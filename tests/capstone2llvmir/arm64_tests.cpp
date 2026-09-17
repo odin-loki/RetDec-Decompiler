@@ -7231,6 +7231,69 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ROR32_r_r_i)
 // ARM64_INS_SDIV
 //
 
+// ARM64 defines division by zero as zero, for both signedness. LLVM's sdiv and
+// udiv call it IMMEDIATE undefined behaviour -- not poison, which is a bad
+// value, but UB, which lets the optimiser delete the surrounding code. A
+// decompiler emitting that is asking LLVM to discard the path being read.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SDIV_by_zero_is_zero)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0x1230},
+		{ARM64_REG_X2, 0x0},
+	});
+
+	emulate("sdiv x0, x1, x2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0x0},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UDIV_by_zero_is_zero)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0x1230},
+		{ARM64_REG_X2, 0x0},
+	});
+
+	emulate("udiv x0, x1, x2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0x0},
+	});
+}
+
+// INT_MIN / -1 has no representable quotient; the architecture truncates it,
+// which lands back on INT_MIN. LLVM calls this one immediate UB as well.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SDIV_intmin_by_minus_one)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0x8000000000000000},
+		{ARM64_REG_X2, 0xffffffffffffffff},
+	});
+
+	emulate("sdiv x0, x1, x2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0x8000000000000000},
+	});
+}
+
+// And the ordinary case must still divide.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SDIV_negative_still_divides)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0xfffffffffffffff6}, // -10
+		{ARM64_REG_X2, 0x3},
+	});
+
+	emulate("sdiv x0, x1, x2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0xfffffffffffffffd},
+	}); // -3
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SDIV_r_r_r)
 {
 	setRegisters({

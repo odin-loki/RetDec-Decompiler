@@ -9292,3 +9292,36 @@ shifter carry-out only for the flag-setting forms. Several existing tests
 assert the current behaviour (`ARM_INS_ADD_ror` expects CPSR_C stored), so
 fixing it means revisiting them; it is a real defect and is recorded rather
 than guessed at here.
+
+### AN-5  ARM64 SDIV/UDIV emitted immediate undefined behaviour
+
+`sdiv` and `udiv` were bare. ARM64 defines both cases LLVM does not:
+
+    divisor == 0         -> 0, signed and unsigned alike
+    INT_MIN / -1 (SDIV)  -> INT_MIN; the exact quotient does not fit and the
+                            architecture truncates it
+
+And LLVM calls them undefined in the worse of the two available ways. Poison is
+a bad value that spreads; division by zero is IMMEDIATE undefined behaviour,
+which lets the optimiser delete the surrounding code -- so a decompiler that
+emits it is asking LLVM to discard the very path the reverser is reading.
+
+A block reaching for this had been sitting commented out in the function since
+before the audit. It branched, which is correct for the zero case and leaves
+the division unreachable there, but it never handled the overflow. Selecting a
+divisor that is never bad, then selecting the architectural answer back in,
+keeps the IR free of UB on every path rather than on the path taken.
+
+Falsification, and an honest gap: reverting the divide-by-zero guard kills the
+test binary with SIGFPE -- the interpreter really does divide by zero on real
+hardware, so that half is caught about as loudly as possible. Reverting the
+INT_MIN / -1 guard changes NOTHING: the interpreter computes it with
+APInt::sdiv, which wraps to INT_MIN and so already gives the architectural
+answer. That half is UB in the emitted IR and nothing here can observe it --
+the same blind spot as the two shift decisions SHIFT-01 was built for.
+
+The obvious next instrument is SHIFT-01's sibling: a check that every emitted
+sdiv/udiv/srem/urem has a divisor provably non-zero, and that no sdiv can meet
+the INT_MIN / -1 pair. `rangeOf` already computes the lower bound it needs. It
+is not built here because it would immediately flag the MIPS and PowerPC
+divisions, which are recorded as open and want fixing in the same breath.

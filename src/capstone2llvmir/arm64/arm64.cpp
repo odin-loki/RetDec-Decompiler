@@ -4066,45 +4066,51 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateDiv(cs_insn* i, cs_arm64* ai,
 	EXPECT_IS_TERNARY(i, ai, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(ai, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
-	llvm::Value *val = nullptr;
+
+	// ARM64 DEFINES both of the cases LLVM calls undefined, and calls them
+	// undefined in the worse of the two available ways: `sdiv` and `udiv` by
+	// zero is IMMEDIATE undefined behaviour, not poison. Poison is a bad value
+	// that spreads; immediate UB lets the optimiser delete the surrounding
+	// code, and a decompiler that emits it is asking LLVM to discard the very
+	// path the reverser is reading.
+	//
+	//   divisor == 0            -> 0, both signed and unsigned
+	//   INT_MIN / -1 (SDIV)     -> INT_MIN; the exact quotient does not fit,
+	//                              and the architecture truncates it
+	//
+	// This is what the block commented out here since before the audit was
+	// reaching for. It branched, which leaves the division unreachable for a
+	// zero divisor and is correct as far as it goes, but it never handled the
+	// overflow case. Selecting a divisor that is never bad, and then selecting
+	// the architectural answer back in, keeps the IR free of UB on every path
+	// rather than free of it on the path that happens to be taken.
+	auto* ty = op1->getType();
+	auto* zero = llvm::ConstantInt::get(ty, 0);
+	auto* one = llvm::ConstantInt::get(ty, 1);
+	auto* divZero = irb.CreateICmpEQ(op2, zero);
+
+	llvm::Value* val = nullptr;
 	if (i->id == ARM64_INS_UDIV)
 	{
-		val = irb.CreateUDiv(op1, op2);
+		auto* safe = irb.CreateSelect(divZero, one, op2);
+		val = irb.CreateSelect(divZero, zero, irb.CreateUDiv(op1, safe));
 	}
 	else if (i->id == ARM64_INS_SDIV)
 	{
-		val = irb.CreateSDiv(op1, op2);
+		unsigned bits = llvm::cast<llvm::IntegerType>(ty)->getBitWidth();
+		auto* intMin = llvm::ConstantInt::get(ty, llvm::APInt::getSignedMinValue(bits));
+		auto* minusOne = llvm::ConstantInt::getSigned(ty, -1);
+		auto* overflow = irb.CreateAnd(irb.CreateICmpEQ(op1, intMin), irb.CreateICmpEQ(op2, minusOne));
+		auto* bad = irb.CreateOr(divZero, overflow);
+		auto* safe = irb.CreateSelect(bad, one, op2);
+		val = irb.CreateSelect(divZero, zero, irb.CreateSelect(overflow, intMin, irb.CreateSDiv(op1, safe)));
+	}
+	else
+	{
+		throw GenericError("translateDiv(): unhandled instruction id");
 	}
 
 	storeOp(ai->operands[0], val, irb);
-
-	/*
-	// Zero division yelds zero as result in this case we
-	// don't want undefined behaviour so we
-	// check for zero division and manualy set the result, for now.
-	llvm::Value* zero = llvm::ConstantInt::get(op1->getType(), 0);
-	auto* cond = irb.CreateICmpEQ(op2, zero);
-	auto irbP = generateIfThenElse(cond, irb);
-	llvm::IRBuilder<> bodyIf(irbP.first);
-	llvm::IRBuilder<> bodyElse(irbP.second);
-
-	//IF - store zero
-	storeOp(ai->operands[0], zero, bodyIf);
-
-	//ELSE - store result of division
-	llvm::Value *val = nullptr;
-	if (i->id == ARM64_INS_UDIV)
-	{
-		val = bodyElse.CreateUDiv(op1, op2);
-	}
-	else if (i->id == ARM64_INS_SDIV)
-	{
-		val = bodyElse.CreateSDiv(op1, op2);
-	}
-
-	storeOp(ai->operands[0], val, bodyElse);
-	//ENDIF
-	*/
 }
 
 /**
