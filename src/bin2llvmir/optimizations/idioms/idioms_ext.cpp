@@ -248,64 +248,71 @@ static bool tryReplaceBswap(BinaryOperator* orInst) {
  * We look for the final multiply by 0x01010101 followed by >> 24 as the
  * signature, then check the chain backward.
  */
+// The classic SWAR population count for 32 bits:
+//
+//   t1 = x  - ((x  >> 1) & 0x55555555)
+//   t2 = (t1 & 0x33333333) + ((t1 >> 2) & 0x33333333)
+//   t3 = (t2 + (t2 >> 4)) & 0x0F0F0F0F
+//   r  = (t3 * 0x01010101) >> 24
+//
+// Every step is checked. The previous version checked five landmarks -- the
+// shift by 24, the multiply, the 0x0F0F0F0F mask, that SOMETHING was an add,
+// and that one operand of that add was masked with 0x33333333 -- and then took
+// the root as `sub->getOperand(0)` with the subtrahend never looked at. A
+// chain with an arbitrary `sub %x, %y` in it passed and was replaced by
+// `ctpop(%x)`: for x = 0x40000000 and y = 0 the original answers 0 and ctpop
+// answers 1. It was also over-strict in the other direction, since the add
+// under the 0x0F0F0F0F mask is `t2 + (t2 >> 4)`, neither operand of which is
+// masked with 0x33333333, so a genuine popcount did not match either.
 static bool tryReplacePopcount(BinaryOperator* lshr) {
-    if (lshr->getOpcode() != Instruction::LShr) return false;
-    auto* shiftAmt = dyn_cast<ConstantInt>(lshr->getOperand(1));
-    if (!shiftAmt || shiftAmt->getZExtValue() != 24) return false;
+	using namespace llvm::PatternMatch;
 
-    auto* mul = dyn_cast<BinaryOperator>(lshr->getOperand(0));
-    if (!mul || mul->getOpcode() != Instruction::Mul) return false;
+	Type* ty = lshr->getType();
+	if (!ty->isIntegerTy(32)) return false;
 
-    auto* mulConst = dyn_cast<ConstantInt>(mul->getOperand(1));
-    if (!mulConst || mulConst->getZExtValue() != 0x01010101ULL) return false;
+	Value* t3 = nullptr;
+	if (!match(lshr, m_LShr(m_c_Mul(m_Value(t3), m_SpecificInt(0x01010101)), m_SpecificInt(24)))) return false;
 
-    // Check the and-mask before the multiply.
-    auto* andInst = dyn_cast<BinaryOperator>(mul->getOperand(0));
-    if (!andInst || andInst->getOpcode() != Instruction::And) return false;
-    auto* mask0f = dyn_cast<ConstantInt>(andInst->getOperand(1));
-    if (!mask0f || mask0f->getZExtValue() != 0x0F0F0F0FUL) return false;
+	// t3 = (t2 + (t2 >> 4)) & 0x0F0F0F0F
+	Value* sum4 = nullptr;
+	if (!match(t3, m_c_And(m_Value(sum4), m_SpecificInt(0x0F0F0F0F)))) return false;
 
-    // Good enough signal — trace back to find the original value.
-    // Walk the and instruction to find the add inside.
-    auto* add = dyn_cast<BinaryOperator>(andInst->getOperand(0));
-    if (!add || add->getOpcode() != Instruction::Add) return false;
+	Value* t2 = nullptr;
+	Value* t2shifted = nullptr;
+	if (!match(sum4, m_c_Add(m_Value(t2), m_Value(t2shifted)))) return false;
+	if (!match(t2shifted, m_LShr(m_Specific(t2), m_SpecificInt(4))))
+	{
+		std::swap(t2, t2shifted);
+		if (!match(t2shifted, m_LShr(m_Specific(t2), m_SpecificInt(4)))) return false;
+	}
 
-    // The left operand of the add should be another and with 0x33333333.
-    // We don't trace all the way — the multi-level check above is
-    // sufficient to avoid false positives.
+	// t2 = (t1 & 0x33333333) + ((t1 >> 2) & 0x33333333)
+	Value* lo = nullptr;
+	Value* hi = nullptr;
+	if (!match(t2, m_c_Add(m_Value(lo), m_Value(hi)))) return false;
 
-    // Find the original input by walking up the tree to find a non-and,
-    // non-sub, non-add value that's used in both halves.
-    // Simplified: just use the lshr result and apply ctpop to the same
-    // bitwidth — the optimiser at a later stage will clean up.
-    Type* ty = lshr->getType();
-    if (!ty->isIntegerTy(32)) return false;
+	Value* t1 = nullptr;
+	Value* t1shifted = nullptr;
+	for (int attempt = 0; attempt < 2; ++attempt)
+	{
+		if (attempt == 1) std::swap(lo, hi);
+		if (!match(lo, m_c_And(m_Value(t1), m_SpecificInt(0x33333333)))) continue;
+		if (!match(hi, m_c_And(m_Value(t1shifted), m_SpecificInt(0x33333333)))) continue;
+		if (!match(t1shifted, m_LShr(m_Specific(t1), m_SpecificInt(2)))) continue;
+		break;
+	}
+	if (t1 == nullptr || t1shifted == nullptr) return false;
+	if (!match(lo, m_c_And(m_Specific(t1), m_SpecificInt(0x33333333)))) return false;
+	if (!match(t1shifted, m_LShr(m_Specific(t1), m_SpecificInt(2)))) return false;
 
-    // Find likely root: walk the subtraction at step 1.
-    // For now, use the operand of mul's chain (andInst → add → sub → x).
-    // If we can't pin it down, bail.
-    Value* root = nullptr;
-    {
-        // add = (t1 & 0x33...) + ((t1>>2) & 0x33...)
-        // One of add's operands is (something & 0x33...).
-        for (int op = 0; op < 2 && !root; ++op) {
-            auto* a = dyn_cast<BinaryOperator>(add->getOperand(op));
-            if (!a || a->getOpcode() != Instruction::And) continue;
-            auto* c = dyn_cast<ConstantInt>(a->getOperand(1));
-            if (!c || c->getZExtValue() != 0x33333333UL) continue;
-            // a->getOperand(0) is t1 or (t1 >> 2) — either way traces to t1.
-            Value* t1cand = a->getOperand(0);
-            if (auto* sub = dyn_cast<BinaryOperator>(t1cand)) {
-                if (sub->getOpcode() == Instruction::Sub)
-                    root = sub->getOperand(0);
-            }
-        }
-    }
+	// t1 = x - ((x >> 1) & 0x55555555)
+	Value* x = nullptr;
+	Value* odd = nullptr;
+	if (!match(t1, m_Sub(m_Value(x), m_Value(odd)))) return false;
+	if (!match(odd, m_c_And(m_LShr(m_Specific(x), m_SpecificInt(1)), m_SpecificInt(0x55555555)))) return false;
 
-    if (!root) return false;
-
-    replaceWithIntrinsic(lshr, Intrinsic::ctpop, {root}, {ty});
-    return true;
+	replaceWithIntrinsic(lshr, Intrinsic::ctpop, {x}, {ty});
+	return true;
 }
 
 //===========================================================================

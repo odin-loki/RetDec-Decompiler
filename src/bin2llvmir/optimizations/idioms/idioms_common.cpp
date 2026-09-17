@@ -134,62 +134,68 @@ Instruction * IdiomsCommon::exchangeBitShiftSDiv1(BasicBlock::iterator iter) con
 	Value * op_and = nullptr;
 	Value * op_lshr = nullptr;
 	Value * op_ashr = nullptr;
-	ConstantInt * cnst = nullptr;
+	ConstantInt* maskCnst = nullptr;
+	ConstantInt* ashrCnst = nullptr;
+	ConstantInt* shiftCnst = nullptr;
 
-	// TODO: Matula:
-	// Very ugly pattern - the problem is that or is comutative -> same pattern
-	// twice with switched ops. Try to find out how LLVM is dealing with this,
-	// this is probable not a problem unique to decompiler and there may be a
-	// better solution for this case, and probably all the other patterns.
-	// The original solution is commented out below.
+	// ((X s>> (w-1)) & mask) | (X u>> k)
 	//
-	if (!(match(&val, m_Or(m_Value(op_and), m_Value(op_lshr)))
-			&& match(op_and, m_And(m_Value(op_ashr), m_ConstantInt(cnst)))
-			&& match(op_ashr, m_AShr(m_Value(op_var1), m_ConstantInt(cnst)))
-			&& *cnst->getValue().getRawData() == 31
-			&& match(op_lshr, m_LShr(m_Value(op_var2), m_ConstantInt(cnst)))
-			&& isPowerOfTwoRepresentable(cnst))
-		&&
-		!(match(&val, m_Or(m_Value(op_lshr), m_Value(op_and)))
-			&& match(op_and, m_And(m_Value(op_ashr), m_ConstantInt(cnst)))
-			&& cnst->getValue().getSExtValue() == -2147483648
-			&& match(op_ashr, m_AShr(m_Value(op_var1), m_ConstantInt(cnst)))
-			&& *cnst->getValue().getRawData() == 31
-			&& match(op_lshr, m_LShr(m_Value(op_var2), m_ConstantInt(cnst)))
-			&& isPowerOfTwoRepresentable(cnst))
-			)
+	// The sign bits are spread over the top k positions and the logical shift
+	// supplies the rest, so the two halves reassemble exactly `ashr X, k`.
+	// Measured over k = 1..3 and x in {-5, -4, -1, 0, 5, INT_MIN}: the
+	// reassembly equals the arithmetic shift on every input.
+	//
+	// It was rewritten as `sdiv X, 2^k`, which is a different function. An
+	// arithmetic shift floors; a signed division truncates toward zero. On the
+	// same inputs they disagree wherever the dividend is negative and not an
+	// exact multiple: for x = -5 and k = 1 the shift is -3 and the division is
+	// -2. So the replacement is the shift.
+	//
+	// The matcher had its own problem: `op_var2` was bound from the lshr and
+	// never compared with `op_var1` from the ashr, so
+	// `((a s>> 31) & mask) | (b u>> 2)` was rewritten using `a` alone and `b`
+	// was dropped. For a = 0, b = 16 the original is 4 and the rewrite was 0.
+	// m_Or takes two m_Value and already matches either order, so the second
+	// hand-written spelling is gone with it.
+	if (!match(&val, m_Or(m_Value(op_and), m_Value(op_lshr)))) return nullptr;
+
+	// The OR's two arms are not ordered, so try the other assignment too.
+	for (int attempt = 0; attempt < 2; ++attempt)
 	{
-		return nullptr;
+		if (attempt == 1)
+		{
+			std::swap(op_and, op_lshr);
+		}
+
+		if (!match(op_and, m_c_And(m_Value(op_ashr), m_ConstantInt(maskCnst)))) continue;
+		if (!match(op_lshr, m_LShr(m_Value(op_var2), m_ConstantInt(shiftCnst)))) continue;
+
+		const unsigned width = val.getType()->getIntegerBitWidth();
+
+		if (!match(op_ashr, m_AShr(m_Value(op_var1), m_ConstantInt(ashrCnst))) || ashrCnst->getValue() != width - 1)
+			continue;
+
+		// The same X on both sides, or this is not one value being reassembled.
+		if (op_var1 != op_var2) continue;
+
+		if (!isPowerOfTwoRepresentable(shiftCnst)) continue;
+
+		const unsigned shift = shiftCnst->getValue().getZExtValue();
+
+		// The mask has to be exactly the positions the logical shift vacated.
+		if (maskCnst->getValue() != ~llvm::APInt::getLowBitsSet(width, width - shift)) continue;
+
+		Instruction* res = BinaryOperator::CreateAShr(op_var1, shiftCnst);
+
+		eraseInstFromBasicBlock(op_ashr, val.getParent());
+		eraseInstFromBasicBlock(op_and, val.getParent());
+		eraseInstFromBasicBlock(op_lshr, val.getParent());
+		eraseInstFromBasicBlock(op_or, val.getParent());
+
+		return res;
 	}
-	// Original code.
-	//
-//	if (! match(&val, m_Or(m_Value(op_and), m_Value(op_lshr))))
-//		return nullptr;
-//
-//	if (! match(op_and, m_And(m_Value(op_ashr), m_ConstantInt(cnst))))
-//		return nullptr;
-//
-//	if (! match(op_ashr, m_AShr(m_Value(op_var1), m_ConstantInt(cnst)))
-//			|| *cnst->getValue().getRawData() != 31)
-//		return nullptr;
-//
-//	if (! match(op_lshr, m_LShr(m_Value(op_var2), m_ConstantInt(cnst))))
-//		return nullptr;
-//
-//	if (! isPowerOfTwoRepresentable(cnst))
-//		return nullptr;
 
-	// now exchange the idiom
-	unsigned shift = *cnst->getValue().getRawData();
-	Constant *NewCst = ConstantInt::get(val.getType(), pow(2, shift));
-	Instruction *res = BinaryOperator::CreateSDiv(op_var1, NewCst);
-
-	eraseInstFromBasicBlock(op_ashr, val.getParent());
-	eraseInstFromBasicBlock(op_and, val.getParent());
-	eraseInstFromBasicBlock(op_lshr, val.getParent());
-	eraseInstFromBasicBlock(op_or, val.getParent());
-
-	return res;
+	return nullptr;
 }
 
 /**
@@ -394,12 +400,22 @@ Instruction * IdiomsCommon::exchangeIntegerAbs(BasicBlock::iterator iter) const
 	Value * op_x = nullptr;
 	ConstantInt * cnst = nullptr;
 
-	if (! match(&val, m_Sub(m_Value(op_xor), m_Value(op_ashr))))
-		return nullptr;
+	// The subtrahend and the xor's other operand have to be the same value.
+	// `op_ashr` was bound here from the sub and then REBOUND by the xor match
+	// below, so the sub's right-hand side was never looked at again:
+	// `(x ^ (x s>> 31)) - y` was rewritten as `abs(x)` for any y. For x = 5 and
+	// y = 100 the original is -95 and the rewrite was 5.
+	Value* op_sub_rhs = nullptr;
+	if (!match(&val, m_Sub(m_Value(op_xor), m_Value(op_sub_rhs)))) return nullptr;
 
-	if (! match(op_xor, m_Xor(m_Value(op_x), m_Value(op_ashr)))
-			&& ! match(op_xor, m_Xor(m_Value(op_ashr), m_Value(op_x))))
-		return nullptr;
+	if (!match(op_xor, m_c_Xor(m_Value(op_x), m_Value(op_ashr)))) return nullptr;
+
+	if (op_ashr != op_sub_rhs)
+	{
+		// m_c_Xor may have bound the pair the other way round.
+		std::swap(op_x, op_ashr);
+		if (op_ashr != op_sub_rhs) return nullptr;
+	}
 
 	// op_ashr must be ashr(x, bitwidth-1)
 	if (! match(op_ashr, m_AShr(m_Value(), m_ConstantInt(cnst))))

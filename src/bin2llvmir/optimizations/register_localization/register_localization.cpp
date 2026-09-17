@@ -91,32 +91,55 @@ bool RegisterLocalization::run()
 		{
 			std::map<Function*, AllocaInst*> fnc2alloca;
 
-			for (auto uIt = reg->user_begin(); uIt != reg->user_end(); )
-			{
-				User* user = *uIt;
-				++uIt;
+			// Snapshot the users. localize() calls replaceUsesOfWith, which
+			// rewrites EVERY operand equal to reg -- so for an instruction
+			// that uses reg twice, the iterator, already advanced onto the
+			// second Use, is moved to the alloca's use list and the remaining
+			// users of reg are walked no more.
+			std::vector<User*> users(reg->user_begin(), reg->user_end());
 
+			for (User* user: users)
+			{
 				if (auto* insn = dyn_cast<Instruction>(user))
 				{
-					changed = localize(reg, fnc2alloca, insn);
+					// Accumulate. This was an assignment, so one later user
+					// that declined reset the flag for every earlier one that
+					// had not.
+					changed |= localize(reg, fnc2alloca, insn);
 				}
 				else if (auto* expr = dyn_cast<ConstantExpr>(user))
 				{
-					for (auto euIt = expr->user_begin(); euIt != expr->user_end(); )
+					std::vector<User*> eusers(expr->user_begin(), expr->user_end());
+
+					for (User* euser: eusers)
 					{
-						User* euser = *euIt;
-						++euIt;
-
-						if (auto* insn = dyn_cast<Instruction>(euser))
+						auto* insn = dyn_cast<Instruction>(euser);
+						if (insn == nullptr)
 						{
-							auto* einsn = expr->getAsInstruction();
-							einsn->insertBefore(insn);
+							continue;
+						}
+						// An instruction may not be materialised in front of a
+						// PHI: the verifier requires the PHIs to be grouped at
+						// the top of the block, and the value would be
+						// computed in the wrong block besides.
+						if (isa<PHINode>(insn))
+						{
+							continue;
+						}
 
-							if (localize(reg, fnc2alloca, einsn))
-							{
-								insn->replaceUsesOfWith(expr, einsn);
-								changed = true;
-							}
+						auto* einsn = expr->getAsInstruction();
+						einsn->insertBefore(insn);
+
+						if (localize(reg, fnc2alloca, einsn))
+						{
+							insn->replaceUsesOfWith(expr, einsn);
+							changed = true;
+						}
+						else
+						{
+							// Otherwise it is left behind, unused, still
+							// naming the register this pass exists to remove.
+							einsn->eraseFromParent();
 						}
 					}
 				}

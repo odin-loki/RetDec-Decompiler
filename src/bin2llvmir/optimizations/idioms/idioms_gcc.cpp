@@ -88,8 +88,11 @@ Instruction * IdiomsGCC::exchangeSignedModuloByTwo(BasicBlock::iterator iter) co
 	if (! match(&val, m_Sub(m_Value(op_and), m_Value(op_lshr))))
 		return nullptr;
 
-	if (! match(op_lshr, m_LShr(m_Value(op_x), m_ConstantInt(cnst)))
-			|| *cnst->getValue().getRawData() != 31)
+	// The sign bit of THIS value, not bit 31. On i64 a shift by 31 is not the
+	// sign bit, and `(((x u>> 31) + x) & 1) - (x u>> 31)` for x = 2^32 is -2,
+	// while `srem x, 2` is 0.
+	if (!match(op_lshr, m_LShr(m_Value(op_x), m_ConstantInt(cnst)))
+		|| cnst->getValue() != op_x->getType()->getIntegerBitWidth() - 1)
 		return nullptr;
 
 	if (! match(op_and, m_And(m_Value(op_add), m_ConstantInt(cnst)))
@@ -111,8 +114,8 @@ Instruction * IdiomsGCC::exchangeSignedModuloByTwo(BasicBlock::iterator iter) co
 			return nullptr;
 	}
 
-	if (! match(op_lshr2, m_LShr(m_Value(op_x_tmp), m_ConstantInt(cnst)))
-			|| *cnst->getValue().getRawData() != 31)
+	if (!match(op_lshr2, m_LShr(m_Value(op_x_tmp), m_ConstantInt(cnst)))
+		|| cnst->getValue() != op_x->getType()->getIntegerBitWidth() - 1)
 		return nullptr;
 
 	if (op_x_tmp != op_x)
@@ -138,39 +141,54 @@ Instruction * IdiomsGCC::exchangeCondBitShiftDiv1(BasicBlock::iterator iter) con
 	Instruction & val = (*iter);
 	Value * op_add = nullptr;
 	Value * op_var = nullptr;
+	Value* op_var_sel = nullptr;
+	Value* op_var_cmp = nullptr;
 	Value * op_select = nullptr;
 	Value * op_cmp = nullptr;
+	ConstantInt* shiftCnst = nullptr;
 	ConstantInt * cnst = nullptr;
 	CmpPredicate pred;
 
 	// (X < 0 ? X + (N-1) : X) a>> log2(N) --> X s/ N
-	if (! match(&val, m_AShr(m_Value(op_select), m_ConstantInt(cnst))))
-		return nullptr;
+	//
+	// m_Value and m_ConstantInt BIND; they do not compare. `cnst` used to be
+	// reused for all three constants, so by the time the divisor was built it
+	// held the ADD's constant, N-1, and `pow(2, N-1)` was emitted as the
+	// divisor: for N = 8 that is 128, not 8, and `64 a>> 3` = 8 became
+	// `sdiv 64, 128` = 0. `op_var` was likewise bound three times, so the
+	// select's false value, the comparison's operand and the addend were never
+	// required to be the same X.
+	if (!match(&val, m_AShr(m_Value(op_select), m_ConstantInt(shiftCnst)))) return nullptr;
 
-	if (! match(op_select, m_Select(m_Value(op_cmp), m_Value(op_add), m_Value(op_var))))
-		return nullptr;
+	if (!match(op_select, m_Select(m_Value(op_cmp), m_Value(op_add), m_Value(op_var_sel)))) return nullptr;
 
-	if (! match(op_cmp, m_ICmp(pred, m_Value(op_var), m_ConstantInt(cnst)))
-			|| *cnst->getValue().getRawData() != 0)
-		return nullptr;
+	if (!match(op_cmp, m_ICmp(pred, m_Value(op_var_cmp), m_ConstantInt(cnst))) || !cnst->isZero()) return nullptr;
 
 	if (pred != ICmpInst::ICMP_SLT)
 		return nullptr;
 
-	if (! match(op_add, m_Add(m_Value(op_var), m_ConstantInt(cnst)))
-			&& ! match(op_add, m_Add(m_ConstantInt(cnst), m_Value(op_var))))
-		return nullptr;
+	if (!match(op_add, m_c_Add(m_Value(op_var), m_ConstantInt(cnst)))) return nullptr;
 
-	if (! isPowerOfTwoRepresentable(cnst))
-		return nullptr;
+	if (op_var != op_var_sel || op_var != op_var_cmp) return nullptr;
+
+	// The shift is the exponent, and it is what has to be in range -- it is
+	// also what bounds the constant that gets built.
+	if (!isPowerOfTwoRepresentable(shiftCnst)) return nullptr;
+
+	const unsigned width = val.getType()->getIntegerBitWidth();
+	const unsigned shift = shiftCnst->getValue().getZExtValue();
+
+	// The idiom's own relation: the addend rounds a negative dividend up, so it
+	// is exactly N - 1. Without this, an add constant of 5 and a shift of 9
+	// matched happily.
+	if (cnst->getValue() != (llvm::APInt::getOneBitSet(cnst->getBitWidth(), shift) - 1)) return nullptr;
 
 	// now exchange the idiom
 	eraseInstFromBasicBlock(op_add, val.getParent());
 	eraseInstFromBasicBlock(op_select, val.getParent());
 	eraseInstFromBasicBlock(op_cmp, val.getParent());
 
-	unsigned shift = *cnst->getValue().getRawData();
-	Constant *NewCst = ConstantInt::get(val.getType(), pow(2, shift));
+	Constant* NewCst = ConstantInt::get(val.getType(), llvm::APInt::getOneBitSet(width, shift));
 	return BinaryOperator::CreateSDiv(op_var, NewCst);
 }
 
@@ -194,21 +212,38 @@ Instruction * IdiomsGCC::exchangeCondBitShiftDiv2(BasicBlock::iterator iter) con
 			|| *cnst->getValue().getRawData() != 0)
 		return nullptr;
 
-	if (! match(op_or, m_Or(m_Value(op_and), m_Value(op_lshr))))
+	if (!match(op_or, m_c_Or(m_Value(op_and), m_Value(op_lshr)))) return nullptr;
+
+	// Separate bindings throughout. `op_var` used to be bound from the ashr
+	// and then REBOUND from the lshr, so the two were never required to be the
+	// same value: `-(((a s>> 31) & mask) | (b u>> 2))` was rewritten as
+	// `sdiv b, -4`, discarding `a` entirely. `cnst` was reused the same way,
+	// so the AND's mask was bound and then overwritten before anyone read it.
+	Value* op_var_ashr = nullptr;
+	Value* op_var_lshr = nullptr;
+	ConstantInt* maskCnst = nullptr;
+	ConstantInt* ashrCnst = nullptr;
+	ConstantInt* shiftCnst = nullptr;
+
+	if (!match(op_and, m_c_And(m_Value(op_ashr), m_ConstantInt(maskCnst)))) return nullptr;
+
+	const unsigned width = val.getType()->getIntegerBitWidth();
+
+	if (!match(op_ashr, m_AShr(m_Value(op_var_ashr), m_ConstantInt(ashrCnst))) || ashrCnst->getValue() != width - 1)
 		return nullptr;
 
-	if (! match(op_and, m_And(m_Value(op_ashr), m_ConstantInt(cnst))))
-		return nullptr;
+	if (!match(op_lshr, m_LShr(m_Value(op_var_lshr), m_ConstantInt(shiftCnst)))) return nullptr;
 
-	if (! match(op_ashr, m_AShr(m_Value(op_var), m_ConstantInt(cnst)))
-			|| *cnst->getValue().getRawData() != 31)
-		return nullptr;
+	if (op_var_ashr != op_var_lshr) return nullptr;
+	op_var = op_var_ashr;
 
-	if (! match(op_lshr, m_LShr(m_Value(op_var), m_ConstantInt(cnst))))
-		return nullptr;
+	if (!isPowerOfTwoRepresentable(shiftCnst)) return nullptr;
 
-	if (! isPowerOfTwoRepresentable(cnst))
-		return nullptr;
+	const unsigned shift = shiftCnst->getValue().getZExtValue();
+
+	// The mask has to be exactly the bits the logical shift vacated, or the OR
+	// is not reassembling one value and this is not the idiom.
+	if (maskCnst->getValue() != ~llvm::APInt::getLowBitsSet(width, width - shift)) return nullptr;
 
 	// now exchange the idiom
 	eraseInstFromBasicBlock(op_ashr, val.getParent());
@@ -216,8 +251,9 @@ Instruction * IdiomsGCC::exchangeCondBitShiftDiv2(BasicBlock::iterator iter) con
 	eraseInstFromBasicBlock(op_lshr, val.getParent());
 	eraseInstFromBasicBlock(op_or, val.getParent());
 
-	unsigned shift = *cnst->getValue().getRawData();
-	Constant *NewCst = ConstantInt::get(val.getType(), -pow(2, shift));
+	// Built as an APInt. `-pow(2, shift)` converts a negative double to
+	// uint64_t, which has no defined result in C++.
+	Constant* NewCst = ConstantInt::get(val.getType(), -llvm::APInt::getOneBitSet(width, shift));
 	return BinaryOperator::CreateSDiv(op_var, NewCst);
 }
 
@@ -240,25 +276,38 @@ Instruction * IdiomsGCC::exchangeCondBitShiftDiv3(BasicBlock::iterator iter) con
 			|| *cnst->getValue().getRawData() != 0)
 		return nullptr;
 
-	if (! match(op_or, m_Or(m_Value(op_lshr), m_Value(op_and))))
-		return nullptr;
+	if (!match(op_or, m_c_Or(m_Value(op_lshr), m_Value(op_and)))) return nullptr;
 
-	if (! match(op_and, m_And(m_Value(op_var), m_ConstantInt(cnst))))
-		return nullptr;
+	// Same rebinding defect as exchangeCondBitShiftDiv2: `op_var` was bound
+	// from the and and then overwritten by the lshr, and the mask constant was
+	// never read before being clobbered. The doc comment above says "in case
+	// of div -2", which means the mask is the sign bit and the shift is one;
+	// neither was enforced.
+	Value* op_var_and = nullptr;
+	Value* op_var_lshr = nullptr;
+	ConstantInt* maskCnst = nullptr;
+	ConstantInt* shiftCnst = nullptr;
 
-	if (! match(op_lshr, m_LShr(m_Value(op_var), m_ConstantInt(cnst))))
-		return nullptr;
+	if (!match(op_and, m_c_And(m_Value(op_var_and), m_ConstantInt(maskCnst)))) return nullptr;
 
-	if (! isPowerOfTwoRepresentable(cnst))
-		return nullptr;
+	if (!match(op_lshr, m_LShr(m_Value(op_var_lshr), m_ConstantInt(shiftCnst)))) return nullptr;
+
+	if (op_var_and != op_var_lshr) return nullptr;
+	op_var = op_var_and;
+
+	if (!isPowerOfTwoRepresentable(shiftCnst)) return nullptr;
+
+	const unsigned width = val.getType()->getIntegerBitWidth();
+	const unsigned shift = shiftCnst->getValue().getZExtValue();
+
+	if (maskCnst->getValue() != ~llvm::APInt::getLowBitsSet(width, width - shift)) return nullptr;
 
 	// now exchange the idiom
 	eraseInstFromBasicBlock(op_and, val.getParent());
 	eraseInstFromBasicBlock(op_lshr, val.getParent());
 	eraseInstFromBasicBlock(op_or, val.getParent());
 
-	unsigned shift = *cnst->getValue().getRawData();
-	Constant *NewCst = ConstantInt::get(val.getType(), -pow(2, shift));
+	Constant* NewCst = ConstantInt::get(val.getType(), -llvm::APInt::getOneBitSet(width, shift));
 	return BinaryOperator::CreateSDiv(op_var, NewCst);
 }
 

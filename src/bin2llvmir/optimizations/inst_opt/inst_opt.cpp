@@ -969,11 +969,28 @@ std::vector<OptEntry> optimizations =
 
 bool optimize(llvm::Instruction* insn)
 {
-	const std::string fnName = insn && insn->getFunction()
-			? insn->getFunction()->getName().str()
-			: "<unknown>";
-	const std::string opName = insn ? insn->getOpcodeName() : "<null>";
-	const auto maxPatterns = instOptMaxPatterns();
+	// This runs once per instruction in the module, and the trace is off in
+	// every build nobody has deliberately switched it on for. It used to read
+	// the environment once per pattern per instruction -- 22 getenv calls each
+	// time round -- and build two heap-allocated strings, including
+	// getName().str(), whose only consumer was output that was not being
+	// produced. The environment is read once per process now, and the strings
+	// are built only when something is going to print them.
+	static const bool traceOn = instOptPatternTraceEnabled();
+	static const bool traceVerbose = instOptPatternTraceVerbose();
+	static const unsigned long maxPatterns = instOptMaxPatterns();
+
+	// Captured up front, and only when something will read them: a pattern
+	// that fires erases `insn`, so after opt.fn returns there is nothing left
+	// to ask for the name.
+	std::string fnName;
+	std::string opName;
+	if (traceOn || traceVerbose)
+	{
+		fnName = insn && insn->getFunction() ? insn->getFunction()->getName().str() : "<unknown>";
+		opName = insn ? insn->getOpcodeName() : "<null>";
+	}
+
 	unsigned long idx = 0;
 	for (auto& opt : optimizations)
 	{
@@ -982,7 +999,7 @@ bool optimize(llvm::Instruction* insn)
 		{
 			break;
 		}
-		if (instOptPatternTraceVerbose())
+		if (traceVerbose)
 		{
 			traceInstOptPattern(
 				std::string("trying ")
@@ -995,14 +1012,10 @@ bool optimize(llvm::Instruction* insn)
 		}
 		if (opt.fn(insn))
 		{
-			traceInstOptPattern(
-				std::string("applied ")
-				+ opt.name
-				+ " in "
-				+ fnName
-				+ " on "
-				+ opName
-			);
+			if (traceOn)
+			{
+				traceInstOptPattern(std::string("applied ") + opt.name + " in " + fnName + " on " + opName);
+			}
 			return true;
 		}
 	}

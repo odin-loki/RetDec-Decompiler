@@ -40,8 +40,11 @@ Instruction * IdiomsLLVM::exchangeIsGreaterThanMinusOne(BasicBlock::iterator ite
 			&& ! match(op_and, m_And(m_ConstantInt(cnst), m_Value(op_x))))
 		return nullptr;
 
-	if (*cnst->getValue().getRawData() != 0x80000000)
-		return nullptr;
+	// The sign bit, not bit 31. getRawData() reads the low 64-bit word and
+	// knows nothing about the constant's width, so for i64 this was asking
+	// about bit 31: `and i64 %x, 0x80000000` then `== 0` was rewritten to
+	// `%x > -1`, which for %x = 0x0000000080000000 turns false into true.
+	if (!cnst->getValue().isSignMask()) return nullptr;
 
 	eraseInstFromBasicBlock(op_and, val.getParent());
 
@@ -66,10 +69,12 @@ Instruction * IdiomsLLVM::exchangeCompareEq(BasicBlock::iterator iter) const {
 		return nullptr;
 
 	// ~(A^B) --> icmp eq i1 A, B
-	if (! match(&val, m_Not(m_Value())))
-		return nullptr;
-
-	op_xor = val.getOperand(0);
+	//
+	// m_Not is m_c_Xor(m_AllOnes(), V) and therefore commutes, so `xor i1
+	// true, %inner` matches it -- and then operand 0 is the constant, not the
+	// inner xor. Let the matcher bind what it found instead of reading a
+	// position.
+	if (!match(&val, m_Not(m_Value(op_xor)))) return nullptr;
 
 	if (! match(op_xor, m_Xor(m_Value(op_a), m_Value(op_b))))
 		return nullptr;
@@ -136,7 +141,10 @@ Instruction * IdiomsLLVM::exchangeCompareSlt(BasicBlock::iterator iter) const {
 
 	eraseInstFromBasicBlock(op_not, val.getParent());
 
-	return CmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, op_a, op_b);
+	// UNSIGNED, as the comment above says. On i1 the two signed values are 0
+	// and -1, so `slt` is the reverse of `ult`: for A = 0, B = 1 the AND is 1
+	// and `icmp slt i1 0, -1` is 0. Two of the four rows were wrong.
+	return CmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_ULT, op_a, op_b);
 }
 
 /**
@@ -174,7 +182,9 @@ Instruction * IdiomsLLVM::exchangeCompareSle(BasicBlock::iterator iter) const {
 
 	eraseInstFromBasicBlock(op_not, val.getParent());
 
-	return CmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLE, op_a, op_b);
+	// Unsigned, for the same reason as exchangeCompareSlt above: for A = 0,
+	// B = 1 the OR is 1 and `icmp sle i1 0, -1` is 0.
+	return CmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_ULE, op_a, op_b);
 }
 
 } // namespace bin2llvmir

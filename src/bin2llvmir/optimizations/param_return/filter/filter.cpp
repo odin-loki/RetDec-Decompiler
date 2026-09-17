@@ -712,8 +712,15 @@ size_t Filter::fetchRegsForType(
 		return getNumberOfStacksForType(type);
 	}
 
+	// A GlobalVariable's getType() is the POINTER type, so under opaque
+	// pointers this asked for the target's pointer size, never the register's
+	// width. Abi::getRegisterByteSize reads the pointee first, which is what
+	// this wants. It agreed wherever the two happen to be equal -- EAX on
+	// x86-32, RAX on x86-64, r0 on ARM -- which is why every test in the suite
+	// gave the same answer either way. It does not agree for ST0 (10 bytes) or
+	// an XMM register.
 	Type* registerType = reg->getType();
-	std::size_t registerSize = _abi->getTypeByteSize(registerType);
+	std::size_t registerSize = _abi->getRegisterByteSize(regs.front());
 	std::size_t typeSize = type->isVoidTy() ? _abi->getWordSize() : _abi->getTypeByteSize(type);
 
 	if (typeSize <= registerSize)
@@ -812,8 +819,7 @@ void Filter::filterRetsByKnownTypes(FilterableLayout& lay) const
 			lay.knownTypes = {nullptr};
 			return;
 		}
-		Type* registerType = firstReg->getType();
-		std::size_t registerSize = _abi->getTypeByteSize(registerType);
+		std::size_t registerSize = _abi->getRegisterByteSize(vecRegs.front());
 
 		if (typeSize <= registerSize || (typeSize > registerSize * vecRegs.size()))
 		{
@@ -835,8 +841,7 @@ void Filter::filterRetsByKnownTypes(FilterableLayout& lay) const
 			lay.knownTypes = {nullptr};
 			return;
 		}
-		Type* registerType = firstReg->getType();
-		std::size_t registerSize = _abi->getTypeByteSize(registerType);
+		std::size_t registerSize = _abi->getRegisterByteSize(doubleRegs.front());
 
 		if (typeSize <= registerSize || (typeSize > registerSize * doubleRegs.size()))
 		{
@@ -858,8 +863,7 @@ void Filter::filterRetsByKnownTypes(FilterableLayout& lay) const
 			lay.knownTypes = {nullptr};
 			return;
 		}
-		Type* registerType = firstReg->getType();
-		std::size_t registerSize = _abi->getTypeByteSize(registerType);
+		std::size_t registerSize = _abi->getRegisterByteSize(fpRegs.front());
 
 		if (typeSize <= registerSize || (typeSize > registerSize * fpRegs.size()))
 		{
@@ -878,8 +882,7 @@ void Filter::filterRetsByKnownTypes(FilterableLayout& lay) const
 		if (auto* defaultReg = _abi->getRegister(gpRegs.front()))
 		{
 			std::size_t typeSize = _abi->getTypeByteSize(retType);
-			Type* registerType = defaultReg->getType();
-			std::size_t registerSize = _abi->getTypeByteSize(registerType);
+			std::size_t registerSize = _abi->getRegisterByteSize(gpRegs.front());
 
 			if (typeSize <= registerSize || (typeSize > registerSize * gpRegs.size()))
 			{
@@ -1427,7 +1430,13 @@ void Filter::createContinuousArgRegisters(FilterableLayout& lay) const
 	{
 		uint32_t regId = lay.vectorRegisters.back();
 
-		for (auto ccR: _cc->getParamRegisters())
+		// The VECTOR list. The three blocks above each walk their own, and this
+		// one walked the general-purpose one, where a vector register id never
+		// appears -- so the loop never broke and copied the whole GP parameter
+		// list into vectorRegisters. On ARM a definition whose only vector use
+		// was q1 came back as {R0, R1, R2, R3}, four parameters that were never
+		// there and one real one lost.
+		for (auto ccR: _cc->getParamVectorRegisters())
 		{
 			veRegs.push_back(ccR);
 			if (regId == ccR)

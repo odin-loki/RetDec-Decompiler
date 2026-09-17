@@ -30,10 +30,10 @@ void ReturnEntry::addRetStore(llvm::StoreInst* st)
 {
 	_retStores.push_back(st);
 
-	if (std::find(
-		_retValues.begin(),
-		_retValues.end(),
-		st->getPointerOperand()) != _retValues.end())
+	// Add it when it is NOT already there. The comparison was the wrong way
+	// round, so this only ever duplicated a value that was present and never
+	// added a new one, leaving _retValues permanently empty.
+	if (std::find(_retValues.begin(), _retValues.end(), st->getPointerOperand()) == _retValues.end())
 	{
 		_retValues.push_back(st->getPointerOperand());
 	}

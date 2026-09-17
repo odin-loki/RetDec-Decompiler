@@ -290,7 +290,12 @@ bool IdiomsAnalysis::analyse(llvm::Function & f, llvm::Pass * p, int (IdiomsAnal
 
 	num_idioms += IdiomsGCC::exchangeCondBitShiftDivMultiBB(f, p);
 
-	return num_idioms == 0;
+	// The doc comment above says "true whenever an exchange has been made".
+	// This returned the opposite, and it is what Idioms::runOnFunction hands
+	// back as the legacy pass manager's "IR changed" flag -- so the pass
+	// claimed to have modified every function it merely visited, and claimed
+	// to have changed nothing on the one occasion it did.
+	return num_idioms != 0;
 }
 
 } // namespace bin2llvmir

@@ -9,6 +9,7 @@ add_executable(tests-bin2llvmir
 	optimizations/jump_table_recovery/jump_table_recovery_tests.cpp
 	optimizations/inst_opt/inst_opt_pass_tests.cpp
 	optimizations/inst_opt/inst_opt_tests.cpp
+	optimizations/inst_opt_rda/inst_opt_rda_tests.cpp
 	optimizations/param_return/param_return_tests.cpp
 	optimizations/phi_remover/phi_remover_tests.cpp
 	optimizations/phi_to_select/phi_to_select_tests.cpp

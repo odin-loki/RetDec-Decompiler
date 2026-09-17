@@ -115,6 +115,26 @@ bool StackPointerOpsRemove::removePreservationStores()
 {
 	bool changed = false;
 
+	// The sibling removeStackPointerStores() checks this; this one did not,
+	// and run() calls both. AbiProvider::getAbi returns null when no ABI was
+	// created, and the isRegister call below dereferences it.
+	if (_abi == nullptr)
+	{
+		LOG << "[ABORT] ABI is not available\n";
+		return false;
+	}
+
+	// Abi::isRegister(value, id) is a raw index into the register table with
+	// no architecture check, and capstone's id spaces overlap: X86_REG_EBP is
+	// 20, and on MIPS so is MIPS_REG_18, which is $s2. Erasing an $s2
+	// spill/reload pair loses a callee-saved value the caller is entitled to
+	// get back. On x86 the frame-pointer bookkeeping really is dead after
+	// stack analysis, which is what this was written for.
+	if (!_abi->isX86() && !_abi->isX64())
+	{
+		return false;
+	}
+
 	for (auto& f : _module->getFunctionList())
 	{
 		for (inst_iterator I = inst_begin(f), E = inst_end(f); I != E; ++I)

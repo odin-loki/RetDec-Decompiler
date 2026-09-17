@@ -78,8 +78,11 @@ bool CondBranchOpt::run()
 		Instruction& insn = *it;
 		++it;
 
+		// condBranchOptExt erases and replaces instructions; its answer was
+		// thrown away, so runOnModule could report "nothing changed" after
+		// changing the module.
 		if (!runOnInstruction(RDA, insn))
-			condBranchOptExt(insn);
+			changed |= condBranchOptExt(insn);
 		else
 			changed = true;
 	}
@@ -260,22 +263,22 @@ bool CondBranchOpt::runOnInstruction(
 	{
 		auto* r = load->getPointerOperand();
 		auto* nl = llvm_utils::createLoadInst(r, "", br);
-		// ci may be zero, and 0 - 1 as a uint64_t is every bit set, which
-		// fits no narrower type; ci need not be as wide as nl either.
-		// Subtract at nl's width, where the wrap is the one the machine does.
 		if (!nl->getType()->isIntegerTy())
 		{
 			return false;
 		}
 		const unsigned nw = nl->getType()->getIntegerBitWidth();
-		auto* nci = ConstantInt::get(nl->getType(), ci->getValue().zextOrTrunc(nw) - 1);
 
-		if (!nl->getType()->isIntegerTy() || !nci->getType()->isIntegerTy())
-		{
-			return false;
-		}
+		// The matched tree is `(X >u C) != 1`, which is `NOT (X >u C)`, which
+		// is `X <=u C`. It was emitted as `X <u C - 1`, i.e. `X <=u C - 2`,
+		// wrong for X in {C-1, C}: for C = 5 and X = 5 the original condition
+		// is true and the rewrite gave `5 <u 4`, false. At C = 0 it was worse
+		// -- `X <u -1` is true for every X but one, the near-inverse of the
+		// condition it replaced. There is no arithmetic on C to do; the
+		// relation is the comparison itself.
+		auto* nci = ConstantInt::get(nl->getType(), ci->getValue().zextOrTrunc(nw));
 
-		auto* icmp = new ICmpInst(br, ICmpInst::ICMP_ULT, nl, nci);
+		auto* icmp = new ICmpInst(br, ICmpInst::ICMP_ULE, nl, nci);
 		_toRemove.insert(br->getCondition());
 		br->replaceUsesOfWith(br->getCondition(), icmp);
 		return true;

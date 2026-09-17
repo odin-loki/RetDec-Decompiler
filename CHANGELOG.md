@@ -47,6 +47,18 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   that makes `redundant_load_store` wrong, so it agreed with the defect. It now
   compares locations after `stripPointerCasts`.
 
+- Tests for `inst_opt_rda`, and a guard on the one thing it does.
+  `ReachingDefinitionsAnalysis` does not model calls: it records a call's
+  pointer arguments as uses and nothing else, so no call kills a definition.
+  Measured directly — `store %x, %p; call @f(%p); load %p` reports exactly one
+  reaching definition, the store, although the callee was handed the pointer.
+  An alloca was already safe (reaching a call gives it a non-load/store user,
+  which the pass refuses), but a machine-register global was not, and a lifted
+  callee writes the machine registers as a matter of course. The pass now
+  refuses to carry a value across anything that may write memory. The analysis
+  itself is unchanged; its one test file contains a single test whose own
+  comment says it tests nothing.
+
 - Tests for two passes in the shipped pipeline that had none:
   `tests/bin2llvmir/optimizations/strength_reduction/` and
   `tests/bin2llvmir/optimizations/redundant_load_store/`. Both passes are listed
@@ -246,6 +258,99 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   back to counting keywords in text. `GateReport::summary()` marks the fallback.
 
 ### Fixed
+
+- **`inst_opt::optimize` read the environment 25 times per instruction.** It
+  runs once per instruction in the module and called `std::getenv` once per
+  pattern for trace output that is off by default, plus built two
+  heap-allocated strings — one of them `getFunction()->getName().str()` — whose
+  only consumer was that output. Measured with a `getenv` interposer over a
+  201-instruction function: 5,025 calls before, 3 after (once per process). The
+  strings are now built only when something will print them.
+
+- **The rest of bin2llvmir.** Two more sweeps, over the idiom recognisers and
+  the passes around them.
+
+  The recurring defect is a matcher that BINDS where it meant to COMPARE.
+  `m_Value(x)` and `m_ConstantInt(c)` overwrite; only `m_Specific` compares. In
+  `exchangeCondBitShiftDiv1` one `cnst` was reused for all three constants, so
+  the divisor was built from the addend N−1 and came out `2^(N-1)`: for N = 8
+  the divisor was 128, and `64 a>> 3` = 8 became `sdiv 64, 128` = 0. `op_var`
+  was bound three times in the same function, and twice each in
+  `exchangeCondBitShiftDiv2`, `exchangeCondBitShiftDiv3`,
+  `exchangeBitShiftSDiv1` and `exchangeIntegerAbs` — so
+  `(x ^ (x s>> 31)) - y` became `abs(x)` for any y at all, turning −95 into 5.
+
+  `exchangeBitShiftSDiv1` was wrong a second way. The shape it matches
+  reassembles exactly `ashr x, k` — measured over k = 1..3 and
+  x in {−5, −4, −1, 0, 5, INT_MIN} — and it answered `sdiv x, 2^k`, which
+  truncates toward zero where the shift floors: for x = −5 and k = 1 those are
+  −2 and −3. It emits the shift now.
+
+  Two comparison idioms emitted the signed predicate where their own comments
+  say unsigned. On i1 the signed values are 0 and −1, so the order is reversed
+  and two of the four rows of each truth table were wrong. `getRawData()`
+  compared against `0x80000000` treats bit 31 as the sign bit at every width.
+  The popcount recogniser checked five landmarks out of a nine-step chain and
+  took its input from an unverified `sub`, so an unrelated chain became
+  `ctpop`; it verifies the whole SWAR sequence now.
+
+  Outside the idioms: `icmp ult (sub a, b), 0` — the constant false, since no
+  unsigned value is below zero — was folded to `icmp ne a, b`, inverting every
+  branch on it. `(X >u C) != 1` is `X <=u C` and was emitted as `X <u C - 1`,
+  wrong for two values of X and near-inverted at C = 0. The parameter filter's
+  vector-register block walked the general-purpose register list, so an ARM
+  definition using `q1` came back with four integer parameters that were never
+  there; and five sites read a register's width from `GlobalVariable::getType()`,
+  which under opaque pointers is the pointer type. `removePreservationStores`
+  applied x86 frame-pointer register ids on every architecture — capstone's id
+  spaces overlap, and `X86_REG_EBP` is also MIPS `$s2` — and erased an ordinary
+  callee-saved spill. A PHI whose incoming value is itself reached
+  `replaceAllUsesWith(this)`, which asserts. And `global_const_prop` called
+  `getIntegerBitWidth()` on non-integer types, shifted by 64, and folded reads
+  past the end of a zeroinitializer.
+
+- **The bin2llvmir rewrites.** The layer that rewrites the lifted IR had no
+  gate, and held miscompiles in every pass that was looked at.
+
+  `and i1 x, y` was rewritten to `icmp eq i1 x, y`, which is 1 where the AND is
+  0; the test that covered it chose `and i1 %a, 1`, the one input pattern where
+  the two agree. `lshr (shl x, N), N` masked the complement of the bits that
+  survive, and the file's own header comment documented the same inversion.
+  `castSequence` collapsed any cast chain whose two ends matched, so
+  `double -> float -> double` became the identity — 1e300 comes back as +inf
+  and 1e-300 as 0 — and under opaque pointers, where every `ptr` in address
+  space 0 is one `Type*`, so did `ptr -> i64 -> i32 -> ptr`. `x - x/k` was
+  rewritten as `x % k`; for x = 10 and k = 2 those are 5 and 0. Two loads of one
+  pointer were folded with no check for an intervening write. Reassociating two
+  adds kept an `nsw` it can no longer justify, turning a defined result into
+  poison. `isPow2Const` called `getZExtValue()` with no width guard, which
+  aborts on the i128 the MIPS DSP registers are built at.
+
+  Every recovered divisor in the magic-number idioms went into a division with
+  no check. Measured by calling the helpers: `divisorByMagicNumberSigned2`
+  answers 0 on **36,869 of the 167,936** (magic, shift) pairs with magic < 4096
+  and shift <= 40, because the documented `q == 0` guard does not bound the
+  return value — the ceil step `++result` on a `uint32_t` wraps `0xFFFFFFFF` to
+  0. Division by zero is not poison, it is immediate undefined behaviour, which
+  licenses the optimiser to delete what follows. Eight of the thirteen sites
+  erased their operands before computing the divisor and so could not have
+  declined; they compute first now. An `and` with an all-ones mask produced
+  `urem x, 0` because the power-of-two test narrowed to `unsigned` while the
+  modulus was built at the constant's own width.
+
+  Volatile and atomic accesses were treated as ordinary throughout
+  `redundant_load_store`, `inst_opt_rda` and the two bitcast-pointer rewrites,
+  so a memory-mapped read could be answered from a remembered value and
+  deleted. Dead-store elimination keyed on the pointer alone, so a four-byte
+  store killed an eight-byte one; a store invalidated only its own key although
+  the file's header promised full invalidation; and a read-only call did not
+  make the preceding store observable.
+
+  In `inst_opt_rda_ext.cpp`, `dyn_cast<StoreInst>(def->src)` can never succeed —
+  `Definition::src` is the store's *pointer operand*, documented as such — so
+  two patterns were unconditionally false, and a third replaced a load across
+  branch arms with a dominance check on the wrong pair of instructions. All
+  three are unregistered, so that is a fix to code that does not run.
 
 - **Instruction translation, all five architectures.** Roughly forty defects,
   found by sweeping `src/capstone2llvmir/` for five recurring shapes:

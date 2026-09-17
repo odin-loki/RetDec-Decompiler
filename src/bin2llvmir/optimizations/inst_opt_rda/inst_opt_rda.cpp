@@ -176,6 +176,28 @@ bool defWithUsesInTheSameBb(
 		}
 	}
 
+	// ReachingDefinitionsAnalysis does not model calls. It records a call's
+	// pointer arguments as USES and nothing else: no call kills a definition,
+	// so a store still reaches a load on the other side of one. Measured --
+	// `store %x, %p; call @f(%p); %a = load %p` reports exactly one reaching
+	// definition, the store, even though the callee was handed the pointer.
+	//
+	// An alloca is saved from that by the users check above: if it reaches a
+	// call at all it has a non-load/store user and this function has already
+	// given up. A register global has not, and a lifted callee writes the
+	// machine registers as a matter of course. So do not carry a value across
+	// anything in between that may write memory.
+	auto mayClobberBetween = [](llvm::Instruction* from, llvm::Instruction* to) {
+		for (auto it = std::next(from->getIterator()); &*it != to; ++it)
+		{
+			if (it->mayWriteToMemory())
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+
 	bool ret = false;
 	bool allUsesRemoved = true;
 	for (auto* use : def->uses)
@@ -202,7 +224,8 @@ bool defWithUsesInTheSameBb(
 		// pointer's element type tied the two together.
 		auto* useLoad = use->use ? llvm::dyn_cast<llvm::LoadInst>(use->use) : nullptr;
 		if (useLoad && useLoad->isSimple() && store->getParent() == useLoad->getParent()
-			&& useLoad->getType() == store->getValueOperand()->getType() && def->dominates(use))
+			&& useLoad->getType() == store->getValueOperand()->getType() && def->dominates(use)
+			&& !mayClobberBetween(store, useLoad))
 		{
 			use->use->replaceAllUsesWith(store->getValueOperand());
 			if (toRemove)

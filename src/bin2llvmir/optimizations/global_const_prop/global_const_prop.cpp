@@ -86,10 +86,14 @@ static Constant* extractFromInitializer(Constant* init, uint64_t byteOff,
     if (!init) return nullptr;
 
     if (auto* arr = dyn_cast<ConstantDataArray>(init)) {
-        // For byte arrays, element index = byteOff.
-        unsigned elemBits = arr->getElementType()->getIntegerBitWidth();
-        unsigned elemBytes = elemBits / 8;
-        if (elemBytes == 0) return nullptr;
+		// For byte arrays, element index = byteOff.
+		// getIntegerBitWidth() is cast<IntegerType>(...)->getBitWidth(): it
+		// asserts on a float or double element rather than answering 0.
+		auto* elemIntTy = dyn_cast<IntegerType>(arr->getElementType());
+		if (!elemIntTy) return nullptr;
+		unsigned elemBits = elemIntTy->getBitWidth();
+		unsigned elemBytes = elemBits / 8;
+		if (elemBytes == 0) return nullptr;
         uint64_t idx = byteOff / elemBytes;
         if (idx >= arr->getNumElements()) return nullptr;
         if (byteOff % elemBytes != 0) return nullptr;
@@ -99,11 +103,9 @@ static Constant* extractFromInitializer(Constant* init, uint64_t byteOff,
                 auto* elem = arr->getElementAsConstant(idx);
                 auto* ci   = dyn_cast<ConstantInt>(elem);
                 if (!ci) return nullptr;
-                return ConstantInt::get(
-                    IntegerType::get(init->getContext(), loadBits),
-                    ci->getZExtValue() & ((1ULL << loadBits) - 1));
-            }
-            return nullptr;
+				return ConstantInt::get(init->getContext(), ci->getValue().trunc(loadBits));
+			}
+			return nullptr;
         }
         return arr->getElementAsConstant(idx);
     }
@@ -122,17 +124,25 @@ static Constant* extractFromInitializer(Constant* init, uint64_t byteOff,
     if (auto* ci = dyn_cast<ConstantInt>(init)) {
         if (byteOff == 0 && ci->getBitWidth() == loadBits) return ci;
         if (byteOff == 0 && loadBits < ci->getBitWidth()) {
-            return ConstantInt::get(
-                IntegerType::get(init->getContext(), loadBits),
-                ci->getZExtValue() & ((1ULL << loadBits) - 1));
-        }
-        return nullptr;
+			// APInt, not uint64_t. getZExtValue() asserts above 64 active
+			// bits, and `1ULL << loadBits` is undefined for loadBits == 64 --
+			// on x86-64 the shift count is masked to zero, so the mask came
+			// out as 0 and an i64 load of an i128 constant folded to zero.
+			return ConstantInt::get(init->getContext(), ci->getValue().trunc(loadBits));
+		}
+		return nullptr;
     }
 
     if (isa<ConstantAggregateZero>(init)) {
-        // All zeros.
-        Type* ty = IntegerType::get(init->getContext(), loadBits);
-        return ConstantInt::get(ty, 0);
+		// All zeros -- but only within the object. Every other branch here
+		// range-checks its index; this one folded any offset at all, so a read
+		// past a zeroinitializer's declared extent answered 0 rather than
+		// declining, and lifted code does build GEPs that address the data
+		// next door.
+		uint64_t size = DL.getTypeAllocSize(init->getType());
+		if (byteOff + (loadBits + 7) / 8 > size) return nullptr;
+		Type* ty = IntegerType::get(init->getContext(), loadBits);
+		return ConstantInt::get(ty, 0);
     }
 
     return nullptr;
@@ -193,22 +203,38 @@ bool GlobalConstProp::run() {
             } else if (auto* gep = dyn_cast<GEPOperator>(user)) {
                 // GEP with constant indices.
                 if (!gepToByteOffset(gep, DL, byteOff)) continue;
-                // The GEP's users must all be loads.
-                for (auto* gepUser : gep->users()) {
-                    if (auto* li = dyn_cast<LoadInst>(gepUser)) {
-                        load = li;
-                    }
-                }
-            }
+				// The GEP's users must all be loads -- which this now
+				// checks. It used to keep whichever load came last and ignore
+				// every other user, so a second load under one GEP was not
+				// folded, a store or a call did not disqualify the fold at
+				// all, and the volatile test below applied only to whichever
+				// load happened to be last.
+				bool allLoads = true;
+				for (auto* gepUser: gep->users())
+				{
+					auto* li = dyn_cast<LoadInst>(gepUser);
+					if (li == nullptr)
+					{
+						allLoads = false;
+						break;
+					}
+					load = li;
+				}
+				if (!allLoads) continue;
+			}
 
-            if (!load) continue;
-            if (load->isVolatile()) continue;
+			if (!load) continue;
+			if (!load->isSimple()) continue;
 
-            unsigned loadBits = load->getType()->getIntegerBitWidth();
-            if (loadBits == 0) continue; // non-integer load
+			// getIntegerBitWidth() asserts on a non-integer type; it does not
+			// answer 0. In a release build the assert is gone and it reads the
+			// subclass data, which for a pointer is the address space.
+			auto* loadIntTy = dyn_cast<IntegerType>(load->getType());
+			if (loadIntTy == nullptr) continue;
+			unsigned loadBits = loadIntTy->getBitWidth();
 
-            Constant* val = extractFromInitializer(init, byteOff, loadBits, DL);
-            if (!val) continue;
+			Constant* val = extractFromInitializer(init, byteOff, loadBits, DL);
+			if (!val) continue;
             if (val->getType() != load->getType()) continue;
 
             toReplace.emplace_back(load, val);

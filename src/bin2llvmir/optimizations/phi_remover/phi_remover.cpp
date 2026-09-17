@@ -110,18 +110,29 @@ static bool eliminateTrivialPhis(llvm::Function& fn) {
                 continue;
             }
 
-            // Check if all incoming values are the same.
-            llvm::Value* first = phi->getIncomingValue(0);
-            bool trivial = true;
-            for (unsigned i = 1; i < phi->getNumIncomingValues(); ++i) {
-                if (phi->getIncomingValue(i) != first) { trivial = false; break; }
-            }
-            if (trivial) {
-                phi->replaceAllUsesWith(first);
+			// Check if all incoming values are the same.
+			//
+			// A PHI whose every incoming value is itself is trivial by that
+			// test, and replaceAllUsesWith asserts on `x->replaceAllUsesWith(x)`.
+			// A single-predecessor self-loop -- which the decoder does emit --
+			// is exactly that shape.
+			llvm::Value* first = phi->getIncomingValue(0);
+			bool trivial = first != phi;
+			for (unsigned i = 1; trivial && i < phi->getNumIncomingValues(); ++i)
+			{
+				if (phi->getIncomingValue(i) != first)
+				{
+					trivial = false;
+					break;
+				}
+			}
+			if (trivial)
+			{
+				phi->replaceAllUsesWith(first);
                 phi->eraseFromParent();
                 changed = true;
-            }
-        }
+			}
+		}
     }
     return changed;
 }
@@ -241,13 +252,27 @@ bool PhiRemover::demotePhiToStack(llvm::PHINode* phi, llvm::MDNode* faddr) {
         // Coerce incoming value to match alloca type if needed (e.g. after
         // load/store type fixes that truncated i64 to i32).
         if (inc->getType() != phiTy) {
-            if (phiTy->isIntegerTy() && inc->getType()->isIntegerTy())
-                inc = llvm::CastInst::CreateIntegerCast(inc, phiTy, false, "", insertInsn);
-            else if (phiTy->isPointerTy() && inc->getType()->isPointerTy())
-                inc = llvm::CastInst::CreatePointerBitCastOrAddrSpaceCast(inc, phiTy, "", insertInsn);
-                attachPointeeOnPointerCast(inc);
-        }
-        auto a = getInstAddress(insertInsn);
+			// The attach call used to sit outside the else-if that its
+			// indentation claimed it belonged to, so it also ran on the
+			// integer path and on the path where NEITHER coercion applied --
+			// where `inc` was still the uncoerced original and was then stored
+			// into an alloca of a different type.
+			if (phiTy->isIntegerTy() && inc->getType()->isIntegerTy())
+			{
+				inc = llvm::CastInst::CreateIntegerCast(inc, phiTy, false, "", insertInsn);
+			}
+			else if (phiTy->isPointerTy() && inc->getType()->isPointerTy())
+			{
+				inc = llvm::CastInst::CreatePointerBitCastOrAddrSpaceCast(inc, phiTy, "", insertInsn);
+				attachPointeeOnPointerCast(inc);
+			}
+			else
+			{
+				// No coercion available: storing this would change the value.
+				return false;
+			}
+		}
+		auto a = getInstAddress(insertInsn);
         auto* s = new llvm::StoreInst(inc, alloca, insertInsn);
         if (a.isDefined())
             s->setMetadata("insn.addr", getInstAddressMeta(a, _module));

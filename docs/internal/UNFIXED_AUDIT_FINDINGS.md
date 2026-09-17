@@ -9675,3 +9675,142 @@ assumption that makes `redundant_load_store` wrong, so reverting that fix left
 it reporting no mismatch. It now compares locations after `stripPointerCasts`.
 That is the seventh time in this audit that the apparatus, not the code and not
 the test, was what hid a defect.
+
+## Batch AT — the analysis under the analysis (2026-09-17)
+
+### ReachingDefinitionsAnalysis does not model calls
+
+`src/bin2llvmir/analyses/reaching_definitions.cpp` records a `CallInst`'s
+pointer arguments as **uses** (line 175 onwards) and does nothing else with a
+call. `initializeKillDefSets` (line 395) builds the kill set from `defs` alone,
+and `defs` contains only stores and allocas, so **no call kills a definition**.
+
+Measured rather than read. A probe calling `ReachingDefinitionsAnalysis` on four
+shapes and printing `defsFromUse` for the final load:
+
+| shape | reaching definitions reported |
+|---|---|
+| `store %x, %p; load %p` | 1 — the store |
+| `store %x, %p; call @f(%p); load %p` | 1 — the store |
+| `store %x, @g; call @f(); load @g` | 1 — the store |
+| `store %x, @g; store 9, @h; load @g` | 1 — the store |
+
+The second row is the one that matters: the callee was handed the pointer and
+the analysis still says the store is what the load reads.
+
+`grep -c CallInst` on that file is 1.
+
+**Not fixed at the analysis.** Making a call kill every definition is correct
+but changes what the whole pipeline sees, and there is no corpus here to
+measure the consequence on. What was fixed is the one registered consumer:
+`defWithUsesInTheSameBb` now refuses to carry a value across anything between
+the store and the load that `mayWriteToMemory()`. An alloca was already safe —
+if it reaches a call at all it has a non-load/store user and the function gives
+up — but a machine-register global was not, and a lifted callee writes the
+machine registers as a matter of course.
+
+The three unregistered patterns in `inst_opt_rda_ext.cpp` have no such guard.
+They are dead, and two of them could never fire anyway (Batch AS), but if any
+of them is ever registered this is what it will need.
+
+### The only test for that analysis tests nothing
+
+`tests/bin2llvmir/analyses/reaching_definitions_tests.cpp` contains one test,
+`DummyTest`, whose own comment says:
+
+> Richt now, this is just an example, how to create LLVM Module from string,
+> instead of manually constructing it instruction by instruction.
+> => Nowhing useful is tested at the moment.
+
+Its two assertions are that a global named `glob0` exists and one named `glob1`
+does not. It does not call anything on the analysis result. So the analysis that
+`inst_opt_rda` is built on has had a test file and no tests since it was
+written. Still true: `tests/bin2llvmir/optimizations/inst_opt_rda/` now exists
+and tests the consumer, but nothing tests the analysis itself.
+
+### inst_opt::optimize read the environment 25 times per instruction
+
+`optimize` runs once per instruction in the module. It built two heap-allocated
+`std::string`s up front — one of them `getFunction()->getName().str()` — and
+called `instOptPatternTraceVerbose()`, a `std::getenv`, once per pattern per
+instruction, plus `instOptMaxPatterns()` once more.
+
+Measured with a `getenv` interposer over a 201-instruction function:
+
+```
+before:  instructions=201 getenv_calls=5025  (25.0 per instruction)
+after:   instructions=201 getenv_calls=3     (once per process)
+```
+
+The strings are now built only when something is going to print them, and
+captured before `opt.fn` runs, because a pattern that fires erases `insn`.
+
+## Batch AU — the rest of bin2llvmir (2026-09-17)
+
+Two sweeps over the parts of `bin2llvmir` that Batch AS had not reached. Every
+entry below was confirmed by reading the code path before it was touched; the
+arithmetic ones were additionally run.
+
+### The idiom recognisers
+
+| Site | What it did |
+|---|---|
+| `idioms_gcc.cpp` `exchangeCondBitShiftDiv1` | `cnst` was reused for all three constants, so the divisor was built from the ADD's constant, N−1: `pow(2, N-1)` instead of N. For N = 8 the divisor came out 128, and `64 a>> 3` = 8 became `sdiv 64, 128` = 0. `op_var` was bound three times, so the select's false value, the comparison's operand and the addend were never required to be the same X. The idiom's own relation — addend == N−1 — was never checked either. |
+| `idioms_gcc.cpp` `exchangeCondBitShiftDiv2`, `Div3` | The same rebinding: `op_var` from the ashr (or the and) overwritten by the lshr, so `-(((a s>> 31) & mask) \| (b u>> 2))` was rewritten as `sdiv b, -4` with `a` discarded. The AND's mask was bound and clobbered before anyone read it. |
+| `idioms_gcc.cpp` `exchangeSignedModuloByTwo` | Compared the shift against the literal 31 with no width guard. On i64, `(((x u>> 31) + x) & 1) - (x u>> 31)` for x = 2^32 is −2 and `srem x, 2` is 0. |
+| `idioms_common.cpp` `exchangeBitShiftSDiv1` | Two defects. `op_var2` was bound from the lshr and never compared with `op_var1`, so `((a s>> 31) & mask) \| (b u>> 2)` was rewritten using `a` alone. And the replacement itself was wrong: the reassembly is exactly `ashr x, k` — measured over k = 1..3 and x in {−5, −4, −1, 0, 5, INT_MIN} — while `sdiv x, 2^k` truncates toward zero instead of flooring. For x = −5, k = 1 the shift is −3 and the division is −2. It emits the shift now. |
+| `idioms_common.cpp` `exchangeIntegerAbs` | `op_ashr` was bound from the sub and rebound by the xor, so the subtrahend was never checked: `(x ^ (x s>> 31)) - y` became `abs(x)` for any y. x = 5, y = 100: −95 became 5. |
+| `idioms_llvm.cpp` `exchangeCompareSlt`, `exchangeCompareSle` | Emitted `ICMP_SLT`/`ICMP_SLE` where their own comments say `ult`/`ule`. On i1 the two signed values are 0 and −1, so the signed order is the reverse: `~A & B` for A = 0, B = 1 is 1, and `icmp slt i1 0, -1` is 0. Two of four rows wrong in each. |
+| `idioms_llvm.cpp` `exchangeGreaterEqualZero` | `getRawData() != 0x80000000` is the sign bit only at i32. For i64 it asked about bit 31, so `and i64 %x, 0x80000000` then `== 0` became `%x > -1`: for x = 0x80000000 that turns false into true. |
+| `idioms_llvm.cpp` `exchangeCompareEq` | `m_Not` is `m_c_Xor(m_AllOnes(), V)` and commutes, so `xor i1 true, %inner` matched and then `getOperand(0)` took the constant. Missed match. |
+| `idioms_ext.cpp` `tryReplacePopcount` | Checked five landmarks and took the root as `sub->getOperand(0)` with the subtrahend never looked at — a chain containing an arbitrary `sub %x, %y` was replaced by `ctpop(%x)`. Also over-strict in the other direction: the add under the `0x0F0F0F0F` mask is `t2 + (t2 >> 4)`, neither operand of which carries a `0x33333333` mask, so a genuine popcount did not match either. The whole SWAR chain is verified now. |
+| `idioms_analysis.cpp` `analyse(Function&, ...)` | `return num_idioms == 0;` under a doc comment saying "true whenever an exchange has been made". It is the legacy pass manager's "IR changed" flag, so the pass claimed to have changed every function it visited and nothing on the one occasion it did. |
+
+### The other passes
+
+| Site | What it did |
+|---|---|
+| `cond_branch_opt_ext.cpp` `foldSubUlt` | Matched `icmp ult (sub a, b), 0` — which is the constant false, since no unsigned value is below zero — and answered `icmp ne a, b`. For a = 5, b = 3 that turns false into true and inverts every branch on it. Now matches `eq`/`ne`, which is the identity that actually holds. |
+| `cond_branch_opt.cpp` | The matched tree `(X >u C) != 1` is `X <=u C`; it emitted `X <u C - 1`, i.e. `X <=u C - 2`. Wrong for X in {C−1, C}, and at C = 0 the rewrite was true for every X but one — the near-inverse of the condition it replaced. |
+| `param_return/filter.cpp` `createContinuousArgRegisters` | The vector block walked `getParamRegisters()`, the general-purpose list, where a vector id never appears — so the loop never broke and copied the whole GP list into `vectorRegisters`. On ARM a definition whose only vector use was `q1` came back as `{R0,R1,R2,R3}`. |
+| `param_return/filter.cpp`, five sites | `reg->getType()` on a `GlobalVariable` is the POINTER type, so under opaque pointers this asked for the target's pointer size, never the register's width. It agreed wherever the two happen to be equal, which is every register any test registers. `Abi::getRegisterByteSize` already existed and reads the pointee. |
+| `param_return/data_entries.cpp` `addRetStore` | `std::find(...) != end()` — pushed only when the value was already present. `_retValues` could never gain an entry. No callers today, so latent. |
+| `stack_pointer_ops.cpp` `removePreservationStores` | No null-ABI guard, although the sibling function has one and `run()` calls both. And `Abi::isRegister(value, id)` is a raw index with no architecture check, while capstone's id spaces overlap: `X86_REG_EBP` is 20 and so is `MIPS_REG_18`, which is `$s2`. An ordinary `$s2` spill/reload pair was erased, losing a callee-saved value. |
+| `register_localization.cpp` | `changed = localize(...)` rather than `|=`, so one later user that declined reset the flag for every earlier one that had not. The expanded `ConstantExpr` instruction was inserted before `localize` was tried and leaked on failure, still naming the register the pass exists to remove. The use-list was walked live while `replaceUsesOfWith` rewrites every matching operand, so an instruction using the register twice moved the iterator onto the alloca's use list and the rest of the users went unvisited. And nothing stopped an instruction being materialised in front of a PHI, which the verifier rejects. |
+| `phi_remover.cpp` | A PHI whose every incoming value is itself passed the triviality test, and `x->replaceAllUsesWith(x)` asserts. Separately, `attachPointeeOnPointerCast` sat outside the `else if` its indentation claimed, so it ran on the integer path and on the path where NEITHER coercion applied — where the uncoerced value was then stored into an alloca of a different type. |
+| `global_const_prop.cpp` | `getIntegerBitWidth()` on a non-integer type asserts rather than answering 0, at two sites. `ci->getZExtValue() & ((1ULL << loadBits) - 1)` asserts above 64 active bits and is undefined at `loadBits == 64`; on x86-64 the shift count is masked to zero, so an i64 load of an i128 constant folded to zero. The `ConstantAggregateZero` case folded any offset at all, with no bounds check, although every other branch range-checks. And the loop whose comment says "the GEP's users must all be loads" kept whichever load came last and ignored every other user. |
+
+### Still open
+
+- **`stack.cpp:263-277`** mints a fresh `.typed` alloca whenever the requested
+  type differs from the slot's, and never registers it, so a store and a load
+  of one stack slot at one type get two unaliased allocas and the load reads
+  undef. The fix needs a `(Function*, offset, Type*)` cache and a decision
+  about `IrModifier::convertValueToType`; both change what the stack pass
+  produces for every binary, and there is no corpus here to measure that on.
+- **`phi_to_select.cpp:130-139`**: the availability check is
+  `I->getParent()->getParent() == merge->getParent()`, which compares the
+  instruction's *function* with the block's *function* and is therefore always
+  true. For reachable diamonds the surrounding structural checks happen to
+  imply what it meant to say, so this is only reachable through an unreachable
+  two-block loop where `idom == merge`.
+- **`eraseInstFromBasicBlock` replaces with undef.** Every idiom erases its
+  intermediate operands through it, and it does
+  `replaceAllUsesWith(UndefValue)` unconditionally — so an intermediate that
+  has any other user in the block has that use turned into undef. No matcher
+  checks `hasOneUse()`. This is systemic across `idioms_*.cpp` and is not
+  addressed here.
+- **`idioms_analysis.cpp` dispatch order.** `exchangeBitShiftUDiv` and
+  `exchangeBitShiftMul` rewrite every `lshr`/`shl` by a small constant into
+  `udiv`/`mul` before `idiomsExt(bb)` runs, so rotation, bswap and popcount
+  recognition never fire. Likewise `exchangeXorMinusOne` consumes every
+  `xor x, -1` before the `IdiomsLLVM` comparison group, which needs the `not`
+  to survive. Both are one-line moves, and both would turn currently-dead code
+  live; the predicate and popcount fixes above are the prerequisite, and a
+  corpus to measure the consequence is not available here.
+- **`typedPointerElement`** (`utils/llvm.cpp`) is an unconditional
+  `return nullptr` left by the opaque-pointer migration. Four callers depend on
+  it, including the guard in `param_return.cpp` meant to skip function-pointer
+  parameters and returns.
+- **`global_const_prop`** ignores endianness, and is registered in no pipeline
+  profile, so none of its defects is reachable today.

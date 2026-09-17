@@ -79,28 +79,30 @@ static bool foldZextBool(Instruction& inst) {
 // Pattern 8: unsigned sub-then-compare folding
 //===========================================================================
 static bool foldSubUlt(Instruction& inst) {
-    // Match: icmp ult (sub %a, %b), 0   →   icmp ne %a, %b
-    // Match: icmp ule (sub %a, %b), 0   →   icmp eq %a, %b (false→same)
-    Value* a = nullptr, *b = nullptr;
-    CmpPredicate pred;
+	// Match: icmp eq (sub %a, %b), 0   ->   icmp eq %a, %b
+	// Match: icmp ne (sub %a, %b), 0   ->   icmp ne %a, %b
+	//
+	// It used to match `icmp ult (sub %a, %b), 0` and answer `icmp ne %a, %b`.
+	// No unsigned value is below zero, so `icmp ult X, 0` is the constant
+	// false; the comment read the `u` predicate as if it were signed. For
+	// a = 5 and b = 3 the original is false and the rewrite is true, so every
+	// branch on it inverted. Equality is the identity that actually holds:
+	// a - b is zero exactly when a equals b, at any width, wrapping or not.
+	Value *a = nullptr, *b = nullptr;
+	CmpPredicate pred;
     if (!match(&inst, m_ICmp(pred,
                              m_Sub(m_Value(a), m_Value(b)),
                              m_Zero()))) return false;
 
-    ICmpInst::Predicate newPred;
-    if (pred == ICmpInst::ICMP_ULT) {
-        newPred = ICmpInst::ICMP_NE;   // sub < 0 → a ≠ b  (unsigned)
-    } else if (pred == ICmpInst::ICMP_UGT) {
-        newPred = ICmpInst::ICMP_UGT;  // already handled upstream
-        return false;
-    } else {
-        return false;
-    }
+	if (pred != ICmpInst::ICMP_EQ && pred != ICmpInst::ICMP_NE)
+	{
+		return false;
+	}
 
-    IRBuilder<> irb(&inst);
-    Value* newCmp = irb.CreateICmp(newPred, a, b);
-    inst.replaceAllUsesWith(newCmp);
-    inst.eraseFromParent();
+	IRBuilder<> irb(&inst);
+	Value* newCmp = irb.CreateICmp(pred, a, b);
+	inst.replaceAllUsesWith(newCmp);
+	inst.eraseFromParent();
     return true;
 }
 
