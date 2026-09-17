@@ -87,6 +87,18 @@ public:
 	void addSuccessor(ShPtr<CFGNode> succ);
 	void moveSuccessorsFrom(const ShPtr<CFGNode> &node);
 	void removeSucc(std::size_t i);
+
+	/// Point the successor edge at index @a i to @a newSucc, keeping the edge
+	/// where it is and keeping its back-edge flag.
+	///
+	/// The index is not bookkeeping: it is the branch polarity.
+	/// reduceToIfStatement negates the condition if and only if the index is
+	/// 1, and structureByGotos reads getSucc(0) as the true target. So
+	/// redirecting an edge with removeSucc + addSuccessor -- which erases at
+	/// i and appends at the end -- exchanges the arms of a two-way branch
+	/// while leaving its condition alone, and drops the back-edge flag too,
+	/// because addSuccessor builds a fresh edge.
+	void replaceSucc(std::size_t i, ShPtr<CFGNode> newSucc);
 	void deleteSucc(std::size_t i);
 	void deleteSuccessors();
 	/// @}

@@ -11026,3 +11026,172 @@ any one of the three fails exactly its own test and nothing else.
   do that: it returns the type-filtered addressed set regardless. The two are
   not obliged to agree by anything the code checks, and this batch did not
   change it.
+
+---
+
+## Batch BH — 6,617 tests ctest never heard of (2026-09-17)
+
+Batch BC said `tests/bin2llvmir`'s assertions "executed only in the pinned-LLVM
+build". Checking that sentence found it too generous.
+
+`ctest-linux.yml` builds `--target retdec-decompiler retdec-gui
+retdec-gui-tests` and some fixtures, and then runs `ctest -L unit`. The
+bin2llvmir test target is not among them — and it would not have mattered if it
+were, because **`tests/bin2llvmir/CMakeLists.txt` calls neither `add_test` nor
+`gtest_discover_tests`**. It builds an executable, installs it, and registers
+nothing. `ctest` has never heard of it.
+
+### The measurement
+
+Sixteen directories under `tests/` are in that state:
+
+| | tests | | | tests |
+|---|--:|---|---|--:|
+| `capstone2llvmir` | 2725 | | `demangler` | 125 |
+| `llvmir2hll` | 2293 | | `loader` | 73 |
+| `bin2llvmir` | 428 | | `unpacker` | 71 |
+| `utils` | 394 | | `ctypesparser` | 59 |
+| `ctypes` | 206 | | `llvmir-emul` | 25 |
+| `common` | 154 | | `pdbparser` | 20 |
+| `cpdetect` | 9 | | `serdes` | 20 |
+| `pelib` | 8 | | `config` | 7 |
+
+**6,617 test cases.** They are exactly the upstream Avast directories; every
+test directory this fork added — `algo_recover`, `bounds`, `cfg`, `codegen`,
+`decompiler` and the rest — calls `gtest_discover_tests` or `add_test`.
+
+Nine of the sixteen are run by a check in `scripts/ci/` instead, which is how a
+suite ends up running without ctest knowing: `B2L-01`, `L2H-01`, `C2L-01`,
+`DEM-01`, `FF-01`, `standalone_check.sh`. `tests/unpacker` is deliberately out
+— it links `retdec::cpdetect`, which needs YARA, and `check_fileformat_tests.sh`
+says so.
+
+That leaves **seven directories and 460 assertions covered by nothing at all**:
+`common`, `config`, `ctypes`, `ctypesparser`, `pdbparser`, `pelib`, `serdes`.
+
+### They pass
+
+All 460, run for what is as far as this audit can tell the first time.
+
+### Added
+
+`ORPH-01` (`scripts/ci/check_orphan_test_suites.sh`) runs them. It computes the
+unregistered-and-uncovered set from the tree rather than trusting a list, and
+requires it to equal a recorded seven — so a directory that gains a ctest
+registration, or a new one that appears, fails the check rather than silently
+changing its scope. Both directions falsified.
+
+It links against the archive `B2L-01` already builds rather than compiling 952
+translation units a second time, which is why the two share a work directory.
+
+### The twelfth instrument failure, caught before it was reported
+
+The first run linked all seven directories into one binary and reported **nine
+failures**:
+
+```
+CallingConventionTests.EveryConventionHasAString
+  All tests in the same test suite must use the same test fixture class.
+  However, in test suite CallingConventionTests, you defined test CheckAll and
+  test EveryConventionHasAString using two different test fixture classes.
+```
+
+Two directories define a fixture with the same name. In the real build each
+directory is its own executable and they never meet; in my binary they did.
+Nine failures, none of them in the code, all of them created by the harness —
+and exactly the sort of thing that reads as a discovery. Linking each directory
+separately makes all 460 pass, and `ORPH-01` links them separately for that
+reason, stated in its header so the next person does not "simplify" it.
+
+### Still open
+
+- `ctest -L unit` is what CI runs, and nothing in these sixteen directories
+  carries a `unit` label because nothing in them is registered at all. Fixing
+  that properly means adding `gtest_discover_tests` with labels to sixteen
+  CMakeLists — at which point sixteen suites start running in CI for the first
+  time. Nine of them are known green here; the other seven are the ones ORPH-01
+  covers, also green. It is a change worth making and it is not made here,
+  because landing it means changing what CI runs on the strength of a container
+  that cannot build the pinned LLVM.
+- The count 6,617 is `TEST`/`TEST_F`/`TEST_P` occurrences, so a parameterised
+  suite counts once rather than once per instantiation. The run counts above
+  (460 for the seven) are what gtest actually reported.
+
+---
+
+## Batch BI — the successor index is the branch polarity (2026-09-17)
+
+Recorded in batch AV's "still open" list, with the reason it was left:
+
+> **`structure_converter.cpp` controlled node splitting** redirects a
+> predecessor's edge with `removeSucc(idx)` + `addSuccessor(clone)`. The
+> successor vector's INDEX is the branch polarity […] Not done here: no test in
+> the 68-test suite uses an irreducible CFG, so there is nothing to demonstrate
+> it against, and CNS is unreachable from every existing case.
+
+That reason held for a differential of the splitting pass. It does not hold for
+the operation the splitting pass needs, which can be tested directly.
+
+### The defect
+
+```cpp
+pred->removeSucc(idx);
+pred->addSuccessor(clone);
+```
+
+`removeSucc` erases at `idx`; `addSuccessor` does `successors.push_back(...)`
+with a **fresh** `CFGEdge`. Two things are lost:
+
+- **Position.** `reduceToIfStatement` negates the condition if and only if the
+  successor index is 1, and `structureByGotos` reads `getSucc(0)` as the true
+  target. Moving an edge to the end of the vector therefore exchanges the arms
+  of a two-way branch and leaves its condition alone.
+- **The back-edge flag.** A fresh `CFGEdge` has `backEdge == false`, and
+  `detectBackEdges` is not re-run after splitting — so a redirected back edge
+  stays unmarked, in exactly the irreducible region that made splitting
+  necessary.
+
+### Fixed
+
+`CFGNode::replaceSucc(i, newSucc)` points the edge at index `i` somewhere else
+in place, keeping its position and its back-edge flag, and does the predecessor
+bookkeeping both ways — including the two exceptions `removeSucc` makes: the
+old target keeps this node as a predecessor if it is the statement successor,
+or if another edge still reaches it. The splitting site calls it.
+
+Reachability is not claimed. As batch AV said, no existing case reaches
+controlled node splitting; this is the batch AY rule again — the correct
+behaviour is unambiguous, the change is inert unless the path fires, so the
+trap is disarmed and the reachability reported as unknown.
+
+### Added
+
+Four `CFGNodeTests` cases on `replaceSucc` itself. Restoring the
+erase-then-append fails three of them; keeping the position but dropping the
+flag fails exactly the flag one.
+
+### The thirteenth instrument failure
+
+The index test first replaced successor **1** of a two-successor node. That
+cannot show reordering: `removeSucc(1)` then `addSuccessor` leaves
+`[trueTarget, clone]`, which is the right answer by accident. It passed against
+the defect it was written for, and the falsification run is what said so — the
+back-edge and predecessor cases failed and the index case did not. It replaces
+successor **0** now, where erase-then-append leaves `[falseTarget, clone]` and
+the arms really are exchanged.
+
+This is the second test in two batches that measured nothing until falsifying
+made it say so — the other was batch BB's loop-end assignment, a no-op on the
+data the case supplied. Both were written by reasoning about what the defect
+would do, and both got the reasoning right and the *arithmetic of the example*
+wrong.
+
+### Still open
+
+- The tests cover `replaceSucc`. Nothing covers controlled node splitting
+  itself, for the reason batch AV gave: the 68-case structure-converter suite
+  has no irreducible CFG in it. Building one is the work this does not do.
+- `structure_converter.cpp` has eighteen other `removeSucc`/`addSuccessor`
+  pairs. They were not audited here. Most operate on a node whose successors
+  are about to be discarded, where position cannot matter, but "most" is a
+  reading.

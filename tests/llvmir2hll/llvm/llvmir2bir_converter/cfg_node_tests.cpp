@@ -713,6 +713,91 @@ GetNameReturnUnnamedForNodeWithFirstBBWithoutName) {
 	ASSERT_EQ("<unnamed>"s, node->getName());
 }
 
+//
+// Tests for replaceSucc()
+//
+// The index of a successor is the branch polarity: reduceToIfStatement negates
+// the condition if and only if the index is 1, and structureByGotos reads
+// getSucc(0) as the true target. Controlled node splitting used to redirect an
+// edge with removeSucc + addSuccessor, which erases at the index and appends
+// at the end -- moving the edge and dropping its back-edge flag.
+//
+
+TEST_F(CFGNodeTests, ReplaceSuccKeepsTheEdgeAtItsIndex)
+{
+	auto mk = [&](const char* n) {
+		return std::make_shared<CFGNode>(llvm::BasicBlock::Create(context, n), EmptyStmt::create());
+	};
+	auto node = mk("head");
+	auto trueTarget = mk("t");
+	auto falseTarget = mk("f");
+	auto clone = mk("clone");
+	node->addSuccessor(trueTarget);
+	node->addSuccessor(falseTarget);
+
+	// Index 0, deliberately. Replacing the LAST index cannot show reordering:
+	// removeSucc(1) + addSuccessor leaves [trueTarget, clone], which is the
+	// right answer by accident. The first version of this test did that and
+	// passed against the defect.
+	node->replaceSucc(0, clone);
+
+	ASSERT_EQ(2u, node->getSuccNum());
+	ASSERT_EQ(clone, node->getSucc(0)) << "the redirected arm must stay at index 0; index 0 is the true "
+										  "target and index 1 is the negated one";
+	ASSERT_EQ(falseTarget, node->getSucc(1)) << "the arm that was not redirected must not move";
+}
+
+TEST_F(CFGNodeTests, ReplaceSuccKeepsTheBackEdgeFlag)
+{
+	auto mk = [&](const char* n) {
+		return std::make_shared<CFGNode>(llvm::BasicBlock::Create(context, n), EmptyStmt::create());
+	};
+	auto node = mk("head");
+	auto header = mk("header");
+	auto clone = mk("clone");
+	node->addSuccessor(header);
+	node->markAsBackEdge(header);
+	ASSERT_TRUE(node->isBackEdge(header)) << "the case is wrong if this fails";
+
+	node->replaceSucc(0, clone);
+
+	ASSERT_EQ(clone, node->getSucc(0));
+	ASSERT_TRUE(node->isBackEdge(clone)) << "detectBackEdges is not re-run after splitting, so an edge that "
+											"loses its mark here stays unmarked";
+}
+
+TEST_F(CFGNodeTests, ReplaceSuccUpdatesPredecessorsBothWays)
+{
+	auto mk = [&](const char* n) {
+		return std::make_shared<CFGNode>(llvm::BasicBlock::Create(context, n), EmptyStmt::create());
+	};
+	auto node = mk("head");
+	auto oldTarget = mk("old");
+	auto clone = mk("clone");
+	node->addSuccessor(oldTarget);
+
+	node->replaceSucc(0, clone);
+
+	ASSERT_EQ(1u, clone->getPredsNum());
+	ASSERT_EQ(0u, oldTarget->getPredsNum()) << "the old target must lose this node as a predecessor";
+}
+
+TEST_F(CFGNodeTests, ReplaceSuccKeepsTheOldTargetAPredecessorWhenAnotherEdgeStillReachesIt)
+{
+	auto mk = [&](const char* n) {
+		return std::make_shared<CFGNode>(llvm::BasicBlock::Create(context, n), EmptyStmt::create());
+	};
+	auto node = mk("head");
+	auto target = mk("t");
+	auto clone = mk("clone");
+	node->addSuccessor(target);
+	node->addSuccessor(target); // both arms go to the same place
+
+	node->replaceSucc(0, clone);
+
+	ASSERT_EQ(1u, target->getPredsNum()) << "the second edge still reaches it";
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec

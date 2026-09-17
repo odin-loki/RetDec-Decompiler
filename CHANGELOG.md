@@ -8,6 +8,25 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- `ORPH-01` (`scripts/ci/check_orphan_test_suites.sh`): runs the seven test
+  directories that `ctest` does not register and no other check covers — 460
+  assertions in `common`, `config`, `ctypes`, `ctypesparser`, `pdbparser`,
+  `pelib` and `serdes` that, as far as this audit can tell, had never run. They
+  pass.
+
+  Sixteen directories under `tests/` build a gtest executable and call neither
+  `add_test` nor `gtest_discover_tests` — exactly the upstream ones, holding
+  6,617 test cases between them; every test directory this fork added is
+  registered. Nine are covered by a check in `scripts/ci/` instead and
+  `tests/unpacker` is deliberately out. The gate computes that set from the
+  tree rather than trusting a list and fails if it changes, in either
+  direction.
+
+  It links each directory into its own binary, deliberately: linked together,
+  gtest rejects nine tests because two directories define a fixture with the
+  same name — an artefact of the harness, not a defect in the code. It reuses
+  the archive `B2L-01` builds rather than compiling the tree twice.
+
 - `L2HW-01` (`scripts/ci/check_llvmir2hll_warnings.sh`): compiles all 312
   translation units under `src/llvmir2hll` with `-Wall -Wextra
   -Wno-unused-parameter` and compares the result against a list of six
@@ -19,8 +38,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   ways, including by restoring the dead code below, which it catches.
 
 - **`B2L-01` (`scripts/ci/check_bin2llvmir_tests.sh`): `tests/bin2llvmir` now
-  runs here — 424 assertions across 35 suites that previously executed only in
-  the pinned-LLVM build.** `OPT-01`'s own header said this container "cannot
+  runs here — 424 assertions across 35 suites.** (This first said they had
+  previously run "only in the pinned-LLVM build". Checking that sentence found
+  it too generous: `tests/bin2llvmir/CMakeLists.txt` registers nothing with
+  `ctest`, and CI does not build the target either, so they ran nowhere. See
+  `ORPH-01` below.) `OPT-01`'s own header said this container "cannot
   execute [tests/bin2llvmir] as a whole", and that was a measurement of the
   link command rather than of the tests: linking the suites against a flat list
   of objects leaves 616 undefined references, while linking the same objects as
@@ -372,6 +394,24 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   back to counting keywords in text. `GateReport::summary()` marks the fallback.
 
 ### Fixed
+
+- Controlled node splitting in `structure_converter.cpp` redirected a
+  predecessor's edge with `removeSucc(idx)` + `addSuccessor(clone)`, which
+  erases at the index and appends at the end. The successor **index is the
+  branch polarity** — `reduceToIfStatement` negates the condition if and only
+  if the index is 1, and `structureByGotos` reads `getSucc(0)` as the true
+  target — so moving the edge exchanges the arms of a two-way branch and leaves
+  the condition alone. `addSuccessor` also builds a fresh `CFGEdge` with
+  `backEdge == false`, and `detectBackEdges` is not re-run, so a redirected
+  back edge loses its marking in exactly the irreducible region that made
+  splitting necessary.
+
+  New `CFGNode::replaceSucc(i, newSucc)` redirects in place, keeping the
+  position and the flag and doing the predecessor bookkeeping both ways.
+  Reachability is not claimed: no existing case reaches node splitting, so this
+  disarms a trap rather than fixing a demonstrated miscompile. Four tests on
+  `replaceSucc` itself; restoring the erase-then-append fails three of them.
+
 
 - `SimpleAliasAnalysis::pointsTo` claimed "always points to" in three cases
   where it did not. The contract is a **must**-alias claim and

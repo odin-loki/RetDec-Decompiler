@@ -593,8 +593,13 @@ bool StructureConverter::tryControlledNodeSplitting(ShPtr<CFGNode> cfg) {
 			auto &indices = kv.second;
 			std::sort(indices.begin(), indices.end(), std::greater<std::size_t>());
 			for (auto idx : indices) {
-				pred->removeSucc(idx);
-				pred->addSuccessor(clone);
+				// replaceSucc, not removeSucc + addSuccessor. The latter
+				// erases at idx and appends at the end, which moves the edge
+				// and drops its back-edge flag -- and the index is the branch
+				// polarity, so moving it exchanges the arms of a two-way
+				// branch while leaving the condition alone. See
+				// CFGNode::replaceSucc.
+				pred->replaceSucc(idx, clone);
 			}
 		}
 

@@ -221,7 +221,16 @@ jobs:
       #
       # It compiles 952 translation units, so it is the slowest step here.
       - name: B2L-01 bin2llvmir suites
-        run: bash scripts/ci/check_bin2llvmir_tests.sh --jobs 4
+        run: bash scripts/ci/check_bin2llvmir_tests.sh --jobs 4 --workdir "$RUNNER_TEMP/b2l" --keep
+
+      # ORPH-01. Sixteen directories under tests/ build a gtest executable and
+      # register no test with ctest -- exactly the upstream ones; every test
+      # directory this fork added is registered. Nine are covered by a check
+      # here instead. Seven were covered by nothing at all: 460 assertions that
+      # ran nowhere. They pass. This reuses B2L-01's archive rather than
+      # compiling the tree a second time, which is why it shares its workdir.
+      - name: ORPH-01 suites ctest never runs
+        run: bash scripts/ci/check_orphan_test_suites.sh --b2l-workdir "$RUNNER_TEMP/b2l"
 
       # L2HW-01. Nothing compiled src/llvmir2hll with warnings on: L2H-01 uses
       # -w because it is there to run the tests, and standalone_check.sh covers

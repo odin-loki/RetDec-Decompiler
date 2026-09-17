@@ -193,6 +193,65 @@ void CFGNode::removeSucc(std::size_t i) {
 }
 
 /**
+ * @brief Points the successor edge at index @a i to @a newSucc, in place.
+ *
+ * Keeps the edge at its index and keeps its back-edge flag, neither of which
+ * survives a removeSucc followed by an addSuccessor: the erase-then-append
+ * moves the edge to the end of the vector, and addSuccessor builds a fresh
+ * CFGEdge whose backEdge is false.
+ *
+ * Both matter. The index is the branch polarity -- reduceToIfStatement negates
+ * the condition if and only if the index is 1, and structureByGotos reads
+ * getSucc(0) as the true target -- so reordering exchanges the arms of a
+ * two-way branch and leaves the condition alone. And detectBackEdges is not
+ * re-run after node splitting, so a redirected back edge that loses its mark
+ * stays unmarked, in exactly the irreducible region that made splitting
+ * necessary.
+ *
+ * @par Preconditions
+ *  - <tt>i < NUM_NODE_SUCC</tt>
+ *  - @a newSucc is non-null
+ */
+void CFGNode::replaceSucc(std::size_t i, ShPtr<CFGNode> newSucc)
+{
+	PRECONDITION(
+		i < getSuccNum(),
+		"i `" << i << "`"
+			  << " is greater "
+				 "than node's successors (`"
+			  << getSuccNum() << "`)");
+	PRECONDITION_NON_NULL(newSucc);
+
+	auto oldSucc = successors[i]->getTarget();
+	if (oldSucc == newSucc)
+	{
+		return;
+	}
+
+	const bool wasBackEdge = successors[i]->isBackEdge();
+
+	successors[i] = std::make_shared<CFGEdge>(newSucc);
+	successors[i]->setBackEdge(wasBackEdge);
+	newSucc->predecessors.insert(shared_from_this());
+
+	// The old target keeps this node as a predecessor if another edge still
+	// reaches it, or if it is the statement successor -- the same exception
+	// removeSucc makes.
+	if (statementSuccessor == oldSucc)
+	{
+		return;
+	}
+	for (const auto& e: successors)
+	{
+		if (e->getTarget() == oldSucc)
+		{
+			return;
+		}
+	}
+	oldSucc->predecessors.erase(shared_from_this());
+}
+
+/**
 * @brief Deletes a successor of this node on the index @a i.
 *
 * Delete means that deleted node will be removed from the tree and all edges
