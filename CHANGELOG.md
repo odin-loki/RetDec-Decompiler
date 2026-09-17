@@ -8,6 +8,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- `PORT-01` (`scripts/ci/check_portable_link_names.py`): fails when a
+  `target_link_libraries` names a bare Unix library — `z`, `dl`, `rt`,
+  `pthread` and the rest — outside a block that states the platform. It runs on
+  Linux in seconds and catches a defect only Windows could otherwise report,
+  and only after a build that takes hours. Its self-test requires the exact
+  line that broke Windows to be flagged and its fix not to be.
+
 - `PIN-01` (`scripts/ci/check_pinned_llvm.py`): compiles the tree against the
   LLVM `cmake/deps.cmake` actually pins — 23.1.0 — rather than against whatever
   `llvm-config` the machine has. It reads the archive URL and SHA256 out of
@@ -417,6 +424,28 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   back to counting keywords in text. `GateReport::summary()` marks the fallback.
 
 ### Fixed
+
+- **Windows could not build at all.** `retdec-jvm-parser` and
+  `retdec-dex-parser` inflate JAR and APK entries and linked the bare Unix
+  library name `z`. MSVC cannot resolve it, and a bare name carries no include
+  directory, so the build died before it got that far:
+
+  ```
+  src\jvm_parser\jvm_jar_reader.cpp(26): fatal error C1083:
+      Cannot open include file: 'zlib.h': No such file or directory
+  ```
+
+  Every `ctest-windows` run from 2026-08-25 — the day `jvm_jar_reader.cpp`
+  landed — to 2026-09-17 failed there. The last Windows installer that built
+  was the `v2.0.21` tag.
+
+  zlib now arrives through `retdec::deps::zlib`: the system one wherever
+  `find_package(ZLIB)` finds it, which is every Unix and macOS, and the bundled
+  build otherwise. `deps/zlib` was cross-only and is now entered on native
+  Windows too, with the static library named through
+  `CMAKE_STATIC_LIBRARY_PREFIX`/`SUFFIX` rather than the MinGW spelling, the
+  MSVC runtime matched to the rest of the tree, and `CMAKE_DEBUG_POSTFIX`
+  cleared so a Debug build installs the file `BUILD_BYPRODUCTS` names.
 
 - **The emitted C declared a loop variable the next loop still used.**
   `VarDefStmtOptimizer` turned a universal for loop's init into a definition —

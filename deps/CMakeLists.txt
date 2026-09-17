@@ -46,8 +46,39 @@ cond_add_subdirectory(capstone RETDEC_ENABLE_CAPSTONE)
 cond_add_subdirectory(elfio RETDEC_ENABLE_ELFIO)
 cond_add_subdirectory(googletest RETDEC_ENABLE_GOOGLETEST)
 cond_add_subdirectory(keystone RETDEC_ENABLE_KEYSTONE)
+# zlib arrives one of two ways, and both end at retdec::deps::zlib.
+#
+# Wherever find_package finds one -- every Unix, macOS, MinGW with the package
+# installed -- that is the one. Where it does not, the bundled build in
+# deps/zlib runs. Native Windows is the case that has none: find_package there
+# reports
+#
+#     -- Could NOT find ZLIB (missing: ZLIB_LIBRARY ZLIB_INCLUDE_DIR)
+#
+# and retdec-jvm-parser and retdec-dex-parser, which inflate JAR and APK
+# entries, used to answer that by linking the bare Unix name `z`. MSVC cannot
+# resolve it and it carries no include directory, so the build died on
+# `Cannot open include file: 'zlib.h'` and had done since 2026-08-25.
+#
+# The cross case keeps its own switch because LLVM wants paths rather than a
+# target, and RETDEC_BUNDLED_ZLIB_WIN_CROSS is how that is turned off.
+set(_RETDEC_NEED_BUNDLED_ZLIB OFF)
 if(RETDEC_ENABLE_LLVM AND CMAKE_CROSSCOMPILING AND CMAKE_SYSTEM_NAME STREQUAL "Windows" AND RETDEC_BUNDLED_ZLIB_WIN_CROSS)
+	set(_RETDEC_NEED_BUNDLED_ZLIB ON)
+else()
+	find_package(ZLIB QUIET)
+	if(NOT ZLIB_FOUND)
+		set(_RETDEC_NEED_BUNDLED_ZLIB ON)
+	endif()
+endif()
+
+if(_RETDEC_NEED_BUNDLED_ZLIB)
 	add_subdirectory(zlib)
+else()
+	message(STATUS "zlib: using the system zlib (${ZLIB_LIBRARIES}).")
+	add_library(retdec-deps-zlib INTERFACE)
+	add_library(retdec::deps::zlib ALIAS retdec-deps-zlib)
+	target_link_libraries(retdec-deps-zlib INTERFACE ZLIB::ZLIB)
 endif()
 cond_add_subdirectory(llvm RETDEC_ENABLE_LLVM)
 cond_add_subdirectory(rapidjson RETDEC_ENABLE_RAPIDJSON)

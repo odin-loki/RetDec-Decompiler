@@ -57,6 +57,11 @@ PY="${PYTHON:-python3}"
 CHECKS=(
 	"ci-smoke  clang-format (pushed range):::bash scripts/check_format.sh --base \"\$(git rev-parse --verify -q '@{upstream}' || git rev-parse HEAD^)\""
 	"ci-smoke  cmake sources:::bash scripts/check_cmake_sources.sh"
+	# PORT-01 runs on Linux and fails on a defect only Windows could otherwise
+	# report -- and only after a build that takes hours. `z` resolves here by
+	# accident.
+	"ci-smoke  no bare Unix library names:::${PY} scripts/ci/check_portable_link_names.py"
+	"ci-smoke  bare Unix lib names (self-test):::${PY} scripts/ci/check_portable_link_names.py --self-test"
 	"ci-smoke  preset cache leaks (self-test):::${PY} scripts/ci/check_cmake_presets.py --self-test"
 	"ci-smoke  preset cache leaks:::${PY} scripts/ci/check_cmake_presets.py CMakePresets.json cmake/superbuild/CMakePresets.json"
 	"ci-smoke  unread build options (self-test):::${PY} scripts/ci/check_cmake_options.py --self-test"

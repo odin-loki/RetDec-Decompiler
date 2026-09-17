@@ -88,6 +88,11 @@ jobs:
       # An option() nothing reads shows up in ccmake and in cmake -LH with a
       # help string saying what it would do, and does nothing. That is worse
       # than the option not existing.
+      - name: PORT-01 no target links a bare Unix library name
+        run: |
+          python3 scripts/ci/check_portable_link_names.py --self-test
+          python3 scripts/ci/check_portable_link_names.py
+
       - name: Every declared build option is read by the build
         run: |
           python3 scripts/ci/check_cmake_options.py --self-test

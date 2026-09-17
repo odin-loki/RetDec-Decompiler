@@ -12,7 +12,7 @@ target_include_directories(retdec-dex-parser
 
 target_link_libraries(retdec-dex-parser
     PUBLIC retdec-bc-module
-           z
+    PRIVATE retdec::deps::zlib
 )
 
 set_target_properties(retdec-dex-parser PROPERTIES
