@@ -2416,11 +2416,18 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateShiftLeft(cs_insn* i, cs_pp
 	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb);
-	op1 = irb.CreateZExtOrTrunc(op1, irb.getInt32Ty());
-	op2 = irb.CreateAnd(op2, llvm::ConstantInt::get(op2->getType(), 0x3f)); // low 6 bits
-	op2 = irb.CreateZExtOrTrunc(op2, op1->getType());
+	auto* i32 = irb.getInt32Ty();
+	op1 = irb.CreateZExtOrTrunc(op1, i32);
+	op2 = irb.CreateAnd(irb.CreateZExtOrTrunc(op2, i32), llvm::ConstantInt::get(i32, 0x3f));
 
-	auto* val = irb.CreateShl(op1, op2);
+	// Six bits are read, but the sixth does not participate in the shift:
+	// `slw` with a count of 32 or more gives ZERO, not a wrapped shift. The
+	// old code shifted an i32 by up to 63, which is poison -- and
+	// translateRotlw, forty lines up in this same file, already says exactly
+	// that in its own comment. These two were the outliers.
+	auto* tooBig = irb.CreateICmpUGE(op2, llvm::ConstantInt::get(i32, 32));
+	auto* safe = irb.CreateAnd(op2, llvm::ConstantInt::get(i32, 31));
+	auto* val = irb.CreateSelect(tooBig, llvm::ConstantInt::get(i32, 0), irb.CreateShl(op1, safe));
 	storeOp(pi->operands[0], val, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST); // TODO: check it all others are using correct conversion
 	storeCr0(irb, pi, val);
 }
@@ -2433,11 +2440,18 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateShiftRight(cs_insn* i, cs_p
 	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb);
-	op1 = irb.CreateZExtOrTrunc(op1, irb.getInt32Ty());
-	op2 = irb.CreateAnd(op2, llvm::ConstantInt::get(op2->getType(), 0x3f)); // low 6 bits
-	op2 = irb.CreateZExtOrTrunc(op2, op1->getType());
+	auto* i32 = irb.getInt32Ty();
+	op1 = irb.CreateZExtOrTrunc(op1, i32);
+	op2 = irb.CreateAnd(irb.CreateZExtOrTrunc(op2, i32), llvm::ConstantInt::get(i32, 0x3f));
 
-	auto* val = irb.CreateLShr(op1, op2);
+	// Six bits are read, but the sixth does not participate in the shift:
+	// `srw` with a count of 32 or more gives ZERO, not a wrapped shift. The
+	// old code shifted an i32 by up to 63, which is poison -- and
+	// translateRotlw, forty lines up in this same file, already says exactly
+	// that in its own comment. These two were the outliers.
+	auto* tooBig = irb.CreateICmpUGE(op2, llvm::ConstantInt::get(i32, 32));
+	auto* safe = irb.CreateAnd(op2, llvm::ConstantInt::get(i32, 31));
+	auto* val = irb.CreateSelect(tooBig, llvm::ConstantInt::get(i32, 0), irb.CreateLShr(op1, safe));
 	storeOp(pi->operands[0], val, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 	storeCr0(irb, pi, val);
 }
@@ -2531,14 +2545,18 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateSraw(cs_insn* i, cs_ppc* pi
 	storeOp(pi->operands[0], or22, irb);
 	storeCr0(irb, pi, or22);
 
+	// CA is set when RS was negative and any 1-bit was shifted out.
 	auto* and26 = irb.CreateAnd(orv, neg);
-	auto* cmp27 = irb.CreateICmpNE(and26, llvm::ConstantInt::get(and26->getType(), 0));
-	auto* conv28 = irb.CreateZExt(cmp27, op1->getType());
+	auto* bitsLost = irb.CreateICmpNE(and26, llvm::ConstantInt::get(and26->getType(), 0));
 	auto* lobit1 = irb.CreateLShr(op1, llvm::ConstantInt::get(op1->getType(), 31));
-	auto* and29 = irb.CreateAnd(conv28, lobit1);
-	auto* shl31 = irb.CreateShl(and29, llvm::ConstantInt::get(and29->getType(), 29));
+	auto* wasNegative = irb.CreateICmpNE(lobit1, llvm::ConstantInt::get(lobit1->getType(), 0));
 
-	storeRegister(PPC_REG_CARRY, shl31, irb);
+	// This used to shift the answer up to XER's bit position 29 and store
+	// that. PPC_REG_CARRY is a separate i1 global here, not a field of XER,
+	// so storing 0x20000000 into it truncates to bit 0 -- which is zero.
+	// CA was unconditionally false. Every other carry store in this file
+	// passes an i1 directly; this was the only one that shifted.
+	storeRegister(PPC_REG_CARRY, irb.CreateAnd(bitsLost, wasNegative), irb);
 }
 
 /**
@@ -2611,7 +2629,11 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateSubfe(cs_insn* i, cs_ppc* p
 
 	storeOp(pi->operands[0], val, irb);
 	storeCr0(irb, pi, val);
-	storeRegister(PPC_REG_CARRY, generateCarryAddC(op1, op2, irb, carry), irb);
+	// `subfe RT,RA,RB` is ~RA + RB + CA, and CA is the carry out of THAT sum.
+	// The value above uses op1Neg; this used the un-complemented op1, so it
+	// answered carryout(RA + RB + CA). The three sibling translators --
+	// subfc, subfme, subfze -- all pass the complemented operand.
+	storeRegister(PPC_REG_CARRY, generateCarryAddC(op1Neg, op2, irb, carry), irb);
 }
 
 /**

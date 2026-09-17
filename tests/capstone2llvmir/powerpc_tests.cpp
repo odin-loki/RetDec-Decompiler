@@ -2291,6 +2291,110 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_RLWNM_by_zero_is_the_sourc
 }
 
 //
+// The count at or past the width, the carry out of SUBFE, and the carry out
+// of SRAW. All three were confirmed from the code before being fixed; see
+// docs/internal/UNFIXED_AUDIT_FINDINGS.md, Batch AH.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_SLW_count_past_the_width_is_zero)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0x00000001}, {PPC_REG_R2, 0x00000020}, // 32: six bits read, but bit 5 means zero
+	});
+
+	emulate("slw 0, 1, 2");
+
+	// `slw` reads six bits of the count, and the sixth selects a result of
+	// ZERO rather than participating in the shift. The old code shifted an
+	// i32 by up to 63, which is poison.
+	EXPECT_EQ(0x0, getRegisterValueUnsigned(PPC_REG_R0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_SRW_count_past_the_width_is_zero)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0xffffffff}, {PPC_REG_R2, 0x0000003f}, // 63, the largest the six bits can hold
+	});
+
+	emulate("srw 0, 1, 2");
+
+	EXPECT_EQ(0x0, getRegisterValueUnsigned(PPC_REG_R0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_SUBFE_carry_is_out_of_the_complemented_sum)
+{
+	SKIP_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x00000001},
+		{PPC_REG_R2, 0x00000005},
+		{PPC_REG_CARRY, true},
+	});
+
+	emulate("subfe 0, 1, 2");
+
+	// subfe RT,RA,RB is ~RA + RB + CA = 0xfffffffe + 5 + 1, which carries
+	// out. The value was already right; the carry was computed from RA
+	// rather than ~RA, so 1 + 5 + 1 does not overflow and CA came out 0.
+	EXPECT_EQ(0x4, getRegisterValueUnsigned(PPC_REG_R0));
+	EXPECT_EQ(1, getRegisterValueUnsigned(PPC_REG_CARRY));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_SRAWI_sets_the_carry)
+{
+	SKIP_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0xffffffff},
+	});
+
+	emulate("srawi 0, 1, 4");
+
+	// CA is set when RS was negative and a 1-bit was shifted out. This used
+	// to place the answer at XER bit 29 and store that into PPC_REG_CARRY,
+	// which is an i1 -- so it truncated to bit 0 and CA was always false.
+	EXPECT_EQ(0xffffffff, getRegisterValueUnsigned(PPC_REG_R0));
+	EXPECT_EQ(1, getRegisterValueUnsigned(PPC_REG_CARRY));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_SRAWI_positive_never_sets_the_carry)
+{
+	SKIP_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x0000000f},
+	});
+
+	emulate("srawi 0, 1, 4");
+
+	// Bits ARE shifted out here, and CA must still be zero: the rule is that
+	// RS was negative AND a 1-bit was lost. Testing only the losing half
+	// passes both readings, which is what the first version of these tests
+	// did -- a mutation dropping the sign condition came back green.
+	EXPECT_EQ(0x0, getRegisterValueUnsigned(PPC_REG_R0));
+	EXPECT_EQ(0, getRegisterValueUnsigned(PPC_REG_CARRY));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_SRAWI_clears_the_carry_when_nothing_is_lost)
+{
+	SKIP_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0xfffffff0},
+	});
+
+	emulate("srawi 0, 1, 4");
+
+	// Negative, but the four bits shifted out are all zero.
+	EXPECT_EQ(0xffffffff, getRegisterValueUnsigned(PPC_REG_R0));
+	EXPECT_EQ(0, getRegisterValueUnsigned(PPC_REG_CARRY));
+}
+
+//
 // PPC_INS_SLW
 //
 

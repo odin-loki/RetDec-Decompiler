@@ -8498,3 +8498,105 @@ ARM64    a memory operand's extender is dropped and its index zero-extended,
          away.
 all      bare CreateFPToSI at eight sites, per AG-2.
 ```
+
+## Batch AH — three PowerPC bugs, two of them in the carry
+
+### AH-1: SLW and SRW shift an i32 by up to 63
+
+```c
+op2 = irb.CreateAnd(op2, ConstantInt::get(op2->getType(), 0x3f)); // low 6 bits
+auto* val = irb.CreateShl(op1, op2);
+```
+
+Six bits is the right amount to **read**, and the sixth does not participate
+in the shift: `slw` with a count of 32 or more gives zero. Masking to six bits
+and then shifting leaves `shl i32 %v, 32` through `shl i32 %v, 63` — poison,
+and the poison then feeds `storeCr0()`, so the condition register goes with
+it.
+
+`translateRotlw`, forty lines up in the same file, handles this and says so:
+
+```c
+// `lshr i32 %w, 32` is poison, and n is not always a constant here -- the
+// register form exists -- so the zero case is selected rather than decided.
+```
+
+`translateRotateWordMask` does the same. SLW and SRW were the two that did
+not. Both of their tests use a count of 16.
+
+### AH-2: SUBFE's carry came out of the wrong sum
+
+`subfe RT,RA,RB` is `~RA + RB + CA`, and CA is the carry out of **that** sum.
+
+```c
+auto* op1Neg = generateValueNegate(irb, op1);
+auto* val = irb.CreateAdd(op1Neg, op2);          // correct: ~RA
+...
+storeRegister(PPC_REG_CARRY, generateCarryAddC(op1, op2, irb, carry), irb);
+                                              // ^^^ not complemented
+```
+
+So the value was right and the carry answered `carryout(RA + RB + CA)`.
+`subfe r0, r1, r2` with `r1=1`, `r2=5`, `CA=1` gives `r0=4` either way, and
+CA=1 on the hardware against CA=0 here.
+
+The three sibling translators — `subfc`, `subfme`, `subfze` — all pass the
+complemented operand. All three existing SUBFE tests use `r1 = 0x2222` and
+`r2 = 0x1111`, where both readings give CA = 0.
+
+This is close to the Batch Z shape but not the same: the carry is not applied
+twice, it is computed from the wrong operand.
+
+### AH-3: SRAW and SRAWI could not set the carry at all
+
+```c
+auto* shl31 = irb.CreateShl(and29, ConstantInt::get(and29->getType(), 29));
+storeRegister(PPC_REG_CARRY, shl31, irb);
+```
+
+`and29` is 0 or 1, so `shl31` is 0 or `0x20000000` — the carry placed at XER's
+bit position 29, which is what the source this was transcribed from was doing.
+But RetDec does not model XER as a word here: `PPC_REG_CARRY` is a separate
+**i1** global, and `storeRegister` truncates. Bit 0 of `0x20000000` is zero, so
+CA was unconditionally false.
+
+Every other carry store in the file passes an i1 directly. This was the only
+one that shifted first. Both of its tests are commented out, which is why
+nothing caught it.
+
+### A mutation that came back green, and the test that was missing
+
+The first version of these tests covered "negative, bits lost" (CA set) and
+"negative, nothing lost" (CA clear). A mutation that dropped the **sign**
+condition entirely — making CA mean only "bits were lost" — passed both.
+
+The missing case is positive-with-bits-lost: `srawi 0, 1, 4` with
+`r1 = 0x0000000f` shifts four 1-bits out of a positive value, and CA must
+still be zero. Added, and the mutation now fails.
+
+### Falsification
+
+```
+AH1_slw_no_zero_select      SLW_count_past_the_width_is_zero
+AH2_srw_no_zero_select      SRW_count_past_the_width_is_zero
+AH3_subfe_carry_from_ra     SUBFE_carry_is_out_of_the_complemented_sum
+AH4_sraw_carry_shifted      SRAWI_sets_the_carry
+AH5_sraw_ignores_the_sign   SRAWI_positive_never_sets_the_carry
+```
+
+C2L-01 floor: PowerPC 926 → 938. 5,691 tests.
+
+### Still open on PowerPC
+
+`cntlzw`, `mulhw`, `mullw`, `divw`/`divwu` and `sraw` are computed at register
+width, so they are wrong on PPC64 — which `createPpc64()` enables and the
+gtest suite instantiates. `cntlzw r0, r1` with `r1 = 1` answers 63 where the
+architecture says 31. MIPS solves this centrally with `isWordOperation()` and
+`narrowToWord()`; PowerPC has no equivalent and the narrowing was applied by
+hand to the rotate and shift family only.
+
+Also open: `div`/`divw` emit `sdiv` with an unconstrained divisor, which is
+undefined behaviour in LLVM rather than poison — strictly worse, because it
+licenses deleting the surrounding code. `mips.cpp` already has
+`storeRegisterUnpredictable()` for exactly this and does not use it on the
+division path.
