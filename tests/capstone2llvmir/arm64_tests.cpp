@@ -1317,6 +1317,41 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_EXTR_r_r_r_i_3)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_MEM_index_sxtw_is_sign_extended)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0x10000}, {ARM64_REG_W2, 0xffffffff}, // -1
+	});
+	setMemory({
+		{0xfffc, 0x11223344_dw},
+	});
+
+	emulate("ldr w0, [x1, w2, sxtw #2]");
+
+	// SignExtend(-1,64) << 2 is -4, so the address is 0x10000 - 4. The
+	// extender was not read at all on this path, so the index was
+	// zero-extended and the address came out 0x1_0000_fffc -- four gigabytes
+	// away.
+	EXPECT_EQ(0x11223344, getRegisterValueUnsigned(ARM64_REG_W0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_MEM_index_uxtw_scales_after_widening)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0x0},
+		{ARM64_REG_W2, 0x20000000},
+	});
+	setMemory({
+		{0x100000000, 0x55667788_qw},
+	});
+
+	emulate("ldr x0, [x1, w2, uxtw #3]");
+
+	// ZeroExtend(w2,64) << 3 is 2^32. The scale used to be applied at the
+	// index's own width, so it shifted inside 32 bits and wrapped to zero.
+	EXPECT_EQ(0x55667788ULL, getRegisterValueUnsigned(ARM64_REG_X0));
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCVTZS_is_the_signed_convert)
 {
 	// Asserted on the IR, not on a value, and the reason is the point: the

@@ -706,6 +706,27 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::generateGetOperandMemAddr(
 	auto* idxR = loadRegister(op.mem.index, irb);
 	if (idxR)
 	{
+		// The extender is part of the addressing mode: `[Xn, Wm, sxtw #2]`
+		// means SignExtend(Wm,64) << 2. Two things were wrong here.
+		//
+		// `op.ext` was not read on this path at all, so a signed index was
+		// zero-extended -- `ldr w0, [x1, w2, sxtw #2]` with w2 = -1 addressed
+		// four gigabytes past x1 instead of sixteen bytes below it.
+		// generateOperandExtension() already existed and was correct; its
+		// only caller was the register-operand branch.
+		//
+		// And the scale was applied at the INDEX's width, before any
+		// widening, so `[x1, w2, uxtw #3]` with w2 = 0x20000000 shifted
+		// inside 32 bits and wrapped to zero where the architecture reaches
+		// 2^32. Extend first, to the address's width; shift after.
+		if (op.ext != ARM64_EXT_INVALID)
+		{
+			idxR = generateOperandExtension(irb, op.ext, idxR, t);
+		}
+		else
+		{
+			idxR = irb.CreateZExtOrTrunc(idxR, t);
+		}
 		idxR = generateOperandShift(irb, op, idxR);
 	}
 

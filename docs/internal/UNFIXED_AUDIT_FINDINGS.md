@@ -8725,3 +8725,45 @@ AJ    all three LDRD tests asserted the swap
 All three are corrected here, and reverting the fix fails all three.
 
 C2L-01 floor unchanged: the tests were corrected, not added.
+
+## Batch AK — the ARM64 addressing mode dropped its extender
+
+`ldr w0, [x1, w2, sxtw #2]` is how a compiler indexes an array with a signed
+`int`. The offset is `SignExtend(Wm,64) << 2`. Two independent errors sat in
+one path:
+
+```c
+auto* idxR = loadRegister(op.mem.index, irb);
+if (idxR) { idxR = generateOperandShift(irb, op, idxR); }   // at 32 bits
+...
+idxR = irb.CreateZExtOrTrunc(idxR, addr->getType());        // always ZERO
+```
+
+**The extender was never read.** `op.ext` does not appear on this path at all,
+so a signed index was zero-extended:
+
+```
+ldr w0, [x1, w2, sxtw #2]   x1 = 0x10000, w2 = 0xffffffff (-1)
+  hardware    0x10000 + (SignExtend(-1) << 2) = 0xfffc
+  translator  0x10000 + 0x00000000fffffffc  = 0x1_0000_fffc   (4 GiB away)
+```
+
+`generateOperandExtension()` already existed and was correct — Batch AG had
+just fixed its UXTX and SXTX cases. Its only caller was the register-operand
+branch.
+
+**And the scale was applied before the widening**, so it wrapped inside 32
+bits. This one bites the unsigned form too:
+
+```
+ldr x0, [x1, w2, uxtw #3]   x1 = 0, w2 = 0x20000000
+  hardware    ZeroExtend(w2,64) << 3 = 0x1_0000_0000
+  translator  (0x20000000 << 3) at 32 bits = 0, so addr = 0
+```
+
+Extend first, to the address's width; shift after.
+
+There was no test for any of it: the only two `ldr` tests with a register
+index use `[x1, x2]` with no extender at all.
+
+C2L-01 floor: ARM64 560 → 562. 5,707 tests.
