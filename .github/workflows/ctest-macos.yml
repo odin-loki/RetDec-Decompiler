@@ -1,0 +1,108 @@
+# Nothing in this repository had ever compiled the tree on macOS.
+#
+# `macos-latest` appeared in exactly one workflow -- doc-integrity, running
+# three Python documentation checks -- while README.md and
+# docs/BUILD_REFERENCE.md advertised the `full-linux-*` presets as
+# "Linux/WSL/macOS" and CMakeLists.txt carried if(APPLE) RPATH and ranlib
+# handling. A platform claim with no artefact behind it is the thing
+# docs/CLAIMS.md exists to catch, and this is the artefact.
+#
+# The steps are split finer than ctest-linux's on purpose. The first run of a
+# build that has never happened wants the log to say WHICH stage failed
+# without reading it: the dependency builds, the decompiler, the test tree and
+# a real decompile are separate steps.
+name: ctest-macos
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  RETDEC_GUI_HEADLESS: "1"
+  QT_QPA_PLATFORM: offscreen
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639 # v1.2
+        with:
+          key: ctest-macos
+          max-size: 8G
+
+      - name: Install dependencies
+        run: |
+          brew update
+          brew install ninja qt@6 pkg-config
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix qt@6)" >> "$GITHUB_ENV"
+
+      - uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb # latest
+        with:
+          cmakeVersion: "3.31.6"
+
+      - name: Fetch large support files
+        run: |
+          bash scripts/fetch-large-files.sh || \
+            bash scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
+
+      - name: Cache CMake build
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: build/linux
+          key: ctest-macos-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}
+          restore-keys: |
+            ctest-macos-
+
+      # full-linux-release is the preset the documentation tells a macOS reader
+      # to use, so it is the one measured. Interprocedural optimisation is off
+      # here and only here: the preset turns it on, and an LTO link of this
+      # tree on a runner is minutes per binary for no signal this job wants.
+      - name: Configure (full-linux-release, CPU-only)
+        run: >
+          cmake --preset full-linux-release
+          -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
+          -DRETDEC_ENABLE_CUDA_ACCEL=OFF
+          -DRETDEC_ENABLE_NEURAL=OFF
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build the dependencies
+        run: cmake --build build/linux --parallel --target llvm-project
+
+      - name: Build the decompiler
+        run: cmake --build build/linux --parallel --target retdec-decompiler
+
+      - name: Decompile something
+        run: |
+          set -euo pipefail
+          DEC="$(find build/linux -name retdec-decompiler -type f -perm -u+x | head -n1)"
+          test -n "${DEC}" || { echo "no retdec-decompiler was built"; exit 1; }
+          printf 'int main(void){return 41+1;}\n' > /tmp/smoke.c
+          cc -o /tmp/smoke /tmp/smoke.c
+          "${DEC}" /tmp/smoke -o /tmp/smoke.c.out
+          test -s /tmp/smoke.c.out || { echo "no output was emitted"; exit 1; }
+          head -n 40 /tmp/smoke.c.out
+
+      - name: Build the tests
+        run: cmake --build build/linux --parallel
+
+      - name: Unit tests
+        run: ctest --test-dir build/linux -L unit --output-on-failure
+
+      - name: Upload the build log on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: macos-build
+          path: |
+            build/linux/CMakeFiles/CMakeConfigureLog.yaml
+            build/linux/external/**/*.log
+          if-no-files-found: ignore

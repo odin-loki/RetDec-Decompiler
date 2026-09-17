@@ -11635,3 +11635,76 @@ harness.
   sits in front of the one consumer that narrows a scope; the rule itself still
   answers "used in two blocks" with "two blocks at one level", and whether that
   is wrong for the prepend path was not established.
+
+---
+
+## Batch BO — two platforms, one broken since August and one never built (2026-09-17)
+
+A release for Windows, Linux and macOS was asked for. Linux is ready:
+`ctest-linux` and `standalone-check` are green and the push-gate sweep is
+70/70. The other two were not what the documentation said they were.
+
+### Windows: broken since 2026-08-25
+
+`ctest-windows` failed every run from 25 August to 17 September on one line:
+
+```
+src\jvm_parser\jvm_jar_reader.cpp(26): fatal error C1083:
+    Cannot open include file: 'zlib.h': No such file or directory
+```
+
+`retdec-jvm-parser` and `retdec-dex-parser` linked the bare Unix name `z`.
+MSVC cannot resolve it, and a bare name carries no include directory, so the
+compile died before the link could. The same configure already printed
+`-- Could NOT find ZLIB (missing: ZLIB_LIBRARY ZLIB_INCLUDE_DIR)` and nothing
+acted on it. The last Windows installer that built was the `v2.0.21` tag —
+the same day `jvm_jar_reader.cpp` landed.
+
+Fixed by routing zlib through `retdec::deps::zlib` and entering `deps/zlib` on
+native Windows, with the MinGW-shaped parts of it generalised: the static
+library name, the MSVC runtime, and `CMAKE_DEBUG_POSTFIX`. `PORT-01`
+(`scripts/ci/check_portable_link_names.py`) is the instrument — it runs on
+Linux in seconds and fails on a defect only Windows could otherwise report.
+
+The Windows half is **not verified in this container**, which has no MSVC. A
+`ctest-windows` run on the fixed tree is what will say.
+
+### macOS: never compiled, anywhere
+
+`macos-latest` appeared in exactly one workflow — `doc-integrity`, running
+three Python documentation checks. No job has ever compiled this tree on
+Darwin, and `release-installers.yml` has three jobs: `release`,
+`windows-installer`, `linux-installer`.
+
+Meanwhile `README.md` and `docs/BUILD_REFERENCE.md` describe the `full-linux-*`
+presets as "Linux/WSL/macOS", and `CMakeLists.txt` carries `if(APPLE)` RPATH
+and ranlib handling. `src/utils/memory.cpp` case-splits `OS_MACOS` properly.
+So the tree *intends* to support macOS and nothing has ever checked whether it
+does.
+
+`ctest-macos.yml` is the artefact. Its steps are split finer than
+`ctest-linux`'s on purpose — dependencies, decompiler, a real decompile, test
+tree, unit tests — so the first run of a build that has never happened says
+which stage failed without reading the log.
+
+What is known before it runs, from a static sweep:
+
+- Only two bare Unix library names existed in the tree and both are fixed.
+- Only one source includes a Linux-only header (`src/utils/memory.cpp`,
+  `<sys/sysinfo.h>`) and it is already behind `OS_MACOS`/`OS_BSD` guards.
+- Four files use the `OS_*` macros at all; two use `OS_WINDOWS` with a POSIX
+  `#else`, which covers Darwin.
+
+That is a reading, not a measurement. The ~1,400 lines of `[Unreleased]` work
+and the dependency builds (OpenSSL, YARA, Qt, Keystone, LLVM 23) are unread on
+Darwin and the runner is arm64, which nothing here has targeted either.
+
+### Still open
+
+- No macOS installer job exists. One belongs in `release-installers.yml` once
+  the build is green; it is not written yet, because an installer for a binary
+  that has never been produced is not something to write first.
+- `docs/CLAIMS.md` gains no macOS row until `ctest-macos` passes. A row added
+  now would be exactly the unbacked claim the register exists to prevent.
+- The version is still 2.0.21 with the whole of this branch under
+  `[Unreleased]`.
