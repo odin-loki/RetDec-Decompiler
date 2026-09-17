@@ -10490,3 +10490,107 @@ papered over with "the tests exist".
   behaviour is unambiguous and the change is inert unless the branch fires, the
   trap gets disarmed and the reachability is reported as unknown rather than
   claimed.
+
+---
+
+## Batch BB — the lowering that never terminates (2026-09-17)
+
+Batch AV recorded this, one line, under "still open":
+
+> **`while_true_to_ufor_loop_optimizer.cpp` do-while lowering** reads the
+> condition out of the loop-end `if` and discards the `if`, including a
+> `return` and any assignment inside it.
+
+That was right, and it was the smaller half. Building a differential for it
+found a second defect in the same eight lines that is considerably worse.
+
+### What the lowering does
+
+```
+while true { BODY; if (exit) <END>; }   -->   BODY; while (!exit) { BODY; }
+```
+
+`isLoopEnd` (`loop_optimizer.cpp`) accepts three shapes for `<END>`: a bare
+`break`, a bare `return X`, and `lhs = rhs` followed by either.
+
+### Defect 1 — the copied body is truncated to one statement
+
+```cpp
+auto loopBody = cast<Statement>(firstBody->clone());
+```
+
+`Statement::clone()` copies **one** statement and passes a null successor —
+`AssignStmt::clone()` is three lines and does exactly that. The chain is copied
+by `Statement::cloneStatements()`, which walks successors, and which
+`WhileTrueToWhileCondOptimizer` uses for the very same copy.
+
+So the new loop's body was the old body's *first statement and nothing else*.
+For the commonest shape there is,
+
+```
+while true { acc = acc + 2; i = i + 1; if (i > 3) break; }
+```
+
+the lowering produced
+
+```
+acc = acc + 2; i = i + 1;
+while (i <= 3) { acc = acc + 2; }
+```
+
+The variable the condition tests is no longer updated. **The loop does not
+terminate.** Any body of more than one statement hits this, which is nearly all
+of them.
+
+Every existing test on this pass passes on that output, because they all check
+the shape: a `WhileLoopStmt` came out, with this condition. None of them runs it.
+
+### Defect 2 and 3 — the discarded `if` took a `return` and an assignment with it
+
+The lowering drops the loop-end `if` whole. For `if (exit) return X;` the
+function then **falls off the end** instead of returning. For
+`if (exit) { lhs = rhs; break; }` the assignment is lost.
+`WhileTrueToWhileCondOptimizer` re-emits both for the same input; the two
+passes disagreed about the same three shapes, and the UFor one runs first.
+
+Both are now re-emitted after the lowered loop, which is where they belong: in
+the original the loop-end body runs once, on the iteration where the exit
+condition first holds, after that iteration's copy of BODY — and that is
+exactly the point the lowered loop exits.
+
+### Added
+
+`tests/llvmir2hll/optimizer/optimizers/while_true_lowering_semantics_tests.cpp`.
+It runs the function before and after the pass with a small interpreter and
+requires the same answer: the same returned value or the same fall-off-the-end,
+and the same final values of the variables the function touches. It bounds
+iterations, so a lowering that turns a terminating loop into a non-terminating
+one is reported as "did not terminate" rather than hanging the suite — which is
+how defect 1 announced itself on the first run.
+
+Failure messages carry a compact shape of what the pass produced, because a
+differential that says only "the answer changed" leaves you guessing.
+
+Each of the three fixes is falsified separately: restoring `clone()` fails all
+three cases; removing the `return` re-emission fails the return case; removing
+the assignment re-emission fails the assignment case.
+
+### The test that measured nothing, caught by falsifying
+
+The assignment case first used a body of `acc = acc + 1; i = i + 1;`. Both
+variables then hold the same value at the exit, so the loop-end assignment
+`acc = i` — which is the only form `isLoopEnd` allows, both sides variables —
+is a **no-op**, and the case passed whether or not the pass re-emitted it. The
+falsification run is what said so: removing the re-emission changed nothing.
+The body advances `acc` by two now.
+
+### Still open
+
+- `isLoopEnd`'s own TODO asks whether the left-hand side of that assignment
+  should be checked for use elsewhere in the loop. It is not, and this suite
+  does not test it: the case it builds assigns to a variable the loop body also
+  writes, and gets the same answer either way.
+- The interpreter models integer variables and the node kinds listed in
+  `evalExpr` and `Runner::run`. It refuses anything else rather than passing
+  it, so an unmodellable case is a reported failure — but it is also a bound on
+  what can be generated here.

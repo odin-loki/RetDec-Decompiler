@@ -126,6 +126,7 @@ add_executable(tests-llvmir2hll
 	optimizer/optimizers/void_return_optimizer_tests.cpp
 	optimizer/optimizers/while_true_to_for_loop_optimizer_ext_tests.cpp
 	optimizer/optimizers/while_true_to_for_loop_optimizer_tests.cpp
+	optimizer/optimizers/while_true_lowering_semantics_tests.cpp
 	optimizer/optimizers/while_true_to_ufor_loop_optimizer_tests.cpp
 	optimizer/optimizers/while_true_to_while_cond_optimizer_tests.cpp
 	pattern/pattern_finder_runner_tests.cpp

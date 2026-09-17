@@ -8,7 +8,9 @@
 #include "retdec/llvmir2hll/analysis/loop_bound_jump_analysis.h"
 #include "retdec/llvmir2hll/analysis/value_analysis.h"
 #include "retdec/llvmir2hll/ir/assign_stmt.h"
+#include "retdec/llvmir2hll/ir/return_stmt.h"
 #include "retdec/llvmir2hll/ir/empty_stmt.h"
+#include "retdec/llvmir2hll/ir/if_stmt.h"
 #include "retdec/llvmir2hll/ir/ufor_loop_stmt.h"
 #include "retdec/llvmir2hll/ir/var_def_stmt.h"
 #include "retdec/llvmir2hll/ir/while_loop_stmt.h"
@@ -87,13 +89,55 @@ void WhileTrueToUForLoopOptimizer::tryReplacementWithUForLoop(
 		auto continueCond = getDoWhileCondition(whileLoop);
 		auto firstBody = splittedLoop->beforeLoopEndStmts;
 		if (continueCond && firstBody) {
-			auto loopBody = cast<Statement>(firstBody->clone());
+			// cloneStatements, not clone. Statement::clone() copies ONE
+			// statement and passes a null successor -- see AssignStmt::clone --
+			// so `firstBody->clone()` gave the new loop a body consisting of
+			// the first statement of the old one and nothing else. For the
+			// commonest shape of all,
+			//
+			//     while true { acc = acc + 1; i = i + 1; if (i > 3) break; }
+			//
+			// that produced `while (i <= 3) { acc = acc + 1; }`: the variable
+			// the condition tests is no longer updated, so the loop does not
+			// terminate. WhileTrueToWhileCondOptimizer uses cloneStatements
+			// for the same copy.
+			auto loopBody = Statement::cloneStatements(firstBody);
 			if (loopBody) {
 				auto loweredLoop = WhileLoopStmt::create(
 					continueCond,
 					loopBody,
 					nullptr,
 					whileLoop->getAddress());
+
+				// The loop-end `if` is discarded by this lowering, so whatever
+				// it did besides breaking has to be re-emitted after the loop.
+				// isLoopEnd (loop_optimizer.cpp) accepts three shapes: a bare
+				// break or return, and an assignment followed by one of those.
+				// This used to drop the `if` whole, which silently deleted the
+				// return -- the function then fell off the end -- and the
+				// assignment with it. WhileTrueToWhileCondOptimizer re-emits
+				// both for the same input.
+				//
+				// Placement: in the original, the loop-end body runs once, on
+				// the iteration where the exit condition first holds, after
+				// that iteration's copy of BODY. The lowered loop exits at
+				// exactly that point, so "after the loop" is that same place.
+				ShPtr<Statement> endStmt(skipEmptyStmts(splittedLoop->loopEnd->getFirstIfBody()));
+				ShPtr<Statement> tail;
+				if (auto assignInEnd = cast<AssignStmt>(endStmt))
+				{
+					tail = ucast<Statement>(assignInEnd->clone());
+					endStmt = skipEmptyStmts(assignInEnd->getSuccessor());
+				}
+				if (auto retInEnd = cast<ReturnStmt>(endStmt))
+				{
+					auto retClone = ucast<Statement>(retInEnd->clone());
+					tail = tail ? Statement::mergeStatements(tail, retClone) : retClone;
+				}
+				if (tail)
+				{
+					Statement::mergeStatements(loweredLoop, tail);
+				}
 
 				Statement::mergeStatements(firstBody, loweredLoop);
 				Statement::replaceStatement(whileLoop, firstBody);

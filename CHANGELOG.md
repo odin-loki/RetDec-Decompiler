@@ -8,6 +8,16 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- A semantic differential for the `while true` loop lowerings
+  (`tests/llvmir2hll/optimizer/optimizers/while_true_lowering_semantics_tests.cpp`).
+  It runs the function before and after the pass with a small interpreter and
+  requires the same answer — same returned value or same fall-off-the-end, and
+  the same final values of the variables the function touches. It bounds
+  iterations, so a lowering that turns a terminating loop into a
+  non-terminating one is reported rather than hanging the suite, which is how
+  the first defect below announced itself. Failure messages carry a compact
+  shape of what the pass produced.
+
 - `IDIOM-USE-01` (`scripts/ci/check_idiom_shared_use.sh`,
   `scripts/ci/idiom_shared_use_check.cpp`): builds four idiom shapes twice,
   runs the real pass on one, and evaluates both over thirteen inputs with
@@ -328,6 +338,38 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   back to counting keywords in text. `GateReport::summary()` marks the fallback.
 
 ### Fixed
+
+- **`WhileTrueToUForLoopOptimizer`'s do-while lowering produced a loop that
+  never terminates.** It copied the loop body with `Statement::clone()`, which
+  copies **one** statement and passes a null successor — the chain is copied by
+  `Statement::cloneStatements()`, which `WhileTrueToWhileCondOptimizer` uses
+  for the very same copy. So
+
+  ```
+  while true { acc = acc + 2; i = i + 1; if (i > 3) break; }
+  ```
+
+  became
+
+  ```
+  acc = acc + 2; i = i + 1;
+  while (i <= 3) { acc = acc + 2; }
+  ```
+
+  where the variable the condition tests is never updated again. Any body of
+  more than one statement hit this. Every existing test on the pass passes on
+  that output, because they all check the shape of the result and none of them
+  runs it.
+
+- The same lowering discarded the loop-end `if` whole, and `isLoopEnd` accepts
+  `if (exit) return X;` and `if (exit) { lhs = rhs; break; }` as well as a bare
+  break. The `return` was silently deleted — the function fell off the end
+  instead of returning — and so was the assignment.
+  `WhileTrueToWhileCondOptimizer` re-emits both for the same input; the two
+  passes disagreed about the same three shapes and the UFor one runs first.
+  Both are now re-emitted after the lowered loop, which is the point the
+  original ran them. Each of the three fixes is falsified separately.
+
 
 - Two more erases that destroyed the check that would have stopped them. A
   sweep for `replaceAllUsesWith(UndefValue` found four sites; `phi_remover`'s
