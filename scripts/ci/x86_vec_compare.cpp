@@ -55,6 +55,13 @@ static const struct { const char* name; const char* bytes; } ENC[] = {
 	{"psignd",   "66 0f 38 0a c1"},
 	{"pmulhrsw", "66 0f 38 0b c1"}, {"pmaddubsw", "66 0f 38 04 c1"},
 	{"phminposuw", "66 0f 38 41 c1"},
+	{"pshufd_1b",  "66 0f 70 c1 1b"}, {"pshufd_4e",  "66 0f 70 c1 4e"},
+	{"pshufd_c6",  "66 0f 70 c1 c6"},
+	{"pshufhw_1b", "f3 0f 70 c1 1b"}, {"pshufhw_c6", "f3 0f 70 c1 c6"},
+	{"pshuflw_1b", "f2 0f 70 c1 1b"}, {"pshuflw_c6", "f2 0f 70 c1 c6"},
+	{"pblendw_a5", "66 0f 3a 0e c1 a5"}, {"pblendw_0f", "66 0f 3a 0e c1 0f"},
+	{"blendps_09", "66 0f 3a 0c c1 09"}, {"blendps_06", "66 0f 3a 0c c1 06"},
+	{"blendpd_01", "66 0f 3a 0d c1 01"}, {"blendpd_02", "66 0f 3a 0d c1 02"},
 };
 
 static std::vector<uint8_t> hexBytes(const char* s)
@@ -128,8 +135,14 @@ int main(int argc, char** argv)
 			if (cs_open(CS_ARCH_X86, CS_MODE_64, &h) == CS_ERR_OK) {
 				cs_insn* ins = nullptr;
 				size_t n = cs_disasm(h, code.data(), code.size(), 0x1000, 1, &ins);
-				if (n != 1 || std::string(ins->mnemonic) != e.name) {
-					printf("%-9s MISENCODED -- these bytes disassemble to '%s'\n",
+				// The immediate forms are named "<mnemonic>_<imm>", because
+				// the control is part of the encoding and cannot vary per
+				// row. Compare against the part before the underscore.
+				std::string want(e.name);
+				size_t us = want.find('_');
+				if (us != std::string::npos) want.resize(us);
+				if (n != 1 || std::string(ins->mnemonic) != want) {
+					printf("%-11s MISENCODED -- these bytes disassemble to '%s'\n",
 						   e.name, n == 1 ? ins->mnemonic : "<nothing>");
 					++misencoded;
 				}

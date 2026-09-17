@@ -8311,3 +8311,65 @@ that do not fit this harness: `PSHUFD`/`PSHUFHW`/`PSHUFLW`, `PBLENDW`,
 general-purpose register. `PTEST` and `PBLENDVB` need the flags and an
 implicit XMM0 respectively. None needs a new instrument, only a row format
 with an immediate in it.
+
+## Batch AF — the immediate-controlled shuffles and blends
+
+Six more: `PSHUFHW`, `PSHUFLW`, `PBLENDW`, `BLENDPS`, `BLENDPD`. The control is
+an imm8, which is part of the **encoding** rather than of the data, so it
+cannot vary per row: each (instruction, immediate) pair is its own oracle
+entry, named with the immediate appended, and the comparator matches
+capstone's mnemonic against the name up to the underscore.
+
+The immediates are chosen to be asymmetric — `0x1b` reverses, `0x4e` swaps
+halves, `0xa5` alternates. A control of `0xe4` is the identity and would pass
+against a translation that ignored the immediate entirely.
+
+### AF-1: the half forms permute a half and copy the other
+
+`PSHUFHW` permutes the high four words and copies the low quadword through;
+`PSHUFLW` does the reverse. Both take two bits per lane out of the same imm8,
+indexed from the start of the half they act on. Treating either as a
+whole-register permutation scrambles the half that is supposed to be left
+alone — 800 mismatches — and indexing the permuted half from lane 0 rather
+than from its own base is 400, on `PSHUFHW` only, because for `PSHUFLW` the
+base is zero and the two readings coincide.
+
+### AF-2: PSHUFD was already there
+
+It has had `translateSsePshufd` since before this batch. The oracle covers it
+at three control bytes and it is correct, so it keeps its own translator and
+the new one has no case for it. Adding an unreachable case would be the dead
+code Batch AC caught itself shipping.
+
+### AF-3: a set immediate bit selects the SECOND operand
+
+For all three blends. Inverting that is 1,200 mismatches, every row of every
+form. `BLENDPS` and `BLENDPD` are floating point only in name — nothing is
+interpreted — so they are one operation at two widths and share a translator
+with `PBLENDW`.
+
+### Falsification
+
+```
+AF1_shuf_whole_register    800   pshufhw_1b/c6 pshuflw_1b/c6
+AF2_shuf_index_from_zero   400   pshufhw_1b/c6 only, and that is correct
+AF3_blend_bit_inverted    1200   all six blend entries
+```
+
+### After
+
+```
+13,800 comparisons against the hardware, 0 mismatches,
+0 untranslated forms, 0 misencoded
+```
+
+C2L-01 floor: X86 2781 → 2796. 5,675 tests.
+
+### A test that was wrong where the translator was right
+
+All five gtest cases written for this batch failed on their first run while
+the same instructions passed 13,800 hardware comparisons. The cause was in the
+tests: `setXmm()` takes `(reg, hi, lo)` and the oracle supplies `(lo, hi)`, so
+every input was reversed. Worth recording because the instinct on a red test
+is to look at the code it tests, and here the code was the only part that had
+already been measured.

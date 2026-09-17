@@ -2091,6 +2091,127 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSsePhminposuw(cs_insn* i, cs_x8
 }
 
 /**
+ * PSHUFHW and PSHUFLW -- permute half the register by an immediate.
+ *
+ * Unlike PSHUFB the control is a constant, so `shufflevector` takes it
+ * directly. What is easy to get wrong is which lanes the permutation reaches:
+ *
+ *   PSHUFHW  permutes the HIGH four words and copies the low quadword
+ *            through untouched.
+ *   PSHUFLW  permutes the LOW four words and copies the high quadword.
+ *
+ * Both take two bits per lane out of the imm8, indexed from the start of the
+ * half they act on -- so a control of 0x1b reverses the four words it touches
+ * and leaves the other four exactly as they were. A translation that treated
+ * either as a whole-register permutation would scramble the half that is
+ * supposed to be copied.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSsePshufImm(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, xi, irb);
+	if (xi->operands[2].type != X86_OP_IMM || xi->operands[0].size != 16)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	uint64_t imm = static_cast<uint64_t>(xi->operands[2].imm) & 0xff;
+
+	unsigned elemBits = 0;
+	unsigned first = 0; // first lane the permutation reaches
+	unsigned n = 0;
+	switch (i->id)
+	{
+	// PSHUFD is not here: it has had translateSsePshufd since before this
+	// function existed, and the oracle covers it at three control bytes.
+	// Adding an unreachable case for it would be the dead code Batch AC
+	// caught itself shipping.
+	case X86_INS_PSHUFHW:
+		elemBits = 16;
+		n = 8;
+		first = 4;
+		break;
+	case X86_INS_PSHUFLW:
+		elemBits = 16;
+		n = 8;
+		first = 0;
+		break;
+	default: translatePseudoAsmGeneric(i, xi, irb); return;
+	}
+
+	op1 = loadOp(xi->operands[1], irb);
+	auto* vecTy = vecType(irb.getIntNTy(elemBits), n);
+	Value* src = irb.CreateBitCast(toI128(op1, irb), vecTy);
+
+	llvm::SmallVector<int, 8> mask;
+	for (unsigned lane = 0; lane < n; ++lane)
+	{
+		if (lane < first || lane >= first + 4)
+		{
+			mask.push_back(static_cast<int>(lane)); // copied through
+		}
+		else
+		{
+			unsigned sel = (imm >> (2 * (lane - first))) & 3;
+			mask.push_back(static_cast<int>(first + sel));
+		}
+	}
+	Value* res = irb.CreateShuffleVector(src, llvm::UndefValue::get(vecTy), mask);
+
+	storeOp(xi->operands[0], irb.CreateBitCast(res, irb.getInt128Ty()), irb, eOpConv::NOTHING);
+}
+
+/**
+ * PBLENDW, BLENDPS, BLENDPD -- pick each lane from one operand or the other
+ * according to a bit of an immediate.
+ *
+ * A set bit selects the SECOND operand. The lane width is what separates the
+ * three: eight words, four dwords, two quadwords, all reading their bits from
+ * the bottom of the same imm8.
+ *
+ * BLENDPS and BLENDPD are floating-point only in name -- nothing is
+ * interpreted, so they are the same operation at a different width and share
+ * this.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSseBlendImm(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, xi, irb);
+	if (xi->operands[2].type != X86_OP_IMM || xi->operands[0].size != 16)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	uint64_t imm = static_cast<uint64_t>(xi->operands[2].imm) & 0xff;
+
+	unsigned elemBits = 0;
+	switch (i->id)
+	{
+	case X86_INS_PBLENDW: elemBits = 16; break;
+	case X86_INS_BLENDPS: elemBits = 32; break;
+	case X86_INS_BLENDPD: elemBits = 64; break;
+	default: translatePseudoAsmGeneric(i, xi, irb); return;
+	}
+	unsigned n = 128 / elemBits;
+
+	// Three operands, so the two sources are loaded by hand: loadOpBinary()
+	// refuses an instruction with an immediate on the end.
+	op0 = loadOp(xi->operands[0], irb);
+	op1 = loadOp(xi->operands[1], irb);
+	auto* vecTy = vecType(irb.getIntNTy(elemBits), n);
+	Value* a = irb.CreateBitCast(toI128(op0, irb), vecTy);
+	Value* b = irb.CreateBitCast(toI128(op1, irb), vecTy);
+
+	llvm::SmallVector<int, 8> mask;
+	for (unsigned lane = 0; lane < n; ++lane)
+	{
+		bool fromSecond = ((imm >> lane) & 1) != 0;
+		mask.push_back(static_cast<int>(fromSecond ? n + lane : lane));
+	}
+	Value* res = irb.CreateShuffleVector(a, b, mask);
+
+	storeOp(xi->operands[0], irb.CreateBitCast(res, irb.getInt128Ty()), irb, eOpConv::NOTHING);
+}
+
+/**
  * PSLLW/D/Q, PSRLW/D/Q, PSRAW/D -- the packed shifts, in both the
  * register/memory form and the immediate one. Capstone gives both the same
  * instruction id and distinguishes them by the operand's type.

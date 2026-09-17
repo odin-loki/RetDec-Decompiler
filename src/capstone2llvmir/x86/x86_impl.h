@@ -438,6 +438,8 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		void translateSsePmulhrsw(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSsePmaddubsw(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSsePhminposuw(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSsePshufImm(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSseBlendImm(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSsePalignr(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSsePavg(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateCvtSi2Ss(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);

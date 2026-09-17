@@ -16249,6 +16249,82 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, CVTTSD2SI_in_range_is_unaffected_by_th
 // scripts/ci/x86_vec_oracle.c.
 //
 
+//
+// Batch AF -- the immediate-controlled shuffles and blends. Expected values
+// executed on the host CPU; see scripts/ci/x86_vec_oracle.c.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PSHUFHW_permutes_only_the_high_half)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x0005000600070008ULL, 0x0001000200030004ULL);
+
+	emulate("pshufhw xmm0, xmm1, 0x1b");
+
+	// 0x1b reverses the four words it touches. The LOW quadword is copied
+	// through untouched -- treating this as a whole-register permutation
+	// would scramble the half that is supposed to be left alone.
+	EXPECT_EQ(0x0001000200030004ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0008000700060005ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PSHUFLW_permutes_only_the_low_half)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x0005000600070008ULL, 0x0001000200030004ULL);
+
+	emulate("pshuflw xmm0, xmm1, 0x1b");
+
+	EXPECT_EQ(0x0004000300020001ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0005000600070008ULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PBLENDW_set_bit_takes_the_second_operand)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x2222222222222222ULL, 0x1111111111111111ULL);
+	setXmm(X86_REG_XMM1, 0xbbbbbbbbbbbbbbbbULL, 0xaaaaaaaaaaaaaaaaULL);
+
+	emulate("pblendw xmm0, xmm1, 0xa5");
+
+	// 0xa5 is 10100101: words 0, 2, 5 and 7 come from the second operand.
+	EXPECT_EQ(0x1111aaaa1111aaaaULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xbbbb2222bbbb2222ULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, BLENDPS_selects_four_dwords)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x3333333344444444ULL, 0x1111111122222222ULL);
+	setXmm(X86_REG_XMM1, 0xccccccccddddddddULL, 0xaaaaaaaabbbbbbbbULL);
+
+	emulate("blendps xmm0, xmm1, 0x09");
+
+	EXPECT_EQ(0x11111111bbbbbbbbULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xcccccccc44444444ULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, BLENDPD_selects_two_quadwords)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x2222222222222222ULL, 0x1111111111111111ULL);
+	setXmm(X86_REG_XMM1, 0xbbbbbbbbbbbbbbbbULL, 0xaaaaaaaaaaaaaaaaULL);
+
+	emulate("blendpd xmm0, xmm1, 0x02");
+
+	// Bit 1 set: the high quadword comes from the second operand, the low
+	// one stays. BLENDPS and BLENDPD are floating point only in name --
+	// nothing is interpreted, so they are one operation at two widths.
+	EXPECT_EQ(0x1111111111111111ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xbbbbbbbbbbbbbbbbULL, xmmHigh(X86_REG_XMM0));
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, PSHUFB_top_bit_of_the_control_writes_zero)
 {
 	ONLY_MODE_64;

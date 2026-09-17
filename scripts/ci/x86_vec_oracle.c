@@ -126,9 +126,44 @@ FORM(o_pmulhrsw,  "pmulhrsw  %%xmm1, %%xmm0")
 FORM(o_pmaddubsw, "pmaddubsw %%xmm1, %%xmm0")
 FORM(o_phminposuw,"phminposuw %%xmm1, %%xmm0")
 
+/* ------------------------------------------------ immediate-controlled forms */
+
+/* These take their control from an imm8, which is part of the ENCODING rather
+   than of the data, so there is no way to vary it per row: each (instruction,
+   immediate) pair is its own table entry, named with the immediate appended.
+   The comparator matches the mnemonic against the name up to the underscore.
+   The immediates are chosen to be asymmetric -- 0x1b is the reversal, 0x4e a
+   swap of halves, 0xc6 an arbitrary permutation -- because a control of 0xe4
+   is the identity and would pass against a translation that ignored it. */
+
+#define IMM_FORM(name, insn)                                                  \
+  static Out name(const uint64_t* a, const uint64_t* b) {                     \
+    uint64_t r[2] = {0, 0};                                                   \
+    __asm__ volatile("movdqu %1, %%xmm0\n\t"                                  \
+                     "movdqu %2, %%xmm1\n\t"                                  \
+                     insn "\n\t"                                              \
+                     "movdqu %%xmm0, %0"                                      \
+                     : "=m"(*r) : "m"(*a), "m"(*b) : "xmm0", "xmm1");         \
+    Out o = { r[0], r[1] }; return o;                                         \
+  }
+
+IMM_FORM(o_pshufd_1b,  "pshufd  $0x1b, %%xmm1, %%xmm0")
+IMM_FORM(o_pshufd_4e,  "pshufd  $0x4e, %%xmm1, %%xmm0")
+IMM_FORM(o_pshufd_c6,  "pshufd  $0xc6, %%xmm1, %%xmm0")
+IMM_FORM(o_pshufhw_1b, "pshufhw $0x1b, %%xmm1, %%xmm0")
+IMM_FORM(o_pshufhw_c6, "pshufhw $0xc6, %%xmm1, %%xmm0")
+IMM_FORM(o_pshuflw_1b, "pshuflw $0x1b, %%xmm1, %%xmm0")
+IMM_FORM(o_pshuflw_c6, "pshuflw $0xc6, %%xmm1, %%xmm0")
+IMM_FORM(o_pblendw_a5, "pblendw $0xa5, %%xmm1, %%xmm0")
+IMM_FORM(o_pblendw_0f, "pblendw $0x0f, %%xmm1, %%xmm0")
+IMM_FORM(o_blendps_09, "blendps $0x09, %%xmm1, %%xmm0")
+IMM_FORM(o_blendps_06, "blendps $0x06, %%xmm1, %%xmm0")
+IMM_FORM(o_blendpd_01, "blendpd $0x01, %%xmm1, %%xmm0")
+IMM_FORM(o_blendpd_02, "blendpd $0x02, %%xmm1, %%xmm0")
+
 typedef Out (*Fn)(const uint64_t*, const uint64_t*);
 
-enum Kind { K_SHIFT, K_WIDEN, K_BIN, K_SHUF };
+enum Kind { K_SHIFT, K_WIDEN, K_BIN, K_SHUF, K_IMM };
 
 static struct { const char* name; Fn fn; enum Kind kind; unsigned elem; } TBL[] = {
 	{"psllw", o_psllw, K_SHIFT, 16}, {"pslld", o_pslld, K_SHIFT, 32},
@@ -161,6 +196,13 @@ static struct { const char* name; Fn fn; enum Kind kind; unsigned elem; } TBL[] 
 	{"psignd",   o_psignd,   K_BIN, 32},
 	{"pmulhrsw", o_pmulhrsw, K_BIN, 16}, {"pmaddubsw", o_pmaddubsw, K_BIN, 8},
 	{"phminposuw", o_phminposuw, K_BIN, 16},
+	{"pshufd_1b",  o_pshufd_1b,  K_IMM, 32}, {"pshufd_4e",  o_pshufd_4e,  K_IMM, 32},
+	{"pshufd_c6",  o_pshufd_c6,  K_IMM, 32},
+	{"pshufhw_1b", o_pshufhw_1b, K_IMM, 16}, {"pshufhw_c6", o_pshufhw_c6, K_IMM, 16},
+	{"pshuflw_1b", o_pshuflw_1b, K_IMM, 16}, {"pshuflw_c6", o_pshuflw_c6, K_IMM, 16},
+	{"pblendw_a5", o_pblendw_a5, K_IMM, 16}, {"pblendw_0f", o_pblendw_0f, K_IMM, 16},
+	{"blendps_09", o_blendps_09, K_IMM, 32}, {"blendps_06", o_blendps_06, K_IMM, 32},
+	{"blendpd_01", o_blendpd_01, K_IMM, 64}, {"blendpd_02", o_blendpd_02, K_IMM, 64},
 };
 
 /* random() gives 31 bits, so the obvious shift-and-xor leaves bit 31 and bit
@@ -245,6 +287,13 @@ int main(int argc, char** argv)
 					c[byte / 8] |= v << ((byte % 8) * 8);
 				}
 				b[0] = c[0]; b[1] = c[1];
+			} else if (TBL[k].kind == K_IMM) {
+				/* Both operands are plain data; the control is in the
+				   encoding. Distinct values in every lane, so a permutation
+				   that moves the wrong one cannot land on the right answer
+				   by accident. */
+				a[0] = rnd64(); a[1] = rnd64();
+				b[0] = rnd64(); b[1] = rnd64();
 			} else if (TBL[k].kind == K_BIN) {
 				/* Uniform noise almost never saturates: two random bytes sum
 				   past 127 about a quarter of the time and past 255 almost
