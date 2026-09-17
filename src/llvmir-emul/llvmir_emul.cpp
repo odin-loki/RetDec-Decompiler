@@ -3251,18 +3251,17 @@ void LlvmIrEmulator::visitCallInst(llvm::CallInst& I)
 		// function 'llvm.umin.i8'", which takes the whole process with it. The
 		// first translator to emit one aborted the entire test binary, with no
 		// failing test named -- the same shape as llvm.fma, noted below.
-		if (id == Intrinsic::umin || id == Intrinsic::umax
-				|| id == Intrinsic::smin || id == Intrinsic::smax)
+		if (id == Intrinsic::umin || id == Intrinsic::umax || id == Intrinsic::smin || id == Intrinsic::smax)
 		{
 			GenericValue a = _globalEc.getOperandValue(I.getArgOperand(0), ec);
 			GenericValue b = _globalEc.getOperandValue(I.getArgOperand(1), ec);
 			bool takeA = false;
 			switch (id)
 			{
-				case Intrinsic::umin: takeA = a.IntVal.ult(b.IntVal); break;
-				case Intrinsic::umax: takeA = a.IntVal.ugt(b.IntVal); break;
-				case Intrinsic::smin: takeA = a.IntVal.slt(b.IntVal); break;
-				default:              takeA = a.IntVal.sgt(b.IntVal); break;
+			case Intrinsic::umin: takeA = a.IntVal.ult(b.IntVal); break;
+			case Intrinsic::umax: takeA = a.IntVal.ugt(b.IntVal); break;
+			case Intrinsic::smin: takeA = a.IntVal.slt(b.IntVal); break;
+			default: takeA = a.IntVal.sgt(b.IntVal); break;
 			}
 			GenericValue dest;
 			dest.IntVal = takeA ? a.IntVal : b.IntVal;

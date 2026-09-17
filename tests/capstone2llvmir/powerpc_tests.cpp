@@ -1599,6 +1599,60 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_SUBFZE_dot_32_carry_true)
 // mulli multiplies the WHOLE register, not its low word -- there is no
 // "mulliw". The test below uses 0x2222, which fits in a word, so the narrowed
 // and un-narrowed readings agree on it and it passed either way.
+// The record forms of the zero-extending word family set CR0 from the 64-bit
+// REGISTER, not from the 32-bit word. Power ISA: for Rc=1 in 64-bit mode the
+// whole register is compared, and rlwinm leaves RA[0:31] zero -- so LT can
+// never be set, however the word looks. Comparing the word said LT=1, GT=0.
+//
+// There was no record-form test for any of the seven instructions in this
+// family, which is why it survived. EQ is right at either width, and that is
+// the bit compilers actually branch on after rlwinm., which is the rest of why.
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_RLWINM_dot_64_compares_the_register)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x80000000},
+	});
+
+	emulate("rlwinm. 0, 1, 0, 0, 15");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R0, 0x80000000},
+		{PPC_REG_CR0LT, false}, // 0x0000000080000000 is positive
+		{PPC_REG_CR0GT, true},
+		{PPC_REG_CR0EQ, false},
+		{PPC_REG_CR0UN, false},
+	});
+}
+
+// And the sign-extending members of the same family must keep comparing as
+// signed: srawi. leaves RA sign-extended, so a negative word IS a negative
+// register and LT must be set. This is the case the fix must not break.
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_SRAWI_dot_64_stays_signed)
+{
+	ONLY_MODE_64;
+
+	// 0x8000000f, not 0x80000000: CA is set only when a NEGATIVE value loses
+	// 1-bits off the bottom, and 0x80000000 >> 4 loses four zeros, so it would
+	// assert CA = true against a correct CA = false. The low nibble here makes
+	// the two conditions independent.
+	setRegisters({
+		{PPC_REG_R1, 0x8000000f},
+	});
+
+	emulate("srawi. 0, 1, 4");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R0, 0xfffffffff8000000},
+		{PPC_REG_CR0LT, true},
+		{PPC_REG_CR0GT, false},
+		{PPC_REG_CR0EQ, false},
+		{PPC_REG_CR0UN, false},
+		{PPC_REG_CARRY, true},
+	});
+}
+
 TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MULLI_64_is_not_a_word_multiply)
 {
 	ONLY_MODE_64;

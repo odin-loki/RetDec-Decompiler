@@ -1350,8 +1350,10 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSseMovMsk(cs_insn* i, cs_x86* x
 	// derives its width from isYmmRegister for exactly this reason.
 	unsigned srcBits = 128;
 	cs_x86_op& src = xi->operands[1];
-	if (src.type == X86_OP_REG && isYmmRegister(src.reg)) srcBits = 256;
-	else if (src.type == X86_OP_REG && isZmmRegister(src.reg)) srcBits = 512;
+	if (src.type == X86_OP_REG && isYmmRegister(src.reg))
+		srcBits = 256;
+	else if (src.type == X86_OP_REG && isZmmRegister(src.reg))
+		srcBits = 512;
 
 	unsigned n = srcBits / laneBits;
 	auto* vecTy = FixedVectorType::get(irb.getIntNTy(laneBits), n);

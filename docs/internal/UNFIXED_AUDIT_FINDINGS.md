@@ -9193,3 +9193,70 @@ files were being edited mid-build, and a mismatched object set is a perfectly
 good explanation for a crash. It was the wrong one. The lesson is the smaller
 one: do not edit while a build is running, because it makes a real failure
 indistinguishable from an artefact.
+
+## Batch AN -- three more, and two subagent claims that were wrong in the details
+
+### AN-1  `ldr r0, [r1, -r2]` loaded from r1 PLUS r2
+
+The ARM memory-operand path negated the index when `mem.scale == -1`. That
+branch is dead: disassembling `ldr r0, [r1, -r2]` with the bundled capstone
+gives `scale = 1` and `subtracted = 1`, and so does every other negated-index
+form. So the minus sign was dropped and the address was wrong -- not the
+writeback, the ADDRESS, on every `[Rn, -Rm]` load and store.
+
+The sweep that raised this reported it as a writeback-only defect and said the
+address "is computed correctly ... and negates via mem.scale == -1". Measuring
+capstone directly says otherwise. Worth recording as a reminder that a report
+which reads plausibly can still have its central fact backwards.
+
+`subtracted` is NOT applied to the displacement: for `ldr r0, [r1, #-4]`
+capstone reports `disp = -4` and `subtracted = 0`, so the sign is already there
+and negating again would undo it. Both measured.
+
+### AN-2  MIPS CVT.W.fmt truncated where the ISA rounds
+
+CVT.W.fmt rounds with the current rounding mode, whose default is
+nearest-even; a bare `fptosi` truncates, which is TRUNC.W.fmt -- a different
+instruction that exists alongside it. `translateFpToInt` eighty lines up
+already case-splits TRUNC/ROUND/CEIL/FLOOR onto fptosi/roundeven/ceil/floor
+and says in its own comment that the rounding mode is the whole difference
+between them. This one was missed.
+
+The destination is also a WORD whatever the source format is -- that is what
+the W means, and CVT.L.fmt is the 64-bit one. The width was taken from the
+SOURCE, so `cvt.w.d` converted to 64 bits.
+
+### AN-3  PowerPC record forms compared 32 bits where 64-bit mode compares 64
+
+For Rc=1 the Power ISA compares the whole register in 64-bit mode, and the
+zero-extending word family -- rlwinm, rlwnm, rlwimi, rotlw, clrlwi, slw, srw,
+slwi, srwi -- all leave RA[0:31] zero, so their register value can never be
+negative while the 32-bit result can:
+
+    rlwinm. r0, r1, 0, 0, 15   r1 = 0x80000000
+      RA = 0x0000000080000000 -> LT = 0, GT = 1
+      comparing the word      -> LT = 1, GT = 0
+
+Seven sites now widen to the register's own type first. The SIGN-extending
+members of the same family -- cntlzw., divw., mulhw., sraw. -- must not, since
+zero-extending would invert their sign, and a test asserts that they still do
+not.
+
+There was no record-form test for any of the seven.
+
+### And a whole class of MIPS tests that could not fail
+
+`CVT.W.fmt` leaves an INTEGER in a floating-point register, and the fixture
+compares a float register with `EXPECT_NEAR(..., 0.001)`. The bit pattern of a
+small integer is a denormal -- 3 is 4.2e-45 -- so every such expectation
+compares equal to zero, to itself, and to every other small integer. Both
+pre-existing CVT.W tests asserted a value that way, and so did the first draft
+of the three added here.
+
+They now compare the raw bits. While fixing that: `MIPS_INS_CVT_W_d` set its
+input with an `_f32` literal into a DOUBLE register, so the value it converted
+was the 32-bit pattern of 3.1415 read back as 5.3e-315 -- and the vacuous
+expectation could not tell.
+
+Falsification: each of the three fixes reverted alone fails 4, 4 and 5 tests
+respectively.

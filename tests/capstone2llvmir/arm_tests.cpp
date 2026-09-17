@@ -2544,6 +2544,50 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDR_plus_reg_preindexed_writeb
 	EXPECT_NO_VALUE_CALLED();
 }
 
+// `[Rn, -Rm]` -- the minus is part of the ENCODING, not a negative value in
+// Rm. capstone reports it as operand.subtracted, and mem.scale stays 1, so the
+// mem.scale == -1 branch this translator used never fired and the offset was
+// ADDED. The test below is named "minus_reg" but assembles `[r1, r2]!` with a
+// negative value in r2, which exercises nothing of that path.
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDR_minus_reg_is_subtracted)
+{
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x1010},
+		{ARM_REG_R2, 0x8},
+	});
+	setMemory({
+		{0x1008, 0x12345678_dw},
+	});
+
+	emulate("ldr r0, [r1, -r2]");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x12345678},
+	});
+}
+
+// A negative IMMEDIATE displacement must not be negated twice: capstone puts
+// the sign in mem.disp and leaves subtracted clear.
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDR_minus_imm_is_not_negated_twice)
+{
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x1010},
+	});
+	setMemory({
+		{0x100c, 0xcafebabe_dw},
+	});
+
+	emulate("ldr r0, [r1, #-4]");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0xcafebabe},
+	});
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDR_minus_reg_preindexed_writeback)
 {
 	SKIP_MODE_THUMB;
@@ -5563,8 +5607,7 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ROR_reg_count_32_rotates_by_no
 	emulate("ror r0, r2, r3");
 
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, 0x12345678},
-		{ARM_REG_CPSR_C, false},   // bit 31 of 0x12345678
+		{ARM_REG_R0, 0x12345678}, {ARM_REG_CPSR_C, false}, // bit 31 of 0x12345678
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();

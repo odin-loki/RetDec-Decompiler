@@ -652,8 +652,7 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::generateShiftRor(
 	auto* maskC = llvm::ConstantInt::get(ty, op0BitW - 1);
 
 	n = irb.CreateAnd(irb.CreateZExtOrTrunc(n, ty), maskC);
-	auto* sub = irb.CreateAnd(
-			irb.CreateSub(llvm::ConstantInt::get(ty, op0BitW), n), maskC);
+	auto* sub = irb.CreateAnd(irb.CreateSub(llvm::ConstantInt::get(ty, op0BitW), n), maskC);
 	auto* orr = irb.CreateOr(irb.CreateLShr(val, n), irb.CreateShl(val, sub));
 	if (updateFlags)
 	{
@@ -3514,8 +3513,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateShifts(cs_insn* i, cs_arm64* 
 	// amount; the immediate forms are bounded by their encoding.
 	{
 		auto* ty = llvm::cast<llvm::IntegerType>(op1->getType());
-		op2 = irb.CreateAnd(
-				op2, llvm::ConstantInt::get(ty, ty->getBitWidth() - 1));
+		op2 = irb.CreateAnd(op2, llvm::ConstantInt::get(ty, ty->getBitWidth() - 1));
 	}
 
 	llvm::Value* val = nullptr;

@@ -926,9 +926,20 @@ void Capstone2LlvmIrTranslatorMips_impl::translateCvt(cs_insn* i, cs_mips* mi, l
 			|| mnem == "cvt.w.d") // should be only on MIPS64
 	{
 		op1 = loadRegister(r1, irb);
-		auto* iTy = op1->getType()->isDoubleTy()
-				? irb.getInt64Ty()
-				: irb.getInt32Ty();
+		// CVT.W.fmt rounds with the CURRENT rounding mode (FCSR.RM), whose
+		// reset value and ABI default is nearest-even. A bare fptosi
+		// truncates, which is TRUNC.W.fmt -- a different instruction that
+		// exists alongside it. translateFpToInt, eighty lines up, already
+		// case-splits TRUNC/ROUND/CEIL/FLOOR onto fptosi/roundeven/ceil/floor
+		// and says in its comment that the rounding mode is the whole
+		// difference between them; this one was missed.
+		//
+		// Both tests of it use 3.1415, on which truncating and rounding agree.
+		op1 = irb.CreateUnaryIntrinsic(llvm::Intrinsic::roundeven, op1);
+		// And the destination is a WORD whatever the source format is -- that
+		// is what the W in CVT.W means; CVT.L.fmt is the 64-bit one. This
+		// picked the width from the SOURCE, so cvt.w.d converted to 64 bits.
+		auto* iTy = irb.getInt32Ty();
 		op1 = irb.CreateFPToSI(op1, iTy);
 		auto* iTy2 = getRegisterType(r0)->isDoubleTy()
 				? irb.getInt64Ty()
@@ -1902,9 +1913,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateLui(cs_insn* i, cs_mips* mi, l
 	// shape the rest of the word family uses. The standard n64 constant idiom
 	// `lui $2,0xffff; ori $2,$2,0x1234` was giving 0x00000000ffff1234.
 	auto* i32 = irb.getInt32Ty();
-	op1 = irb.CreateShl(
-			irb.CreateZExtOrTrunc(op1, i32),
-			llvm::ConstantInt::get(i32, 16));
+	op1 = irb.CreateShl(irb.CreateZExtOrTrunc(op1, i32), llvm::ConstantInt::get(i32, 16));
 	storeOp(mi->operands[0], op1, irb);
 }
 

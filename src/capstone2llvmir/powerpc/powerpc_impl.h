@@ -87,6 +87,10 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 				llvm::Value* op1 = nullptr,
 				bool signedCmp = true);
 		void storeCr0(llvm::IRBuilder<>& irb, cs_ppc* pi, llvm::Value* val);
+		/// CR0 for a word operation whose result is zero-extended into the
+		/// register; see the definition. The sign-extending word operations
+		/// must keep using storeCr0().
+		void storeCr0Word(llvm::IRBuilder<>& irb, cs_ppc* pi, llvm::Value* val);
 		void crFieldRegisters(uint32_t crReg, uint32_t& ltR, uint32_t& gtR, uint32_t& eqR, uint32_t& soR);
 
 		llvm::Value* roundToSingle(llvm::IRBuilder<>& irb, llvm::Value* val);

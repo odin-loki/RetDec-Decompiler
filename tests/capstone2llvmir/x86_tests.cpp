@@ -20541,8 +20541,8 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, PUSHFQ_carries_the_AC_and_ID_flags)
 	emulate("pushfq");
 
 	uint64_t pushed = _emulator->getMemoryValue(0xf8).IntVal.getZExtValue();
-	EXPECT_EQ(1ULL, (pushed >> 21) & 1);   // ID
-	EXPECT_EQ(1ULL, (pushed >> 18) & 1);   // AC
+	EXPECT_EQ(1ULL, (pushed >> 21) & 1); // ID
+	EXPECT_EQ(1ULL, (pushed >> 18) & 1); // AC
 }
 
 } // namespace tests

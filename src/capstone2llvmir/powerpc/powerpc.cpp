@@ -431,6 +431,35 @@ llvm::Value* Capstone2LlvmIrTranslatorPowerpc_impl::loadCrX(
 	}
 }
 
+/**
+ * CR0 for a word operation whose result is ZERO-extended into the register.
+ *
+ * Power ISA: for Rc=1, "if MSR_SF = 1 then M <- 0 else M <- 32; if (RA)[M:63]
+ * < 0 then LT". In 64-bit mode the WHOLE register is compared, and rlwinm,
+ * slw, srw and the rest of that family all leave RA[0:31] zero -- so their
+ * register value can never be negative, while the 32-bit result can.
+ *
+ *   rlwinm. r0, r1, 0, 0, 15   with r1 = 0x80000000
+ *     RA = 0x0000000080000000 -> LT = 0, GT = 1
+ *     comparing the word      -> LT = 1, GT = 0
+ *
+ * Widening to the register's own type says that. EQ was right either way,
+ * which is most of why this survived: compilers know LT is always clear after
+ * rlwinm. on ppc64 and branch on beq/bne rather than blt/bgt.
+ *
+ * The SIGN-extending members of the same family -- cntlzw., divw., mulhw.,
+ * sraw. -- must NOT come through here: their word and their register value
+ * have the same sign, and zero-extending would invert it.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::storeCr0Word(llvm::IRBuilder<>& irb, cs_ppc* pi, llvm::Value* val)
+{
+	if (!pi->update_cr0)
+	{
+		return;
+	}
+	storeCr0(irb, pi, irb.CreateZExtOrTrunc(val, getDefaultType()));
+}
+
 void Capstone2LlvmIrTranslatorPowerpc_impl::storeCr0(
 		llvm::IRBuilder<>& irb,
 		cs_ppc* pi,
@@ -725,7 +754,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateClrlwi(cs_insn* i, cs_ppc* 
 		llvm::Value* n = irb.CreateAnd(irb.CreateZExtOrTrunc(op2, i32), llvm::ConstantInt::get(i32, 31));
 		llvm::Value* res = irb.CreateLShr(irb.CreateShl(w, n), n);
 		storeOp(pi->operands[0], res, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
-		storeCr0(irb, pi, res);
+		storeCr0Word(irb, pi, res);
 	}
 	else
 	{
@@ -2398,7 +2427,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateRotateWordMask(cs_insn* i, 
 	}
 
 	storeOp(pi->operands[0], res, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
-	storeCr0(irb, pi, res);
+	storeCr0Word(irb, pi, res);
 }
 
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateRotateComplex5op(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
@@ -2459,7 +2488,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateRotlw(cs_insn* i, cs_ppc* p
 	llvm::Value* res = irb.CreateSelect(irb.CreateICmpEQ(n, llvm::ConstantInt::get(i32, 0)), w, spun);
 
 	storeOp(pi->operands[0], res, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
-	storeCr0(irb, pi, res);
+	storeCr0Word(irb, pi, res);
 }
 
 /**
@@ -2483,7 +2512,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateShiftLeft(cs_insn* i, cs_pp
 	auto* safe = irb.CreateAnd(op2, llvm::ConstantInt::get(i32, 31));
 	auto* val = irb.CreateSelect(tooBig, llvm::ConstantInt::get(i32, 0), irb.CreateShl(op1, safe));
 	storeOp(pi->operands[0], val, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST); // TODO: check it all others are using correct conversion
-	storeCr0(irb, pi, val);
+	storeCr0Word(irb, pi, val);
 }
 
 /**
@@ -2507,7 +2536,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateShiftRight(cs_insn* i, cs_p
 	auto* safe = irb.CreateAnd(op2, llvm::ConstantInt::get(i32, 31));
 	auto* val = irb.CreateSelect(tooBig, llvm::ConstantInt::get(i32, 0), irb.CreateLShr(op1, safe));
 	storeOp(pi->operands[0], val, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
-	storeCr0(irb, pi, val);
+	storeCr0Word(irb, pi, val);
 }
 
 /**
@@ -2528,7 +2557,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateSlwi(cs_insn* i, cs_ppc* pi
 	llvm::Value* n = irb.CreateAnd(irb.CreateZExtOrTrunc(op2, i32), llvm::ConstantInt::get(i32, 31));
 	auto* shl = irb.CreateShl(irb.CreateZExtOrTrunc(op1, i32), n);
 	storeOp(pi->operands[0], shl, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
-	storeCr0(irb, pi, shl);
+	storeCr0Word(irb, pi, shl);
 }
 
 /**
@@ -2549,7 +2578,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateSrwi(cs_insn* i, cs_ppc* pi
 	llvm::Value* n = irb.CreateAnd(irb.CreateZExtOrTrunc(op2, i32), llvm::ConstantInt::get(i32, 31));
 	auto* shr = irb.CreateLShr(irb.CreateZExtOrTrunc(op1, i32), n);
 	storeOp(pi->operands[0], shr, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
-	storeCr0(irb, pi, shr);
+	storeCr0Word(irb, pi, shr);
 }
 
 /**

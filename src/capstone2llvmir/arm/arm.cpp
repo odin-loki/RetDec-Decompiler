@@ -537,9 +537,7 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::generateShiftRor(
 	auto* zero = llvm::ConstantInt::get(ty, 0);
 	auto* maskC = llvm::ConstantInt::get(ty, w - 1);
 
-	n = irb.CreateAnd(
-			irb.CreateZExtOrTrunc(n, ty),
-			llvm::ConstantInt::get(ty, 0xff));
+	n = irb.CreateAnd(irb.CreateZExtOrTrunc(n, ty), llvm::ConstantInt::get(ty, 0xff));
 
 	// The immediate forms are the common case and everything about them is
 	// known here. Writing that case out keeps the IR free of selects and, more
@@ -556,14 +554,12 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::generateShiftRor(
 			return val;
 		}
 		unsigned rotK = static_cast<unsigned>(k) & (w - 1);
-		llvm::Value* res = rotK == 0
-				? val
-				: llvm::cast<llvm::Value>(irb.CreateOr(
-						irb.CreateLShr(val, llvm::ConstantInt::get(ty, rotK)),
-						irb.CreateShl(val, llvm::ConstantInt::get(ty, w - rotK))));
-		auto* cv = irb.CreateTrunc(
-				irb.CreateAnd(irb.CreateLShr(res, maskC), llvm::ConstantInt::get(ty, 1)),
-				irb.getInt1Ty());
+		llvm::Value* res = rotK == 0 ? val
+									 : llvm::cast<llvm::Value>(irb.CreateOr(
+										   irb.CreateLShr(val, llvm::ConstantInt::get(ty, rotK)),
+										   irb.CreateShl(val, llvm::ConstantInt::get(ty, w - rotK))));
+		auto* cv =
+			irb.CreateTrunc(irb.CreateAnd(irb.CreateLShr(res, maskC), llvm::ConstantInt::get(ty, 1)), irb.getInt1Ty());
 		storeRegister(ARM_REG_CPSR_C, cv, irb);
 		return res;
 	}
@@ -573,15 +569,12 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::generateShiftRor(
 	// Masking the amount AND its complement keeps both shifts in range for
 	// every count, the one that rotates by nothing included.
 	auto* rot = irb.CreateAnd(n, maskC);
-	auto* sub = irb.CreateAnd(
-			irb.CreateSub(llvm::ConstantInt::get(ty, w), rot), maskC);
+	auto* sub = irb.CreateAnd(irb.CreateSub(llvm::ConstantInt::get(ty, w), rot), maskC);
 	auto* orr = irb.CreateOr(irb.CreateLShr(val, rot), irb.CreateShl(val, sub));
 
-	auto* carry = irb.CreateTrunc(
-			irb.CreateAnd(irb.CreateLShr(orr, maskC), llvm::ConstantInt::get(ty, 1)),
-			irb.getInt1Ty());
-	auto* oldC = irb.CreateZExtOrTrunc(
-			loadRegister(ARM_REG_CPSR_C, irb), irb.getInt1Ty());
+	auto* carry =
+		irb.CreateTrunc(irb.CreateAnd(irb.CreateLShr(orr, maskC), llvm::ConstantInt::get(ty, 1)), irb.getInt1Ty());
+	auto* oldC = irb.CreateZExtOrTrunc(loadRegister(ARM_REG_CPSR_C, irb), irb.getInt1Ty());
 	storeRegister(ARM_REG_CPSR_C, irb.CreateSelect(isZero, oldC, carry), irb);
 
 	// The VALUE needs no select: rotating by zero is the identity, so `orr`
@@ -1178,13 +1171,21 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadOp(
 					idxR = irb.CreateShl(idxR, lshift);
 				}
 
-				// arm.h says this is only 1 || -1 -> ignore anything != -1.
-				if (op.mem.scale == -1)
+				// The sign of a register offset is op.subtracted, NOT
+				// mem.scale. arm.h documents scale as 1 or -1, but this
+				// capstone never writes -1 for ARM: disassembling
+				// `ldr r0, [r1, -r2]` gives scale = 1 and subtracted = 1, and
+				// so does every other negated-index form. So this branch was
+				// dead and the minus sign was dropped -- `ldr r0, [r1, -r2]`
+				// loaded from r1 + r2.
+				//
+				// NOT applied to the displacement: for `ldr r0, [r1, #-4]`
+				// capstone reports disp = -4 and subtracted = 0, so the sign
+				// is already there and negating again would undo it. Both
+				// measured against the bundled capstone.
+				if (op.subtracted)
 				{
-					auto* scale = llvm::ConstantInt::getSigned(
-							idxR->getType(),
-							op.mem.scale);
-					idxR = irb.CreateMul(idxR, scale);
+					idxR = irb.CreateNeg(idxR);
 				}
 
 				// If there is a shift in memory operand, it is applied to
@@ -1346,13 +1347,21 @@ llvm::Instruction* Capstone2LlvmIrTranslatorArm_impl::storeOp(
 					idxR = irb.CreateShl(idxR, lshift);
 				}
 
-				// arm.h says this is only 1 || -1 -> ignore anything != -1.
-				if (op.mem.scale == -1)
+				// The sign of a register offset is op.subtracted, NOT
+				// mem.scale. arm.h documents scale as 1 or -1, but this
+				// capstone never writes -1 for ARM: disassembling
+				// `ldr r0, [r1, -r2]` gives scale = 1 and subtracted = 1, and
+				// so does every other negated-index form. So this branch was
+				// dead and the minus sign was dropped -- `ldr r0, [r1, -r2]`
+				// loaded from r1 + r2.
+				//
+				// NOT applied to the displacement: for `ldr r0, [r1, #-4]`
+				// capstone reports disp = -4 and subtracted = 0, so the sign
+				// is already there and negating again would undo it. Both
+				// measured against the bundled capstone.
+				if (op.subtracted)
 				{
-					auto* scale = llvm::ConstantInt::getSigned(
-							idxR->getType(),
-							op.mem.scale);
-					idxR = irb.CreateMul(idxR, scale);
+					idxR = irb.CreateNeg(idxR);
 				}
 
 				// If there is a shift in memory operand, it is applied to

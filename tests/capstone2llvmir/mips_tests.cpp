@@ -5780,6 +5780,65 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CVT_d_l)
 // MIPS_INS_CVT.W.fmt
 //
 
+// CVT.W.fmt rounds with the current rounding mode, whose default is
+// nearest-EVEN. The test below uses 3.1415, on which truncating and rounding
+// agree -- which is why a bare fptosi survived here. 2.7, 2.5 and 3.5 separate
+// them: truncation gives 2, 2 and 3.
+/// The raw bits of a float register.
+///
+/// CVT.W.fmt leaves an INTEGER in a floating-point register, and the fixture's
+/// comparison for a float register is EXPECT_NEAR(..., 0.001). The bit pattern
+/// of a small integer is a denormal -- 3 is 4.2e-45 -- so every such
+/// expectation compares equal to zero, to itself, and to every other small
+/// integer. Those assertions cannot fail. This one can.
+static uint32_t floatRegBits(float f)
+{
+	uint32_t bits = 0;
+	std::memcpy(&bits, &f, sizeof bits);
+	return bits;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CVT_W_s_rounds_to_nearest)
+{
+	SKIP_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_F2, 2.7_f32},
+	});
+
+	emulate("cvt.w.s $f0, $f2");
+
+	EXPECT_EQ(3u, floatRegBits(getRegisterValueFloat(MIPS_REG_F0)));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CVT_W_s_ties_go_to_even)
+{
+	SKIP_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_F2, 2.5_f32},
+	});
+
+	emulate("cvt.w.s $f0, $f2");
+
+	// 2.5 -> 2, not 3: ties to even. Round-half-away would give 3 here and
+	// agree with nearest-even on 3.5, so one of the two is not enough.
+	EXPECT_EQ(2u, floatRegBits(getRegisterValueFloat(MIPS_REG_F0)));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CVT_W_s_ties_go_to_even_upward)
+{
+	SKIP_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_F2, 3.5_f32},
+	});
+
+	emulate("cvt.w.s $f0, $f2");
+
+	EXPECT_EQ(4u, floatRegBits(getRegisterValueFloat(MIPS_REG_F0)));
+}
+
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CVT_W_s)
 {
 	SKIP_MODE_64;
@@ -5792,10 +5851,16 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CVT_W_s)
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_F0, 4.2039e-45_f32},
+		{MIPS_REG_F0, ANY},
 	});
+	EXPECT_EQ(3u, floatRegBits(getRegisterValueFloat(MIPS_REG_F0)));
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_NO_VALUE_CALLED();
+	// CVT.W.fmt rounds; the conversion is no longer a bare fptosi. 3.1415
+	// rounds and truncates to the same 3, which is why this test could not
+	// tell the two apart -- see MIPS_INS_CVT_W_s_ties_go_to_even.
+	EXPECT_VALUES_CALLED({
+		{_module.getFunction("llvm.roundeven.f32"), {3.1415_f32}},
+	});
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CVT_W_d)
@@ -5803,17 +5868,28 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CVT_W_d)
 	SKIP_MODE_64;
 
 	setRegisters({
-		{MIPS_REG_FD2, 3.1415_f32}, // 3.1415 -> 3 -> 0x3 -> 4.2039e-45
+		// _f64, not _f32: FD2 is a double register, and an _f32 literal put
+		// the 32-bit pattern of 3.1415 there, which reads back as the double
+		// 5.3e-315. The conversion then answered 0 -- and the expectation
+		// below could not tell, because 0 and the bits of 3 are both denormals
+		// well within the 0.001 the fixture compares floats to.
+		{MIPS_REG_FD2, 3.1415_f64},
 	});
 
 	emulate("cvt.w.d $f0, $f2");
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_FD2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_F0, 4.2039e-45_f32},
+		{MIPS_REG_F0, ANY},
 	});
+	EXPECT_EQ(3u, floatRegBits(getRegisterValueFloat(MIPS_REG_F0)));
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_NO_VALUE_CALLED();
+	// CVT.W.fmt rounds; the conversion is no longer a bare fptosi. 3.1415
+	// rounds and truncates to the same 3, which is why this test could not
+	// tell the two apart -- see MIPS_INS_CVT_W_s_ties_go_to_even.
+	EXPECT_VALUES_CALLED({
+		{_module.getFunction("llvm.roundeven.f64"), {3.1415_f64}},
+	});
 }
 
 //
