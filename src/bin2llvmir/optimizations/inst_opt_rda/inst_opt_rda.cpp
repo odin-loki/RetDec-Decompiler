@@ -40,6 +40,16 @@ bool unusedStores(llvm::Instruction* insn, ReachingDefinitionsAnalysis& RDA)
 		return false;
 	}
 
+	// ReachingDefinitionsAnalysis pairs definitions and uses by pointer and
+	// never looks at volatility, so a volatile store arrives here as an
+	// ordinary Definition. Forwarding its value would delete both the write
+	// and the matching read, and for a memory-mapped register the access is
+	// the whole point of the instruction.
+	if (!store->isSimple())
+	{
+		return false;
+	}
+
 	auto* def = RDA.getDef(store);
 	// We want to find definition in RDA.
 	// We don't want to optimize stores to temporaries like:
@@ -141,6 +151,16 @@ bool defWithUsesInTheSameBb(
 		return false;
 	}
 
+	// ReachingDefinitionsAnalysis pairs definitions and uses by pointer and
+	// never looks at volatility, so a volatile store arrives here as an
+	// ordinary Definition. Forwarding its value would delete both the write
+	// and the matching read, and for a memory-mapped register the access is
+	// the whole point of the instruction.
+	if (!store->isSimple())
+	{
+		return false;
+	}
+
 	auto* def = RDA.getDef(store);
 	if (def == nullptr)
 	{
@@ -180,8 +200,9 @@ bool defWithUsesInTheSameBb(
 		// three patterns in inst_opt_rda_ext.cpp each check this already; the
 		// two in this file did not, and predate opaque pointers, where a
 		// pointer's element type tied the two together.
-		if (use->use && store->getParent() == use->use->getParent() && llvm::isa<llvm::LoadInst>(use->use)
-			&& use->use->getType() == store->getValueOperand()->getType() && def->dominates(use))
+		auto* useLoad = use->use ? llvm::dyn_cast<llvm::LoadInst>(use->use) : nullptr;
+		if (useLoad && useLoad->isSimple() && store->getParent() == useLoad->getParent()
+			&& useLoad->getType() == store->getValueOperand()->getType() && def->dominates(use))
 		{
 			use->use->replaceAllUsesWith(store->getValueOperand());
 			if (toRemove)
@@ -210,6 +231,12 @@ bool defWithUsesInTheSameBb(
 		{
 			IrModifier::eraseUnusedInstructionRecursive(store);
 		}
+		// The store is going away, so the module is about to change. Returning
+		// false here let runOnModule report "nothing happened" after
+		// eraseUnusedInstructionsRecursive had already removed instructions,
+		// leaving the legacy PassManager's analyses believing the IR was
+		// untouched.
+		ret = true;
 	}
 
 	return ret;

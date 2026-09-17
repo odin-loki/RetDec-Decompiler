@@ -238,6 +238,67 @@ bool xorXX(llvm::Instruction* insn)
 }
 
 /**
+ * Do these two loads certainly read the same value?
+ *
+ * Same pointer is not enough. Anything between them that may write memory --
+ * a store, a call, an atomic operation, a fence -- can change what the second
+ * one sees, and a volatile or atomic load may not be duplicated or removed at
+ * all. This answers no unless both loads are plain, read the same pointer at
+ * the same type, and sit in one basic block with nothing that writes memory
+ * between them.
+ */
+bool loadsReadSameValue(llvm::LoadInst* l1, llvm::LoadInst* l2)
+{
+	if (l1 == nullptr || l2 == nullptr)
+	{
+		return false;
+	}
+	if (l1 == l2)
+	{
+		return true;
+	}
+	if (!l1->isSimple() || !l2->isSimple())
+	{
+		return false;
+	}
+	if (l1->getPointerOperand() != l2->getPointerOperand() || l1->getType() != l2->getType())
+	{
+		return false;
+	}
+	if (l1->getParent() == nullptr || l1->getParent() != l2->getParent())
+	{
+		return false;
+	}
+
+	// Program order, not argument order: the caller does not know which of the
+	// two comes first.
+	llvm::Instruction* first = l1;
+	llvm::Instruction* second = l2;
+	for (llvm::Instruction& i: *l1->getParent())
+	{
+		if (&i == l2)
+		{
+			first = l2;
+			second = l1;
+			break;
+		}
+		if (&i == l1)
+		{
+			break;
+		}
+	}
+
+	for (auto it = std::next(first->getIterator()); &*it != second; ++it)
+	{
+		if (it->mayWriteToMemory())
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+/**
  * a = load x
  * b = load x
  * c = xor a, b
@@ -257,18 +318,20 @@ bool xorLoadXX(llvm::Instruction* insn)
 	}
 	LoadInst* l1 = cast<LoadInst>(i1);
 	LoadInst* l2 = cast<LoadInst>(i2);
-	if (l1->getPointerOperand() != l2->getPointerOperand())
+	if (!loadsReadSameValue(l1, l2))
 	{
 		return false;
 	}
 
 	insn->replaceAllUsesWith(ConstantInt::get(insn->getType(), 0));
 	insn->eraseFromParent();
-	if (l1->user_empty())
+	// `xor a, a` is zero whatever a is, so the fold is sound even for one
+	// volatile load used twice -- but the load itself still has to happen.
+	if (l1->isSimple() && l1->user_empty())
 	{
 		l1->eraseFromParent();
 	}
-	if (l2 != l1 && l2->user_empty())
+	if (l2 != l1 && l2->isSimple() && l2->user_empty())
 	{
 		l2->eraseFromParent();
 	}
@@ -311,13 +374,13 @@ bool orAndXX(llvm::Instruction* insn)
  * b = load x
  * c = or a, b
  *   =>
- * c = 0
+ * c = a
  *
  * a = load x
  * b = load x
  * c = and a, b
  *   =>
- * c = 0
+ * c = a
  */
 bool orAndLoadXX(llvm::Instruction* insn)
 {
@@ -331,16 +394,14 @@ bool orAndLoadXX(llvm::Instruction* insn)
 	}
 	LoadInst* l1 = dyn_cast<LoadInst>(i1);
 	LoadInst* l2 = dyn_cast<LoadInst>(i2);
-	if (l1 == nullptr
-			|| l2 == nullptr
-			|| l1->getPointerOperand() != l2->getPointerOperand())
+	if (!loadsReadSameValue(l1, l2))
 	{
 		return false;
 	}
 
 	insn->replaceAllUsesWith(l1);
 	insn->eraseFromParent();
-	if (l2->user_empty())
+	if (l2 != l1 && l2->isSimple() && l2->user_empty())
 	{
 		l2->eraseFromParent();
 	}
@@ -379,9 +440,21 @@ bool xor_i1(llvm::Instruction* insn)
 }
 
 /**
- * a = and i1 x, y
+ * a = and i1 x, true
  *   =>
- * a = icmp eq i1 x, y
+ * a = x
+ *
+ * a = and i1 x, false
+ *   =>
+ * a = false
+ *
+ * This used to rewrite `and i1 x, y` to `icmp eq i1 x, y` for any pair of
+ * operands. Those are different functions: for x = y = 0 the AND is 0 and the
+ * comparison is 1. A one-bit AND is not a comparison and there is no two-operand
+ * icmp that spells it, so nothing is done unless one side is a constant, where
+ * the answer is the other operand or false. The test that covered this picked
+ * `and i1 %a, 1`, the single input pattern on which the old rewrite and the
+ * truth agree, so it could not have failed.
  */
 bool and_i1(llvm::Instruction* insn)
 {
@@ -394,15 +467,32 @@ bool and_i1(llvm::Instruction* insn)
 		return false;
 	}
 
-	auto* cmp = CmpInst::Create(
-			Instruction::ICmp,
-			ICmpInst::ICMP_EQ,
-			op0,
-			op1,
-			"",
-			insn);
-	cmp->takeName(insn);
-	insn->replaceAllUsesWith(cmp);
+	auto* c0 = dyn_cast<ConstantInt>(op0);
+	auto* c1 = dyn_cast<ConstantInt>(op1);
+	Value* replacement = nullptr;
+
+	if (c0 && c0->isZero())
+	{
+		replacement = c0;
+	}
+	else if (c1 && c1->isZero())
+	{
+		replacement = c1;
+	}
+	else if (c0 && c0->isOne())
+	{
+		replacement = op1;
+	}
+	else if (c1 && c1->isOne())
+	{
+		replacement = op0;
+	}
+	else
+	{
+		return false;
+	}
+
+	insn->replaceAllUsesWith(replacement);
 	insn->eraseFromParent();
 
 	return true;
@@ -431,6 +521,17 @@ bool addSequence(llvm::Instruction* insn)
 	insn->setOperand(0, val);
 	insn->setOperand(1, ConstantInt::get(insn->getType(), c1->getValue() + c2->getValue()));
 
+	// Reassociating does not preserve the wrap flags. `(x +nsw 127) +nsw 127`
+	// on i8 is defined for x = -127 -- neither step overflows -- while
+	// `x +nsw -2` for the same x does overflow, and a defined value would
+	// become poison. The flags describe the original pair of additions, so
+	// they do not survive the pair being replaced.
+	if (auto* bo = dyn_cast<BinaryOperator>(insn))
+	{
+		bo->setHasNoSignedWrap(false);
+		bo->setHasNoUnsignedWrap(false);
+	}
+
 	if (secondAdd->user_empty())
 	{
 		secondAdd->eraseFromParent();
@@ -450,6 +551,68 @@ bool addSequence(llvm::Instruction* insn)
  * E.g. i32 -> i1 -> i32 is not the same as i32 -> i32.
  * It may not be safe for pointers and floats as well, but we leave it for now.
  */
+/**
+ * How many bits of information does a value of this type carry, for the
+ * purpose of deciding whether a cast chain threw any of them away?
+ *
+ * For a pointer that is the pointer's width on this target; for a float it is
+ * the whole representation, because narrowing a double to a float loses
+ * exponent range as well as mantissa bits; for an integer it is the integer's
+ * width.
+ */
+unsigned informationBits(llvm::Type* t, const llvm::DataLayout& dl)
+{
+	if (t->isPointerTy())
+	{
+		return dl.getPointerTypeSizeInBits(t);
+	}
+	return t->getPrimitiveSizeInBits();
+}
+
+/**
+ * Does the chain of casts from `cast1` up to and including `cast2` pass every
+ * value through unharmed?
+ *
+ * A cast pair may only be collapsed if nothing between its two ends was
+ * narrower than the ends themselves. `double -> float -> double` has matching
+ * ends and is not the identity: 1.0000000000000002 comes back as 1.0. Under
+ * opaque pointers the pointer case is worse, because every `ptr` in address
+ * space 0 is the same Type*, so `ptrtoint ptr to i64 / trunc to i32 /
+ * inttoptr i32 to ptr` has ends that compare equal and a middle that threw
+ * away the top half of the address.
+ */
+bool castChainPreservesValue(llvm::CastInst* cast1, llvm::CastInst* cast2, const llvm::DataLayout& dl)
+{
+	unsigned floor = std::min(informationBits(cast1->getSrcTy(), dl), informationBits(cast2->getDestTy(), dl));
+	if (floor == 0)
+	{
+		return false; // a type we cannot size; do not guess
+	}
+
+	// Walk the operand chain from cast2 back down to cast1, looking at every
+	// intermediate type the value was forced through.
+	llvm::Value* v = cast2->getOperand(0);
+	for (unsigned steps = 0; steps < 64; ++steps)
+	{
+		auto* c = dyn_cast<CastInst>(v);
+		if (c == nullptr)
+		{
+			return false; // cast1 was never reached: not one chain
+		}
+		unsigned bits = informationBits(c->getDestTy(), dl);
+		if (bits == 0 || bits < floor)
+		{
+			return false;
+		}
+		if (c == cast1)
+		{
+			return true;
+		}
+		v = c->getOperand(0);
+	}
+	return false;
+}
+
 llvm::Value* castSequence(llvm::CastInst* cast1, llvm::CastInst* cast2)
 {
 	if (cast1 == nullptr || cast2 == nullptr
@@ -462,10 +625,24 @@ llvm::Value* castSequence(llvm::CastInst* cast1, llvm::CastInst* cast2)
 	auto* srcTy = cast1->getSrcTy();
 	auto* dstTy = cast2->getDestTy();
 
+	const llvm::DataLayout& dl = cast2->getModule()->getDataLayout();
+
 	Value* v = nullptr;
 
 	if (srcTy->isPointerTy() && dstTy->isPointerTy())
 	{
+		// An addrspacecast is a target-specific conversion, not a
+		// reinterpretation, so two pointers from different address spaces are
+		// not two ends of one chain. RetDec does produce non-zero address
+		// spaces, for x86 fs:/gs:.
+		if (srcTy->getPointerAddressSpace() != dstTy->getPointerAddressSpace())
+		{
+			return nullptr;
+		}
+		if (!castChainPreservesValue(cast1, cast2, dl))
+		{
+			return nullptr;
+		}
 		v = srcTy != dstTy
 				? CastInst::CreatePointerCast(src, dstTy, "", cast2)
 				: src;
@@ -477,6 +654,10 @@ llvm::Value* castSequence(llvm::CastInst* cast1, llvm::CastInst* cast2)
 	// float -> cast -> cast -> float
 	else if (srcTy->isFloatingPointTy() && dstTy->isFloatingPointTy())
 	{
+		if (!castChainPreservesValue(cast1, cast2, dl))
+		{
+			return nullptr;
+		}
 		v = srcTy != dstTy
 				? CastInst::CreateFPCast(src, dstTy, "", cast2)
 				: src;
@@ -549,6 +730,18 @@ bool castSequenceWrapper(llvm::Instruction* insn)
  */
 bool storeToBitcastPointer(llvm::Instruction* insn)
 {
+	// llvm_utils::createStoreInst always builds a plain store at the ABI
+	// alignment for the type. Rebuilding a volatile store that way drops the
+	// side effect, and rebuilding an under-aligned one claims an alignment the
+	// pointer does not have.
+	if (auto* si = dyn_cast<StoreInst>(insn))
+	{
+		if (!si->isSimple())
+		{
+			return false;
+		}
+	}
+
 	Value* val;
 	Value* op;
 	if (match(insn, m_Store(m_Value(val), m_BitCast(m_Value(op)))))
@@ -580,6 +773,7 @@ bool storeToBitcastPointer(llvm::Instruction* insn)
 			"",
 			insn);
 	auto* st = llvm_utils::createStoreInst(conv, op, insn);
+	st->setAlignment(cast<StoreInst>(insn)->getAlign());
 
 	auto* bitcastI = dyn_cast<BitCastInst>(insn->getOperand(1));
 	auto* bitcastCE = dyn_cast<ConstantExpr>(insn->getOperand(1));
@@ -611,6 +805,17 @@ bool storeToBitcastPointer(llvm::Instruction* insn)
  */
 bool loadFromBitcastPointer(llvm::Instruction* insn)
 {
+	// Same reason as storeToBitcastPointer: createLoadInst builds a plain
+	// load, so a volatile or atomic read would come back as one the optimiser
+	// is free to delete, duplicate or reorder.
+	if (auto* li = dyn_cast<LoadInst>(insn))
+	{
+		if (!li->isSimple())
+		{
+			return false;
+		}
+	}
+
 	Value* op;
 	if (match(insn, m_Load(m_BitCast(m_Value(op)))))
 	{

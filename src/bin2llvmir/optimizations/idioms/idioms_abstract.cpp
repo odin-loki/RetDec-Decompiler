@@ -58,6 +58,33 @@ void IdiomsAbstract::eraseInstFromBasicBlock(llvm::Value * val, llvm::BasicBlock
 }
 
 /**
+ * Is a divisor recovered from an idiom safe to put in the module?
+ *
+ * No. Not unless it is at least two in magnitude.
+ *
+ * Zero is the one that matters: `sdiv i32 %x, 0` is not a poison value the
+ * optimiser has to carry around, it is immediate undefined behaviour, which
+ * licenses it to delete whatever follows. And the magic-number helpers reach
+ * zero easily. Calling divisorByMagicNumberSigned2 over magic < 4096 and
+ * shift <= 40 -- 167936 pairs -- answers 0 on 36869 of them, because the
+ * `q == 0` check inside it does not bound the value that comes out: the ceil
+ * step `++result` on a uint32_t wraps 0xFFFFFFFF to 0, and the signed helpers
+ * divide by an INT32_MIN quotient and truncate to 0.
+ *
+ * One is not undefined, but it is still wrong: no compiler emits a magic
+ * multiply to divide by one, so a divisor of one means the pattern matched
+ * something that was never a division. Same for minus one, which additionally
+ * makes `sdiv INT_MIN, -1` -- undefined behaviour again.
+ *
+ * So the recovered value has to be a divisor a compiler would actually have
+ * used a magic number for, and that starts at two.
+ */
+bool IdiomsAbstract::isUsableDivisor(int64_t divisor)
+{
+	return divisor <= -2 || divisor >= 2;
+}
+
+/**
  * Is value a power of two?
  * @param x value to be check
  * @return true if value is power of two or zero

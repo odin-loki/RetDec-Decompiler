@@ -8,6 +8,8 @@
 #ifndef RETDEC_BIN2LLVMIR_OPTIMIZATIONS_IDIOMS_IDIOMS_ABSTRACT_H
 #define RETDEC_BIN2LLVMIR_OPTIMIZATIONS_IDIOMS_IDIOMS_ABSTRACT_H
 
+#include <cstdint>
+
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Module.h>
@@ -43,6 +45,7 @@ protected:
 		const llvm::Value * val) const;
 	static void eraseInstFromBasicBlock(llvm::Value * val, llvm::BasicBlock * bb);
 	static bool isPowerOfTwo(unsigned x);
+	static bool isUsableDivisor(int64_t divisor);
 	static bool isPowerOfTwoRepresentable(const llvm::ConstantInt *cnst);
 };
 

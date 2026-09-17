@@ -1,32 +1,31 @@
 /**
-* @file src/bin2llvmir/optimizations/strength_reduction/strength_reduction.cpp
-* @brief Strength reduction pass: replace expensive ops with cheaper equivalents.
-* @copyright (c) 2024, MIT license
-*
-* Runs after the constants pass. Applies to all functions/BBs.
-*
-* Patterns (all target integer types):
-*
-*  mul x, (2^N)      →  shl x, N
-*  mul x, -(2^N)     →  neg (shl x, N)
-*  mul (2^N), x      →  shl x, N
-*
-*  udiv x, (2^N)     →  lshr x, N
-*  urem x, (2^N)     →  and x, (2^N - 1)
-*  sdiv x, 1         →  x              (canonicalised by InstCombine; belt-and-suspenders)
-*
-*  lshr (shl x, N), N  →  and x, ~((1<<N)-1)  [mask high bits]
-*  shl (lshr x, N), N  →  and x, -(1<<N)      [mask low bits, equivalent]
-*
-*  xor x, x          →  0
-*  or  x, x          →  x
-*  and x, x          →  x
-*  sub x, x          →  0
-*
-* This pass intentionally does NOT replace sdiv by power-of-2 with arithmetic
-* shift — that transformation requires rounding adjustment (SAR + correction)
-* which obscures intent more than it simplifies.
-*/
+ * @file src/bin2llvmir/optimizations/strength_reduction/strength_reduction.cpp
+ * @brief Strength reduction pass: replace expensive ops with cheaper equivalents.
+ * @copyright (c) 2024, MIT license
+ *
+ * Runs after the constants pass. Applies to all functions/BBs.
+ *
+ * Patterns (all target integer types):
+ *
+ *  mul x, (2^N)      →  shl x, N
+ *  mul x, -(2^N)     →  neg (shl x, N)
+ *  mul (2^N), x      →  shl x, N
+ *
+ *  udiv x, (2^N)     →  lshr x, N
+ *  urem x, (2^N)     →  and x, (2^N - 1)
+ *  sdiv x, 1         →  x              (canonicalised by InstCombine; belt-and-suspenders)
+ *
+ *  lshr (shl x, N), N  →  and x, ((1<<(w-N))-1)  [keep the low w-N bits]
+ *
+ *  xor x, x          →  0
+ *  or  x, x          →  x
+ *  and x, x          →  x
+ *  sub x, x          →  0
+ *
+ * This pass intentionally does NOT replace sdiv by power-of-2 with arithmetic
+ * shift — that transformation requires rounding adjustment (SAR + correction)
+ * which obscures intent more than it simplifies.
+ */
 
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Function.h>
@@ -63,13 +62,17 @@ bool StrengthReduction::runOnModule(Module& M) {
 
 //─────────────────────────────────────────────────────────────────────────────
 
+// Kept in APInt throughout. getZExtValue() asserts once a constant has more
+// than 64 active bits, and i128 is not hypothetical here -- the MIPS DSP flag
+// registers are built at that width -- so an i128 multiply would have aborted
+// an assertions build and silently skipped the reduction in a release one.
 static bool isPow2Const(Value* v, unsigned& log2out) {
     auto* ci = dyn_cast<ConstantInt>(v);
-    if (!ci || ci->isZero() || ci->isNegative()) return false;
-    uint64_t val = ci->getZExtValue();
-    if (!isPowerOf2_64(val)) return false;
-    log2out = Log2_64(val);
-    return true;
+	if (!ci) return false;
+	const APInt& a = ci->getValue();
+	if (a.isZero() || a.isNegative() || !a.isPowerOf2()) return false;
+	log2out = a.logBase2();
+	return true;
 }
 
 static Value* makeShift(IRBuilder<>& irb, Value* x, unsigned n, bool left) {
@@ -129,35 +132,42 @@ static bool reduceURem(BinaryOperator* inst) {
 }
 
 static bool reduceShiftPair(BinaryOperator* inst) {
-    // lshr (shl x, N), N  →  and x, ~((1<<N)-1)
-    if (inst->getOpcode() != Instruction::LShr) return false;
-    unsigned outerN = 0;
-    if (!isPow2Const(inst->getOperand(1), outerN)) return false;
-    // Fix: shift amount is the literal value, not power-of-2 check
-    auto* outerShift = dyn_cast<ConstantInt>(inst->getOperand(1));
-    if (!outerShift) return false;
-    uint64_t outerAmt = outerShift->getZExtValue();
+	// lshr (shl x, N), N  →  and x, lowBits(w - N)
+	if (inst->getOpcode() != Instruction::LShr) return false;
+	if (!inst->getType()->isIntegerTy()) return false;
 
-    auto* inner = dyn_cast<BinaryOperator>(inst->getOperand(0));
+	// The shift amount is a literal, not a power of two. Gating on
+	// isPow2Const here meant the reduction only ever fired for N in
+	// {1, 2, 4, 8, 16} and silently declined `lshr (shl x, 3), 3`.
+	auto* outerShift = dyn_cast<ConstantInt>(inst->getOperand(1));
+    if (!outerShift) return false;
+	const unsigned w = inst->getType()->getIntegerBitWidth();
+	if (outerShift->getValue().uge(w)) return false;
+	uint64_t outerAmt = outerShift->getValue().getZExtValue();
+	if (outerAmt == 0) return false; // nothing to mask
+
+	auto* inner = dyn_cast<BinaryOperator>(inst->getOperand(0));
     if (!inner || inner->getOpcode() != Instruction::Shl) return false;
     auto* innerShift = dyn_cast<ConstantInt>(inner->getOperand(1));
     if (!innerShift) return false;
-    if (innerShift->getZExtValue() != outerAmt) return false;
+	if (innerShift->getValue() != outerShift->getValue()) return false;
 
-	// (shl x, N) then lshr N → mask off lower N bits.
+	// Shifting left by N drops the TOP N bits of x; shifting the result back
+	// right by N refills those positions with zeros. What survives is the low
+	// w - N bits, so the mask keeps them and clears the rest.
 	//
-	// `~((1ULL << N) - 1)` has every bit above N set in SIXTY-FOUR bits, so on
-	// any narrower type the value does not fit and ConstantInt::get asserts.
-	// That is how every PowerPC binary in the ARCH-01 corpus died. Built at the
-	// instruction's own width it is exactly the high bits and nothing else.
-	const unsigned w = inst->getType()->getIntegerBitWidth();
-	if (outerAmt >= w) return false;
+	// The mask here used to be `~lowBits(N)`, which is the exact complement:
+	// it cleared the low N bits and kept the high ones. For x = 0x12345678 and
+	// N = 4 the pair computes 0x02345678 and the rewrite answered 0x12345670.
+	// The header comment documented the same inversion, so reading either one
+	// confirmed the other.
 	IRBuilder<> irb(inst);
-	Value* maskVal = ConstantInt::get(inst->getType(), ~APInt::getLowBitsSet(w, outerAmt));
+	Value* maskVal = ConstantInt::get(inst->getType(), APInt::getLowBitsSet(w, w - outerAmt));
 	Value* andVal = irb.CreateAnd(inner->getOperand(0), maskVal, "sr_mask");
 	inst->replaceAllUsesWith(andVal);
     inst->eraseFromParent();
-    return true;
+	if (inner->user_empty()) inner->eraseFromParent();
+	return true;
 }
 
 static bool reduceSelfOp(BinaryOperator* inst) {

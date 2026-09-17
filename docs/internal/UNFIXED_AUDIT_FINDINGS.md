@@ -9608,3 +9608,70 @@ apparatus underneath both:
   * `x86_fp80` excluded from the intrinsic block, so x87 answered 0.0;
   * SHIFT-01 decoding two architectures with the wrong endianness;
   * and this.
+
+## Batch AS — bin2llvmir, the layer nothing was checking (2026-09-17)
+
+`bin2llvmir` rewrites the lifted IR before it reaches the C back end. Until this
+batch it had **no gate**: `tests/bin2llvmir/CMakeLists.txt` built no tests for
+`strength_reduction`, `redundant_load_store`, `inst_opt_rda` or `inst_opt_ext`,
+and the tests it did build for `inst_opt` compared IR text rather than answers.
+`retdec-strength-reduction` and `retdec-redundant-load-store` are both in the
+shipped pass list, so both had been running on every decompilation unchecked.
+
+### Fixed in this batch
+
+| Site | What it did |
+|---|---|
+| `inst_opt.cpp` `and_i1` | `and i1 x, y` → `icmp eq i1 x, y`. Opposite answer for x = y = 0. The test that covered it chose `and i1 %a, 1`, the one input pattern where the two agree. |
+| `strength_reduction.cpp` `reduceShiftPair` | `lshr (shl x, N), N` masked `~lowBits(N)` — the exact complement of the bits that survive. The header comment documented the same inversion. Also gated on `isPow2Const` of the shift *amount*, so it only ever fired for N in {1,2,4,8,16}. |
+| `strength_reduction.cpp` `isPow2Const` | `APInt::getZExtValue()` with no width guard; asserts above 64 active bits. MIPS builds i128 registers. |
+| `inst_opt.cpp` `castSequence` | Collapsed a cast chain whenever the two ends matched, ignoring what the middle threw away. `double → float → double` is not the identity; under opaque pointers every `ptr` in address space 0 is one `Type*`, so `ptr → i64 → i32 → ptr` collapsed too. |
+| `inst_opt.cpp` `addSequence` | Reassociated two adds while keeping `nsw`/`nuw`. `(x +nsw 127) +nsw 127` on i8 is defined for x = −127; `x +nsw −2` is poison. |
+| `inst_opt.cpp` `xorLoadXX` / `orAndLoadXX` | Folded two loads of one pointer with no check for an intervening write. |
+| `inst_opt.cpp` store/load-from-bitcast | Rebuilt the access through `llvm_utils::create{Load,Store}Inst`, which hardcodes non-volatile and recomputes alignment, so a volatile access lost its side effect and an under-aligned one gained an alignment it does not have. |
+| `redundant_load_store.cpp` | Four separate holes: volatile and atomic treated as ordinary; dead-store elimination keyed on the pointer alone, so a narrow store killed a wider one; a store invalidated only its own key although the file's header promised full invalidation; a read-only call did not make the preceding store observable. |
+| `inst_opt_rda.cpp` | Forwarded through, and deleted, volatile stores and loads; and reported "unchanged" while queuing a store for deletion. |
+| `inst_opt_rda_ext.cpp` | `dyn_cast<StoreInst>(def->src)` can never succeed — `Definition::src` is the store's *pointer operand*, documented as such in the header — so two patterns were unconditionally false. `doubleLoadElimination` RAUW'd across branch arms with a dominance check on the wrong pair of instructions. All three are currently unregistered, so this is a fix to code that does not run. |
+| `idioms_magicdivmod.cpp` (13 sites) | Every recovered divisor went straight into `CreateUDiv`/`CreateSDiv`/`CreateSRem` with no check. Measured with the real helpers: `divisorByMagicNumberSigned2` answers 0 on 36,869 of the 167,936 (magic, shift) pairs with magic < 4096 and shift ≤ 40. The documented `q == 0` guards do not bound the return value — the ceil step `++result` on a `uint32_t` wraps `0xFFFFFFFF` to 0. Eight of the thirteen erased their operands *before* computing the divisor, so they could not decline. |
+| `idioms_magicdivmod.cpp` `unsignedMod` | Rewrote `x - x/k` to `x % k`. Those are different numbers: for x = 10, k = 2 the subtraction is 5 and the remainder is 0. The idiom needs the multiply back out. |
+| `idioms_common.cpp` `exchangeUnsignedModulo2n` | The power-of-two test narrowed to `unsigned` while the modulus was built at the constant's own width, so an i8 mask of `0xFF` passed the test and produced `urem i8 x, 0`. Reachable from `and al, 0FFh`. |
+| `idioms_common.cpp` `exchangeSignedModulo2n` | `m_And` does not commute; the hand-written second spelling bound a different variable and left `op_add` null, which the next line passed to `match` — a `dyn_cast` on null. Also no guard on a zero modulus, with the erases first. |
+
+### Still open
+
+- **`idioms_gcc.cpp` `exchangeCondBitShiftDiv1`** rebinds `cnst` three times and
+  at the divisor line it holds the *add* constant `N−1`, not the shift amount,
+  yet uses it as the exponent of `pow(2, ·)`. Correct only when `N = 2`. Not
+  fixed here because establishing what the idiom is meant to match needs a gcc
+  corpus this container cannot cross-compile.
+- **`idioms_common.cpp` `exchangeBitShiftSDiv1`** binds `op_var2` from the
+  `lshr` and never compares it to `op_var1`, so `(x s>> 31 & mask) | (y u>> k)`
+  is rewritten to `x / 2^k` for unrelated x and y. Same reason.
+- **`idioms_gcc.cpp:220,261`** convert a negative `double` to `uint64_t`, which
+  is undefined in C++. It happens to give the intended bit pattern on x86-64.
+- **Unbounded shift amounts** are read straight out of the IR and handed to the
+  `divisorByMagicNumber*` helpers, where `APInt::lshrInPlace` asserts above the
+  bit width. Guarded indirectly by the new divisor check (an out-of-range shift
+  yields 0, which is now refused) but not bounded at the source.
+- **`inst_opt.cpp` `optimize`** builds two `std::string`s and calls `getenv`
+  once per pattern per instruction — 22 `getenv` calls per instruction — for
+  trace output that is off by default.
+- **`isNonEscapingAlloca`** in `redundant_load_store.cpp` returns a constant
+  `false` on both paths. Harmless (it makes call invalidation fully
+  conservative) but the name promises an analysis that is not there.
+
+### What the new instrument cannot see
+
+`OPT-01` evaluates before and after with LLVM's constant folder. That folder
+ignores `nsw`/`nuw` and returns the wrapped value rather than poison, so the
+`addSequence` flag defect is **not** caught by it — it is caught by shape, in
+the gtest suite. The evaluator also refuses anything past one basic block, and
+models memory as one value per location rather than bytes, so a partial
+overwrite cannot be expressed there either.
+
+One blind spot was found by falsification rather than by reasoning: the
+evaluator originally keyed memory on the pointer `Value*`, which is the same
+assumption that makes `redundant_load_store` wrong, so reverting that fix left
+it reporting no mismatch. It now compares locations after `stripPointerCasts`.
+That is the seventh time in this audit that the apparatus, not the code and not
+the test, was what hid a defect.

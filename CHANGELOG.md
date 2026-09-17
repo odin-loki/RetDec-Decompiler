@@ -23,6 +23,36 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   requires exactly one mismatch back, because a comparison that cannot report a
   difference proves nothing.
 
+- `OPT-01` (`scripts/ci/check_bin2llvmir_opts.sh`,
+  `scripts/ci/inst_opt_semantics_check.cpp`): a semantic differ for the
+  bin2llvmir rewrites. bin2llvmir is the layer that rewrites the lifted IR and
+  it had **no gate of any kind**; `tests/bin2llvmir/CMakeLists.txt` built no
+  tests for `strength_reduction`, `redundant_load_store`, `inst_opt_rda` or
+  `inst_opt_ext`, and the tests it did build for `inst_opt` compared IR text.
+
+  Comparing text answers "did the rewrite produce the instruction I wrote
+  down". It does not answer "do the two programs compute the same number", and
+  that gap was holding real miscompiles. The differ takes the module before a
+  rewrite and after it, evaluates **both** over a domain of inputs, and requires
+  the same answer every time; the evaluator is LLVM's own constant folder, which
+  knows nothing about RetDec and cannot be talked into agreeing. 36 cases over
+  810 input points, with a self-test that replaces each rewrite's answer with
+  its complement and requires every case to be reported.
+
+  The file states plainly what the instrument cannot see — poison (the folder
+  ignores `nsw`/`nuw`), control flow past one basic block, and partial
+  overwrites — so that a pass here is not read as more than it is. One blind
+  spot was found by falsification rather than by reasoning: the evaluator
+  originally keyed memory on the pointer `Value*`, which is the same assumption
+  that makes `redundant_load_store` wrong, so it agreed with the defect. It now
+  compares locations after `stripPointerCasts`.
+
+- Tests for two passes in the shipped pipeline that had none:
+  `tests/bin2llvmir/optimizations/strength_reduction/` and
+  `tests/bin2llvmir/optimizations/redundant_load_store/`. Both passes are listed
+  in `src/retdec-decompiler/decompiler-config.json`, so both have been running
+  on every decompilation with nothing checking them.
+
 - `SHIFT-01` and `DIV-01` (`scripts/ci/shift_poison_check.cpp`, run inside
   `C2L-01`): static checks that the translators emit no shift whose amount can
   reach the operand's width, and no division whose divisor can be zero.

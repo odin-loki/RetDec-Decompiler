@@ -227,10 +227,20 @@ Instruction * IdiomsCommon::exchangeUnsignedModulo2n(BasicBlock::iterator iter) 
 	ConstantInt *cnst = nullptr;
 
 	// X & (k - 1) --> X % k iff k is power of 2
-	if (match(&val, m_And(m_Value(op0), m_ConstantInt(cnst)))
-			&& isPowerOfTwo(*cnst->getValue().getRawData() + 1)) {
-		Constant *NewCst = ConstantInt::get(op0->getType(), cnst->getValue() + 1);
-		return BinaryOperator::CreateURem(op0, NewCst);
+	//
+	// The "+ 1" has to happen at the constant's own width, and so does the
+	// power-of-two test. isPowerOfTwo takes an `unsigned`, so for an i8 mask of
+	// 0xFF it was asked about 0x100 -- a power of two -- while the modulus
+	// actually built was `APInt(8, 0xFF) + 1`, which is 0. That is `urem i8 x,
+	// 0`: undefined behaviour, from nothing more exotic than `and al, 0FFh`.
+	if (match(&val, m_And(m_Value(op0), m_ConstantInt(cnst))))
+	{
+		llvm::APInt k = cnst->getValue() + 1;
+		if (k.isPowerOf2())
+		{
+			Constant* NewCst = ConstantInt::get(op0->getType(), k);
+			return BinaryOperator::CreateURem(op0, NewCst);
+		}
 	}
 
 	return nullptr;
@@ -324,9 +334,12 @@ Instruction * IdiomsCommon::exchangeSignedModulo2n(BasicBlock::iterator iter) co
 	}
 
 	// left hand side of sub
-	if (! match(op_and, m_And(m_Value(op_add), m_ConstantInt(op_n)))
-			&& ! match(op_and, m_And(m_ConstantInt(op_n), m_Value(op_lshr1))))
-		return nullptr;
+	//
+	// m_And does not commute, which is why a second spelling was written out.
+	// It bound op_lshr1 and left op_add null, and the very next line matches
+	// against op_add -- dyn_cast on a null Value. m_c_And is the commuting
+	// matcher and binds the same two operands either way round.
+	if (!match(op_and, m_c_And(m_Value(op_add), m_ConstantInt(op_n)))) return nullptr;
 
 	if (! match(op_add, m_Add(m_Value(op_lshr1), m_Value(op_x_tmp))))
 		return nullptr;
@@ -348,6 +361,14 @@ Instruction * IdiomsCommon::exchangeSignedModulo2n(BasicBlock::iterator iter) co
 	if (op_x_tmp != op_x)
 		return nullptr;
 
+	// The modulus is the mask plus one, computed at the value's own width. An
+	// all-ones mask makes that zero, and `srem x, 0` is undefined behaviour,
+	// so it has to be checked before anything is erased -- once
+	// eraseInstFromBasicBlock has run the operands are undef and there is no
+	// way to decline the rewrite.
+	llvm::APInt modulus = op_n->getValue().zextOrTrunc(op_x->getType()->getIntegerBitWidth()) + 1;
+	if (!isUsableDivisor(modulus.getSExtValue())) return nullptr;
+
 	// now exchange the idiom
 	eraseInstFromBasicBlock(op_and, val.getParent());
 	eraseInstFromBasicBlock(op_ashr, val.getParent());
@@ -356,7 +377,7 @@ Instruction * IdiomsCommon::exchangeSignedModulo2n(BasicBlock::iterator iter) co
 	eraseInstFromBasicBlock(op_lshr1, val.getParent());
 	eraseInstFromBasicBlock(op_ashr1, val.getParent());
 
-	Constant *NewCst = ConstantInt::get(op_x->getType(), *op_n->getValue().getRawData() + 1);
+	Constant* NewCst = ConstantInt::get(op_x->getType(), modulus);
 	return BinaryOperator::CreateSRem(op_x, NewCst);
 }
 

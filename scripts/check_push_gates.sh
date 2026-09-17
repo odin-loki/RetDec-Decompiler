@@ -109,6 +109,12 @@ CHECKS=(
 	"standalone arity tables vs headers:::${PY} scripts/ci/check_libc_arity.py --check"
 	"standalone opencl library and kernels:::bash scripts/ci/check_opencl_tests.sh --self-test"
 	"standalone capstone2llvmir (5 architectures):::bash scripts/ci/check_capstone2llvmir_tests.sh --self-test"
+	# OPT-01. bin2llvmir had no gate of any kind: the layer that rewrites the
+	# lifted IR was checked only by IR-text comparisons for one of its passes.
+	# This evaluates each rewrite before and after over a domain of inputs and
+	# requires the same answer, which is the question the text comparison was
+	# never asking.
+	"standalone bin2llvmir rewrites (semantics):::bash scripts/ci/check_bin2llvmir_opts.sh --self-test"
 	# Runs after the entry above so that the capstone 5.0.9 it needs is already
 	# built. COV-01 itself wants a cross-compiled corpus and minutes, so what
 	# runs here is its self-test -- which is more than ran before, since

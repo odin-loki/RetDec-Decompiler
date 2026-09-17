@@ -4,6 +4,7 @@ add_executable(tests-bin2llvmir
 	optimizations/asm_inst_remover/asm_inst_remover_tests.cpp
 	optimizations/decoder/decoder_linking_section_names_tests.cpp
 	optimizations/entry_alloca/entry_alloca_tests.cpp
+	optimizations/idioms/idioms_magicdivmod_tests.cpp
 	optimizations/idioms_libgcc/idioms_libgcc_tests.cpp
 	optimizations/jump_table_recovery/jump_table_recovery_tests.cpp
 	optimizations/inst_opt/inst_opt_pass_tests.cpp
@@ -11,8 +12,10 @@ add_executable(tests-bin2llvmir
 	optimizations/param_return/param_return_tests.cpp
 	optimizations/phi_remover/phi_remover_tests.cpp
 	optimizations/phi_to_select/phi_to_select_tests.cpp
+	optimizations/redundant_load_store/redundant_load_store_tests.cpp
 	optimizations/simple_types/simple_types_tests.cpp
 	optimizations/stack_pointer_ops/stack_pointer_ops_tests.cpp
+	optimizations/strength_reduction/strength_reduction_tests.cpp
 	optimizations/unreachable_funcs/unreachable_funcs_tests.cpp
 	optimizations/value_protect/value_protect_test.cpp
 	optimizations/writer_dsm/writer_dsm_tests.cpp

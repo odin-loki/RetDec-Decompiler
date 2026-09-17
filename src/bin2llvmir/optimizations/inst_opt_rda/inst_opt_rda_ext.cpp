@@ -68,12 +68,17 @@ bool constantFoldingThroughLoads(
     if (defs.size() != 1) return false;
 
     auto* def = *defs.begin();
-    if (!def || !def->src) return false;
+	if (!def) return false;
 
-    auto* store = dyn_cast<StoreInst>(def->src);
-    if (!store) return false;
+	// Definition::src is the store's POINTER operand (see the field comment in
+	// analyses/reaching_definitions.h), so dyn_cast<StoreInst> on it never
+	// succeeded and this pattern could only ever return false. The store is
+	// Definition::def, which is what defWithUsesInTheSameBb reads.
+	auto* store = dyn_cast_or_null<StoreInst>(def->def);
+	if (!store) return false;
+	if (!store->isSimple() || !load->isSimple()) return false;
 
-    // The stored value must be a constant.
+	// The stored value must be a constant.
     auto* constVal = dyn_cast<Constant>(store->getValueOperand());
     if (!constVal) return false;
 
@@ -127,14 +132,19 @@ bool doubleLoadElimination(
         if (otherDefs.size() != 1) continue;
         if (*otherDefs.begin() != def) continue;
 
-        // otherLoad and load have the same single definition. Replace the
-        // later one with the earlier one. We identify "later" by instruction
-        // order: the one that appears later in the function replaces itself.
-        // Simple check: if otherLoad comes AFTER load in the same function,
-        // replace otherLoad. (Cross-BB: we use RDA dominance.)
-        if (!def->dominates(otherUse)) continue;
+		// otherLoad is about to be replaced by load, so load has to reach it.
+		// def->dominates(otherUse) says the STORE dominates otherLoad, which
+		// says nothing about where the two loads sit relative to each other:
+		// for two loads in the arms of an if, both are dominated by a store in
+		// the entry block and neither dominates the other, and the rewrite
+		// produced a use before its definition. Requiring one block and
+		// program order is the check this needs and costs no analysis.
+		if (!def->dominates(otherUse)) continue;
+		if (load->getParent() != otherLoad->getParent()) continue;
+		if (!load->comesBefore(otherLoad)) continue;
+		if (!load->isSimple() || !otherLoad->isSimple()) continue;
 
-        // Replace otherLoad with the result of load (the first one).
+		// Replace otherLoad with the result of load (the first one).
         otherLoad->replaceAllUsesWith(load);
         if (toRemove) {
             toRemove->insert(otherLoad);
@@ -167,10 +177,11 @@ bool crossBbStorePropagation(
     if (defs.size() != 1) return false;
 
     auto* def = *defs.begin();
-    if (!def || !def->src) return false;
+	if (!def) return false;
 
-    auto* store = dyn_cast<StoreInst>(def->src);
-    if (!store) return false;
+	// Same reason as pattern 4: the store is Definition::def, not ::src.
+	auto* store = dyn_cast_or_null<StoreInst>(def->def);
+	if (!store) return false;
 
     // Same BB case already handled upstream — skip.
     if (store->getParent() == load->getParent()) return false;
