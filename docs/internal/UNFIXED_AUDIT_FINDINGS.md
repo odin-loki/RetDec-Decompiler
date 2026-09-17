@@ -8767,3 +8767,45 @@ There was no test for any of it: the only two `ldr` tests with a register
 index use `[x1, x2]` with no extender at all.
 
 C2L-01 floor: ARM64 560 → 562. 5,707 tests.
+
+## Batch AL — the PowerPC `w` instructions were computed at register width
+
+PowerPC's 64-bit mode is live: `capstone2llvmir.cpp` dispatches `CS_MODE_64`
+to `createPpc64()`, `powerpc_init.cpp` makes the GPRs `i64`, and the gtest
+suite instantiates both modes. The instructions whose names end in `w` work on
+the low **word** of their operands whatever the register width, and five of
+them were not narrowing:
+
+```
+cntlzw r0, r1      r1 = 1                   31 on the hardware, 63 here
+mullw  r0, r1, r2  r1 = 0x1_00000002, r2=3   6 on the hardware, 0x3_00000006
+mulhw  r0, r1, r2  r1 = 0x1_00000002, r2=2   0 on the hardware, 2 here
+divw   r0, r1, r2  r1 = 0x1_00000000, r2=1   0 on the hardware, 0x1_00000000
+srawi  r0, r1, 4   r1 = 0xffffffff          -1 on the hardware, 0x0fffffff…
+```
+
+Two of them are worth naming individually.
+
+`cntlzw` instantiated `llvm.ctlz` on **the operand's** type, so on PPC64 it
+counted the thirty-two zero bits above the word as well.
+
+`mulhw` did `CreateSExtOrTrunc(op, i64)` — which is a **no-op** when the
+operand is already i64. It reads like a widening and is one in 32-bit mode; in
+64-bit mode it left a 64×64 multiply with bits 63:32 taken.
+
+`sraw`'s whole body is a hand-unrolled 32-bit rotate — its constants are 31
+and 32 — applied to whatever width arrived.
+
+All five are inert in 32-bit mode, which is where every test for them that is
+not `ALL_MODES` lives. `PPC_INS_CNTLZW_non_zero_32` is explicitly
+`ONLY_MODE_32`; the two `ALL_MODES` cntlzw tests use `r1 = 0xffffffffffffffff`,
+which answers 0 either way.
+
+MIPS solves this centrally: `isWordOperation()` names the twenty-three
+instructions that need it and `narrowToWord()` applies it. PowerPC had no
+equivalent — the narrowing was written by hand into the rotate and shift
+family (`translateRotlw`, `translateSlwi`, `translateShiftLeft` and four more)
+and into nothing else. This batch adds a `narrowToWord()` and uses it, which
+is the same shape MIPS already had.
+
+C2L-01 floor: PowerPC 938 → 948. 5,717 tests.

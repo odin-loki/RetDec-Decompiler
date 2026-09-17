@@ -795,11 +795,35 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateCmp(cs_insn* i, cs_ppc* pi,
 /**
  * PPC_INS_CNTLZW
  */
+/**
+ * The `w` instructions -- cntlzw, mullw, mulhw, divw, sraw and their
+ * relatives -- work on the low WORD of their operands whatever the register
+ * width. On PPC64, which createPpc64() enables and the gtest suite
+ * instantiates, the operands arrive as i64 and each of these was computing at
+ * register width:
+ *
+ *   cntlzw r0, r1      r1 = 1                  31 on the hardware, 63 here
+ *   mullw  r0, r1, r2  r1 = 0x1_00000002, r2=3  6 on the hardware, 0x3_00000006
+ *   mulhw  r0, r1, r2  r1 = 0x1_00000002, r2=2  0 on the hardware, 2 here
+ *   divw   r0, r1, r2  r1 = 0x1_00000000, r2=1  0 on the hardware, 0x1_00000000
+ *
+ * All of them are inert in 32-bit mode, which is where every test for them
+ * that is not ALL_MODES lives.
+ *
+ * MIPS solves this centrally with isWordOperation() and narrowToWord(). On
+ * PowerPC the narrowing had been applied by hand to the rotate and shift
+ * family and to nothing else.
+ */
+llvm::Value* Capstone2LlvmIrTranslatorPowerpc_impl::narrowToWord(llvm::Value* v, llvm::IRBuilder<>& irb)
+{
+	return irb.CreateZExtOrTrunc(v, irb.getInt32Ty());
+}
+
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateCntlzw(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY(i, pi, irb);
 
-	op1 = loadOpBinaryOp1(pi, irb);
+	op1 = narrowToWord(loadOpBinaryOp1(pi, irb), irb);
 	auto* f = llvm::Intrinsic::getOrInsertDeclaration(
 			_module,
 			llvm::Intrinsic::ctlz,
@@ -817,6 +841,8 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateDivw(cs_insn* i, cs_ppc* pi
 	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb);
+	op1 = narrowToWord(op1, irb);
+	op2 = narrowToWord(op2, irb);
 	auto* val = i->id == PPC_INS_DIVW
 			? irb.CreateSDiv(op1, op2)
 			: irb.CreateUDiv(op1, op2);
@@ -2085,15 +2111,20 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateMulhw(cs_insn* i, cs_ppc* p
 	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb);
+	// Narrow to the word FIRST. SExtOrTrunc to i64 is a no-op when the
+	// operand is already i64, so on PPC64 this was a 64x64 multiply with
+	// bits 63:32 taken.
+	op1 = narrowToWord(op1, irb);
+	op2 = narrowToWord(op2, irb);
 	if (i->id == PPC_INS_MULHW)
 	{
-		op1 = irb.CreateSExtOrTrunc(op1, irb.getInt64Ty());
-		op2 = irb.CreateSExtOrTrunc(op2, irb.getInt64Ty());
+		op1 = irb.CreateSExt(op1, irb.getInt64Ty());
+		op2 = irb.CreateSExt(op2, irb.getInt64Ty());
 	}
 	else if (i->id == PPC_INS_MULHWU)
 	{
-		op1 = irb.CreateZExtOrTrunc(op1, irb.getInt64Ty());
-		op2 = irb.CreateZExtOrTrunc(op2, irb.getInt64Ty());
+		op1 = irb.CreateZExt(op1, irb.getInt64Ty());
+		op2 = irb.CreateZExt(op2, irb.getInt64Ty());
 	}
 	auto* val = irb.CreateMul(op1, op2);
 	val = irb.CreateLShr(val, 32);
@@ -2110,7 +2141,10 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateMullw(cs_insn* i, cs_ppc* p
 	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
-	auto* val = irb.CreateMul(op1, op2);
+	// The 64-bit product of the low WORDS. In 32-bit mode storeOp truncates
+	// it back, which is that mode's answer.
+	auto* i64 = irb.getInt64Ty();
+	auto* val = irb.CreateMul(irb.CreateSExt(narrowToWord(op1, irb), i64), irb.CreateSExt(narrowToWord(op2, irb), i64));
 	storeOp(pi->operands[0], val, irb);
 	storeCr0(irb, pi, val);
 }
@@ -2523,6 +2557,10 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateSraw(cs_insn* i, cs_ppc* pi
 	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb);
+	// Everything below is a hand-unrolled 32-bit rotate -- the constants 31
+	// and 32 say so -- applied to whatever width the operands arrived at.
+	op1 = narrowToWord(op1, irb);
+	op2 = narrowToWord(op2, irb);
 
 	auto* andV = irb.CreateAnd(op2, llvm::ConstantInt::get(op2->getType(), 31));
 	auto* u2 = irb.CreateSub(llvm::ConstantInt::get(op2->getType(), 0), op2);

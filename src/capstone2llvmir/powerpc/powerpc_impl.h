@@ -140,6 +140,7 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		void translateB(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateClrlwi(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateCmp(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		llvm::Value* narrowToWord(llvm::Value* v, llvm::IRBuilder<>& irb);
 		void translateCntlzw(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateCrModifTernary(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateCrNotMove(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);

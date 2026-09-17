@@ -2296,6 +2296,91 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_RLWNM_by_zero_is_the_sourc
 // docs/internal/UNFIXED_AUDIT_FINDINGS.md, Batch AH.
 //
 
+//
+// The `w` instructions work on the low WORD whatever the register width.
+// These are ONLY_MODE_64 because that is the mode they were wrong in; the
+// 32-bit answers were always right. See Batch AL.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CNTLZW_counts_within_the_word)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x0000000000000001},
+	});
+
+	emulate("cntlzw 0, 1");
+
+	// 31 leading zeros within the word. Instantiating llvm.ctlz on the i64
+	// register counted the 32 zero bits above the word as well and said 63.
+	EXPECT_EQ(31, getRegisterValueUnsigned(PPC_REG_R0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MULLW_multiplies_the_low_words)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x0000000100000002},
+		{PPC_REG_R2, 0x0000000000000003},
+	});
+
+	emulate("mullw 0, 1, 2");
+
+	// The 64-bit product of the low words: 2 * 3. The register-width multiply
+	// answered 0x0000000300000006.
+	EXPECT_EQ(6, getRegisterValueUnsigned(PPC_REG_R0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MULHW_takes_the_high_word_of_the_word_product)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x0000000100000002},
+		{PPC_REG_R2, 0x0000000000000002},
+	});
+
+	emulate("mulhw 0, 1, 2");
+
+	// 2 * 2 is 4, whose high word is 0. SExtOrTrunc to i64 is a no-op when
+	// the operand is already i64, so this was a 64x64 multiply and answered 2.
+	EXPECT_EQ(0, getRegisterValueUnsigned(PPC_REG_R0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_DIVW_divides_the_low_words)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x0000000100000000},
+		{PPC_REG_R2, 0x0000000000000001},
+	});
+
+	emulate("divw 0, 1, 2");
+
+	// The low word of r1 is zero, so the quotient is zero. Dividing at
+	// register width answered 0x0000000100000000.
+	EXPECT_EQ(0, getRegisterValueUnsigned(PPC_REG_R0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_SRAWI_shifts_within_the_word)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x00000000ffffffff},
+	});
+
+	emulate("srawi 0, 1, 4");
+
+	// The word is -1, so an arithmetic shift leaves it -1 and the register
+	// takes the sign extension. The body is a hand-unrolled 32-bit rotate --
+	// its constants are 31 and 32 -- and it was being applied to an i64.
+	EXPECT_EQ(0xffffffffffffffffULL, getRegisterValueUnsigned(PPC_REG_R0));
+}
+
 TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_SLW_count_past_the_width_is_zero)
 {
 	ALL_MODES;
