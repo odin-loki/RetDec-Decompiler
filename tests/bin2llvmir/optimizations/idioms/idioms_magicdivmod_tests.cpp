@@ -243,6 +243,250 @@ TEST_F(IdiomsMagicDivModTests, aGenuinePowerOfTwoMaskIsStillAModulo)
 	EXPECT_TRUE(found) << "and x, 15 was not recognised as x % 16";
 }
 
+//
+// exchangeCondBitShiftDiv1: the divisor is 2^(ashr amount), not 2^(addend)
+//
+// One `cnst` was reused for the ashr amount, the icmp constant and the add
+// constant, so by the time the divisor was built it held the addend N-1 and
+// pow(2, N-1) was emitted. For N = 8 that is 128, not 8.
+//
+
+TEST_F(IdiomsMagicDivModTests, condBitShiftDivRecoversTheShiftNotTheAddend)
+{
+	parseInput(R"(
+		define i32 @fnc(i32 %x) {
+			%cmp = icmp slt i32 %x, 0
+			%add = add i32 %x, 7
+			%sel = select i1 %cmp, i32 %add, i32 %x
+			%div = ashr i32 %sel, 3
+			ret i32 %div
+		}
+	)");
+
+	runIdioms(CC_GCC);
+
+	bool found = false;
+	for (auto& bb: *module->getFunction("fnc"))
+	{
+		for (auto& i: bb)
+		{
+			if (i.getOpcode() != Instruction::SDiv)
+			{
+				continue;
+			}
+			auto* c = dyn_cast<ConstantInt>(i.getOperand(1));
+			EXPECT_FALSE(c && c->equalsInt(128)) << "the divisor was built from the addend, 2^(N-1)";
+			if (c && c->equalsInt(8))
+			{
+				found = true;
+			}
+		}
+	}
+	EXPECT_TRUE(found) << "the divide by 8 was not recovered";
+}
+
+// The three X bindings have to be one value.
+TEST_F(IdiomsMagicDivModTests, condBitShiftDivNeedsOneVariableThroughout)
+{
+	parseInput(R"(
+		define i32 @fnc(i32 %a, i32 %b, i32 %c) {
+			%cmp = icmp slt i32 %a, 0
+			%add = add i32 %b, 7
+			%sel = select i1 %cmp, i32 %add, i32 %c
+			%div = ashr i32 %sel, 3
+			ret i32 %div
+		}
+	)");
+
+	runIdioms(CC_GCC);
+
+	for (auto& bb: *module->getFunction("fnc"))
+	{
+		for (auto& i: bb)
+		{
+			EXPECT_NE(Instruction::SDiv, i.getOpcode()) << "three unrelated values were treated as one";
+		}
+	}
+}
+
+//
+// exchangeIntegerAbs: the subtrahend must be the arithmetic shift
+//
+
+TEST_F(IdiomsMagicDivModTests, integerAbsNeedsTheShiftAsTheSubtrahend)
+{
+	parseInput(R"(
+		define i32 @fnc(i32 %x, i32 %y) {
+			%sx = ashr i32 %x, 31
+			%xo = xor i32 %x, %sx
+			%r = sub i32 %xo, %y
+			ret i32 %r
+		}
+	)");
+
+	runIdioms();
+
+	for (auto& bb: *module->getFunction("fnc"))
+	{
+		for (auto& i: bb)
+		{
+			EXPECT_FALSE(isa<SelectInst>(&i)) << "(x ^ (x s>> 31)) - y became abs(x) for an unrelated y";
+		}
+	}
+}
+
+TEST_F(IdiomsMagicDivModTests, integerAbsIsStillRecognised)
+{
+	parseInput(R"(
+		define i32 @fnc(i32 %x) {
+			%sx = ashr i32 %x, 31
+			%xo = xor i32 %x, %sx
+			%r = sub i32 %xo, %sx
+			ret i32 %r
+		}
+	)");
+
+	runIdioms();
+
+	bool found = false;
+	for (auto& bb: *module->getFunction("fnc"))
+	{
+		for (auto& i: bb)
+		{
+			if (isa<SelectInst>(&i))
+			{
+				found = true;
+			}
+		}
+	}
+	EXPECT_TRUE(found) << "abs(x) was not recovered";
+}
+
+//
+// exchangeBitShiftSDiv1: the reassembly is an arithmetic shift, not a division
+//
+// `((x s>> 31) & mask) | (x u>> k)` equals `ashr x, k`. A signed division
+// truncates toward zero where the shift floors, so for x = -5 and k = 1 they
+// are -2 and -3.
+//
+
+TEST_F(IdiomsMagicDivModTests, theReassembledShiftIsAShift)
+{
+	parseInput(R"(
+		define i32 @fnc(i32 %x) {
+			%sx = ashr i32 %x, 31
+			%an = and i32 %sx, -1073741824
+			%ls = lshr i32 %x, 2
+			%r = or i32 %an, %ls
+			ret i32 %r
+		}
+	)");
+
+	runIdioms();
+
+	bool sdiv = false;
+	bool ashr = false;
+	for (auto& bb: *module->getFunction("fnc"))
+	{
+		for (auto& i: bb)
+		{
+			if (i.getOpcode() == Instruction::SDiv)
+			{
+				sdiv = true;
+			}
+			auto* c = i.getNumOperands() > 1 ? dyn_cast<ConstantInt>(i.getOperand(1)) : nullptr;
+			if (i.getOpcode() == Instruction::AShr && c && c->equalsInt(2))
+			{
+				ashr = true;
+			}
+		}
+	}
+	EXPECT_FALSE(sdiv) << "an arithmetic shift was rendered as a division";
+	EXPECT_TRUE(ashr) << "the reassembly was not simplified to a shift";
+}
+
+TEST_F(IdiomsMagicDivModTests, theReassembledShiftNeedsOneVariable)
+{
+	parseInput(R"(
+		define i32 @fnc(i32 %a, i32 %b) {
+			%sa = ashr i32 %a, 31
+			%an = and i32 %sa, -1073741824
+			%ls = lshr i32 %b, 2
+			%r = or i32 %an, %ls
+			ret i32 %r
+		}
+	)");
+
+	runIdioms();
+
+	// The input already contains `ashr %a, 31`; what must not appear is a
+	// shift by the lshr's amount, or a division.
+	for (auto& bb: *module->getFunction("fnc"))
+	{
+		for (auto& i: bb)
+		{
+			EXPECT_NE(Instruction::SDiv, i.getOpcode());
+			auto* c = i.getNumOperands() > 1 ? dyn_cast<ConstantInt>(i.getOperand(1)) : nullptr;
+			EXPECT_FALSE(i.getOpcode() == Instruction::AShr && c && c->equalsInt(2))
+				<< "two unrelated values were treated as one";
+		}
+	}
+}
+
+//
+// exchangeGreaterEqualZero: the sign bit, at the value's own width
+//
+
+TEST_F(IdiomsMagicDivModTests, aSignMaskTestAtSixtyFourBits)
+{
+	parseInput(R"(
+		define i1 @fnc(i64 %x) {
+			%a = and i64 %x, 2147483648
+			%c = icmp eq i64 %a, 0
+			ret i1 %c
+		}
+	)");
+
+	runIdioms(CC_LLVM);
+
+	for (auto& bb: *module->getFunction("fnc"))
+	{
+		for (auto& i: bb)
+		{
+			auto* cmp = dyn_cast<ICmpInst>(&i);
+			EXPECT_FALSE(cmp && cmp->getPredicate() == ICmpInst::ICMP_SGT)
+				<< "bit 31 of an i64 was treated as the sign bit";
+		}
+	}
+}
+
+TEST_F(IdiomsMagicDivModTests, aSignMaskTestAtThirtyTwoBitsStillFires)
+{
+	parseInput(R"(
+		define i1 @fnc(i32 %x) {
+			%a = and i32 %x, -2147483648
+			%c = icmp eq i32 %a, 0
+			ret i1 %c
+		}
+	)");
+
+	runIdioms(CC_LLVM);
+
+	bool found = false;
+	for (auto& bb: *module->getFunction("fnc"))
+	{
+		for (auto& i: bb)
+		{
+			auto* cmp = dyn_cast<ICmpInst>(&i);
+			if (cmp && cmp->getPredicate() == ICmpInst::ICMP_SGT)
+			{
+				found = true;
+			}
+		}
+	}
+	EXPECT_TRUE(found) << "(x & signbit) == 0 was not recognised as x > -1";
+}
+
 } // namespace tests
 } // namespace bin2llvmir
 } // namespace retdec

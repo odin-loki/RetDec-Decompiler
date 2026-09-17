@@ -9783,11 +9783,33 @@ arithmetic ones were additionally run.
 ### Still open
 
 - **`stack.cpp:263-277`** mints a fresh `.typed` alloca whenever the requested
-  type differs from the slot's, and never registers it, so a store and a load
-  of one stack slot at one type get two unaliased allocas and the load reads
-  undef. The fix needs a `(Function*, offset, Type*)` cache and a decision
-  about `IrModifier::convertValueToType`; both change what the stack pass
-  produces for every binary, and there is no corpus here to measure that on.
+  type differs from the slot's, and registers it with nothing, so a store and a
+  load of one stack slot at one non-matching type get two unaliased allocas and
+  the load reads undef.
+
+  A `(Function*, offset, Type*)` cache was written and then **withdrawn**,
+  because the branch could not be reached from a constructed module and a fix
+  that cannot be demonstrated is not one this tree should carry. What the
+  attempt established, which is the useful part for whoever picks this up:
+
+  `handleInstruction` needs two things at once that appear to exclude each
+  other. Its stack-pointer test (`isStackPointerRegister(n->value)`) is true
+  only when the SP **global** survives as a node in the symbolic tree, which
+  happens only while the SP load is unresolved; and the branch below it needs
+  `root.value` to be a `ConstantInt`, which requires the SP load to have been
+  resolved, at which point the global is gone and the function has already
+  returned at "no SP". Only `isVal2ValMapUsed()` being true skips the SP test,
+  and the map is empty at the first stack access in a function.
+
+  Either there is an input shape that satisfies both -- in which case a test is
+  possible and this should be fixed -- or the typed-alloca branch is
+  unreachable in practice, in which case it should be deleted rather than
+  repaired. Deciding that needs a real lifted binary, which this container
+  cannot produce for this pass.
+
+  Note also `isStackPointerRegister(n->value)` is asked about the node's value;
+  `getBaseOffset` in the same file asks `isRegister(l->getPointerOperand())`
+  for the same purpose, which is the form that works on a load node.
 - **`phi_to_select.cpp:130-139`**: the availability check is
   `I->getParent()->getParent() == merge->getParent()`, which compares the
   instruction's *function* with the block's *function* and is therefore always
@@ -9814,3 +9836,20 @@ arithmetic ones were additionally run.
   parameters and returns.
 - **`global_const_prop`** ignores endianness, and is registered in no pipeline
   profile, so none of its defects is reachable today.
+
+### The falsification harness swallowed its own no-ops
+
+Two falsification runs in Batch AU came back green, which would have meant the
+fix they reverted was not doing anything. Both were wrong. The revert scripts
+matched a source line by exact text, `check_format --fix` had reflowed those
+lines onto one line each, and the match silently found nothing -- so the "run
+without the fix" was a run *with* the fix. The Python edits raised on a missing
+match; the shell pipeline around them did not check, and the compile step piped
+its output through `head -3` with no status check, so a failed rebuild left a
+stale object behind and looked like a pass.
+
+The harness now uses `set -eu` and checks that the edit landed before running.
+That is the fourth time in this audit that the apparatus, rather than the code
+or the test, produced the wrong answer -- and the first where the wrong answer
+was "your fix is unnecessary", which is the direction that gets a real fix
+thrown away.
