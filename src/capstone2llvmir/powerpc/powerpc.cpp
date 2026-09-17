@@ -2141,6 +2141,26 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateMullw(cs_insn* i, cs_ppc* p
 	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+
+	// MULLI is NOT a word operation and must not be narrowed. Both ids are
+	// dispatched here and the body named neither, so mullw's semantics were
+	// applied to both:
+	//
+	//   mullw RT,RA,RB   RT <- (RA)[32:63] x (RB)[32:63]   -- low words
+	//   mulli RT,RA,SI   prod[0:127] <- (RA) x EXTS(SI); RT <- prod[64:127]
+	//
+	// There is no "mulliw". With RA = 0x0000000100000002 and SI = 3, PowerPC
+	// gives 0x0000000300000006 and narrowing gave 6. Inert on PPC32, where
+	// the narrowing is a no-op; capstone maps both MULLI and MULLI8 to this
+	// id, so the 64-bit form arrives here with i64 operands.
+	if (i->id == PPC_INS_MULLI)
+	{
+		auto* prod = irb.CreateMul(op1, op2);
+		storeOp(pi->operands[0], prod, irb);
+		storeCr0(irb, pi, prod);
+		return;
+	}
+
 	// The 64-bit product of the low WORDS. In 32-bit mode storeOp truncates
 	// it back, which is that mode's answer.
 	auto* i64 = irb.getInt64Ty();

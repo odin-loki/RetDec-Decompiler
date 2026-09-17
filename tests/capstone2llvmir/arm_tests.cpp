@@ -5522,6 +5522,74 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ROR_imm)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+// A register count of zero leaves BOTH the value and the carry alone. The
+// only register-form test used a count of 5 -- in range and non-zero -- so
+// neither the missing eight-bit mask nor the unconditional carry write could
+// show. r2's bit 31 is 0, so a wrongly-written carry is observably different
+// from the preserved 1.
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ROR_reg_zero_count_preserves_carry)
+{
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R2, 0x12345678},
+		{ARM_REG_R3, 0x0},
+		{ARM_REG_CPSR_C, true},
+	});
+
+	emulate("ror r0, r2, r3");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x12345678},
+		{ARM_REG_CPSR_C, true},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// A count of 32 is NOT a count of zero: it rotates by nothing and still writes
+// the carry, from bit 31 of the result. Unmasked, this emitted `lshr i32 %v,
+// 32` -- poison.
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ROR_reg_count_32_rotates_by_nothing)
+{
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R2, 0x12345678},
+		{ARM_REG_R3, 32},
+		{ARM_REG_CPSR_C, true},
+	});
+
+	emulate("ror r0, r2, r3");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x12345678},
+		{ARM_REG_CPSR_C, false},   // bit 31 of 0x12345678
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The count is the low EIGHT bits of the register, so 0x105 rotates by 5.
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ROR_reg_count_is_eight_bits)
+{
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R2, 0x400},
+		{ARM_REG_R3, 0x105},
+	});
+
+	emulate("ror r0, r2, r3");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x20},
+		{ARM_REG_CPSR_C, false},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ROR_reg)
 {
 	SKIP_MODE_THUMB;
@@ -5533,7 +5601,12 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ROR_reg)
 
 	emulate("ror r0, r2, r3");
 
-	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R2, ARM_REG_R3});
+	// CPSR_C is LOADED as well as stored, for the same reason the LSL, LSR and
+	// ASR register forms load it: a rotate by zero must leave the carry
+	// exactly as it was, and a flag cannot be left alone without being read.
+	// ROR was left out of that change and kept writing the carry
+	// unconditionally. The immediate forms still do not read it.
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R2, ARM_REG_R3, ARM_REG_CPSR_C});
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM_REG_R0, 0x20},
 		{ARM_REG_CPSR_C, false},

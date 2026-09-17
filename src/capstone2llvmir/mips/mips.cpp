@@ -1887,8 +1887,24 @@ void Capstone2LlvmIrTranslatorMips_impl::translateLui(cs_insn* i, cs_mips* mi, l
 	EXPECT_IS_BINARY(i, mi, irb);
 
 	op1 = loadOp(mi->operands[1], irb);
-	op1 = irb.CreateZExt(op1, getDefaultType());
-	op1 = irb.CreateShl(op1, llvm::ConstantInt::get(op1->getType(), 16));
+	// The doc comment above is right and the code implemented only half of
+	// it. MIPS64 LUI is `GPR[rt] <- sign_extend(immediate || 0^16)`: the
+	// 32-bit result is SIGN-extended into the 64-bit register.
+	//
+	// The CreateZExt here was not a widening at all -- loadOp materialises a
+	// MIPS immediate at getDefaultType() already, which is i64 in MIPS64, so
+	// the cast was a no-op on equal types and the shift then produced
+	// 0x00000000_abcd0000 where the architecture produces 0xffffffff_abcd0000.
+	// storeOp's SEXT_TRUNC_OR_BITCAST default could not rescue it either,
+	// because by then the value was already the parent's width.
+	//
+	// Computing at i32 and letting that default do the widening is the same
+	// shape the rest of the word family uses. The standard n64 constant idiom
+	// `lui $2,0xffff; ori $2,$2,0x1234` was giving 0x00000000ffff1234.
+	auto* i32 = irb.getInt32Ty();
+	op1 = irb.CreateShl(
+			irb.CreateZExtOrTrunc(op1, i32),
+			llvm::ConstantInt::get(i32, 16));
 	storeOp(mi->operands[0], op1, irb);
 }
 

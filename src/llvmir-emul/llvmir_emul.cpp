@@ -3240,6 +3240,36 @@ void LlvmIrEmulator::visitCallInst(llvm::CallInst& I)
 			return;
 		}
 
+		// The integer min/max intrinsics. These reach the interpreter because
+		// the translators use llvm.umin to state a shift amount's bound in the
+		// value itself rather than in a branch above it -- which is the only
+		// form SHIFT-01's range analysis can read.
+		//
+		// They MUST be handled here. IntrinsicLowering does not know them, and
+		// what it does with an intrinsic it does not know is
+		// report_fatal_error: "Code generator does not support intrinsic
+		// function 'llvm.umin.i8'", which takes the whole process with it. The
+		// first translator to emit one aborted the entire test binary, with no
+		// failing test named -- the same shape as llvm.fma, noted below.
+		if (id == Intrinsic::umin || id == Intrinsic::umax
+				|| id == Intrinsic::smin || id == Intrinsic::smax)
+		{
+			GenericValue a = _globalEc.getOperandValue(I.getArgOperand(0), ec);
+			GenericValue b = _globalEc.getOperandValue(I.getArgOperand(1), ec);
+			bool takeA = false;
+			switch (id)
+			{
+				case Intrinsic::umin: takeA = a.IntVal.ult(b.IntVal); break;
+				case Intrinsic::umax: takeA = a.IntVal.ugt(b.IntVal); break;
+				case Intrinsic::smin: takeA = a.IntVal.slt(b.IntVal); break;
+				default:              takeA = a.IntVal.sgt(b.IntVal); break;
+			}
+			GenericValue dest;
+			dest.IntVal = takeA ? a.IntVal : b.IntVal;
+			_globalEc.setValue(&I, dest);
+			return;
+		}
+
 		// The floating-point intrinsics. None of them survives the path
 		// below. IntrinsicLowering turns most into libcalls -- sqrt, floor,
 		// … -- which this interpreter cannot resolve, so it produced 0; for
@@ -3267,8 +3297,23 @@ void LlvmIrEmulator::visitCallInst(llvm::CallInst& I)
 		// `select` meeting one to turn it into an assertion on the operand
 		// sizes. Until then every packed conversion this interpreter ran was
 		// reading nothing and answering with it.
+		// x86_fp80 belongs here too. This interpreter represents an fp80
+		// value in GenericValue::DoubleVal everywhere else -- executeFAddInst
+		// and its siblings fall the X86_FP80TyID case straight through to the
+		// Double one, and executeFPTruncInst reads Src.DoubleVal for an fp80
+		// source -- so excluding it from this block was not a representation
+		// limit, it was an oversight.
+		//
+		// The cost was that EVERY x87 intrinsic fell through to
+		// LowerIntrinsicCall, which rewrites llvm.round.f80 into a call to
+		// roundl that this interpreter cannot execute. So the x87 tests could
+		// asserts only that the call APPEARED, with the register value left
+		// as ANY -- and a translator that rounded the wrong way, or scaled by
+		// the wrong power, was indistinguishable from one that did not.
+		// FRNDINT using ties-away-from-zero and FSCALE rounding where it
+		// should truncate both lived behind this.
 		llvm::Type* elemTy = I.getType()->getScalarType();
-		if (elemTy->isFloatTy() || elemTy->isDoubleTy())
+		if (elemTy->isFloatTy() || elemTy->isDoubleTy() || elemTy->isX86_FP80Ty())
 		{
 			bool handled = true;
 			bool isF32 = elemTy->isFloatTy();
@@ -3306,6 +3351,11 @@ void LlvmIrEmulator::visitCallInst(llvm::CallInst& I)
 				case Intrinsic::minnum: r = std::fmin(arg(0), arg(1)); break;
 				case Intrinsic::maxnum: r = std::fmax(arg(0), arg(1)); break;
 				case Intrinsic::fma: r = std::fma(arg(0), arg(1), arg(2)); break;
+				// FSCALE is the only instruction that asks for this, and
+				// without it FSCALE stays untestable by value even once fp80
+				// is handled above: the exp2 would still be lowered to an
+				// exp2l this interpreter cannot call.
+				case Intrinsic::exp2: r = std::exp2(arg(0)); break;
 				default: handled = false; break;
 				}
 				results[lane] = r;

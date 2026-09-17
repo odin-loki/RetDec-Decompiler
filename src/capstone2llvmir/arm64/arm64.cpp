@@ -641,17 +641,24 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::generateShiftRor(
 		llvm::Value *n,
 		bool updateFlags)
 {
-	unsigned op0BitW = llvm::cast<llvm::IntegerType>(n->getType())->getBitWidth();
+	// ROR(operand, amount MOD datasize). Masking the amount AND its complement
+	// keeps both shifts in range for every amount, including the one that
+	// rotates by nothing -- where the unmasked complement was the full width
+	// and `shl i32 %v, 32` is poison. This helper is reached both from
+	// translateShifts (RORV) and from generateOperandShift, where the amount
+	// is whatever the program put in the register.
+	auto* ty = llvm::cast<llvm::IntegerType>(val->getType());
+	unsigned op0BitW = ty->getBitWidth();
+	auto* maskC = llvm::ConstantInt::get(ty, op0BitW - 1);
 
-	auto* srl = irb.CreateLShr(val, n);
-	auto* sub = irb.CreateSub(llvm::ConstantInt::get(n->getType(), op0BitW), n);
-	auto* shl = irb.CreateShl(val, sub);
-	auto* orr = irb.CreateOr(srl, shl);
+	n = irb.CreateAnd(irb.CreateZExtOrTrunc(n, ty), maskC);
+	auto* sub = irb.CreateAnd(
+			irb.CreateSub(llvm::ConstantInt::get(ty, op0BitW), n), maskC);
+	auto* orr = irb.CreateOr(irb.CreateLShr(val, n), irb.CreateShl(val, sub));
 	if (updateFlags)
 	{
-
-		auto* cfSrl = irb.CreateLShr(orr, llvm::ConstantInt::get(orr->getType(), op0BitW - 1));
-		auto* cfIcmp = irb.CreateICmpNE(cfSrl, llvm::ConstantInt::get(cfSrl->getType(), 0));
+		auto* cfSrl = irb.CreateLShr(orr, maskC);
+		auto* cfIcmp = irb.CreateICmpNE(cfSrl, llvm::ConstantInt::get(ty, 0));
 		storeRegister(ARM64_REG_CPSR_C, cfIcmp, irb);
 	}
 
@@ -3495,6 +3502,22 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateShifts(cs_insn* i, cs_arm64* 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(ai, irb);
 	op2 = irb.CreateZExtOrTrunc(op2, op1->getType());
 
+	// LSLV, LSRV, ASRV and RORV shift by the amount MOD the register width --
+	// "shift_amount = UInt(operand2) MOD datasize" in every one of the four.
+	// Without the mask, `lslv w0, w1, w2` emitted `shl i32 %v, %n` with n
+	// unconstrained, which LLVM calls poison for any n of 32 or more. The
+	// value the emulator produced happened to match, because it reduces
+	// modulo the width too -- so this was invisible from that side and is why
+	// it sat open. Masking says the rule instead of relying on the agreement.
+	//
+	// The register forms are the only ones that reach here with a non-constant
+	// amount; the immediate forms are bounded by their encoding.
+	{
+		auto* ty = llvm::cast<llvm::IntegerType>(op1->getType());
+		op2 = irb.CreateAnd(
+				op2, llvm::ConstantInt::get(ty, ty->getBitWidth() - 1));
+	}
+
 	llvm::Value* val = nullptr;
 	switch(i->id)
 	{
@@ -3684,7 +3707,19 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateClz(cs_insn* i, cs_arm64* ai,
 	    llvm::Intrinsic::ctlz,
 	    op1->getType());
 
-	auto* val = irb.CreateCall(f, {op1, irb.getTrue()});
+	// is_zero_poison = FALSE. ARM64 DEFINES the zero case: `clz x1, x2` with
+	// x2 = 0 answers 64, and the W form answers 32. llvm.ctlz with the flag
+	// set says the result is poison there instead -- and, worse for a
+	// decompiler, licenses the optimiser to infer that the operand is
+	// non-zero and delete the zero test around it. The x86 side of this tree
+	// already made the same call for LZCNT and TZCNT, with a comment saying
+	// the defined zero case is exactly why.
+	//
+	// The two tests that cover this (ARM64_INS_CLZ_r_r, ARM64_INS_CLZ32_r_r)
+	// pass a zero operand and assert 0x40 and 0x20 -- the right answers --
+	// and passed either way, because the emulator's ctlz ignores the second
+	// argument. A test that asserts the correct value and cannot fail.
+	auto* val = irb.CreateCall(f, {op1, irb.getFalse()});
 	storeOp(ai->operands[0], val, irb);
 }
 

@@ -1149,7 +1149,10 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SLTI_false_eq)
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LUI)
 {
-	ALL_MODES;
+	// SKIP_MODE_64 now: this test ran in MIPS64 too and asserted the 32-bit
+	// answer there, which pinned the defect. 0xabcd has bit 15 set, so the
+	// MIPS64 answer is 0xffffffffabcd0000 -- see MIPS_INS_LUI_64_sign_extends.
+	SKIP_MODE_64;
 
 	setRegisters({
 		{MIPS_REG_1, 0x12345678},
@@ -1160,6 +1163,46 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LUI)
 	EXPECT_NO_REGISTERS_LOADED();
 	EXPECT_JUST_REGISTERS_STORED({
 		{MIPS_REG_1, 0xabcd0000},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// MIPS64 LUI sign-extends the 32-bit result into the register. The standard
+// n64 constant idiom depends on it: `lui $2,0xffff; ori $2,$2,0x1234` is
+// 0xffffffffffff1234 on the machine.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LUI_64_sign_extends)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_1, 0x12345678},
+	});
+
+	emulate("lui $1, 0xabcd");
+
+	EXPECT_NO_REGISTERS_LOADED();
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_1, 0xffffffffabcd0000},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// A positive immediate must NOT acquire high bits.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LUI_64_positive_stays_positive)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_1, 0x12345678},
+	});
+
+	emulate("lui $1, 0x7abc");
+
+	EXPECT_NO_REGISTERS_LOADED();
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_1, 0x7abc0000},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();

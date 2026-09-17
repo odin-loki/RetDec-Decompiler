@@ -49,9 +49,13 @@ static const struct { const char* name; const char* bytes; } ENC[] = {
 	{"ror32",  "d3 c8"},       {"rcl32",  "d3 d0"},
 	{"rcr32",  "d3 d8"},
 	{"shl8",   "d2 e0"},       {"shr8",   "d2 e8"},
+	{"sar8",   "d2 f8"},
 	{"rol8",   "d2 c0"},       {"ror8",   "d2 c8"},
-	{"shl16",  "66 d3 e0"},    {"sar16",  "66 d3 f8"},
-	{"rol16",  "66 d3 c0"},
+	{"rcl8",   "d2 d0"},       {"rcr8",   "d2 d8"},
+	{"shl16",  "66 d3 e0"},    {"shr16",  "66 d3 e8"},
+	{"sar16",  "66 d3 f8"},
+	{"rol16",  "66 d3 c0"},    {"ror16",  "66 d3 c8"},
+	{"rcl16",  "66 d3 d0"},    {"rcr16",  "66 d3 d8"},
 };
 
 static std::vector<uint8_t> hexBytes(const char* s)

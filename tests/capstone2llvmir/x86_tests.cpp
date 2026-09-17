@@ -13089,12 +13089,16 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_FSQRT)
 	emulate("fsqrt");
 
 	EXPECT_JUST_REGISTERS_LOADED({X87_REG_TOP, X86_REG_ST1});
+	// Was ANY against a call to sqrtl: the emulator could not evaluate an
+	// fp80 intrinsic, so every x87 intrinsic was lowered to a libc name it
+	// could not call and the result was never checked. It can now, so this
+	// asserts the number.
 	EXPECT_JUST_REGISTERS_STORED({
-		{X86_REG_ST1, ANY},
+		{X86_REG_ST1, 3.1622776601683795},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_VALUES_CALLED({
-		{_module.getFunction("sqrtl"), {10.0}},
+		{_module.getFunction("llvm.sqrt.f80"), {10.0}},
 	});
 }
 
@@ -13116,13 +13120,16 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_FSCALE)
 	emulate("fscale");
 
 	EXPECT_JUST_REGISTERS_LOADED({X87_REG_TOP, X86_REG_ST0, X86_REG_ST1});
+	// FSCALE truncates ST(1): 10.0 * 2^trunc(4.4) = 10.0 * 16 = 160.0. The
+	// old expectation named roundl, which is round-to-nearest and would have
+	// given 10.0 * 2^4 here by luck and 10.0 * 2^5 for an ST(1) of 4.6.
 	EXPECT_JUST_REGISTERS_STORED({
-		{X86_REG_ST0, ANY},
+		{X86_REG_ST0, 160.0},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_VALUES_CALLED({
-		{_module.getFunction("roundl"), {4.4}},
-		{_module.getFunction("exp2l"), {ANY}},
+		{_module.getFunction("llvm.trunc.f80"), {4.4}},
+		{_module.getFunction("llvm.exp2.f80"), {4.0}},
 	});
 }
 
@@ -13335,12 +13342,15 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_F2XM1_compute)
 	emulate("f2xm1");
 
 	EXPECT_JUST_REGISTERS_LOADED({X87_REG_TOP, X86_REG_ST1});
+	// F2XM1 is 2^x - 1. This asserted only that SOMETHING called exp2 with
+	// 16.0 -- which is 2^(x-1), the wrong formula -- and left the result as
+	// ANY, so the defect was invisible from both ends.
 	EXPECT_JUST_REGISTERS_STORED({
-		{X86_REG_ST1, ANY},
+		{X86_REG_ST1, 131071.0},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_VALUES_CALLED({
-		{_module.getFunction("exp2l"), {16.0}},
+		{_module.getFunction("llvm.exp2.f80"), {17.0}},
 	});
 }
 
@@ -13660,11 +13670,11 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_FRNDINT)
 
 	EXPECT_JUST_REGISTERS_LOADED({X87_REG_TOP, X86_REG_ST3});
 	EXPECT_JUST_REGISTERS_STORED({
-		{X86_REG_ST3, ANY},
+		{X86_REG_ST3, 10.0},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_VALUES_CALLED({
-		{_module.getFunction("roundl"), {10.123}}, // not llvm.round.f80
+		{_module.getFunction("llvm.roundeven.f80"), {10.123}},
 	});
 }
 
@@ -20349,6 +20359,190 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, SBB_all_ones_from_all_ones_with_a_carr
 		{X86_REG_AF, true},
 	});
 	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// Batch AM. Each of these reads a register or a flag the existing test for the
+// same instruction did not read, which is the whole reason the defect lived.
+//
+
+// The existing X86_INS_MOVSX_sign asserts on ECX, and the harness truncates a
+// sub-register read to its own width, so no MOVSX test could ever see what the
+// store did to the other half of the parent. Measured on hardware:
+// RCX = 0x00000000_ffffff00.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, MOVSX_does_not_sign_past_the_destination)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RCX, 0x1111111111111111},
+		{X86_REG_AX, 0xff00},
+	});
+
+	emulate("movsx ecx, ax");
+
+	// A 32-bit write zeroes 63:32 whatever produced the value. The sign stops
+	// at the end of ECX; it does not run on into RCX.
+	EXPECT_EQ(0x00000000ffffff00ULL, getRegisterValueUnsigned(X86_REG_RCX));
+}
+
+// The 8-to-16 case goes through storeRegister's read-modify-write merge, where
+// the OR had no mask on the converted value, so an all-ones sext set every bit
+// of the parent. Measured: RAX = 0x11223344_5566_ffff.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, MOVSX_into_a_16_bit_destination_keeps_the_parent)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RAX, 0x1122334455667788},
+		{X86_REG_BL, 0xff},
+	});
+
+	emulate("movsx ax, bl");
+
+	EXPECT_EQ(0x112233445566ffffULL, getRegisterValueUnsigned(X86_REG_RAX));
+}
+
+// RepMovsAttachesPointeeMetadata checks the metadata and not the registers, so
+// the source pointer being overwritten with the destination pointer was
+// invisible. Measured: both advance by the count, each from its own base.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, REP_MOVSB_advances_each_pointer_from_its_own_base)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RSI, 0x1000},
+		{X86_REG_RDI, 0x2000},
+		{X86_REG_RCX, 16},
+		{X86_REG_DF, false},
+	});
+
+	emulate("rep movsb");
+
+	EXPECT_EQ(0x1010ULL, getRegisterValueUnsigned(X86_REG_RSI));
+	EXPECT_EQ(0x2010ULL, getRegisterValueUnsigned(X86_REG_RDI));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_RCX));
+}
+
+// VMOVAPS was dispatched to the legacy-SSE move, which leaves the upper half
+// alone. A VEX 128-bit write zeroes it -- measured, ymm1[255:128] comes back 0.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VMOVAPS_128_zeroes_the_upper_half)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x1111111111111111ULL, 0x2222222222222222ULL);
+	setXmm(X86_REG_YMM1_HI, 0xAAAAAAAAAAAAAAAAULL, 0xAAAAAAAAAAAAAAAAULL);
+	setXmm(X86_REG_XMM3, 0x3333333333333333ULL, 0x4444444444444444ULL);
+
+	emulate("vmovaps xmm1, xmm3");
+
+	EXPECT_EQ(0x4444444444444444ULL, xmmLow(X86_REG_XMM1));
+	EXPECT_EQ(0x3333333333333333ULL, xmmHigh(X86_REG_XMM1));
+	EXPECT_EQ(0ULL, xmmLow(X86_REG_YMM1_HI));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_YMM1_HI));
+}
+
+// Both the oracle and the gtests exercised only the XMM form, and the YMM read
+// was silently truncated to 128 bits on the way in. Measured: 0xff, not 0x0f.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VMOVMSKPS_on_a_YMM_source_answers_eight_bits)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x8000000080000000ULL, 0x8000000080000000ULL);
+	setXmm(X86_REG_YMM0_HI, 0x8000000080000000ULL, 0x8000000080000000ULL);
+
+	emulate("vmovmskps eax, ymm0");
+
+	EXPECT_EQ(0xffULL, getRegisterValueUnsigned(X86_REG_EAX));
+}
+
+// A count of at least the operand width is masked to five bits and then run in
+// full: the destination empties. Measured `shl al, cl` with cl = 20 -> 0x00.
+// Nothing in the suite, and nothing the oracle drew, used such a count at 8 or
+// 16 bits -- the oracle declined to draw them on a wrong reading of the manual.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, SHL_by_more_than_the_byte_width_empties_it)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_AL, 0x12},
+		{X86_REG_CL, 20},
+	});
+
+	emulate("shl al, cl");
+
+	EXPECT_EQ(0x0ULL, getRegisterValueUnsigned(X86_REG_AL));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, SAR_by_more_than_the_word_width_is_all_sign)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_AX, 0x8000},
+		{X86_REG_CL, 20},
+	});
+
+	emulate("sar ax, cl");
+
+	EXPECT_EQ(0xffffULL, getRegisterValueUnsigned(X86_REG_AX));
+}
+
+// A rotate by the width is the identity ON THE VALUE and still writes CF,
+// because the SDM guards the flag on the MASKED count and the rotation on the
+// reduced one. Measured: AL stays 0x5a, CF goes from 1 to 0.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, ROL_by_the_byte_width_still_writes_CF)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_AL, 0x5a},
+		{X86_REG_CL, 8},
+		{X86_REG_CF, true},
+	});
+
+	emulate("rol al, cl");
+
+	EXPECT_EQ(0x5aULL, getRegisterValueUnsigned(X86_REG_AL));
+	EXPECT_EQ(false, getRegisterValueUnsigned(X86_REG_CF));
+}
+
+// RCL is the other way round: the carry is a ninth bit of the rotated value,
+// so a count of 9 on a byte really is a no-op, CF included. Measured.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, RCL_by_nine_on_a_byte_is_the_identity)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_AL, 0x5a},
+		{X86_REG_CL, 9},
+		{X86_REG_CF, true},
+	});
+
+	emulate("rcl al, cl");
+
+	EXPECT_EQ(0x5aULL, getRegisterValueUnsigned(X86_REG_AL));
+	EXPECT_EQ(true, getRegisterValueUnsigned(X86_REG_CF));
+}
+
+// translatePushEflags tested for POPFD/POPFQ, which are never dispatched to it,
+// so AC and ID were writable by POPFD and never readable again. This is the
+// CPUID probe, which concluded "unsupported" on every binary.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PUSHFQ_carries_the_AC_and_ID_flags)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RSP, 0x100},
+		{X86_REG_ID, true},
+		{X86_REG_AC, true},
+	});
+
+	emulate("pushfq");
+
+	uint64_t pushed = _emulator->getMemoryValue(0xf8).IntVal.getZExtValue();
+	EXPECT_EQ(1ULL, (pushed >> 21) & 1);   // ID
+	EXPECT_EQ(1ULL, (pushed >> 18) & 1);   // AC
 }
 
 } // namespace tests

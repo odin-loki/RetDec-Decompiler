@@ -8809,3 +8809,387 @@ and into nothing else. This batch adds a `narrowToWord()` and uses it, which
 is the same shape MIPS already had.
 
 C2L-01 floor: PowerPC 938 → 948. 5,717 tests.
+
+## Batch AM -- x86: eleven defects, every one measured on the host
+
+The container is x86-64, so none of this batch rests on a reading of the
+manual. Each fix below names the instruction sequence that was run on the
+hardware and the answer it gave.
+
+Six of the eleven came from a systematic sweep of the x86 translator for five
+defect shapes (sub-register write width; shift count not provably below the
+operand width; one dispatch key covering more than one operation; sign versus
+zero extension; float-to-integer without a range guard). The other five came
+from an audit of the emulator, which is the instrument the rest of the suite
+depends on.
+
+### AM-1  MOVSX sign-extended past its destination into the parent register
+
+`storeRegister` converted the value to the PARENT register's width before
+deciding how to write it, so `SEXT_TRUNC_OR_BITCAST` ran the sign to bit 63.
+Two failures, both measured:
+
+  movsx ecx, ax    AX = 0xff00           RCX = 0x00000000_ffffff00
+                                         was  0xffffffff_ffffff00
+  movsx ax, bl     RAX = 0x1122334455667788, BL = 0xff
+                                         RAX = 0x11223344_5566_ffff
+                                         was  0xffffffff_ffffffff
+
+The second is the worse one: the 8- and 16-bit path is a read-modify-write
+whose `OR` had no mask on the converted value, so an all-ones sign extension
+set every bit of the parent.
+
+Why it survived: the two MOVSX tests read ECX, and the harness's
+`getRegisterValueUnsigned` truncates a sub-register read to that register's own
+width. No MOVSX test could observe the parent. The fix masks the converted
+value to the destination's width, which is a no-op for every zero-extending
+caller -- that is, for every other caller in the file.
+
+### AM-2  `rep movs` stored EDI's final value into ESI
+
+One `add` was computed and stored to both pointers. Measured: after `rep movsb`
+with ECX = 16, each pointer advances 16 from its OWN base. `rep movsb` is the
+inlined memcpy in current glibc. The non-REP path in the same function always
+computed the two separately. The existing test checked only metadata.
+
+### AM-3  VMOVAPS/VMOVAPD were dispatched to the legacy-SSE move
+
+A VEX write zeroes everything above what it writes; a legacy SSE write does
+not. Measured: `vmovaps xmm1, xmm3` leaves ymm1[255:128] zero. These two ids
+pointed at `translateSseMovWhole` while their unaligned twins VMOVUPS/VMOVUPD
+pointed at `translateAvxMov` -- whose own doc comment already listed VMOVAPS
+and VMOVAPD among the instructions it handles. Only the table disagreed.
+
+### AM-4  A YMM write did not zero bits 511:256
+
+`storeWideVectorRegister` wrote the XMM and YMM_HI globals and left ZMM_HI
+alone. Measured: `vmovaps ymm0, ymm1` zeroes zmm0[511:256]. Nothing but a VEX
+or EVEX instruction can write a YMM register in this model, so every value
+arriving there carries the rule. `storeVectorOp`'s YMM branch had it; this
+path, which is where `storeRegister` sends a YMM destination, did not.
+
+### AM-5  VMOVMSKPS/VMOVMSKPD on a YMM source read only 128 bits
+
+The lane count was hardwired to the XMM width and the i256 register read was
+then passed through a helper that TRUNCATES to 128 bits. Measured:
+`vmovmskps eax, ymm0` with all eight sign bits set answers 0xff, not 0x0f;
+`vmovmskpd` answers 0x0f, not 0x03. The neighbouring PMOVMSKB translator
+already derived its width from the operand.
+
+### AM-6  Shift and rotate counts at 8 and 16 bits -- three different rules
+
+All seven of these masked the count to five bits and stopped. Five bits reach
+31, which is past the end of an i8 or an i16, and what the architecture does
+next is NOT the same instruction to instruction. All three measured:
+
+  SHL/SHR/SAR  do not reduce. `shl al, cl` with cl = 20 gives 0x00, NOT the
+               modulo-8 0x20; `sar al, cl` with cl >= 8 gives 0xff.
+  ROL/ROR      rotate by the count MOD the width -- and still write CF when
+               the MASKED count is non-zero. `rol al, cl` with cl = 8 and
+               AL = 0x5a leaves AL alone and takes CF from 1 to 0.
+  RCL/RCR      reduce MOD the width PLUS ONE, because the carry is a real
+               extra bit of the rotated value. `rcl al, cl` with cl = 9 is the
+               identity, CF included; cl = 8 is not.
+
+In LLVM a shift by at least the operand's width is poison whichever of the
+three is meant, so each had to be said explicitly. The emulator reduces shift
+amounts modulo the width, which made the two rotate cases agree with the
+hardware by accident and the linear case answer plausibly -- right for the
+wrong reason in one place and wrong in the other.
+
+The first attempt at this fix reduced the ROL/ROR count itself. That made the
+whole body conditional on the reduced value, so a count of 8 on a byte skipped
+the CF write. The oracle caught it: 88 mismatches across rol8, ror8, rcl8,
+rcr8, rol16, ror16, rcl16, rcr16. The SDM says it in two separate lines -- the
+rotate loop runs `(count & mask) MOD size` times, and the CF update is guarded
+by `(count & mask) != 0` -- and the hardware says it too.
+
+### AM-7  FICOM/FICOMP widened a signed memory integer with UIToFP
+
+Every other x87 integer form uses SITOFP, FILD included, and FICOM reads the
+same encoding FILD does. Measured: ST(0) = 0.0 compared against a word holding
+0xffff sets C0 = 0, because 0.0 is the greater. This compared against 65535.0
+and set C0 = 1, so the `fnstsw`/`sahf`/`jb` that follows branched the wrong way.
+
+### AM-8  FIST/FISTP truncated where the architecture rounds
+
+`CreateFPToSI` truncates, and this one function is dispatched for FIST, FISTP
+and FISTTP alike -- so all three got FISTTP's operation. Measured with the
+default rounding control: `fistp` on 2.7 stores 3, on 2.5 stores 2 and on 3.5
+stores 4. That is ties-to-EVEN, so `roundeven` and not `round`. `fisttp` on
+2.7 stores 2, confirming the two are different instructions.
+
+The same site also had the bare-conversion range gap: measured, `fistpl`
+answers 0x80000000 for +inf, -inf, NaN, 1e24 and 2147483647.5 alike, and
+`fistps` answers 0x8000. `fptosi` calls every one of those poison. Both are
+now handled by the same helper the SSE side uses.
+
+RetDec models no FPCW rounding-control field, so the reset value is the only
+one that can be modelled; code that sets RC to truncate first is translated as
+if it had not. That is now a stated approximation rather than a silent one.
+
+### AM-9  FRNDINT used ties-away-from-zero
+
+`Intrinsic::round` rounds halves away from zero; FRNDINT follows the FPCW
+rounding control, whose reset value is nearest-EVEN. Measured: 0.5 -> 0,
+1.5 -> 2, 2.5 -> 2, 3.5 -> 4. `Intrinsic::round` answers 1 and 3 for the two
+that distinguish them.
+
+### AM-10  FSCALE rounded ST(1) where it should truncate
+
+Measured: `fscale(8.0, 1.9)` = 16, so 2^1 and not 2^2; `fscale(8.0, -0.9)` = 8,
+so 2^0 and not 2^-1. The variable holding the result was already named
+`roundDown`.
+
+### AM-11  PUSHFD tested for POPFD
+
+`translatePushEflags` gated the AC and ID bits on `id == POPFD || id == POPFQ`.
+The only ids dispatched to it are PUSHF, PUSHFD and PUSHFQ, so the branch was
+dead and those two flags could be written by POPFD and never read back.
+Measured: setting both and pushing returns both set. This is the canonical
+CPUID probe, which therefore concluded "CPUID unsupported" on every binary.
+
+### The instrument was wrong too
+
+`scripts/ci/x86_wide_oracle.c` declined to draw a count at or above the operand
+width for SHL, SHR and SAR at 8 and 16 bits, on a comment claiming those
+instructions "leave the destination AND CF undefined" there. CF, yes. The
+destination, no. So the oracle was refusing to draw exactly the inputs that
+would have shown AM-6, and the reason it gave was the same misreading of the
+manual that produced the bug.
+
+That is the sixth time this session the test that should have caught a defect
+was written from the same reading as the defect (after IDIV, EXTR, SRAW, LDRD
+and cntlzw). It is now the most reliable single predictor of where a bug is.
+
+The restriction is gone, and with SAR8, SHR16, ROR16 and the four RCL/RCR byte
+and word forms added the wide comparison went from 4,320 rows to 17,200.
+
+### Still not value-testable here
+
+FICOM, FIST, FRNDINT and FSCALE are fixed by measurement against the hardware
+but cannot be checked by the emulator in this tree: it excludes `x86_fp80` from
+its floating-point intrinsic block, so every x87 intrinsic evaluates to 0.0,
+and it implements `fptoui` and `fptosi` through one path so a signed/unsigned
+distinction is invisible to it. The first of those is addressed in the next
+batch; the second remains open.
+
+### Falsification: six of eight caught, and why the other two could not be
+
+Each of the eight decisions in AM-6 was reverted alone, rebuilt, and the wide
+comparison re-run against 17,200 measured rows (md5 guard on the source before
+and after every mutation):
+
+    A_shl_saturate          222 mismatches   shl8=137  shl16=85
+    B_shr_saturate          184 mismatches   shr8=110  shr16=74
+    C_linear_clamp          705 mismatches   shl8=203 shr8=147 sar8=74
+                                             shl16=131 shr16=104 sar16=46
+    E_rcl_rcr_mod           753 mismatches   rcl8=223 rcr8=219 rcl16=156 rcr16=155
+    F_rcl_wide_shift         25 mismatches   rcl8=20  rcl16=5
+    G_rcr_wide_shift         21 mismatches   rcr8=16  rcr16=5
+    D_rotate_reduce           0 mismatches   NOT CAUGHT
+    H_rol_complement_mask     0 mismatches   NOT CAUGHT
+
+D and H are the two decisions that exist only to keep poison out of the
+emitted IR. Reverting either leaves `shl i8 %x, %n` with n reaching 31, which
+LLVM calls poison -- and the interpreter these oracles run on reduces every
+shift amount modulo the operand width (`llvmir_emul.cpp`, `getShiftAmount`),
+which for a rotate is the architecture's own rule. So the measured answers do
+not move. The code is not dead, and this is not the AC-6 / AI-3 situation
+where a green mutation meant the mutated line never ran: it means the
+instrument cannot see the failure mode.
+
+That is a gap in the instrument, not a reason to drop the fix. SHIFT-01 below
+is the instrument that can see it.
+
+## Batch AM, continued -- what fixing the emulator exposed
+
+### AM-12  The emulator could not evaluate any x87 intrinsic
+
+`llvmir_emul.cpp` restricted its floating-point intrinsic block to `float` and
+`double`, excluding `x86_fp80`. That was not a representation limit: this
+interpreter holds an fp80 value in `GenericValue::DoubleVal` everywhere else
+-- `executeFAddInst` and its siblings fall the `X86_FP80TyID` case straight
+through to the `Double` one, and `executeFPTruncInst` reads `Src.DoubleVal`
+for an fp80 source.
+
+The cost was that every x87 intrinsic fell through to `LowerIntrinsicCall`,
+which rewrites `llvm.round.f80` into a call to `roundl` that the interpreter
+cannot execute. So the x87 tests could assert only that the CALL APPEARED,
+with the register value left as `ANY`. A translator that rounded the wrong way
+was indistinguishable from one that did not.
+
+Four tests were sitting on that: FSQRT, F2XM1, FRNDINT and FSCALE. All four
+now assert numbers. `Intrinsic::exp2` was added to the same block because
+FSCALE needs it and would otherwise still be untestable.
+
+### AM-13  F2XM1 computed 2^(x-1) instead of 2^x - 1
+
+The subtraction was applied to the exponent:
+
+    op0 = op0 - 1;  res = exp2(op0);      // 2^(x-1)
+
+Measured: `f2xm1` on 0.5 gives 0.41421356, which is 2^0.5 - 1. This answered
+2^-0.5 = 0.70710678. On 0.25 the hardware gives 0.18920712 and this gave
+0.59460356. The two readings agree at exactly one point, x = 1.
+
+This was found by fixing AM-12, not by looking for it. The one test of the
+instruction asserted the register as `ANY` and asserted a call to `exp2l` with
+16.0 -- which is the argument the WRONG formula passes. The test recorded the
+bug in both halves and could not fail.
+
+### AM-14  ARM and ARM64 CLZ declared their defined zero case poison
+
+Both passed `is_zero_poison = true` to `llvm.ctlz`. ARM64 defines `clz x1, x2`
+with x2 = 0 as 64 and the W form as 32; A32 defines `clz Rd, Rm` with Rm = 0
+as 32. The flag says the result is poison there instead, and -- worse for a
+decompiler -- licenses the optimiser to infer the operand is non-zero and
+delete the zero test around it.
+
+The x86 side of this tree had already made the opposite call for LZCNT and
+TZCNT, with a comment saying the defined zero case is exactly why.
+
+The two ARM64 tests cover this: `ARM64_INS_CLZ_r_r` and `ARM64_INS_CLZ32_r_r`
+both pass a zero operand and assert 0x40 and 0x20, the right answers. They
+passed either way, because the emulator's `ctlz` ignores its second argument.
+A test that asserts the correct value and cannot fail -- a different shape
+from the five instances above, where the test asserted the wrong value. Both
+are worth looking for. The ARM 32-bit tests use no zero operand at all.
+
+### AM-15  MIPS LUI did not sign-extend on MIPS64
+
+    lui $1, 0xabcd     MIPS64     $1 = 0xffffffffabcd0000
+                       translator $1 = 0x00000000abcd0000
+
+MIPS64 defines LUI as `GPR[rt] <- sign_extend(immediate || 0^16)`. The code
+carried a `CreateZExt` to the default type that was not a widening at all:
+`loadOp` materialises a MIPS immediate at the default type already, so the
+cast was a no-op on equal types, and `storeOp`'s sign-extending default could
+not help because the value was already the parent's width.
+
+This breaks the standard n64 constant idiom: `lui $2,0xffff; ori $2,$2,0x1234`
+is 0xffffffffffff1234 on the machine and was 0x00000000ffff1234 here.
+
+The single LUI test ran in MIPS64 (it was `ALL_MODES`) and asserted
+0xabcd0000 there -- the 32-bit answer. It pinned the defect. Seventh instance.
+
+### AM-16  PowerPC MULLI was translated as a word multiply
+
+`PPC_INS_MULLI` and `PPC_INS_MULLW` were dispatched to one function whose body
+named neither, so `mullw`'s narrowing was applied to both:
+
+    mullw RT,RA,RB   RT <- (RA)[32:63] x (RB)[32:63]      -- the low words
+    mulli RT,RA,SI   prod[0:127] <- (RA) x EXTS(SI)       -- the whole register
+                     RT <- prod[64:127]
+
+There is no "mulliw".
+
+    mulli r0, r1, 3    r1 = 0x0000000100000002
+      PPC64            r0 = 0x0000000300000006
+      translator       r0 = 6
+
+The MULLI test used r1 = 0x2222, which fits in a word and is positive, so the
+narrowed and un-narrowed readings agree on it exactly.
+
+AM-15 and AM-16 are CONFIRMED BY READING against the ISA and against
+capstone's own operand tables, not measured: this container is x86-64 and has
+no MIPS or PowerPC emulator. That is a weaker standard than the rest of this
+batch and is stated rather than glossed.
+
+## SHIFT-01 -- a gate for the class the oracles cannot see
+
+Two of the eight AM-6 mutations came back green. Not because the mutated code
+was dead -- that was the AC-6 and AI-3 story -- but because the failure mode is
+POISON, and nothing in this tree could observe poison.
+
+`shl i8 %x, 20` is poison in LLVM: not "some number", but a value the optimiser
+may assume never arises and may propagate through everything downstream. Every
+architecture here defines an answer instead. But the hardware oracles compare
+against RetDec's own interpreter, and that interpreter reduces every shift
+amount modulo the operand width (`llvmir_emul.cpp`, `getShiftAmount`, whose own
+comment says "according to the llvm documentation ... the result is undefined.
+but we do shift by this rule"). For a rotate, that rule IS the architecture's,
+so poison-producing IR gives exactly the right answer and passes.
+
+So the class was invisible from both ends: the gtests and the oracles both run
+the IR, and running it is the one thing that cannot show this.
+
+`scripts/ci/shift_poison_check.cpp` does not run it. For a corpus of every
+shift and rotate form whose amount is a register rather than an immediate --
+70 instructions across x86-64, ARM, ARM64, MIPS and PowerPC, including the ARM
+shifted-operand forms where the shift hides inside another instruction's second
+operand -- it translates the instruction and asks LLVM's own value tracking
+whether each emitted shift amount can reach the operand's width. It runs inside
+C2L-01, reusing the objects already built there.
+
+### Constant ranges, not known bits
+
+The first version used `computeKnownBits` and fired on 64 shifts, including the
+clamp-and-select idiom the AM-6 fix itself uses. Known bits carry a bitmask, so
+the tightest they can say about a value bounded by 8 is "at most 15", and for
+`select(n >= 8, 7, n)` they report only the bits the two arms agree on -- which
+is "might be 31". The check was firing on the fix rather than on the bug, which
+is the one thing a gate must not do.
+
+`computeConstantRange` is exact for the operations that appear here: `urem` by
+a constant gives [0, k), `sub` is exact, `umin` gives [0, k+1).
+
+### And where the bound was not local, the translator now says it
+
+Some amounts are bounded only by a branch -- `n - 1` cannot wrap because the
+block runs only for a non-zero n. That is true and a local analysis cannot use
+it. Rather than teach the checker about dominating branches, those sites now
+carry a `umin`, which is the identity for every value the block actually runs
+on and states the bound in the value itself. The clamp in
+`clampLinearShiftCount` became a `umin` for the same reason: it computes the
+same number as the select and, unlike the select, says so locally.
+
+That is a real improvement to the code and not merely an accommodation of the
+tool. "This is in range because of a branch thirty lines up" is exactly the
+kind of reasoning that was wrong in six of the eight places this batch touched.
+
+### What it found immediately
+
+  * ARM64 LSLV/LSRV/ASRV/RORV -- the unmasked amounts, recorded as open since
+    the ARM64 audit and left because they were "poison, not value-observable".
+    They are masked now: every one of the four is defined as
+    `shift_amount = UInt(operand2) MOD datasize`.
+  * ARM64 `generateShiftRor` -- the same, and reached from the shifted-operand
+    path as well, where the amount is whatever the program put in the register.
+  * ARM `generateShiftRor` -- the Batch AI rewrite covered LSL, LSR and ASR and
+    left ROR with all three of the defects it removed from the others: no
+    eight-bit mask on the count, a complement of the full width at a count of
+    zero, and an unconditional carry write where the architecture preserves it.
+    The last of those is a WRONG VALUE, not just poison: `rors r0, r1, r2` with
+    r2 = 0 must leave C alone and was writing bit 31 of the result. The only
+    register-form test used a count of 5 -- in range and non-zero -- and the
+    one test named `ARM_INS_ADD_ror_reg` assembles an ASR.
+
+The self-test builds an unmasked i8 amount and requires it to be flagged, then
+masks it to three bits and requires it not to be. A check that cannot report a
+problem proves nothing.
+
+### AM-17  The emulator aborted the whole binary on llvm.umin
+
+Stating a shift amount's bound with `llvm.umin` rather than a select made the
+test binary die with
+
+    LLVM ERROR: Code generator does not support intrinsic function 'llvm.umin.i8'
+
+and no failing test named. The interpreter had no case for the integer
+min/max intrinsics, so they fell to `IntrinsicLowering`, and what that does
+with an intrinsic it does not know is `report_fatal_error` -- which takes the
+process with it. The block above it already carried a comment saying exactly
+this about `llvm.fma`; `umin` was simply the next one to arrive.
+
+`umin`, `umax`, `smin` and `smax` are now evaluated directly. They are
+ordinary LLVM intrinsics that any current optimiser emits, so this was a hole
+waiting for the first translator to use one, and it fails in the worst
+available way: the abort names no test, so the failure reads as "the suite
+crashed" rather than "this instruction is wrong".
+
+Diagnosing it cost two rounds, because the first abort happened while source
+files were being edited mid-build, and a mismatched object set is a perfectly
+good explanation for a crash. It was the wrong one. The lesson is the smaller
+one: do not edit while a build is running, because it makes a real failure
+indistinguishable from an artefact.

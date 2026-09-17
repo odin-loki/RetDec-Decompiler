@@ -1327,17 +1327,42 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSseShufp(cs_insn* i, cs_x86* xi
  * being computed and then thrown away at an __asm_pmovmskb call, and the TEST
  * and Jcc that follow it read a value out of nowhere.
  */
+// Defined with the other vector-register predicates further down; needed here
+// because MOVMSK's lane count comes from the source register's width.
+static bool isYmmRegister(uint32_t r);
+static bool isZmmRegister(uint32_t r);
+
 void Capstone2LlvmIrTranslatorX86_impl::translateSseMovMsk(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY(i, xi, irb);
 
 	bool isDouble = i->id == X86_INS_MOVMSKPD || i->id == X86_INS_VMOVMSKPD;
 	bool isByte = i->id == X86_INS_PMOVMSKB;
-	unsigned n = isByte ? 16 : (isDouble ? 2 : 4);
 	unsigned laneBits = isByte ? 8 : (isDouble ? 64 : 32);
+
+	// The lane count comes from the SOURCE OPERAND's width, not from the
+	// mnemonic. The VEX forms take a YMM source and then produce twice as
+	// many bits: measured, `vmovmskps eax, ymm0` with all eight sign bits set
+	// answers 0xff and `vmovmskpd eax, ymm0` answers 0x0f. This was hardwired
+	// to the XMM width and then ran the i256 YMM read through toI128, which
+	// TRUNCATES -- so the upper four floats were read and discarded, and the
+	// answer was 0x0f and 0x03. translateAvxPmovmskb next door already
+	// derives its width from isYmmRegister for exactly this reason.
+	unsigned srcBits = 128;
+	cs_x86_op& src = xi->operands[1];
+	if (src.type == X86_OP_REG && isYmmRegister(src.reg)) srcBits = 256;
+	else if (src.type == X86_OP_REG && isZmmRegister(src.reg)) srcBits = 512;
+
+	unsigned n = srcBits / laneBits;
 	auto* vecTy = FixedVectorType::get(irb.getIntNTy(laneBits), n);
 
-	Value* v = irb.CreateBitCast(toI128(loadOp(xi->operands[1], irb), irb), vecTy);
+	Value* raw = loadVectorOp(src, irb, srcBits);
+	if (raw == nullptr)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	Value* v = irb.CreateBitCast(irb.CreateZExtOrTrunc(raw, irb.getIntNTy(srcBits)), vecTy);
 	auto* i32t = irb.getInt32Ty();
 	Value* res = ConstantInt::get(i32t, 0);
 	for (unsigned lane = 0; lane < n; ++lane)

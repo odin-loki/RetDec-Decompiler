@@ -946,8 +946,15 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorX86_impl::*)(cs_insn* i, cs
 		{X86_INS_MOVAPS, &Capstone2LlvmIrTranslatorX86_impl::translateSseMovWhole},
 		{X86_INS_ORPD, &Capstone2LlvmIrTranslatorX86_impl::translateSseFltLogic},
 		{X86_INS_ORPS, &Capstone2LlvmIrTranslatorX86_impl::translateSseFltLogic},
-		{X86_INS_VMOVAPD, &Capstone2LlvmIrTranslatorX86_impl::translateSseMovWhole},
-		{X86_INS_VMOVAPS, &Capstone2LlvmIrTranslatorX86_impl::translateSseMovWhole},
+		// translateAvxMov, NOT translateSseMovWhole: these are the VEX forms
+		// and a VEX write zeroes everything above what it writes, which
+		// translateSseMovWhole -- the legacy-SSE move, which leaves the upper
+		// half alone -- does not do. Measured: `vmovaps xmm1, xmm3` zeroes
+		// ymm1[255:128]. Their unaligned twins VMOVUPS/VMOVUPD were already
+		// routed correctly, and translateAvxMov's own doc comment lists these
+		// two among the instructions it handles; only the table disagreed.
+		{X86_INS_VMOVAPD, &Capstone2LlvmIrTranslatorX86_impl::translateAvxMov},
+		{X86_INS_VMOVAPS, &Capstone2LlvmIrTranslatorX86_impl::translateAvxMov},
 		{X86_INS_XORPD, &Capstone2LlvmIrTranslatorX86_impl::translateSseFltLogic},
 		{X86_INS_XORPS, &Capstone2LlvmIrTranslatorX86_impl::translateSseFltLogic},
 		{X86_INS_GETSEC, nullptr},

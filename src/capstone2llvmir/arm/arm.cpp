@@ -516,17 +516,76 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::generateShiftRor(
 		llvm::Value* val,
 		llvm::Value* n)
 {
-	unsigned op0BitW = llvm::cast<llvm::IntegerType>(n->getType())->getBitWidth();
+	// The Batch AI rewrite covered LSL, LSR and ASR and left this one as it
+	// was, so ROR with a register count kept all three of the defects AI
+	// removed from its siblings:
+	//
+	//   * the count was not masked to eight bits, so `ror r0, r1, r2` with
+	//     r2 = 0x100 emitted `lshr i32 %v, 256` -- poison;
+	//   * a count of zero made the complement 32, so `shl i32 %v, 32` --
+	//     poison again, on the single most likely runtime value;
+	//   * the carry was written unconditionally, where the architecture
+	//     leaves it alone when shift_n is zero.
+	//
+	// ARM ARM: shift_n = UInt(R[m]<7:0>); if shift_n is zero the value and
+	// the carry are both unchanged; otherwise the rotation is by shift_n MOD
+	// 32 and the carry is bit 31 of the result. A count of 32 is NOT a count
+	// of zero -- it rotates by nothing and still writes the carry, the same
+	// asymmetry x86's ROL has.
+	auto* ty = llvm::cast<llvm::IntegerType>(val->getType());
+	unsigned w = ty->getBitWidth();
+	auto* zero = llvm::ConstantInt::get(ty, 0);
+	auto* maskC = llvm::ConstantInt::get(ty, w - 1);
 
-	auto* srl = irb.CreateLShr(val, n);
-	auto* sub = irb.CreateSub(llvm::ConstantInt::get(n->getType(), op0BitW), n);
-	auto* shl = irb.CreateShl(val, sub);
-	auto* orr = irb.CreateOr(srl, shl);
+	n = irb.CreateAnd(
+			irb.CreateZExtOrTrunc(n, ty),
+			llvm::ConstantInt::get(ty, 0xff));
 
-	auto* cfSrl = irb.CreateLShr(orr, llvm::ConstantInt::get(orr->getType(), op0BitW - 1));
-	auto* cfIcmp = irb.CreateICmpNE(cfSrl, llvm::ConstantInt::get(cfSrl->getType(), 0));
-	storeRegister(ARM_REG_CPSR_C, cfIcmp, irb);
+	// The immediate forms are the common case and everything about them is
+	// known here. Writing that case out keeps the IR free of selects and, more
+	// to the point, avoids READING CPSR_C at all -- which the general path
+	// below must do in order to leave the carry alone at a count of zero.
+	// generateShiftCommon does the same for LSL, LSR and ASR, and the ROR
+	// tests assert exactly this: `ror r0, r2, #5` loads r2 and nothing else.
+	if (auto* cn = llvm::dyn_cast<llvm::ConstantInt>(n))
+	{
+		uint64_t k = cn->getZExtValue();
+		if (k == 0)
+		{
+			// Neither the value nor the carry is touched.
+			return val;
+		}
+		unsigned rotK = static_cast<unsigned>(k) & (w - 1);
+		llvm::Value* res = rotK == 0
+				? val
+				: llvm::cast<llvm::Value>(irb.CreateOr(
+						irb.CreateLShr(val, llvm::ConstantInt::get(ty, rotK)),
+						irb.CreateShl(val, llvm::ConstantInt::get(ty, w - rotK))));
+		auto* cv = irb.CreateTrunc(
+				irb.CreateAnd(irb.CreateLShr(res, maskC), llvm::ConstantInt::get(ty, 1)),
+				irb.getInt1Ty());
+		storeRegister(ARM_REG_CPSR_C, cv, irb);
+		return res;
+	}
 
+	auto* isZero = irb.CreateICmpEQ(n, zero);
+
+	// Masking the amount AND its complement keeps both shifts in range for
+	// every count, the one that rotates by nothing included.
+	auto* rot = irb.CreateAnd(n, maskC);
+	auto* sub = irb.CreateAnd(
+			irb.CreateSub(llvm::ConstantInt::get(ty, w), rot), maskC);
+	auto* orr = irb.CreateOr(irb.CreateLShr(val, rot), irb.CreateShl(val, sub));
+
+	auto* carry = irb.CreateTrunc(
+			irb.CreateAnd(irb.CreateLShr(orr, maskC), llvm::ConstantInt::get(ty, 1)),
+			irb.getInt1Ty());
+	auto* oldC = irb.CreateZExtOrTrunc(
+			loadRegister(ARM_REG_CPSR_C, irb), irb.getInt1Ty());
+	storeRegister(ARM_REG_CPSR_C, irb.CreateSelect(isZero, oldC, carry), irb);
+
+	// The VALUE needs no select: rotating by zero is the identity, so `orr`
+	// already equals `val` there.
 	return orr;
 }
 
@@ -2233,7 +2292,10 @@ void Capstone2LlvmIrTranslatorArm_impl::translateClz(cs_insn* i, cs_arm* ai, llv
 			_module,
 			llvm::Intrinsic::ctlz,
 			op1->getType());
-	auto* ctlz = irb.CreateCall(f, {op1, irb.getTrue()});
+	// is_zero_poison = FALSE; see the ARM64 translateClz for the reasoning.
+	// A32 defines `clz Rd, Rm` with Rm = 0 as 32. Neither ARM test even uses
+	// a zero operand, so this side had no coverage of the case at all.
+	auto* ctlz = irb.CreateCall(f, {op1, irb.getFalse()});
 	storeOp(ai->operands[0], ctlz, irb);
 }
 

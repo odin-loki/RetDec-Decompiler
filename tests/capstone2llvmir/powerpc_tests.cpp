@@ -1596,6 +1596,27 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_SUBFZE_dot_32_carry_true)
 // PPC_INS_MULLI
 //
 
+// mulli multiplies the WHOLE register, not its low word -- there is no
+// "mulliw". The test below uses 0x2222, which fits in a word, so the narrowed
+// and un-narrowed readings agree on it and it passed either way.
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MULLI_64_is_not_a_word_multiply)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x0000000100000002},
+	});
+
+	emulate("mulli 0, 1, 3");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R0, 0x0000000300000006},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MULLI)
 {
 	ALL_MODES;

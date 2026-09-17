@@ -47,11 +47,11 @@ WORKDIR="${C2L_WORKDIR:-}"
 
 # The measured counts, per architecture. A floor, not an equality: adding
 # tests should not fail the gate, losing them must.
-readonly MIN_X86=2796
+readonly MIN_X86=2826
 readonly MIN_ARM=664
 readonly MIN_ARM64=562
-readonly MIN_MIPS=714
-readonly MIN_POWERPC=948
+readonly MIN_MIPS=718
+readonly MIN_POWERPC=950
 readonly MIN_EMUL=25
 
 # The revisions cmake/deps.cmake pins. Kept in step with it by CI: if they
@@ -326,6 +326,40 @@ else
 fi
 
 [ "${bad}" = 0 ] || die "an architecture lost coverage"
+
+# ── SHIFT-01: no shift by a possibly-out-of-range amount ─────────────────────
+#
+# The gtests above cannot see this one. They run the translated IR through
+# tests/llvmir-emul, and that interpreter reduces every shift amount modulo the
+# operand width (llvmir_emul.cpp, getShiftAmount) -- so `shl i8 %x, 20`, which
+# LLVM calls POISON, is evaluated as a shift by 4 and answers plausibly.
+# Reverting two of the eight Batch AM shift decisions left the hardware oracles
+# at zero mismatches for exactly that reason.
+#
+# So this does not run the IR. It asks LLVM's own value tracking whether each
+# emitted shift amount can reach the operand's width, which is the same
+# question the optimiser asks before it starts exploiting poison.
+#
+# It reuses the objects already built above; only the test objects are dropped,
+# because they carry gtest's main().
+shift_objs="$(ls "${WORKDIR}"/obj/*.o | grep -v '/obj/tests_')"
+g++ -std=c++17 -O0 ${INC} ${LLVM_FLAGS} scripts/ci/shift_poison_check.cpp \
+	${shift_objs} -o "${WORKDIR}/shift_poison" \
+	-L"${CS_PREFIX}/lib" -lcapstone -L"${KS_PREFIX}/lib" -lkeystone \
+	$("${LLVM_CONFIG}" --libs) $("${LLVM_CONFIG}" --system-libs) -pthread \
+	2>"${WORKDIR}/shift_link.err" \
+	|| { sed -n '1,20p' "${WORKDIR}/shift_link.err" >&2; die "SHIFT-01 link failed"; }
+
+set +e
+"${WORKDIR}/shift_poison" --self-test > "${WORKDIR}/shift.log" 2>&1
+shift_status=$?
+set -e
+if [ "${shift_status}" != 0 ]; then
+	grep -E 'POISON|self-test FAILED' "${WORKDIR}/shift.log" | head -60 >&2
+	tail -2 "${WORKDIR}/shift.log" >&2
+	die "SHIFT-01: a translator emits a shift whose amount may exceed the operand width"
+fi
+grep -E 'self-test ok|examined' "${WORKDIR}/shift.log" | sed 's/^/C2L-01: /'
 
 total="$(sed -n 's/.*\[==========\] \([0-9]*\) tests\? from .* ran.*/\1/p' "${WORKDIR}/run.log" | tail -1)"
 echo "C2L-01: OK ${total:-0} tests across 5 architectures, against LLVM ${LLVM_MAJOR}, Capstone ${CAPSTONE_TAG}, Keystone ${KEYSTONE_TAG}"

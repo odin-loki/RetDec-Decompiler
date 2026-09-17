@@ -788,6 +788,20 @@ Capstone2LlvmIrTranslatorX86_impl::storeWideVectorRegister(uint32_t r, llvm::Val
 			irb.CreateTrunc(irb.CreateLShr(val, llvm::ConstantInt::get(ty, 256)), irb.getIntNTy(256)),
 			irb);
 	}
+	else
+	{
+		// A 256-bit write zeroes bits 511:256. Nothing but a VEX or EVEX
+		// instruction can write a YMM register at all -- a legacy SSE write
+		// goes to the XMM name -- so every value arriving here carries that
+		// rule. Measured: `vmovaps ymm0, ymm1` leaves zmm0[511:256] zero,
+		// and this left whatever was there. storeVectorOp's YMM branch had
+		// the rule; this path, which is where storeRegister sends a YMM
+		// destination, did not.
+		ret = storeRegister(
+			X86_REG_ZMM0_HI + n,
+			llvm::ConstantInt::get(irb.getIntNTy(256), 0),
+			irb);
+	}
 
 	return ret;
 }
@@ -897,6 +911,29 @@ llvm::StoreInst* Capstone2LlvmIrTranslatorX86_impl::storeRegister(
 	}
 
 	val = generateTypeConversion(irb, val, reg->getValueType(), ct);
+
+	// generateTypeConversion widens to the PARENT's width, which is one step
+	// too far for a sign-extending store. x86 says the extension fills the
+	// DESTINATION operand and stops: `movsx ecx, ax` with AX = 0xff00 leaves
+	// RCX = 0x00000000_ffffff00 on this machine, not 0xffffffff_ffffff00,
+	// because a 32-bit write zeroes 63:32 whatever produced the value.
+	// Worse at 8 and 16 bits, where the merge below is `l | val` with no mask
+	// on val: `movsx ax, bl` with BL = 0xff measured 0x11223344_5566_ffff,
+	// and the all-ones i64 sext would have set every bit of RAX.
+	//
+	// Masking the converted value down to the destination's own width says
+	// exactly that. For every ZEXT caller -- which is every other caller --
+	// the bits it clears are already zero, so this changes nothing but MOVSX.
+	if (auto* valTy = llvm::dyn_cast<llvm::IntegerType>(val->getType()))
+	{
+		unsigned childBits = getRegisterBitSize(r);
+		if (childBits && childBits < valTy->getBitWidth())
+		{
+			val = irb.CreateAnd(val, llvm::ConstantInt::get(
+					valTy,
+					llvm::APInt::getLowBitsSet(valTy->getBitWidth(), childBits)));
+		}
+	}
 
 	if (r == pr
 			// Zext for 64-bit target regs & 32-bit source regs.
@@ -1393,12 +1430,19 @@ Capstone2LlvmIrTranslatorX86_impl::loadOpFloatingBinaryTop(
 				|| i->id == X86_INS_FICOMP)
 		{
 			op0 = loadX87DataReg(irb, top);
+			// SIGNED. FICOM's memory operand is a signed word or dword
+			// integer -- the same encoding FILD reads, and FILD, FIADD,
+			// FIMUL, FIDIV and FISUB all use SITOFP. This alone said UITOFP,
+			// so `ficoms` on a word holding 0xffff compared against 65535.0
+			// instead of -1.0. Measured: ST(0) = 0.0 against that word sets
+			// C0 = 0, because 0.0 is the greater; this produced C0 = 1 and
+			// the fnstsw/sahf/jb that follows branched the wrong way.
 			op1 = loadOpUnary(
 					xi,
 					irb,
 					nullptr,
 					llvm::Type::getX86_FP80Ty(_module->getContext()),
-					eOpConv::UITOFP_OR_FPCAST);
+					eOpConv::SITOFP_OR_FPCAST);
 		}
 		else
 		{
@@ -3774,7 +3818,17 @@ void Capstone2LlvmIrTranslatorX86_impl::translatePushEflags(cs_insn* i, cs_x86* 
 	val = irb.CreateOr(val, of);
 	val = irb.CreateOr(val, nt);
 
-	if (i->id == X86_INS_POPFD || i->id == X86_INS_POPFQ)
+	// PUSHFD and PUSHFQ, not POPFD and POPFQ -- this is translatePushEflags,
+	// and the only ids dispatched here are PUSHF, PUSHFD and PUSHFQ, so the
+	// test named two instructions that never arrive and the branch was dead.
+	// A copy of the identical (and correct) test in translatePopEflags.
+	//
+	// The consequence is that AC and ID could be written by POPFD and never
+	// read back, which breaks the canonical CPUID probe: set EFLAGS.ID with
+	// popfd, push the flags again and compare. Measured on this machine the
+	// round-trip returns bit 21 set; this returned zero, so the probe always
+	// concluded CPUID was unsupported.
+	if (i->id == X86_INS_PUSHFD || i->id == X86_INS_PUSHFQ)
 	{
 //		auto* rf = irb.CreateShl(irb.CreateZExt(loadRegister(X86_REG_RF, irb), it), 16);
 //		auto* vm = irb.CreateShl(irb.CreateZExt(loadRegister(X86_REG_VM, irb), it), 17);
@@ -3962,6 +4016,138 @@ void Capstone2LlvmIrTranslatorX86_impl::generateShiftDestinationWrite(
 	}
 }
 
+namespace {
+
+/**
+ * What an 8- or 16-bit shift or rotate does with a count that does not fit.
+ *
+ * All of these first mask the count to five bits, or six for a 64-bit
+ * operand. That much was always here, and at 32 and 64 bits it is the whole
+ * rule -- five bits reach 31, six reach 63, and both are inside the operand.
+ * At 8 and 16 bits they are not, and what happens next is NOT the same
+ * instruction to instruction. Measured on this machine:
+ *
+ *   ROL/ROR  reduce MOD the width. A rotate by more than its width is just a
+ *            rotate; `rol al, cl` with cl = 20 rotates by 4.
+ *   RCL/RCR  reduce MOD the width PLUS ONE, because the carry is a genuine
+ *            extra bit of the value being rotated. `rcl al, cl` with cl = 9
+ *            is the identity and cl = 8 is not, so the modulus is 9.
+ *   SHL/SHR  do NOT reduce at all. The SDM's decrementing loop runs the whole
+ *   SAR      masked count, so the answer is 0 -- or all-sign for SAR.
+ *            `shl al, cl` with cl = 20 measured 0x00, NOT the modulo-8 0x20;
+ *            `sar al, cl` with cl >= 8 measured 0xff.
+ *
+ * LLVM calls a shift by at least the operand's width poison whichever of
+ * those three the architecture means, so each has to be said out loud. That
+ * the emulator reduces modulo the width made the first two look right and the
+ * third look plausible, which is why this survived: it agreed with the
+ * hardware for the rotates by accident, and disagreed for the shifts in a way
+ * only a count of 8 or more could show.
+ *
+ * The oracle this should have been caught by declined to draw such counts at
+ * 8 and 16 bits, on a comment claiming the destination was undefined there.
+ * The destination is defined; only CF is not.
+ */
+enum class eShiftCount
+{
+	/// ROL, ROR -- reduce MOD width.
+	Rotate,
+	/// RCL, RCR -- reduce MOD (width + 1).
+	RotateThroughCarry,
+	/// SHL, SHR, SAR -- do not reduce; the caller saturates instead.
+	Linear
+};
+
+llvm::Value* maskShiftCount(
+		llvm::Value* cnt,
+		unsigned op0BitW,
+		eShiftCount kind,
+		llvm::IRBuilder<>& irb)
+{
+	unsigned maskC = op0BitW == 64 ? 0x3f : 0x1f;
+	cnt = irb.CreateAnd(cnt, llvm::ConstantInt::get(cnt->getType(), maskC));
+
+	// At 32 and 64 bits the five- or six-bit mask has already done every
+	// reduction below: 31 < 32 and < 33, 63 < 64 and < 65.
+	if (op0BitW >= 32)
+	{
+		return cnt;
+	}
+
+	switch (kind)
+	{
+		case eShiftCount::RotateThroughCarry:
+			return irb.CreateURem(
+					cnt, llvm::ConstantInt::get(cnt->getType(), op0BitW + 1));
+		case eShiftCount::Rotate:
+		case eShiftCount::Linear:
+			break;
+	}
+	return cnt;
+}
+
+/**
+ * How far ROL and ROR actually rotate, given the five- or six-bit count.
+ *
+ * The reduction MOD the width belongs HERE and not in the count itself,
+ * because the two are read for different questions. `rol al, cl` with cl = 8
+ * rotates by nothing -- and still writes CF. Measured: AL = 0x5a with CF = 1
+ * beforehand comes back AL = 0x5a and CF = 0, which is LSB(result). The SDM
+ * says as much in two separate lines: the rotate loop runs `(count & mask)
+ * MOD size` times, and the CF update is guarded by `(count & mask) != 0`.
+ *
+ * Reducing the count itself made the whole body conditional on the reduced
+ * value, so a count of 8, 16 or 24 on a byte skipped the CF write. RCL and
+ * RCR are the other way round -- there the carry is a bit of the rotated
+ * value, so a count that reduces to zero really does leave CF alone, which is
+ * why they reduce the count and these do not.
+ *
+ * Since every width here is a power of two, MOD is an AND, and at 32 and 64
+ * bits it is the same mask that has already been applied.
+ */
+llvm::Value* rotateAmount(llvm::Value* cnt, unsigned op0BitW, llvm::IRBuilder<>& irb)
+{
+	return irb.CreateAnd(
+			cnt, llvm::ConstantInt::get(cnt->getType(), op0BitW - 1));
+}
+
+/**
+ * The largest count SHL/SHR/SAR can be given without producing poison, plus
+ * the flag saying the real count was past it.
+ *
+ * For SAR the clamp alone IS the answer -- shifting right by width-1 leaves
+ * the sign bit in every position, which is what the hardware settles on -- so
+ * that caller ignores \p tooBig. SHL and SHR have to select a zero back in.
+ * \p tooBig is null when no clamp was needed, which is every 32- and 64-bit
+ * operand and therefore almost all real code.
+ */
+llvm::Value* clampLinearShiftCount(
+		llvm::Value* cnt,
+		unsigned op0BitW,
+		llvm::Value*& tooBig,
+		llvm::IRBuilder<>& irb)
+{
+	tooBig = nullptr;
+	if (op0BitW >= 32)
+	{
+		return cnt;
+	}
+	auto* widthC = llvm::ConstantInt::get(cnt->getType(), op0BitW);
+	tooBig = irb.CreateICmpUGE(cnt, widthC);
+	// umin rather than a select on `tooBig`. The two compute the same number,
+	// but only umin states the bound LOCALLY: a reader of `select(n >= 8, 7,
+	// n)` -- human or analysis -- has to correlate the condition with the arms
+	// to see that the result is below 8, and LLVM's value tracking does not.
+	// SHIFT-01 fired on this exact idiom, which is to say it fired on the fix
+	// rather than on the bug.
+	return irb.CreateBinaryIntrinsic(
+			llvm::Intrinsic::umin,
+			cnt,
+			llvm::ConstantInt::get(cnt->getType(), op0BitW - 1));
+}
+
+} // anonymous namespace
+
 /**
  * X86_INS_SHL == X86_INS_SAL
  */
@@ -3980,9 +4166,9 @@ void Capstone2LlvmIrTranslatorX86_impl::translateShiftLeft(cs_insn* i, cs_x86* x
 		op1 = llvm::ConstantInt::get(op0->getType(), 1);
 	}
 	unsigned op0BitW = llvm::cast<llvm::IntegerType>(op0->getType())->getBitWidth();
-	unsigned maskC = op0BitW == 64 ? 0x3f : 0x1f;
-	auto* mask = llvm::ConstantInt::get(op1->getType(), maskC);
-	op1 = irb.CreateAnd(op1, mask);
+	op1 = maskShiftCount(op1, op0BitW, eShiftCount::Linear, irb);
+	llvm::Value* tooBig = nullptr;
+	llvm::Value* shAmt = clampLinearShiftCount(op1, op0BitW, tooBig, irb);
 	auto* of = llvm::cast<llvm::Instruction>(loadRegister(X86_REG_OF, irb));
 	auto* op1Zero = irb.CreateICmpEQ(op1, llvm::ConstantInt::get(op1->getType(), 0));
 
@@ -3996,11 +4182,27 @@ void Capstone2LlvmIrTranslatorX86_impl::translateShiftLeft(cs_insn* i, cs_x86* x
 	//
 	llvm::IRBuilder<> bodyIrb(generateIfNotThen(op1Zero, irb));
 
-	auto* shl = bodyIrb.CreateShl(op0, op1);
+	llvm::Value* shl = bodyIrb.CreateShl(op0, shAmt);
+	if (tooBig)
+	{
+		// Everything shifted out. Measured, not assumed: `shl al, cl` with
+		// cl = 20 gives 0x00.
+		shl = bodyIrb.CreateSelect(
+				tooBig, llvm::ConstantInt::get(shl->getType(), 0), shl);
+	}
 	generateSetSflags(shl, bodyIrb);
 	storeOp(xi->operands[0], shl, bodyIrb);
 
-	auto* cfOp1 = bodyIrb.CreateSub(op1, llvm::ConstantInt::get(op1->getType(), 1));
+	// CF is architecturally undefined once the count reaches the width, so the
+	// clamped amount is used here only to keep the IR free of poison. The
+	// subtraction can still wrap when the count is zero -- which this block is
+	// guarded against, but by a BRANCH, and a branch is not something a local
+	// analysis can use. Clamping again says it in the value itself, and costs
+	// nothing: for every count this block really runs with, umin is identity.
+	auto* cfOp1 = bodyIrb.CreateBinaryIntrinsic(
+			llvm::Intrinsic::umin,
+			bodyIrb.CreateSub(shAmt, llvm::ConstantInt::get(shAmt->getType(), 1)),
+			llvm::ConstantInt::get(shAmt->getType(), op0BitW - 1));
 	auto* cfShl = bodyIrb.CreateShl(op0, cfOp1);
 	auto* cfIntT = llvm::cast<llvm::IntegerType>(cfShl->getType());
 	auto* cfRightCount = llvm::ConstantInt::get(cfIntT, cfIntT->getBitWidth() - 1);
@@ -4032,20 +4234,35 @@ void Capstone2LlvmIrTranslatorX86_impl::translateShiftRight(cs_insn* i, cs_x86* 
 		op1 = llvm::ConstantInt::get(op0->getType(), 1);
 	}
 	unsigned op0BitW = llvm::cast<llvm::IntegerType>(op0->getType())->getBitWidth();
-	unsigned maskC = op0BitW == 64 ? 0x3f : 0x1f;
-	auto* mask = llvm::ConstantInt::get(op1->getType(), maskC);
-	op1 = irb.CreateAnd(op1, mask);
+	op1 = maskShiftCount(op1, op0BitW, eShiftCount::Linear, irb);
+	llvm::Value* tooBig = nullptr;
+	llvm::Value* shAmt = clampLinearShiftCount(op1, op0BitW, tooBig, irb);
 	auto* of = llvm::cast<llvm::Instruction>(loadRegister(X86_REG_OF, irb));
 	auto* op1Zero = irb.CreateICmpEQ(op1, llvm::ConstantInt::get(op1->getType(), 0));
 	generateShiftDestinationWrite(xi->operands[0], op0, irb);
 	llvm::IRBuilder<> bodyIrb(generateIfNotThen(op1Zero, irb));
 
 	llvm::Value* shift = i->id == X86_INS_SHR
-			? bodyIrb.CreateLShr(op0, op1)  // X86_INS_SHR
-			: bodyIrb.CreateAShr(op0, op1); // X86_INS_SAR
+			? bodyIrb.CreateLShr(op0, shAmt)  // X86_INS_SHR
+			: bodyIrb.CreateAShr(op0, shAmt); // X86_INS_SAR
+	if (tooBig && i->id == X86_INS_SHR)
+	{
+		// SHR empties the operand; SAR does not, because the clamp to
+		// width-1 has already left the sign bit in every position, which is
+		// the answer `sar al, cl` gives for every cl of 8 or more.
+		shift = bodyIrb.CreateSelect(
+				tooBig, llvm::ConstantInt::get(shift->getType(), 0), shift);
+	}
 	generateSetSflags(shift, bodyIrb);
 	storeOp(xi->operands[0], shift, bodyIrb);
-	auto* cfOp1 = bodyIrb.CreateSub(op1, llvm::ConstantInt::get(op1->getType(), 1));
+	// CF is undefined at a count of at least the width; the clamped amount
+	// keeps this out of poison territory. Clamped once more for the same
+	// reason as in translateShiftLeft: the count-is-zero guarantee is a
+	// branch, and the subtraction below would wrap without it.
+	auto* cfOp1 = bodyIrb.CreateBinaryIntrinsic(
+			llvm::Intrinsic::umin,
+			bodyIrb.CreateSub(shAmt, llvm::ConstantInt::get(shAmt->getType(), 1)),
+			llvm::ConstantInt::get(shAmt->getType(), op0BitW - 1));
 	auto* cfShl = bodyIrb.CreateShl(llvm::ConstantInt::get(cfOp1->getType(), 1), cfOp1);
 	auto* cfAnd = bodyIrb.CreateAnd(cfShl, op0);
 	auto* cfIcmp = bodyIrb.CreateICmpNE(cfAnd, llvm::ConstantInt::get(cfAnd->getType(), 0));
@@ -4098,13 +4315,24 @@ void Capstone2LlvmIrTranslatorX86_impl::translateShld(cs_insn* i, cs_x86* xi, ll
 
 	auto* shl = bodyIrb.CreateShl(op0, op2);
 	auto* it = llvm::cast<llvm::IntegerType>(shl->getType());
-	auto* sub = bodyIrb.CreateSub(llvm::ConstantInt::get(it, it->getBitWidth()), op2);
+	// The complement is the full width when the count is zero -- which this
+	// block is guarded against, but by a BRANCH, and a branch is not a bound
+	// a local analysis can use. Clamping states it in the value, and is the
+	// identity for every count this block actually runs on.
+	auto* sub = bodyIrb.CreateBinaryIntrinsic(
+			llvm::Intrinsic::umin,
+			bodyIrb.CreateSub(llvm::ConstantInt::get(it, it->getBitWidth()), op2),
+			llvm::ConstantInt::get(it, it->getBitWidth() - 1));
 	auto* srl = bodyIrb.CreateLShr(op1, sub);
 	auto* orr = bodyIrb.CreateOr(srl, shl);
 	generateSetSflags(orr, bodyIrb);
 	storeOp(xi->operands[0], orr, bodyIrb);
 
-	auto* subCf = bodyIrb.CreateSub(op2, llvm::ConstantInt::get(op2->getType(), 1));
+	// Same again: count - 1 wraps at a count of zero.
+	auto* subCf = bodyIrb.CreateBinaryIntrinsic(
+			llvm::Intrinsic::umin,
+			bodyIrb.CreateSub(op2, llvm::ConstantInt::get(op2->getType(), 1)),
+			llvm::ConstantInt::get(op2->getType(), op0BitW - 1));
 	auto* shlCf = bodyIrb.CreateShl(op0, subCf);
 	auto* icmpCf = bodyIrb.CreateICmpSLT(shlCf, llvm::ConstantInt::getSigned(shlCf->getType(), 0));
 	storeRegister(X86_REG_CF, icmpCf, bodyIrb);
@@ -4151,13 +4379,21 @@ void Capstone2LlvmIrTranslatorX86_impl::translateShrd(cs_insn* i, cs_x86* xi, ll
 
 	auto* lshr = bodyIrb.CreateLShr(op0, op2);
 	auto* it = llvm::cast<llvm::IntegerType>(op2->getType());
-	auto* sub = bodyIrb.CreateSub(llvm::ConstantInt::get(it, it->getBitWidth()), op2);
+	// See translateShld: the complement is the full width at a count of zero,
+	// which only the branch excludes.
+	auto* sub = bodyIrb.CreateBinaryIntrinsic(
+			llvm::Intrinsic::umin,
+			bodyIrb.CreateSub(llvm::ConstantInt::get(it, it->getBitWidth()), op2),
+			llvm::ConstantInt::get(it, it->getBitWidth() - 1));
 	auto* shl = bodyIrb.CreateShl(op1, sub);
 	auto* orr = bodyIrb.CreateOr(shl, lshr);
 	generateSetSflags(orr, bodyIrb);
 	storeOp(xi->operands[0], orr, bodyIrb);
 
-	auto* subCf = bodyIrb.CreateSub(op2, llvm::ConstantInt::get(op2->getType(), 1));
+	auto* subCf = bodyIrb.CreateBinaryIntrinsic(
+			llvm::Intrinsic::umin,
+			bodyIrb.CreateSub(op2, llvm::ConstantInt::get(op2->getType(), 1)),
+			llvm::ConstantInt::get(op2->getType(), op0BitW - 1));
 	auto* shlCf = bodyIrb.CreateShl(llvm::ConstantInt::get(subCf->getType(), 1), subCf);
 	auto* andCf = bodyIrb.CreateAnd(shlCf, op0);
 	auto* icmpCf = bodyIrb.CreateICmpNE(andCf, llvm::ConstantInt::get(andCf->getType(), 0));
@@ -4180,9 +4416,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateRcr(cs_insn* i, cs_x86* xi, llv
 	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 	unsigned op0BitW = llvm::cast<llvm::IntegerType>(op0->getType())->getBitWidth();
 	auto* doubleT = llvm::Type::getIntNTy(_module->getContext(), op0BitW*2);
-	unsigned maskC = op0BitW == 64 ? 0x3f : 0x1f;
-	auto* mask = llvm::ConstantInt::get(op1->getType(), maskC);
-	op1 = irb.CreateAnd(op1, mask);
+	op1 = maskShiftCount(op1, op0BitW, eShiftCount::RotateThroughCarry, irb);
 	auto* op1NotZero = irb.CreateICmpNE(op1, llvm::ConstantInt::get(op1->getType(), 0));
 
 	generateShiftDestinationWrite(xi->operands[0], op0, irb);
@@ -4190,13 +4424,21 @@ void Capstone2LlvmIrTranslatorX86_impl::translateRcr(cs_insn* i, cs_x86* xi, llv
 
 	auto* cf = loadRegister(X86_REG_CF, bodyIrb, op0->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
 
-	auto* srl = bodyIrb.CreateLShr(op0, op1);
-	auto* srlZext = bodyIrb.CreateZExt(srl, doubleT);
+	// See translateRcl: a count of exactly the width is in range after MOD
+	// (width+1) and would make `lshr i8 %x, 8` poison, so the shift is done
+	// at the doubled width where it is not.
 	auto* op0Zext = bodyIrb.CreateZExt(op0, doubleT);
+	auto* srlZext = bodyIrb.CreateLShr(op0Zext, bodyIrb.CreateZExt(op1, doubleT));
 	auto* sub = bodyIrb.CreateSub(llvm::ConstantInt::get(op1->getType(), op0BitW + 1), op1);
 	auto* subZext = bodyIrb.CreateZExt(sub, doubleT);
 	auto* shl = bodyIrb.CreateShl(op0Zext, subZext);
-	auto* sub2 = bodyIrb.CreateSub(llvm::ConstantInt::get(op1->getType(), op0BitW), op1);
+	// w - n is w when n is zero, which the branch excludes and a local
+	// analysis cannot know. SHIFT-01 found this one -- it is the same shape as
+	// the two umins above and I had not spotted it by reading.
+	auto* sub2 = bodyIrb.CreateBinaryIntrinsic(
+			llvm::Intrinsic::umin,
+			bodyIrb.CreateSub(llvm::ConstantInt::get(op1->getType(), op0BitW), op1),
+			llvm::ConstantInt::get(op1->getType(), op0BitW - 1));
 	auto* shl2 = bodyIrb.CreateShl(cf, sub2);
 	auto* shl2Zext = bodyIrb.CreateZExt(shl2, doubleT);
 	auto* or1 = bodyIrb.CreateOr(shl, srlZext);
@@ -4204,7 +4446,12 @@ void Capstone2LlvmIrTranslatorX86_impl::translateRcr(cs_insn* i, cs_x86* xi, llv
 	auto* or2Trunc = bodyIrb.CreateTrunc(or2, op0->getType());
 	storeOp(xi->operands[0], or2Trunc, bodyIrb);
 
-	auto* sub3 = bodyIrb.CreateSub(op1, llvm::ConstantInt::get(op1->getType(), 1));
+	// See the umin above: n - 1 wraps at n == 0, which the branch excludes and
+	// a local analysis cannot know.
+	auto* sub3 = bodyIrb.CreateBinaryIntrinsic(
+			llvm::Intrinsic::umin,
+			bodyIrb.CreateSub(op1, llvm::ConstantInt::get(op1->getType(), 1)),
+			llvm::ConstantInt::get(op1->getType(), op0BitW - 1));
 	auto* shl3 = bodyIrb.CreateShl(llvm::ConstantInt::get(sub3->getType(), 1), sub3);
 	auto* and1 = bodyIrb.CreateAnd(shl3, op0);
 	auto* cfIcmp = bodyIrb.CreateICmpNE(and1, llvm::ConstantInt::get(and1->getType(), 0));
@@ -4228,9 +4475,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateRcl(cs_insn* i, cs_x86* xi, llv
 	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 	unsigned op0BitW = llvm::cast<llvm::IntegerType>(op0->getType())->getBitWidth();
 	auto* doubleT = llvm::Type::getIntNTy(_module->getContext(), op0BitW*2);
-	unsigned maskC = op0BitW == 64 ? 0x3f : 0x1f;
-	auto* mask = llvm::ConstantInt::get(op1->getType(), maskC);
-	op1 = irb.CreateAnd(op1, mask);
+	op1 = maskShiftCount(op1, op0BitW, eShiftCount::RotateThroughCarry, irb);
 	auto* op1NotZero = irb.CreateICmpNE(op1, llvm::ConstantInt::get(op1->getType(), 0));
 
 	generateShiftDestinationWrite(xi->operands[0], op0, irb);
@@ -4238,13 +4483,23 @@ void Capstone2LlvmIrTranslatorX86_impl::translateRcl(cs_insn* i, cs_x86* xi, llv
 
 	auto* cf = loadRegister(X86_REG_CF, bodyIrb, op0->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
 
-	auto* shl = bodyIrb.CreateShl(op0, op1);
-	auto* shlZext = bodyIrb.CreateZExt(shl, doubleT);
+	// MOD (width+1) leaves a count of exactly the width in range -- `rcl al,
+	// cl` with cl = 8 is a real rotation of the nine-bit {CF, AL} quantity --
+	// and `shl i8 %x, 8` is poison. Widening the shift keeps every bit that
+	// the OR below needs and lets the final truncate drop the rest, which is
+	// what the narrow shift was already relying on for smaller counts.
 	auto* op0Zext = bodyIrb.CreateZExt(op0, doubleT);
+	auto* shlZext = bodyIrb.CreateShl(op0Zext, bodyIrb.CreateZExt(op1, doubleT));
 	auto* sub = bodyIrb.CreateSub(llvm::ConstantInt::get(op1->getType(), op0BitW + 1), op1);
 	auto* subZext = bodyIrb.CreateZExt(sub, doubleT);
 	auto* srl = bodyIrb.CreateLShr(op0Zext, subZext);
-	auto* sub2 = bodyIrb.CreateSub(op1, llvm::ConstantInt::get(op1->getType(), 1));
+	// n - 1 wraps when n is zero. This block only runs for a non-zero n, but
+	// that is a branch, and a branch is not a bound a local analysis can use;
+	// clamping says it in the value. Identity for every n this block runs on.
+	auto* sub2 = bodyIrb.CreateBinaryIntrinsic(
+			llvm::Intrinsic::umin,
+			bodyIrb.CreateSub(op1, llvm::ConstantInt::get(op1->getType(), 1)),
+			llvm::ConstantInt::get(op1->getType(), op0BitW - 1));
 	auto* shl2 = bodyIrb.CreateShl(cf, sub2);
 	auto* shl2Zext = bodyIrb.CreateZExt(shl2, doubleT);
 	auto* or1 = bodyIrb.CreateOr(srl, shlZext);
@@ -4274,16 +4529,22 @@ void Capstone2LlvmIrTranslatorX86_impl::translateRol(cs_insn* i, cs_x86* xi, llv
 
 	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 	unsigned op0BitW = llvm::cast<llvm::IntegerType>(op0->getType())->getBitWidth();
-	unsigned maskC = op0BitW == 64 ? 0x3f : 0x1f;
-	auto* mask = llvm::ConstantInt::get(op1->getType(), maskC);
-	op1 = irb.CreateAnd(op1, mask);
+	op1 = maskShiftCount(op1, op0BitW, eShiftCount::Rotate, irb);
 	auto* op1NotZero = irb.CreateICmpNE(op1, llvm::ConstantInt::get(op1->getType(), 0));
 
 	generateShiftDestinationWrite(xi->operands[0], op0, irb);
 	llvm::IRBuilder<> bodyIrb(generateIfThen(op1NotZero, irb));
 
-	auto* shl = bodyIrb.CreateShl(op0, op1);
-	auto* sub = bodyIrb.CreateSub(llvm::ConstantInt::get(op1->getType(), op0BitW), op1);
+	// The body runs whenever the MASKED count is non-zero, but rotates by the
+	// count reduced MOD the width -- which may be zero, and then this has to
+	// come out as the identity rather than as poison. Masking the complement
+	// with width-1 does that: at a rotation of zero both halves are the whole
+	// operand and the OR of them is the operand itself.
+	auto* rot = rotateAmount(op1, op0BitW, bodyIrb);
+	auto* shl = bodyIrb.CreateShl(op0, rot);
+	auto* sub = bodyIrb.CreateAnd(
+			bodyIrb.CreateSub(llvm::ConstantInt::get(rot->getType(), op0BitW), rot),
+			llvm::ConstantInt::get(rot->getType(), op0BitW - 1));
 	auto* srl = bodyIrb.CreateLShr(op0, sub);
 	auto* orr = bodyIrb.CreateOr(srl, shl);
 
@@ -4310,16 +4571,20 @@ void Capstone2LlvmIrTranslatorX86_impl::translateRor(cs_insn* i, cs_x86* xi, llv
 
 	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 	unsigned op0BitW = llvm::cast<llvm::IntegerType>(op0->getType())->getBitWidth();
-	unsigned maskC = op0BitW == 64 ? 0x3f : 0x1f;
-	auto* mask = llvm::ConstantInt::get(op1->getType(), maskC);
-	op1 = irb.CreateAnd(op1, mask);
+	op1 = maskShiftCount(op1, op0BitW, eShiftCount::Rotate, irb);
 	auto* op1NotZero = irb.CreateICmpNE(op1, llvm::ConstantInt::get(op1->getType(), 0));
 
 	generateShiftDestinationWrite(xi->operands[0], op0, irb);
 	llvm::IRBuilder<> bodyIrb(generateIfThen(op1NotZero, irb));
 
-	auto* srl = bodyIrb.CreateLShr(op0, op1);
-	auto* sub = bodyIrb.CreateSub(llvm::ConstantInt::get(op1->getType(), op0BitW), op1);
+	// See translateRol: the body is gated on the masked count, the rotation
+	// uses the count reduced MOD the width, and the complement is masked so a
+	// rotation of zero is the identity instead of a shift by the full width.
+	auto* rot = rotateAmount(op1, op0BitW, bodyIrb);
+	auto* srl = bodyIrb.CreateLShr(op0, rot);
+	auto* sub = bodyIrb.CreateAnd(
+			bodyIrb.CreateSub(llvm::ConstantInt::get(rot->getType(), op0BitW), rot),
+			llvm::ConstantInt::get(rot->getType(), op0BitW - 1));
 	auto* shl = bodyIrb.CreateShl(op0, sub);
 	auto* orr = bodyIrb.CreateOr(srl, shl);
 	storeOp(xi->operands[0], orr, bodyIrb);
@@ -4709,9 +4974,16 @@ void Capstone2LlvmIrTranslatorX86_impl::translateMoveString(cs_insn* i, cs_x86* 
 		llvm::Value* plus = llvm::ConstantInt::getSigned(edi->getType(), o0.size);
 		auto* val = irb.CreateSelect(df, minus, plus);
 		val = irb.CreateMul(val, ecx);
-		auto* add = irb.CreateAdd(edi, val);
-		storeRegister(ediId, add, irb);
-		storeRegister(esiId, add, irb);
+		// Both pointers move by the same delta, but from their OWN bases.
+		// This stored EDI's result into ESI as well, so `rep movsb` with
+		// ESI = 0x1000, EDI = 0x2000, ECX = 16 left ESI = 0x2010 where the
+		// hardware leaves 0x1010 -- the source pointer landed on top of the
+		// destination. The non-REP path forty lines down always computed the
+		// two separately; only this one shared the sum. `rep movsb` is the
+		// inlined memcpy in current glibc, so the wrong ESI is carried into
+		// whatever reads the source pointer next.
+		storeRegister(ediId, irb.CreateAdd(edi, val), irb);
+		storeRegister(esiId, irb.CreateAdd(esi, val), irb);
 
 		// ECX is zero afterwards.
 		storeRegister(ecxId, llvm::ConstantInt::get(ecx->getType(), 0), irb);
@@ -5536,8 +5808,13 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFscale(cs_insn* i, cs_x86* xi, 
 	EXPECT_IS_NULLARY(i, xi, irb);
 
 	std::tie(op0, op1, top, idx) = loadOpFloatingBinaryTop(i, xi, irb);
-	auto* roundDown = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::round, op1->getType());
-	op1 = irb.CreateCall(roundDown, {op1});
+	// FSCALE TRUNCATES ST(1) toward zero; it does not round it. Measured:
+	// fscale(8.0, 1.9) = 16 (2^1, not 2^2) and fscale(8.0, -0.9) = 8 (2^0,
+	// not 2^-1). Intrinsic::round gets both of those wrong, and the variable
+	// it was assigned to was already called `roundDown`.
+	auto* truncToZero = llvm::Intrinsic::getOrInsertDeclaration(
+			_module, llvm::Intrinsic::trunc, op1->getType());
+	op1 = irb.CreateCall(truncToZero, {op1});
 	auto* exp2 = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::exp2, op1->getType());
 	op1 = irb.CreateCall(exp2, {op1});
 	op0 = irb.CreateFMul(op0, op1);
@@ -5555,9 +5832,14 @@ void Capstone2LlvmIrTranslatorX86_impl::translateF2xm1(cs_insn* i, cs_x86* xi, l
 	auto* top = loadX87Top(irb);
 	op0 = loadX87DataReg(irb, top);
 	op1 = llvm::ConstantFP::get(op0->getType(), 1);
-	op0 = irb.CreateFSub(op0, op1);
+	// 2^x - 1, not 2^(x-1). The subtraction was applied to the EXPONENT.
+	// Measured: f2xm1 on 0.5 gives 0.41421356, which is 2^0.5 - 1; this gave
+	// 2^-0.5 = 0.70710678. The two agree only at x = 1, and the one test of
+	// this instruction could not tell them apart because it asserted the
+	// register as ANY -- the emulator could not evaluate an fp80 intrinsic,
+	// so the value was never checked. Fixing that is what exposed this.
 	auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::exp2, op0->getType());
-	auto* res = irb.CreateCall(f, {op0});
+	auto* res = irb.CreateFSub(irb.CreateCall(f, {op0}), op1);
 
 	storeX87DataReg(irb, top, res);
 }
@@ -6138,8 +6420,27 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFist(cs_insn* i, cs_x86* xi, ll
 	auto* top = loadX87DataReg(irb, topNum);
 	auto* t = getIntegerTypeFromByteSize(_module, xi->operands[0].size);
 
-	auto *fptosi = irb.CreateFPToSI(top, t);
-	storeOp(xi->operands[0], fptosi, irb);
+	// FISTTP truncates toward zero -- that is the whole reason SSE3 added it.
+	// FIST and FISTP round with the FPCW rounding-control field, whose reset
+	// value is round-to-nearest-even, and a bare CreateFPToSI gave all three
+	// FISTTP's operation. Measured: `fistpl` on 2.7 stores 3, on 2.5 stores 2
+	// and on 3.5 stores 4 -- ties to even, so roundeven and not round.
+	// The SSE side of the same conversion already made this call, with the
+	// same reasoning, in translateCvtSs2Si.
+	//
+	// RetDec models no FPCW rounding-control field, so the reset value is the
+	// only one that can be modelled; code that sets RC to truncate first (the
+	// fnstcw/or 0x0c00/fldcw idiom) is translated as if it had not. That is a
+	// stated approximation rather than a silent one.
+	if (i->id != X86_INS_FISTTP)
+	{
+		top = irb.CreateUnaryIntrinsic(llvm::Intrinsic::roundeven, top);
+	}
+	// An input that does not fit stores the INTEGER INDEFINITE value, not
+	// poison: measured, `fistpl` gives 0x80000000 for +inf, -inf, NaN, 1e24
+	// and 2147483647.5 alike, and `fistps` gives 0x8000. fptosi calls every
+	// one of those poison.
+	storeOp(xi->operands[0], generateFpToSiDefined(top, t, irb), irb);
 
 	if (i->id == X86_INS_FISTP or i->id == X86_INS_FISTTP) // pop
 	{
@@ -6156,7 +6457,12 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFrndint(cs_insn* i, cs_x86* xi,
 
 	auto* top = loadX87Top(irb);
 	llvm::Value* src = loadX87DataReg(irb, top);
-	auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::round, src->getType());
+	// roundeven, not round: Intrinsic::round is ties-AWAY-from-zero, and
+	// FRNDINT follows the FPCW rounding control, whose reset value is
+	// nearest-EVEN. Measured on this machine: 0.5 -> 0, 1.5 -> 2, 2.5 -> 2,
+	// 3.5 -> 4. Intrinsic::round answers 1 and 3 for the two that matter.
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(
+			_module, llvm::Intrinsic::roundeven, src->getType());
 	auto* val = irb.CreateCall(f, {src});
 	storeX87DataReg(irb, top, val);
 }

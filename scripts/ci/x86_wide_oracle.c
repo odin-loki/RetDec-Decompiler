@@ -120,11 +120,18 @@ SH1(o_rcl32, "rcll %%cl, %%eax")
 SH1(o_rcr32, "rcrl %%cl, %%eax")
 SH1(o_shl8,  "shlb %%cl, %%al")
 SH1(o_shr8,  "shrb %%cl, %%al")
+SH1(o_sar8,  "sarb %%cl, %%al")
 SH1(o_rol8,  "rolb %%cl, %%al")
 SH1(o_ror8,  "rorb %%cl, %%al")
+SH1(o_rcl8,  "rclb %%cl, %%al")
+SH1(o_rcr8,  "rcrb %%cl, %%al")
 SH1(o_shl16, "shlw %%cl, %%ax")
+SH1(o_shr16, "shrw %%cl, %%ax")
 SH1(o_sar16, "sarw %%cl, %%ax")
 SH1(o_rol16, "rolw %%cl, %%ax")
+SH1(o_ror16, "rorw %%cl, %%ax")
+SH1(o_rcl16, "rclw %%cl, %%ax")
+SH1(o_rcr16, "rcrw %%cl, %%ax")
 
 /* ------------------------------------------------------------- generation */
 
@@ -152,22 +159,31 @@ static struct {
 	{"ror32",  o_ror32,  32, K_SH1, 0}, {"rcl32",  o_rcl32,  32, K_SH1, 0},
 	{"rcr32",  o_rcr32,  32, K_SH1, 0},
 	{"shl8",   o_shl8,    8, K_SH1, 0}, {"shr8",   o_shr8,    8, K_SH1, 0},
+	{"sar8",   o_sar8,    8, K_SH1, 0},
 	{"rol8",   o_rol8,    8, K_SH1, 0}, {"ror8",   o_ror8,    8, K_SH1, 0},
-	{"shl16",  o_shl16,  16, K_SH1, 0}, {"sar16",  o_sar16,  16, K_SH1, 0},
-	{"rol16",  o_rol16,  16, K_SH1, 0},
+	{"rcl8",   o_rcl8,    8, K_SH1, 0}, {"rcr8",   o_rcr8,    8, K_SH1, 0},
+	{"shl16",  o_shl16,  16, K_SH1, 0}, {"shr16",  o_shr16,  16, K_SH1, 0},
+	{"sar16",  o_sar16,  16, K_SH1, 0},
+	{"rol16",  o_rol16,  16, K_SH1, 0}, {"ror16",  o_ror16,  16, K_SH1, 0},
+	{"rcl16",  o_rcl16,  16, K_SH1, 0}, {"rcr16",  o_rcr16,  16, K_SH1, 0},
 };
 
-/* SHL, SHR and SAR leave the destination AND CF undefined when the masked
-   count is at least the operand width, so at 8 and 16 bits the count is kept
-   below the width. The rotates are defined for every count -- a rotate by
-   more than its width is just a rotate -- so they get the whole byte, which
-   is where the masking is actually tested. */
-static int countMustBeSmall(const char* nm)
-{
-	return (nm[0] == 's')
-	    && (nm[strlen(nm) - 1] == '8'
-	        || (nm[strlen(nm) - 2] == '1' && nm[strlen(nm) - 1] == '6'));
-}
+/* Every count from 0 to 255 is drawn, for every width.
+ *
+ * This used to keep the count below the operand width for SHL, SHR and SAR at
+ * 8 and 16 bits, on a comment claiming those instructions "leave the
+ * destination AND CF undefined when the masked count is at least the operand
+ * width". CF, yes. The DESTINATION, no -- the SDM's decrementing loop runs
+ * the whole masked count, and this machine agrees: `shl al, cl` with cl = 20
+ * gives 0x00, and `sar al, cl` with cl >= 8 gives 0xff.
+ *
+ * So the oracle was declining to draw exactly the counts that would have
+ * shown the translator masking to five bits and then shifting an i8 by up to
+ * 31 -- poison in LLVM, and a modulo-8 answer once the emulator reduced it.
+ * The comparator has always known CF is undefined above the width and skips
+ * it; only the value restriction here was wrong, and it was written from the
+ * same misreading of the manual as the code it was meant to check.
+ */
 
 /* random() returns 31 bits, so the obvious `random() << 32 ^ random()` leaves
    bit 31 and bit 63 clear in EVERY draw -- 200,000 of them, checked. A
@@ -275,9 +291,7 @@ int main(int argc, char** argv)
 				}
 			} else if (TBL[k].kind == K_SH1) {
 				a = shaped(64);
-				unsigned cnt = countMustBeSmall(TBL[k].name)
-						? (unsigned)(random() % bits)
-						: (unsigned)(random() % 256);
+				unsigned cnt = (unsigned)(random() % 256);
 				b = (rnd64() & ~0xffULL) | cnt;
 			} else if (TBL[k].kind == K_SH) {
 				a = shaped(64); b = shaped(64);
