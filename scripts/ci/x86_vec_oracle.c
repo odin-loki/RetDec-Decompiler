@@ -67,9 +67,40 @@ FORM(o_pmovzxwd, "pmovzxwd %%xmm1, %%xmm0")
 FORM(o_pmovzxwq, "pmovzxwq %%xmm1, %%xmm0")
 FORM(o_pmovzxdq, "pmovzxdq %%xmm1, %%xmm0")
 
+/* ---------------------------------------- saturating and widening integer */
+
+/* These are the ones a plain vector add gets wrong in a way that looks right:
+   PADDSB of 127 and 1 is 127, not -128. LLVM has intrinsics that say exactly
+   this -- llvm.sadd.sat and friends -- so the translation is a name rather
+   than a hand-rolled clamp, but only if the right one is picked. */
+
+FORM(o_paddsb,  "paddsb  %%xmm1, %%xmm0")
+FORM(o_paddsw,  "paddsw  %%xmm1, %%xmm0")
+FORM(o_paddusb, "paddusb %%xmm1, %%xmm0")
+FORM(o_paddusw, "paddusw %%xmm1, %%xmm0")
+FORM(o_psubsb,  "psubsb  %%xmm1, %%xmm0")
+FORM(o_psubsw,  "psubsw  %%xmm1, %%xmm0")
+FORM(o_psubusb, "psubusb %%xmm1, %%xmm0")
+FORM(o_psubusw, "psubusw %%xmm1, %%xmm0")
+
+FORM(o_pmullw,  "pmullw  %%xmm1, %%xmm0")
+FORM(o_pmulhw,  "pmulhw  %%xmm1, %%xmm0")
+FORM(o_pmulhuw, "pmulhuw %%xmm1, %%xmm0")
+FORM(o_pmulld,  "pmulld  %%xmm1, %%xmm0")
+FORM(o_pmuludq, "pmuludq %%xmm1, %%xmm0")
+FORM(o_pmuldq,  "pmuldq  %%xmm1, %%xmm0")
+
+FORM(o_packsswb, "packsswb %%xmm1, %%xmm0")
+FORM(o_packssdw, "packssdw %%xmm1, %%xmm0")
+FORM(o_packuswb, "packuswb %%xmm1, %%xmm0")
+FORM(o_packusdw, "packusdw %%xmm1, %%xmm0")
+
+FORM(o_pmaddwd,  "pmaddwd  %%xmm1, %%xmm0")
+FORM(o_psadbw,   "psadbw   %%xmm1, %%xmm0")
+
 typedef Out (*Fn)(const uint64_t*, const uint64_t*);
 
-enum Kind { K_SHIFT, K_WIDEN };
+enum Kind { K_SHIFT, K_WIDEN, K_BIN };
 
 static struct { const char* name; Fn fn; enum Kind kind; unsigned elem; } TBL[] = {
 	{"psllw", o_psllw, K_SHIFT, 16}, {"pslld", o_pslld, K_SHIFT, 32},
@@ -82,6 +113,16 @@ static struct { const char* name; Fn fn; enum Kind kind; unsigned elem; } TBL[] 
 	{"pmovzxbw", o_pmovzxbw, K_WIDEN, 8},  {"pmovzxbd", o_pmovzxbd, K_WIDEN, 8},
 	{"pmovzxbq", o_pmovzxbq, K_WIDEN, 8},  {"pmovzxwd", o_pmovzxwd, K_WIDEN, 16},
 	{"pmovzxwq", o_pmovzxwq, K_WIDEN, 16}, {"pmovzxdq", o_pmovzxdq, K_WIDEN, 32},
+	{"paddsb",  o_paddsb,  K_BIN, 8},  {"paddsw",  o_paddsw,  K_BIN, 16},
+	{"paddusb", o_paddusb, K_BIN, 8},  {"paddusw", o_paddusw, K_BIN, 16},
+	{"psubsb",  o_psubsb,  K_BIN, 8},  {"psubsw",  o_psubsw,  K_BIN, 16},
+	{"psubusb", o_psubusb, K_BIN, 8},  {"psubusw", o_psubusw, K_BIN, 16},
+	{"pmullw",  o_pmullw,  K_BIN, 16}, {"pmulhw",  o_pmulhw,  K_BIN, 16},
+	{"pmulhuw", o_pmulhuw, K_BIN, 16}, {"pmulld",  o_pmulld,  K_BIN, 32},
+	{"pmuludq", o_pmuludq, K_BIN, 32}, {"pmuldq",  o_pmuldq,  K_BIN, 32},
+	{"packsswb", o_packsswb, K_BIN, 16}, {"packssdw", o_packssdw, K_BIN, 32},
+	{"packuswb", o_packuswb, K_BIN, 16}, {"packusdw", o_packusdw, K_BIN, 32},
+	{"pmaddwd",  o_pmaddwd,  K_BIN, 16}, {"psadbw",   o_psadbw,   K_BIN, 8},
 };
 
 /* random() gives 31 bits, so the obvious shift-and-xor leaves bit 31 and bit
@@ -111,6 +152,30 @@ static uint64_t shiftCount(unsigned elem)
 	}
 }
 
+/* A quadword whose every element is drawn from the edges of its range: the
+   signed and unsigned extremes, their neighbours, zero and one. Saturation is
+   a property of the edges, and uniform noise is almost never near them. */
+static uint64_t edgy(unsigned elem)
+{
+	uint64_t mask = elem == 64 ? ~0ULL : ((1ULL << elem) - 1);
+	uint64_t out = 0;
+	for (unsigned off = 0; off < 64; off += elem) {
+		uint64_t v;
+		switch (random() % 8) {
+			case 0: v = 0; break;
+			case 1: v = 1; break;
+			case 2: v = mask; break;                       /* -1, or the max */
+			case 3: v = mask >> 1; break;                  /* signed max */
+			case 4: v = (mask >> 1) + 1; break;            /* signed min */
+			case 5: v = mask - 1; break;
+			case 6: v = (uint64_t)(random()) & mask; break;
+			default: v = (uint64_t)(-(int64_t)(random() % 4)) & mask; break;
+		}
+		out |= (v & mask) << off;
+	}
+	return out;
+}
+
 int main(int argc, char** argv)
 {
 	long n = argc > 1 ? atol(argv[1]) : 200;
@@ -127,6 +192,14 @@ int main(int argc, char** argv)
 				   hardware. Filling it with noise is how a translator that
 				   reads it shows up. */
 				b[1] = rnd64();
+			} else if (TBL[k].kind == K_BIN) {
+				/* Uniform noise almost never saturates: two random bytes sum
+				   past 127 about a quarter of the time and past 255 almost
+				   never. Half the rows are drawn from the edges of the
+				   element range instead, so the clamp is actually exercised
+				   rather than merely present. */
+				a[0] = edgy(TBL[k].elem); a[1] = edgy(TBL[k].elem);
+				b[0] = edgy(TBL[k].elem); b[1] = edgy(TBL[k].elem);
 			} else {
 				b[0] = rnd64(); b[1] = rnd64();
 			}

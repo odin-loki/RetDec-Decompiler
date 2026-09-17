@@ -8092,3 +8092,112 @@ C2L-01 floor: X86 2664 → 2709. 5,588 tests.
 saturating adds and subtracts, `PMADDWD`, the multiply family, `PSHUFB` and
 the blends, the insert/extract pairs, the horizontal adds, `PACKSSWB` and
 friends, and `PTEST`. The oracle shape they need now exists.
+
+## Batch AD — saturation, packing, the packed multiplies and two reductions
+
+### What it is
+
+The twenty instructions the Batch AC entry listed as still not covered, minus
+the shuffles and the insert/extract pairs:
+
+```
+paddsb paddsw paddusb paddusw psubsb psubsw psubusb psubusw
+packsswb packssdw packuswb packusdw
+pmullw pmulhw pmulhuw pmulld pmuludq pmuldq
+pmaddwd psadbw
+```
+
+All twenty fell through to pseudo-assembly. They reuse the Batch AC oracle,
+which already had the right shape — XMM in, XMM out, both halves carried.
+
+### AD-1: the whole point of these is the edge, so the generator goes there
+
+Uniform noise almost never saturates. Two random bytes sum past 127 about a
+quarter of the time and past 255 almost never, so a random-operand sweep of
+`paddusb` would run thousands of rows without once exercising the clamp and
+report zero mismatches on a translation that does not have one.
+
+Half of each operand's elements are therefore drawn from the edges of the
+element's range — zero, one, the signed and unsigned extremes and their
+neighbours. Removing the saturation entirely is then 3,738 mismatches out of
+20,000 rather than a handful.
+
+### AD-2: the unsigned forms need a SIGNED comparison
+
+`psubusb` of 1 and 2 is zero, and the way to get there is to widen, subtract,
+and notice the intermediate went below zero. Widening with a zero extension
+and then clamping with an *unsigned* comparison cannot notice: the negative
+intermediate reads as enormous and clamps upward instead.
+
+Both the signed and the unsigned forms therefore clamp with signed
+comparisons on the widened value. Widening to twice the element gives room for
+every sum and difference of two N-bit values, so the arithmetic itself can
+never overflow and only the clamp decides. Using unsigned comparisons instead
+costs 4,994 mismatches.
+
+### AD-3: PACKUSWB reads a signed source
+
+The US forms saturate a **signed** word into an **unsigned** byte: -1 becomes
+0, 300 becomes 255. Reading the source as unsigned turns -1 into 255 — the
+same bit pattern, arrived at backwards, and wrong.
+
+### AD-4: three different answers to "what do you keep"
+
+```
+PMULLW PMULLD     the low half, where the product wraps into the element and
+                  the signedness cannot be observed at all
+PMULHW PMULHUW    the high half, where it is the only thing kept and the
+                  signedness is the entire difference between the two
+PMULUDQ PMULDQ    the whole product of the EVEN dwords only -- lanes 1 and 3
+                  are not multiplied at all
+```
+
+Making PMULHUW signed is 500 mismatches and touches nothing else. Reading the
+odd dwords instead of the even ones is 991, across both quadword forms.
+
+### AD-5: the two reductions
+
+`PMADDWD` multiplies signed words and adds **adjacent** pairs, so eight
+products become four sums. Its one overflowing input is -32768 squared twice,
+which wraps to 0x80000000; that is the defined answer, so the addition is left
+to wrap rather than saturated.
+
+`PSADBW` sums eight absolute differences per group into the low word of that
+group's quadword. Eight byte differences reach 2040, so the accumulator is
+sixteen bits and cannot overflow. Dropping the absolute value is 500
+mismatches — every row, because a signed difference is almost never the
+unsigned one.
+
+### Falsification
+
+Each decision reverted on its own, with an md5 guard, against 20,000 rows:
+
+```
+AD1_no_saturation        3738   all eight saturating forms
+AD2_unsigned_low_clamp   4994   the saturating forms and all four packs
+AD3_pack_src_unsigned    1979   all four packs
+AD4_pack_halves_swapped  1970   all four packs
+AD5_mulh_always_signed    500   pmulhuw only
+AD6_mul_odd_lanes         991   pmuludq pmuldq
+AD7_madd_wrong_pairs      500   pmaddwd
+AD8_sad_no_abs            500   psadbw
+```
+
+AD5 is the one worth having: it touches exactly one instruction, which is what
+a signedness bug looks like when the two forms differ only in that.
+
+### After
+
+```
+20,000 comparisons against the hardware, 0 mismatches,
+0 untranslated forms, 0 misencoded
+```
+
+C2L-01 floor: X86 2709 → 2748. 5,627 tests.
+
+### Still not covered
+
+Of the 65 packed-integer instructions grouped in the Batch AB entry, 25
+remain: `PSHUFB`, `PSHUFHW`/`PSHUFLW` and the blends; the `PINSR`/`PEXTR`
+pairs; the horizontal adds and subtracts; `PTEST`; `PHMINPOSUW`;
+`PMULHRSW`; `PMADDUBSW`; `PABSB`/`W`/`D` and the `PSIGN` family.

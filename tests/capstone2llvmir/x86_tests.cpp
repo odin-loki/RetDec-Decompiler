@@ -16236,6 +16236,213 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, CVTTSD2SI_in_range_is_unaffected_by_th
 // below was executed on the host CPU; see scripts/ci/x86_vec_oracle.c.
 //
 
+//
+// Batch AD -- saturating arithmetic, packing, the packed multiplies and the
+// two reductions. All twenty fell through to pseudo-assembly. Every expected
+// value was executed on the host CPU; see scripts/ci/x86_vec_oracle.c.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PADDSB_saturates_in_both_directions)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0x7f008001807f7f01ULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x0100ff01ff807f01ULL);
+
+	emulate("paddsb xmm0, xmm1");
+
+	// 127 + 1 is 127 and -128 + -128 is -128. A plain vector add gives
+	// -128 and 0, which look like answers.
+	EXPECT_EQ(0x7f00800280ff7f02ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0000000000000000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PADDUSB_saturates_at_255)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0xff01ff80017f00feULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x01ff01800180ff02ULL);
+
+	emulate("paddusb xmm0, xmm1");
+
+	EXPECT_EQ(0xffffffff02ffffffULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0000000000000000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PSUBUSB_clamps_at_zero)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0x0001027f80fffe03ULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x0102017f81000105ULL);
+
+	emulate("psubusb xmm0, xmm1");
+
+	// The unsigned difference goes NEGATIVE before it is clamped, so the
+	// lower bound has to be tested with a signed comparison. An unsigned
+	// one reads the intermediate as enormous and clamps upward instead.
+	EXPECT_EQ(0x0000010000fffd00ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0000000000000000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PSUBSW_saturates_both_ends)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0x80007fff00010000ULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x00010001ffff8000ULL);
+
+	emulate("psubsw xmm0, xmm1");
+
+	EXPECT_EQ(0x80007ffe00027fffULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0000000000000000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PACKSSWB_low_half_is_the_first_operand)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x0100ffff00010002ULL, 0x007f0080ff80007fULL);
+	setXmm(X86_REG_XMM1, 0x0005000600070008ULL, 0x80007fff00030004ULL);
+
+	emulate("packsswb xmm0, xmm1");
+
+	// The destination's low half comes from the FIRST operand and its
+	// high half from the second.
+	EXPECT_EQ(0x7fff01027f7f807fULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x05060708807f0304ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PACKUSWB_reads_a_signed_source)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x00ff000100020003ULL, 0xffff0100007f0080ULL);
+	setXmm(X86_REG_XMM1, 0x0006000700080009ULL, 0x8000010000040005ULL);
+
+	emulate("packuswb xmm0, xmm1");
+
+	// -1 becomes 0, not 255. The source is signed even though the
+	// destination is unsigned; reading it as unsigned gets 255 by
+	// arriving at the same bit pattern backwards.
+	EXPECT_EQ(0xff01020300ff7f80ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0607080900ff0405ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PMULLW_keeps_the_low_half)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0xffff000400050006ULL, 0x80007fff00020003ULL);
+	setXmm(X86_REG_XMM1, 0x0002000200020002ULL, 0x0002000200030004ULL);
+
+	emulate("pmullw xmm0, xmm1");
+
+	EXPECT_EQ(0x0000fffe0006000cULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xfffe0008000a000cULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PMULHW_keeps_the_signed_high_half)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x0003000400050006ULL, 0x80007fffffff0002ULL);
+	setXmm(X86_REG_XMM1, 0x0003000400050006ULL, 0x80007fffffff0002ULL);
+
+	emulate("pmulhw xmm0, xmm1");
+
+	// -1 squared is 1, whose high word is 0.
+	EXPECT_EQ(0x40003fff00000000ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0000000000000000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PMULHUW_keeps_the_unsigned_high_half)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x0003000400050006ULL, 0x80007fffffff0002ULL);
+	setXmm(X86_REG_XMM1, 0x0003000400050006ULL, 0x80007fffffff0002ULL);
+
+	emulate("pmulhuw xmm0, xmm1");
+
+	// The same operands as PMULHW. 0xffff squared unsigned is
+	// 0xfffe0001, whose high word is 0xfffe -- the one difference
+	// between these two instructions.
+	EXPECT_EQ(0x40003ffffffe0000ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0000000000000000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PMULUDQ_reads_only_the_even_dwords)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0xcafebabe00000003ULL, 0xdeadbeefffffffffULL);
+	setXmm(X86_REG_XMM1, 0x0badf00d00000005ULL, 0xfeedface00000002ULL);
+
+	emulate("pmuludq xmm0, xmm1");
+
+	// Lanes 1 and 3 are not multiplied at all.
+	EXPECT_EQ(0x00000001fffffffeULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x000000000000000fULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PMULDQ_sign_extends_the_even_dwords)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0xcafebabe00000003ULL, 0xdeadbeeffffffffeULL);
+	setXmm(X86_REG_XMM1, 0x0badf00dfffffffbULL, 0xfeedface00000003ULL);
+
+	emulate("pmuldq xmm0, xmm1");
+
+	EXPECT_EQ(0xfffffffffffffffaULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xfffffffffffffff1ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PMADDWD_adds_adjacent_products)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x8000800000050006ULL, 0x0001000200030004ULL);
+	setXmm(X86_REG_XMM1, 0x800080000009000aULL, 0x0005000600070008ULL);
+
+	emulate("pmaddwd xmm0, xmm1");
+
+	// The high lane is -32768 squared twice, which wraps to 0x80000000.
+	// That is the defined answer, so the addition is left to wrap.
+	EXPECT_EQ(0x0000001100000035ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x8000000000000069ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PSADBW_sums_each_group_of_eight)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0xff00ff00ff00ff00ULL, 0x0102030405060708ULL);
+	setXmm(X86_REG_XMM1, 0x00ff00ff00ff00ffULL, 0x0807060504030201ULL);
+
+	emulate("psadbw xmm0, xmm1");
+
+	// Eight absolute differences per group, each group's total in the
+	// low word of its own quadword. The high group is eight times 255.
+	EXPECT_EQ(0x0000000000000020ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x00000000000007f8ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, PSLLW_shifts_every_word)
 {
 	ONLY_MODE_64;

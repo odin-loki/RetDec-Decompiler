@@ -1364,6 +1364,359 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSseMovMsk(cs_insn* i, cs_x86* x
  * in exactly the code these appear in.
  */
 /**
+ * Clamp a widened vector into the range of a narrower element, elementwise.
+ *
+ * Both the signed and the unsigned forms clamp with SIGNED comparisons. For
+ * the signed ones that is obvious. For the unsigned ones it is the point:
+ * `psubusb` of 1 and 2 is a negative intermediate, and the widened value has
+ * to be compared against zero as a signed number to notice. Widening to twice
+ * the element gives room for every sum and difference of two N-bit values, so
+ * the arithmetic itself can never overflow and only the clamp decides.
+ */
+static Value* clampToRange(Value* wide, unsigned bits, bool isSigned, IRBuilder<>& irb)
+{
+	Type* ty = wide->getType();
+	unsigned wideBits = ty->getScalarType()->getIntegerBitWidth();
+	APInt lo = isSigned ? APInt::getSignedMinValue(bits).sext(wideBits) : APInt::getZero(wideBits);
+	APInt hi = isSigned ? APInt::getSignedMaxValue(bits).sext(wideBits) : APInt::getMaxValue(bits).zext(wideBits);
+	auto* loC = ConstantInt::get(ty, lo);
+	auto* hiC = ConstantInt::get(ty, hi);
+	Value* v = irb.CreateSelect(irb.CreateICmpSLT(wide, loC), loC, wide);
+	return irb.CreateSelect(irb.CreateICmpSGT(v, hiC), hiC, v);
+}
+
+/**
+ * PADDSB/W, PADDUSB/W, PSUBSB/W, PSUBUSB/W -- add or subtract and stop at the
+ * end of the range instead of wrapping.
+ *
+ * This is the whole reason they exist, and it is exactly what a plain vector
+ * add gets wrong in a way that looks right: `paddsb` of 127 and 1 is 127, not
+ * -128. A select is used rather than llvm.sadd.sat for the same reason
+ * translateSsePminMax uses one -- the emitted C reads as arithmetic rather
+ * than as a call to something the writer has to be taught.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSseSaturatingArith(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	unsigned bits = 0;
+	bool isSigned = true;
+	bool isAdd = true;
+	switch (i->id)
+	{
+	case X86_INS_PADDSB: bits = 8; break;
+	case X86_INS_PADDSW: bits = 16; break;
+	case X86_INS_PADDUSB:
+		bits = 8;
+		isSigned = false;
+		break;
+	case X86_INS_PADDUSW:
+		bits = 16;
+		isSigned = false;
+		break;
+	case X86_INS_PSUBSB:
+		bits = 8;
+		isAdd = false;
+		break;
+	case X86_INS_PSUBSW:
+		bits = 16;
+		isAdd = false;
+		break;
+	case X86_INS_PSUBUSB:
+		bits = 8;
+		isSigned = false;
+		isAdd = false;
+		break;
+	case X86_INS_PSUBUSW:
+		bits = 16;
+		isSigned = false;
+		isAdd = false;
+		break;
+	default: translatePseudoAsmGeneric(i, xi, irb); return;
+	}
+
+	unsigned totalBits = xi->operands[0].size * 8;
+	if (totalBits < bits || totalBits % bits != 0)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned n = totalBits / bits;
+
+	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
+	auto* intTy = irb.getIntNTy(totalBits);
+	auto* vecTy = vecType(irb.getIntNTy(bits), n);
+	auto* wideTy = vecType(irb.getIntNTy(bits * 2), n);
+
+	Value* a = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op0, irb), intTy), vecTy);
+	Value* b = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op1, irb), intTy), vecTy);
+
+	Value* aw = isSigned ? irb.CreateSExt(a, wideTy) : irb.CreateZExt(a, wideTy);
+	Value* bw = isSigned ? irb.CreateSExt(b, wideTy) : irb.CreateZExt(b, wideTy);
+	Value* r = isAdd ? irb.CreateAdd(aw, bw) : irb.CreateSub(aw, bw);
+	r = irb.CreateTrunc(clampToRange(r, bits, isSigned, irb), vecTy);
+
+	storeOp(
+		xi->operands[0], irb.CreateZExtOrTrunc(irb.CreateBitCast(r, intTy), irb.getInt128Ty()), irb, eOpConv::NOTHING);
+}
+
+/**
+ * PACKSSWB/DW and PACKUSWB/DW -- halve the element width of two registers and
+ * put the results side by side, saturating rather than truncating.
+ *
+ * The source is signed in every case, including the US forms: PACKUSWB
+ * saturates a SIGNED word into an UNSIGNED byte, so -1 becomes 0 and 300
+ * becomes 255. Reading the source as unsigned would make -1 into 255, which
+ * is the same bit pattern arrived at backwards.
+ *
+ * The destination's low half comes from the first operand and the high half
+ * from the second.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSsePack(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	unsigned srcBits = 0;
+	bool dstSigned = true;
+	switch (i->id)
+	{
+	case X86_INS_PACKSSWB: srcBits = 16; break;
+	case X86_INS_PACKSSDW: srcBits = 32; break;
+	case X86_INS_PACKUSWB:
+		srcBits = 16;
+		dstSigned = false;
+		break;
+	case X86_INS_PACKUSDW:
+		srcBits = 32;
+		dstSigned = false;
+		break;
+	default: translatePseudoAsmGeneric(i, xi, irb); return;
+	}
+
+	unsigned totalBits = xi->operands[0].size * 8;
+	if (totalBits % srcBits != 0)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned n = totalBits / srcBits;
+	unsigned dstBits = srcBits / 2;
+
+	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
+	auto* intTy = irb.getIntNTy(totalBits);
+	auto* srcVecTy = vecType(irb.getIntNTy(srcBits), n);
+	auto* dstVecTy = vecType(irb.getIntNTy(dstBits), n);
+
+	Value* a = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op0, irb), intTy), srcVecTy);
+	Value* b = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op1, irb), intTy), srcVecTy);
+
+	Value* sa = irb.CreateTrunc(clampToRange(a, dstBits, dstSigned, irb), dstVecTy);
+	Value* sb = irb.CreateTrunc(clampToRange(b, dstBits, dstSigned, irb), dstVecTy);
+
+	llvm::SmallVector<int, 32> mask;
+	for (unsigned k = 0; k < 2 * n; ++k)
+	{
+		mask.push_back(static_cast<int>(k));
+	}
+	Value* r = irb.CreateShuffleVector(sa, sb, mask);
+
+	storeOp(
+		xi->operands[0], irb.CreateZExtOrTrunc(irb.CreateBitCast(r, intTy), irb.getInt128Ty()), irb, eOpConv::NOTHING);
+}
+
+/**
+ * PMULLW, PMULHW, PMULHUW, PMULLD, PMULUDQ, PMULDQ.
+ *
+ * Three different answers to "what do you keep":
+ *
+ *   the LOW half      PMULLW and PMULLD, where the product wraps into the
+ *                     element and the signedness cannot be observed.
+ *   the HIGH half     PMULHW and PMULHUW, where it is the only thing kept
+ *                     and the signedness is the whole difference between
+ *                     them.
+ *   the WHOLE product PMULUDQ and PMULDQ, which read only the EVEN dwords --
+ *                     lanes 0 and 2 -- and write two quadwords. The odd
+ *                     dwords are not multiplied at all.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSsePackedMul(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	unsigned bits = 0;
+	bool isSigned = true;
+	enum
+	{
+		LOW,
+		HIGH,
+		WHOLE_EVEN
+	} keep = LOW;
+	switch (i->id)
+	{
+	case X86_INS_PMULLW: bits = 16; break;
+	case X86_INS_PMULLD: bits = 32; break;
+	case X86_INS_PMULHW:
+		bits = 16;
+		keep = HIGH;
+		break;
+	case X86_INS_PMULHUW:
+		bits = 16;
+		keep = HIGH;
+		isSigned = false;
+		break;
+	case X86_INS_PMULDQ:
+		bits = 32;
+		keep = WHOLE_EVEN;
+		break;
+	case X86_INS_PMULUDQ:
+		bits = 32;
+		keep = WHOLE_EVEN;
+		isSigned = false;
+		break;
+	default: translatePseudoAsmGeneric(i, xi, irb); return;
+	}
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	unsigned totalBits = xi->operands[0].size * 8;
+	if (totalBits % bits != 0 || totalBits < bits * 2)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned n = totalBits / bits;
+
+	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
+	auto* intTy = irb.getIntNTy(totalBits);
+	auto* vecTy = vecType(irb.getIntNTy(bits), n);
+	Value* a = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op0, irb), intTy), vecTy);
+	Value* b = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op1, irb), intTy), vecTy);
+
+	Value* r = nullptr;
+	if (keep == LOW)
+	{
+		r = irb.CreateMul(a, b);
+	}
+	else if (keep == HIGH)
+	{
+		auto* wideTy = vecType(irb.getIntNTy(bits * 2), n);
+		Value* aw = isSigned ? irb.CreateSExt(a, wideTy) : irb.CreateZExt(a, wideTy);
+		Value* bw = isSigned ? irb.CreateSExt(b, wideTy) : irb.CreateZExt(b, wideTy);
+		Value* prod = irb.CreateMul(aw, bw);
+		Value* shifted = irb.CreateLShr(prod, ConstantInt::get(wideTy, APInt(bits * 2, bits)));
+		r = irb.CreateTrunc(shifted, vecTy);
+	}
+	else
+	{
+		llvm::SmallVector<int, 8> even;
+		for (unsigned k = 0; k < n; k += 2)
+		{
+			even.push_back(static_cast<int>(k));
+		}
+		auto* halfTy = vecType(irb.getIntNTy(bits), even.size());
+		auto* wideTy = vecType(irb.getIntNTy(bits * 2), even.size());
+		Value* ae = irb.CreateShuffleVector(a, llvm::UndefValue::get(vecTy), even);
+		Value* be = irb.CreateShuffleVector(b, llvm::UndefValue::get(vecTy), even);
+		(void)halfTy;
+		Value* aw = isSigned ? irb.CreateSExt(ae, wideTy) : irb.CreateZExt(ae, wideTy);
+		Value* bw = isSigned ? irb.CreateSExt(be, wideTy) : irb.CreateZExt(be, wideTy);
+		r = irb.CreateMul(aw, bw);
+	}
+
+	storeOp(
+		xi->operands[0], irb.CreateZExtOrTrunc(irb.CreateBitCast(r, intTy), irb.getInt128Ty()), irb, eOpConv::NOTHING);
+}
+
+/**
+ * PMADDWD -- multiply signed words and add ADJACENT pairs of the products.
+ *
+ * dest[31:0] is a[15:0]*b[15:0] + a[31:16]*b[31:16], so the eight products
+ * become four sums, not eight. The one input where the sum itself overflows
+ * is -32768 squared twice, which wraps to 0x80000000; that is the defined
+ * answer, so the add is left to wrap.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSsePmaddwd(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	unsigned totalBits = xi->operands[0].size * 8;
+	if (totalBits % 32 != 0)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned n = totalBits / 16;
+
+	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
+	auto* intTy = irb.getIntNTy(totalBits);
+	auto* vecTy = vecType(irb.getInt16Ty(), n);
+	auto* wideTy = vecType(irb.getInt32Ty(), n);
+
+	Value* a = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op0, irb), intTy), vecTy);
+	Value* b = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op1, irb), intTy), vecTy);
+	Value* prod = irb.CreateMul(irb.CreateSExt(a, wideTy), irb.CreateSExt(b, wideTy));
+
+	llvm::SmallVector<int, 8> even, odd;
+	for (unsigned k = 0; k < n; k += 2)
+	{
+		even.push_back(static_cast<int>(k));
+		odd.push_back(static_cast<int>(k + 1));
+	}
+	Value* e = irb.CreateShuffleVector(prod, llvm::UndefValue::get(wideTy), even);
+	Value* o = irb.CreateShuffleVector(prod, llvm::UndefValue::get(wideTy), odd);
+	Value* r = irb.CreateAdd(e, o);
+
+	storeOp(
+		xi->operands[0], irb.CreateZExtOrTrunc(irb.CreateBitCast(r, intTy), irb.getInt128Ty()), irb, eOpConv::NOTHING);
+}
+
+/**
+ * PSADBW -- absolute differences of unsigned bytes, summed in groups of eight.
+ *
+ * Each group of eight bytes produces ONE number, written to the low word of
+ * that group's quadword with the rest zeroed. Eight differences of bytes can
+ * reach 2040, so the sum is accumulated at sixteen bits and cannot overflow.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSsePsadbw(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	unsigned totalBits = xi->operands[0].size * 8;
+	if (totalBits % 64 != 0)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned groups = totalBits / 64;
+	unsigned n = totalBits / 8;
+
+	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
+	auto* intTy = irb.getIntNTy(totalBits);
+	auto* vecTy = vecType(irb.getInt8Ty(), n);
+	auto* wideTy = vecType(irb.getInt16Ty(), n);
+
+	Value* a = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op0, irb), intTy), vecTy);
+	Value* b = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op1, irb), intTy), vecTy);
+
+	// Unsigned bytes widened, so the difference is exact and its sign is the
+	// thing the absolute value is taken of.
+	Value* d = irb.CreateSub(irb.CreateZExt(a, wideTy), irb.CreateZExt(b, wideTy));
+	Value* neg = irb.CreateNeg(d);
+	Value* absd = irb.CreateSelect(irb.CreateICmpSLT(d, Constant::getNullValue(wideTy)), neg, d);
+
+	auto* i128 = irb.getInt128Ty();
+	Value* res = ConstantInt::get(i128, 0);
+	for (unsigned g = 0; g < groups; ++g)
+	{
+		Value* sum = ConstantInt::get(irb.getInt16Ty(), 0);
+		for (unsigned k = 0; k < 8; ++k)
+		{
+			sum = irb.CreateAdd(sum, irb.CreateExtractElement(absd, (uint64_t)(g * 8 + k)));
+		}
+		Value* placed = irb.CreateShl(irb.CreateZExt(sum, i128), ConstantInt::get(i128, g * 64));
+		res = irb.CreateOr(res, placed);
+	}
+
+	storeOp(xi->operands[0], res, irb, eOpConv::NOTHING);
+}
+
+/**
  * PSLLW/D/Q, PSRLW/D/Q, PSRAW/D -- the packed shifts, in both the
  * register/memory form and the immediate one. Capstone gives both the same
  * instruction id and distinguishes them by the operand's type.
