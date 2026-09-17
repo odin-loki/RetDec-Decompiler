@@ -8682,3 +8682,46 @@ Also unchanged: these helpers write CPSR_C whether or not the instruction sets
 flags, so a non-S `lsl` clobbers the carry. `ARM_INS_LSL` (`arm_tests.cpp`)
 currently pins that as expected. It is a separate question from the count, and
 this batch does not answer it.
+
+## Batch AJ — LDRD put the two loaded words in the wrong registers
+
+`LDRD <Rt>, <Rt2>, [<Rn>]` is `Rt <- MemA[Rn,4]; Rt2 <- MemA[Rn+4,4]`. The
+translator loads a little-endian i64 from the address, so the **low** half is
+the word at `[Rn]` and belongs in `operands[0]`. It stored the high half
+there:
+
+```c
+storeOp(ai->operands[0], hi, irb);
+storeOp(ai->operands[1], lo, irb);
+```
+
+```
+ldrd r0, r1, [r2]   r2 = 0x1000, [0x1000] = 0x90abcdef, [0x1004] = 0x12345678
+  hardware    r0 = 0x90abcdef   r1 = 0x12345678
+  translator  r0 = 0x12345678   r1 = 0x90abcdef
+```
+
+Three places in the same file use the opposite convention, and they are the
+ones that are right: `STRD` a hundred lines down stores `operands[0]` at the
+base address and `operands[1]` at base+4, and `UMULL`, `SMULL`, `UMLAL` and
+`SMLAL` all put `lo` in `operands[0]`. `LDRD` contradicted all four.
+`LDREXD` and `LDAEXD` share the translator and had it too.
+
+### Three tests asserted the swapped answer
+
+`ARM_INS_LDRD`, `ARM_INS_LDREXD` and `ARM_INS_LDAEXD` all set a quadword at
+`0x1000` and expected `r0` to take its high half. They were written from the
+same reading of the manual as the code, which is the Batch AA-1 shape and the
+fourth time it has appeared on this branch:
+
+```
+AA-1  every IDIV test divided by a positive number
+AG-4  the EXTR test chose a constant whose bits hid the bug
+AH    both SRAW tests were commented out; the SUBFE ones used operands
+      where the right and wrong readings agree
+AJ    all three LDRD tests asserted the swap
+```
+
+All three are corrected here, and reverting the fix fails all three.
+
+C2L-01 floor unchanged: the tests were corrected, not added.

@@ -3035,25 +3035,31 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLdrd(cs_insn* i, cs_arm* ai, ll
 	bool op1Pc = ai->operands[1].type == ARM_OP_REG
 			&& ai->operands[1].reg == ARM_REG_PC;
 
+	// `LDRD <Rt>, <Rt2>, [<Rn>]` is `Rt <- MemA[Rn,4]; Rt2 <- MemA[Rn+4,4]`.
+	// op1 above is a little-endian i64 load from the address, so `lo` is the
+	// word at [Rn] and belongs in operands[0]. These two were the other way
+	// round, which is the opposite of what the rest of this file does: STRD a
+	// hundred lines down stores operands[0] at the base and operands[1] at
+	// base+4, and UMULL/SMULL/UMLAL/SMLAL all put `lo` in operands[0].
 	if (!op0Pc && !op1Pc)
 	{
-		storeOp(ai->operands[0], hi, irb);
-		storeOp(ai->operands[1], lo, irb);
+		storeOp(ai->operands[0], lo, irb);
+		storeOp(ai->operands[1], hi, irb);
 	}
 	else if (op0Pc && !op1Pc)
 	{
-		storeOp(ai->operands[1], lo, irb);
-		storeOp(ai->operands[0], hi, irb);
+		storeOp(ai->operands[1], hi, irb);
+		storeOp(ai->operands[0], lo, irb);
 	}
 	else if (!op0Pc && op1Pc)
 	{
-		storeOp(ai->operands[0], hi, irb);
-		storeOp(ai->operands[1], lo, irb);
+		storeOp(ai->operands[0], lo, irb);
+		storeOp(ai->operands[1], hi, irb);
 	}
 	else
 	{
 		// Store only one.
-		storeOp(ai->operands[0], hi, irb);
+		storeOp(ai->operands[0], lo, irb);
 	}
 
 	if (!op0Pc && !op1Pc && baseR == ARM_REG_PC && v)

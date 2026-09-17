@@ -3116,9 +3116,12 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDAEXD)
 	emulate_bin("9f 0e b2 e1");
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R2});
+	// Rt takes the word at [Rn], which little-endian makes the LOW half
+	// of the loaded quadword. Shares translateLdrd with LDRD, and the
+	// same correction applies.
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, 0x12345678},
-		{ARM_REG_R1, 0x90abcdef},
+		{ARM_REG_R0, 0x90abcdef},
+		{ARM_REG_R1, 0x12345678},
 	});
 	EXPECT_JUST_MEMORY_LOADED({0x1000});
 	EXPECT_NO_MEMORY_STORED();
@@ -3402,10 +3405,14 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDRD)
 
 	emulate("ldrd r0, r1, [r2]");
 
+	// Rt takes the word at [Rn] and Rt2 the word at [Rn+4]. Memory here is
+	// little-endian, so the low half of the stored quadword is the word at
+	// 0x1000 and belongs in r0. This test asserted the reverse, which is the
+	// same reading STRD and UMULL in the same file contradict.
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, 0x12345678},
-		{ARM_REG_R1, 0x90abcdef},
+		{ARM_REG_R0, 0x90abcdef},
+		{ARM_REG_R1, 0x12345678},
 	});
 	EXPECT_JUST_MEMORY_LOADED({0x1000});
 	EXPECT_NO_MEMORY_STORED();
@@ -3450,9 +3457,12 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDREXD)
 	emulate("ldrexd r0, r1, [r2]");
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R2});
+	// Rt takes the word at [Rn], which little-endian makes the LOW half
+	// of the loaded quadword. Shares translateLdrd with LDRD, and the
+	// same correction applies.
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, 0x12345678},
-		{ARM_REG_R1, 0x90abcdef},
+		{ARM_REG_R0, 0x90abcdef},
+		{ARM_REG_R1, 0x12345678},
 	});
 	EXPECT_JUST_MEMORY_LOADED({0x1000});
 	EXPECT_NO_MEMORY_STORED();
