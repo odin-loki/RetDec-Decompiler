@@ -232,12 +232,19 @@ def load_jobs(db_path, subs, rebase=None):
     db = json.loads(Path(db_path).read_text(encoding="utf-8"))
     jobs, skipped, moved, cxx = [], [], 0, 0
     for entry in db:
+        if not entry["file"].endswith((".cpp", ".cc", ".cxx")):
+            continue                              # C sources of vendored deps
+        # Counted before anything can drop this entry. Counting it after the
+        # rebase check put the dropped files in `moved` and not in `cxx`, and
+        # the accounting below then reported four more entries accounted for
+        # than the database held. The invariant caught it, which is what it is
+        # there for.
+        cxx += 1
         cmd = entry.get("command")
         if cmd is None:
             cmd = " ".join(shlex.quote(a) for a in entry.get("arguments", []))
         if rebase:
             src_root, here = rebase
-            # counted above, so a dropped file still shows in the accounting
             cmd = cmd.replace(src_root, here)
             entry = dict(entry,
                          file=entry["file"].replace(src_root, here),
@@ -247,9 +254,6 @@ def load_jobs(db_path, subs, rebase=None):
                 continue
         for old, new in subs.items():
             cmd = cmd.replace(old, new)
-        if not entry["file"].endswith((".cpp", ".cc", ".cxx")):
-            continue                              # C sources of vendored deps
-        cxx += 1
         missing = [p for p in re.findall(r"-(?:isystem|I)\s*(\S+)", cmd)
                    if not os.path.isdir(p)]
         if missing:

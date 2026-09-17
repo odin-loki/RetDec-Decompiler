@@ -434,6 +434,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   over `VarUsesVisitor`'s direct and indirect uses; otherwise the ordinary path
   emits the declaration ahead of both loops.
 
+  `CC-01` reports 252/252 on the fixed tree, and `ctest-linux` is green for the
+  first time since 2026-08-29.
+
   Two tests: the failing shape, and a control in which the only other use is
   inside the loop and the narrowing must still happen — a fix that simply
   stopped marking anything would pass the first and fail the second. Disabling

@@ -11596,10 +11596,38 @@ L2H-01: full log: .../run.log
 That is the seventeenth time in this audit that the apparatus, rather than the
 code, gave the wrong answer — and the second time the wrong answer was silence.
 
-### Still open
+### Confirmed by `ctest-linux`
 
-- The BIR tests fix the decision; whether `CC-01` reaches 252/252 is a
-  statement about the whole corpus that only `ctest-linux` can make.
+`CC-01` reports **252/252** on `accc2bca`, and the whole workflow is green —
+build, clang-tidy, GUI tests, unit tests, integration tests, `CACHE-05`,
+`DET-01`, `CLI-01`, both `ARCH-01` steps, `IR2HLL-01` and both `COV-01` steps.
+That is the first green `ctest-linux` since 2026-08-29, which is the last run
+before the LLVM 23.1.0 pin landed.
+
+### `PIN-01` failed the sweep, on its own accounting
+
+The push-gate sweep against a pristine worktree came back 69 of 70, and the
+one failure was the new gate catching itself:
+
+```
+PIN-01: FAIL 991 C++ entries in the database and 995 accounted for
+        (939 checked, 0 waiting on a dependency header,
+         52 waiting on a dependency include directory, 4 not in this checkout)
+```
+
+`cxx` was incremented after the rebase check rather than before it, so the four
+entries dropped as "not in this checkout" landed in `moved` and never in the
+total they were being compared against. Four more accounted for than existed.
+It only shows when the database belongs to another checkout, which is the
+worktree case and not the case the gate was written in — so the run that found
+it is the first one that could have.
+
+The invariant is the whole reason it was written: a harness that reports on
+part of what it was handed and does not say which part is how an audit comes to
+believe it covered a tree it did not. Here the first thing it caught was the
+harness.
+
+### Still open
 - `tryOptimizeUForLoop` is the only caller of `markInitAsDefinition`, so this
   closes the scope question for `UForLoopStmt`. `ForLoopStmt` emits its own
   induction variable a different way and was not audited here.
