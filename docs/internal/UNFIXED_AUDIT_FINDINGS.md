@@ -8373,3 +8373,128 @@ tests: `setXmm()` takes `(reg, hi, lo)` and the oracle supplies `(lo, hi)`, so
 every input was reversed. Worth recording because the instinct on a red test
 is to look at the code it tests, and here the code was the only part that had
 already been measured.
+
+## Batch AG — three ARM64 bugs, found by looking for the x86 ones
+
+### How this was found
+
+Every batch from AA to AF was x86, because x86 is the only architecture this
+container can execute. The five bug classes those batches established are not
+x86-specific, though, so ARM, ARM64, MIPS and PowerPC were searched for each
+of them by reading — with the rule that a finding which cannot be demonstrated
+from the code is worse than no finding.
+
+Three of the ARM64 results are in this batch. The rest, and the MIPS/PowerPC
+ones, are recorded below as still open.
+
+### AG-1: FCVTZS and FCVTZU had their signedness transposed
+
+```c
+case ARM64_INS_FCVTZU:
+    op1 = irb.CreateFPToSI(op1, ...);   // the UNSIGNED convert, signed
+case ARM64_INS_FCVTZS:
+    op1 = irb.CreateFPToUI(op1, ...);   // the SIGNED convert, unsigned
+```
+
+Straight transposition, and both ids are dispatched here. `fptosi` and
+`fptoui` agree wherever the value fits, which is why it survived: they differ
+exactly at the inputs that do not, and there the answer is poison rather than
+merely different. `fcvtzs x0, d0` with `d0 = -1.0` was `fptoui double -1.0`.
+
+### AG-2: the emulator cannot see AG-1, and that is why it lasted
+
+The test for this one asserts on the **IR**, not on a value, and the reason is
+worth recording. `src/llvmir-emul/llvmir_emul.cpp` implements both
+conversions with the same call:
+
+```
+executeFPToUIInst  ->  APIntOps::RoundDoubleToAPInt(Src.DoubleVal, DBitWidth)
+executeFPToSIInst  ->  APIntOps::RoundDoubleToAPInt(Src.DoubleVal, DBitWidth)
+```
+
+The two instructions are indistinguishable to the interpreter. **No value test
+running through it can catch a translator emitting the wrong one of the
+pair**, on any architecture. The first version of these tests asserted on the
+returned register and passed with the transposition put back.
+
+That also means the float-to-integer *saturation* class — bare `CreateFPToSI`
+at eight sites across ARM, ARM64, MIPS, PowerPC and the x87 path — cannot be
+value-tested here either. It is listed as open below rather than fixed
+unfalsifiably.
+
+### AG-3: UXTX and SXTX threw away the top half
+
+```c
+case ARM64_EXT_UXTX:
+    trunc = irb.CreateTrunc(val, i32);   // copied from the UXTW case above
+    return irb.CreateZExt(trunc, ty);
+```
+
+"Extend from X" means use all sixty-four bits, so both of these are no-ops.
+Both were byte-identical copies of the W forms above them.
+`add x0, x1, x2, uxtx` with `x2 = 0x123456789abcdef0` answered
+`0x000000009abcdef0`.
+
+Reachability is limited: capstone does not set `ext` when UXTX is paired with
+SP, so the common `add x0, sp, x1, lsl #3` never reaches this code. Wrong from
+the code without qualification; uncommon in compiler output.
+
+### AG-4: EXTR with a rotate of zero, and a test that hid it
+
+`extr Xd, Xn, Xm, #0` is a legal encoding meaning `Xd = Xm`. The translator
+computed `width - 0 = 64` and emitted `shl i64 %Xn, 64` — poison. The
+emulator reduces a shift modulo the width, turning it into `shl %Xn, 0`, so
+the answer came out as `Xm | Xn`: a wrong **value**, not only bad IR.
+
+There was already a test for exactly this encoding,
+`ARM64_INS_EXTR_r_r_r_i_5`, and it passed. It chose `x1 = 0x1111111111111111`
+against `x2 = 0x9999999999999999`, and every set bit of the first is also set
+in the second — so the spurious OR was invisible. Changing that one constant
+to `0x2222222222222222` fails it, and that is the change this batch makes.
+
+`translateNeonExt`, a few hundred lines away in the same file, case-splits
+this identical hazard and its comment says why. EXTR was missed.
+
+### Falsification
+
+```
+AG1_fcvtz_transposed   2 tests  FCVTZS_is_the_signed_convert, FCVTZU_...
+AG2_uxtx_truncates     1 test
+AG3_sxtx_truncates     1 test
+AG4_extr_no_zero_case  1 test   the existing test, with its constant replaced
+```
+
+One decision is deliberately not in that list. The EXTR fix also clamps the
+shift amount, not only selects the result, so the IR carries no poison on
+either path. That clamp is **not value-observable** — the select already
+decides the answer — so a mutation removing it comes back green. It is kept
+rather than dropped because poison does not stay where it is put once the
+optimiser sees it, and said here rather than left as an unfalsified change.
+
+C2L-01 floor: ARM64 556 → 560. 5,679 tests.
+
+### Still open on the other architectures
+
+Confirmed from the code, not yet fixed:
+
+```
+PowerPC  SLW/SRW mask the count to six bits and then shift an i32 by it,
+         which is poison for 32..63 where the ISA defines ZERO. translateRotlw
+         in the same file handles this and says so in a comment.
+PowerPC  SUBFE computes its carry from RA where the value uses ~RA. The three
+         sibling translators all pass the complemented operand.
+PowerPC  SRAW/SRAWI place the carry at XER bit 29 and store that into an i1
+         global, so CA is unconditionally false. Both its tests are commented
+         out.
+PowerPC  cntlzw, mulhw, mullw, divw and sraw are done at register width, so
+         they are wrong on PPC64, which createPpc64() enables.
+ARM      the register-controlled shifts mask neither to eight bits nor at the
+         operand width; ARM is not modulo, so this is a wrong value and not
+         only poison.
+ARM      LDRD writes the two loaded words to the wrong registers.
+ARM64    LSLV/LSRV/ASRV/RORV do not mask the shift amount.
+ARM64    a memory operand's extender is dropped and its index zero-extended,
+         so `ldr w0, [x1, w2, sxtw #2]` with a negative index addresses 4 GiB
+         away.
+all      bare CreateFPToSI at eight sites, per AG-2.
+```

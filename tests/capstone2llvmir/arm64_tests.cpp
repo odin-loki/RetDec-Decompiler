@@ -1317,10 +1317,61 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_EXTR_r_r_r_i_3)
 	EXPECT_NO_VALUE_CALLED();
 }
 
-TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_EXTR_r_r_r_i_5)
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCVTZS_is_the_signed_convert)
+{
+	// Asserted on the IR, not on a value, and the reason is the point: the
+	// emulator implements FPToUI and FPToSI with the SAME
+	// APIntOps::RoundDoubleToAPInt (src/llvmir-emul/llvmir_emul.cpp:1167 and
+	// :1215), so the two instructions are indistinguishable to it. No test
+	// that runs through it can catch a translator emitting the wrong one of
+	// the pair -- which is exactly how these two came to be transposed.
+	auto* f = translate(assemble("fcvtzs x0, d1"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(std::string::npos, dumpFunction(f).find("fptosi")) << dumpFunction(f);
+	EXPECT_EQ(std::string::npos, dumpFunction(f).find("fptoui")) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCVTZU_is_the_unsigned_convert)
+{
+	auto* f = translate(assemble("fcvtzu x0, d1"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(std::string::npos, dumpFunction(f).find("fptoui")) << dumpFunction(f);
+	EXPECT_EQ(std::string::npos, dumpFunction(f).find("fptosi")) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_EXT_UXTX_keeps_all_sixty_four_bits)
 {
 	setRegisters({
-		{ARM64_REG_X1, 0x1111111111111111},
+		{ARM64_REG_X1, 0x0},
+		{ARM64_REG_X2, 0x123456789abcdef0},
+	});
+
+	emulate("add x0, x1, x2, uxtx");
+
+	// UXTX extends from the whole X register. The case was a copy of UXTW
+	// and threw the top half away, answering 0x000000009abcdef0.
+	EXPECT_EQ(0x123456789abcdef0ULL, getRegisterValueUnsigned(ARM64_REG_X0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_EXT_SXTX_keeps_all_sixty_four_bits)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0x0},
+		{ARM64_REG_X2, 0xfedcba9876543210},
+	});
+
+	emulate("add x0, x1, x2, sxtx");
+
+	EXPECT_EQ(0xfedcba9876543210ULL, getRegisterValueUnsigned(ARM64_REG_X0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_EXTR_r_r_r_i_5)
+{
+	// 0x2222... rather than 0x1111...: with the old constant every set bit of
+	// X1 was also set in X2, so the spurious `Xm | Xn` this instruction used
+	// to compute was invisible and the test passed against a wrong answer.
+	setRegisters({
+		{ARM64_REG_X1, 0x2222222222222222},
 		{ARM64_REG_X2, 0x9999999999999999},
 	});
 

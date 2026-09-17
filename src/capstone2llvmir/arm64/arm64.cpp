@@ -496,8 +496,11 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::generateOperandExtension(
 		}
 		case ARM64_EXT_UXTX:
 		{
-			trunc = irb.CreateTrunc(val, i32);
-			return irb.CreateZExt(trunc, ty);
+			// UXTX extends from the whole X register. This was a copy of the
+			// UXTW case above and threw the top half away, so
+			// `add x0, x1, x2, uxtx` with x2 = 0x123456789abcdef0 answered
+			// 0x000000009abcdef0.
+			return irb.CreateZExtOrTrunc(val, ty);
 		}
 		case ARM64_EXT_SXTB:
 		{
@@ -516,8 +519,9 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::generateOperandExtension(
 		}
 		case ARM64_EXT_SXTX:
 		{
-			trunc = irb.CreateTrunc(val, i32);
-			return irb.CreateSExt(trunc, ty);
+			// SXTX likewise: the source is already the full width, so there
+			// is nothing to extend from.
+			return irb.CreateSExtOrTrunc(val, ty);
 		}
 		default:
 			throw GenericError("Arm64: generateOperandExtension(): Unsupported extension type");
@@ -3962,10 +3966,21 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateExtr(cs_insn* i, cs_arm64* ai
 	llvm::Value* lsb2 = llvm::ConstantInt::get(op1->getType(), llvm::cast<llvm::IntegerType>(op2->getType())->getBitWidth());
 	lsb2 = irb.CreateSub(lsb2, lsb1);
 
+	// `extr Xd, Xn, Xm, #0` is a legal encoding meaning Xd = Xm, and it makes
+	// lsb2 the whole operand width -- `shl i64 %Xn, 64`, which is poison. The
+	// emulator reduces a shift modulo the width, so that became `shl %Xn, 0`
+	// and the answer came out as `Xm | Xn` instead of `Xm`: a wrong VALUE,
+	// not only bad IR. translateNeonExt case-splits the same hazard.
+	//
+	// The shift amount is clamped as well as the result selected, so no
+	// poison is emitted on either path.
+	auto* zeroRot = irb.CreateICmpEQ(lsb1, llvm::ConstantInt::get(op1->getType(), 0));
+	lsb2 = irb.CreateSelect(zeroRot, llvm::ConstantInt::get(op1->getType(), 0), lsb2);
+
 	auto* left_val  = irb.CreateLShr(op2, lsb1);
 	auto* right_val = irb.CreateShl(op1, lsb2);
 
-	auto* val = irb.CreateOr(left_val, right_val);
+	auto* val = irb.CreateSelect(zeroRot, op2, irb.CreateOr(left_val, right_val));
 
 	storeOp(ai->operands[0], val, irb);
 }
@@ -4526,12 +4541,13 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFCvtz(cs_insn* i, cs_arm64* a
 
 	switch(i->id)
 	{
-	case ARM64_INS_FCVTZU:
-		op1 = irb.CreateFPToSI(op1, getRegisterType(ai->operands[0].reg));
-		break;
-	case ARM64_INS_FCVTZS:
-		op1 = irb.CreateFPToUI(op1, getRegisterType(ai->operands[0].reg));
-		break;
+	// These two were transposed: the SIGNED convert was emitting fptoui and
+	// the UNSIGNED one fptosi. The two agree wherever the value fits, which
+	// is why it survived -- they differ exactly at the inputs that do not,
+	// and there the answer was poison rather than merely different.
+	// `fcvtzs x0, d0` with d0 = -1.0 became `fptoui double -1.0`.
+	case ARM64_INS_FCVTZS: op1 = irb.CreateFPToSI(op1, getRegisterType(ai->operands[0].reg)); break;
+	case ARM64_INS_FCVTZU: op1 = irb.CreateFPToUI(op1, getRegisterType(ai->operands[0].reg)); break;
 	default:
 		throw GenericError("Arm64: translateFCvtz(): Unsupported instruction id");
 	}
