@@ -57,6 +57,17 @@
 #               AVX binary got a pseudo-assembly call where an SSE binary got
 #               a comparison.
 #
+#   vec         the instructions that read XMM registers and write one: the
+#               packed shifts and the PMOVSX/PMOVZX widenings. Both 64-bit
+#               halves of the destination are compared, so a translator that
+#               writes the right value to the wrong half is a mismatch. The
+#               shift counts straddle the element width on purpose -- a count
+#               at or past it is DEFINED (zero, or the sign bit broadcast)
+#               where LLVM's shl is poison. The encodings are hand-written,
+#               so each is disassembled and checked against the mnemonic it
+#               is supposed to be: a wrong ModRM would otherwise test one
+#               instruction against another's expected answers.
+#
 #   condition   every SETcc against every one of the 64 combinations of the
 #               six flags. Exhaustive, not sampled: 16 x 64 = 1024 cases. Jcc,
 #               SETcc and CMOVcc all go through the same sixteen generateCc*
@@ -158,10 +169,12 @@ gcc -O0 -o "${WORKDIR}/wide_oracle" scripts/ci/x86_wide_oracle.c || die "wide or
 # established the host is x86-64; a machine without AVX fails here rather than
 # quietly testing only the SSE half.
 gcc -O0 -mavx -o "${WORKDIR}/sse_oracle" scripts/ci/x86_sse_oracle.c || die "sse oracle build failed"
+gcc -O0 -msse4.1 -o "${WORKDIR}/vec_oracle" scripts/ci/x86_vec_oracle.c || die "vec oracle build failed"
 link scripts/ci/x86_flag_compare.cpp "${WORKDIR}/flag_compare"
 link scripts/ci/x86_cc_compare.cpp   "${WORKDIR}/cc_compare"
 link scripts/ci/x86_wide_compare.cpp "${WORKDIR}/wide_compare"
 link scripts/ci/x86_sse_compare.cpp  "${WORKDIR}/sse_compare"
+link scripts/ci/x86_vec_compare.cpp  "${WORKDIR}/vec_compare"
 
 rc=0
 
@@ -216,6 +229,20 @@ if [ "${SELF_TEST}" -eq 1 ]; then
 		*", 1 mismatches"*) echo "FLAG-01: sse self-test ok -- ${st}" ;;
 		*) die "sse self-test: expected exactly 1 mismatch, got: ${st}" ;;
 	esac
+
+	"${WORKDIR}/vec_oracle" 4 > "${WORKDIR}/vrows.txt"
+	awk -F'|' 'BEGIN{OFS="|"} NR==2 && NF==7 {
+			last = substr($6, length($6));
+			$6 = substr($6, 1, length($6) - 1) (last == "0" ? "1" : "0")
+		} {print}' \
+		"${WORKDIR}/vrows.txt" > "${WORKDIR}/vrows.bad"
+	cmp -s "${WORKDIR}/vrows.txt" "${WORKDIR}/vrows.bad" \
+		&& die "self-test: corrupting a vec row changed nothing"
+	st="$(cd "${WORKDIR}" && ./vec_compare vrows.bad | tail -1)"
+	case "${st}" in
+		*", 1 mismatches"*) echo "FLAG-01: vec self-test ok -- ${st}" ;;
+		*) die "vec self-test: expected exactly 1 mismatch, got: ${st}" ;;
+	esac
 fi
 
 "${WORKDIR}/flag_oracle" "${ROWS}" > "${WORKDIR}/rows.txt"
@@ -246,6 +273,18 @@ fi
 # be read as a pass.
 if ! echo "${out}" | grep -qE '0 untranslated forms'; then
 	echo "FLAG-01: FAIL an instruction under test is not translated at all" >&2
+	rc=1
+fi
+
+"${WORKDIR}/vec_oracle" "${ROWS}" > "${WORKDIR}/vrows.txt"
+out="$(cd "${WORKDIR}" && ./vec_compare vrows.txt)"
+echo "${out}" | tail -20
+if ! echo "${out}" | grep -qE ', 0 mismatches'; then
+	echo "FLAG-01: FAIL packed integer results disagree with the hardware" >&2
+	rc=1
+fi
+if ! echo "${out}" | grep -qE '0 untranslated forms, 0 misencoded'; then
+	echo "FLAG-01: FAIL an instruction under test is untranslated or misencoded" >&2
 	rc=1
 fi
 

@@ -16229,6 +16229,219 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, CVTTSD2SI_in_range_is_unaffected_by_th
 	EXPECT_EQ(0x7fffffffULL, getRegisterValueUnsigned(X86_REG_RAX));
 }
 
+//
+// Batch AC -- the packed shifts and the widening moves.
+//
+// All twenty of these fell through to pseudo-assembly. Every expected value
+// below was executed on the host CPU; see scripts/ci/x86_vec_oracle.c.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PSLLW_shifts_every_word)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x0005000600070008ULL, 0x0001000200030004ULL);
+	setXmm(X86_REG_XMM1, 0ULL, 4ULL);
+
+	emulate("psllw xmm0, xmm1");
+
+	EXPECT_EQ(0x0010002000300040ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0050006000700080ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PSLLW_by_the_element_width_is_zero)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x0005000600070008ULL, 0x0001000200030004ULL);
+	setXmm(X86_REG_XMM1, 0ULL, 16ULL);
+
+	emulate("psllw xmm0, xmm1");
+
+	// Not undefined and not poison: a count at or past the element width
+	// gives zero. `shl <8 x i16> %v, 16` is poison, so the count has to be
+	// clamped and the answer selected back.
+	EXPECT_EQ(0ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PSLLW_by_an_enormous_count_is_still_zero)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x0005000600070008ULL, 0x0001000200030004ULL);
+	setXmm(X86_REG_XMM1, 0ULL, 1ULL << 40);
+
+	emulate("psllw xmm0, xmm1");
+
+	// The count is a full 64-bit value, so "too big" has to be asked of all
+	// of it -- truncating it to the element width first would read this as a
+	// shift by zero.
+	EXPECT_EQ(0ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PSLLW_ignores_the_high_half_of_the_count)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x0005000600070008ULL, 0x0001000200030004ULL);
+	setXmm(X86_REG_XMM1, 0xdeadbeefdeadbeefULL, 4ULL);
+
+	emulate("psllw xmm0, xmm1");
+
+	// The count is the LOW quadword. Reading the whole register would make
+	// this an enormous count and answer zero.
+	EXPECT_EQ(0x0010002000300040ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0050006000700080ULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PSRAW_past_the_width_broadcasts_the_sign)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0xffff000180007fffULL, 0x8000000700018000ULL);
+	setXmm(X86_REG_XMM1, 0ULL, 20ULL);
+
+	emulate("psraw xmm0, xmm1");
+
+	// The arithmetic right shift is the one case where "too big" is NOT
+	// zero: every element becomes its own sign bit.
+	EXPECT_EQ(0xffff00000000ffffULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xffff0000ffff0000ULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PSRAD_by_the_element_width_broadcasts_the_sign)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x7fffffff00000001ULL, 0x80000001ffffffffULL);
+	setXmm(X86_REG_XMM1, 0ULL, 32ULL);
+
+	emulate("psrad xmm0, xmm1");
+
+	EXPECT_EQ(0xffffffffffffffffULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PSRLQ_shifts_both_quadwords)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0xffffffffffffffffULL, 0x8000000000000000ULL);
+	setXmm(X86_REG_XMM1, 0ULL, 63ULL);
+
+	emulate("psrlq xmm0, xmm1");
+
+	EXPECT_EQ(1ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(1ULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PSLLW_immediate_form)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x0005000600070008ULL, 0x0001000200030004ULL);
+
+	emulate("psllw xmm0, 3");
+
+	// Capstone gives the immediate form the same instruction id as the
+	// register one and distinguishes them only by the operand's type.
+	EXPECT_EQ(0x0008001000180020ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0028003000380040ULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PSRLD_immediate_past_the_width)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x00000001ffffffffULL, 0xffffffff80000000ULL);
+
+	emulate("psrld xmm0, 33");
+
+	EXPECT_EQ(0ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PMOVSXBW_widens_the_low_eight_bytes)
+{
+	ONLY_MODE_64;
+
+	// The upper half of the source is noise: pmovsxbw reads eight bytes and
+	// a translator that reads more would still answer plausibly for the
+	// lanes it does write.
+	setXmm(X86_REG_XMM1, 0xdeadbeefdeadbeefULL, 0x01ff7f80fe020103ULL);
+
+	emulate("pmovsxbw xmm0, xmm1");
+
+	EXPECT_EQ(0xfffe000200010003ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0001ffff007fff80ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PMOVZXBW_zero_extends_where_PMOVSXBW_signs)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0xdeadbeefdeadbeefULL, 0x01ff7f80fe020103ULL);
+
+	emulate("pmovzxbw xmm0, xmm1");
+
+	EXPECT_EQ(0x00fe000200010003ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x000100ff007f0080ULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PMOVSXBQ_reads_only_two_bytes)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0xdeadbeefdeadbeefULL, 0x0102030405067f80ULL);
+
+	emulate("pmovsxbq xmm0, xmm1");
+
+	// Two quadwords out means two bytes in. Everything above the low sixteen
+	// bits of the source is untouched.
+	EXPECT_EQ(0xffffffffffffff80ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x000000000000007fULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PMOVZXBQ_reads_only_two_bytes)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0xdeadbeefdeadbeefULL, 0x0102030405067f80ULL);
+
+	emulate("pmovzxbq xmm0, xmm1");
+
+	EXPECT_EQ(0x0000000000000080ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x000000000000007fULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PMOVSXDQ_widens_two_dwords)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0xdeadbeefdeadbeefULL, 0x80000001fffffffeULL);
+
+	emulate("pmovsxdq xmm0, xmm1");
+
+	EXPECT_EQ(0xfffffffffffffffeULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xffffffff80000001ULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PMOVZXWD_widens_four_words)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0xdeadbeefdeadbeefULL, 0x8000000100027fffULL);
+
+	emulate("pmovzxwd xmm0, xmm1");
+
+	EXPECT_EQ(0x0000000200007fffULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0000800000000001ULL, xmmHigh(X86_REG_XMM0));
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, CVTTPS2DQ_indefinite_is_per_lane)
 {
 	ONLY_MODE_64;

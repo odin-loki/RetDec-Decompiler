@@ -424,6 +424,8 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		void translateSseShufp(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSseMovMsk(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSsePminMax(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSsePackedShift(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSseMovWiden(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSsePalignr(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSsePavg(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateCvtSi2Ss(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);

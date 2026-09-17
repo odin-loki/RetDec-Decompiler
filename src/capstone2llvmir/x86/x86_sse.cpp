@@ -1363,6 +1363,217 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSseMovMsk(cs_insn* i, cs_x86* x
  * matching ones, so reading the U or the S wrongly is a silent miscompilation
  * in exactly the code these appear in.
  */
+/**
+ * PSLLW/D/Q, PSRLW/D/Q, PSRAW/D -- the packed shifts, in both the
+ * register/memory form and the immediate one. Capstone gives both the same
+ * instruction id and distinguishes them by the operand's type.
+ *
+ * Two things separate this from a vector shl.
+ *
+ * The count is ONE value for the whole register -- the low quadword of the
+ * second operand, or the immediate -- not one per lane. The upper quadword of
+ * a register count operand is not read at all.
+ *
+ * A count at or past the element width is DEFINED, and it is defined
+ * differently for the two directions: a logical shift gives zero, an
+ * arithmetic right shift gives the sign bit broadcast across the element.
+ * `psllw` by 17 is zero, measured. LLVM's shl is poison there, so the count
+ * is clamped and the logical case is selected back to zero -- the same shape
+ * as the conversion guard a few hundred lines up, and for the same reason:
+ * poison does not stay where it is put.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSsePackedShift(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	unsigned elemBits = 0;
+	bool left = false;
+	bool arithmetic = false;
+	switch (i->id)
+	{
+	case X86_INS_PSLLW:
+		elemBits = 16;
+		left = true;
+		break;
+	case X86_INS_PSLLD:
+		elemBits = 32;
+		left = true;
+		break;
+	case X86_INS_PSLLQ:
+		elemBits = 64;
+		left = true;
+		break;
+	case X86_INS_PSRLW: elemBits = 16; break;
+	case X86_INS_PSRLD: elemBits = 32; break;
+	case X86_INS_PSRLQ: elemBits = 64; break;
+	case X86_INS_PSRAW:
+		elemBits = 16;
+		arithmetic = true;
+		break;
+	case X86_INS_PSRAD:
+		elemBits = 32;
+		arithmetic = true;
+		break;
+	default: translatePseudoAsmGeneric(i, xi, irb); return;
+	}
+
+	// MMX shares these mnemonics and these ids at half the width. Deciding
+	// from the operand rather than assuming 128 bits is what keeps the two
+	// apart -- the id alone does not say.
+	unsigned totalBits = xi->operands[0].size * 8;
+	if (totalBits < elemBits || totalBits % elemBits != 0)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned n = totalBits / elemBits;
+
+	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
+
+	auto* intTy = irb.getIntNTy(totalBits);
+	auto* vecTy = vecType(irb.getIntNTy(elemBits), n);
+	Value* v = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op0, irb), intTy), vecTy);
+
+	auto* i64 = irb.getInt64Ty();
+	Value* cnt = nullptr;
+	if (xi->operands[1].type == X86_OP_IMM)
+	{
+		cnt = ConstantInt::get(i64, xi->operands[1].imm);
+	}
+	else
+	{
+		// The low quadword only: the rest of the register is not the count.
+		cnt = irb.CreateTrunc(toI128(op1, irb), i64);
+	}
+
+	auto* tooBig = irb.CreateICmpUGE(cnt, ConstantInt::get(i64, elemBits));
+	// Clamped to the largest count that is not poison. For the arithmetic
+	// shift that clamp IS the answer -- shifting right by width-1 leaves the
+	// sign bit everywhere -- so only the logical cases need the select below.
+	auto* safe = irb.CreateSelect(tooBig, ConstantInt::get(i64, elemBits - 1), cnt);
+	Value* amt = irb.CreateVectorSplat(n, irb.CreateTrunc(safe, irb.getIntNTy(elemBits)));
+
+	Value* res = nullptr;
+	if (left)
+	{
+		res = irb.CreateShl(v, amt);
+	}
+	else if (arithmetic)
+	{
+		res = irb.CreateAShr(v, amt);
+	}
+	else
+	{
+		res = irb.CreateLShr(v, amt);
+	}
+	if (!arithmetic)
+	{
+		res = irb.CreateSelect(tooBig, Constant::getNullValue(vecTy), res);
+	}
+
+	storeOp(
+		xi->operands[0],
+		irb.CreateZExtOrTrunc(irb.CreateBitCast(res, intTy), irb.getInt128Ty()),
+		irb,
+		eOpConv::NOTHING);
+}
+
+/**
+ * PMOVSXBW/BD/BQ/WD/WQ/DQ and the PMOVZX forms -- widen the LOW elements of
+ * the source and fill the destination with them.
+ *
+ * How many elements are read follows from the destination, not the source:
+ * `pmovsxbq` writes two quadwords, so it reads two bytes. Everything above
+ * the low sixteen bits of the source is untouched input, and a translator
+ * that reads more than it should would still produce a plausible answer for
+ * the lanes it does write -- which is why the oracle fills those bits with
+ * noise.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSseMovWiden(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	unsigned srcBits = 0;
+	unsigned dstBits = 0;
+	bool isSigned = true;
+	switch (i->id)
+	{
+	case X86_INS_PMOVSXBW:
+		srcBits = 8;
+		dstBits = 16;
+		break;
+	case X86_INS_PMOVSXBD:
+		srcBits = 8;
+		dstBits = 32;
+		break;
+	case X86_INS_PMOVSXBQ:
+		srcBits = 8;
+		dstBits = 64;
+		break;
+	case X86_INS_PMOVSXWD:
+		srcBits = 16;
+		dstBits = 32;
+		break;
+	case X86_INS_PMOVSXWQ:
+		srcBits = 16;
+		dstBits = 64;
+		break;
+	case X86_INS_PMOVSXDQ:
+		srcBits = 32;
+		dstBits = 64;
+		break;
+	case X86_INS_PMOVZXBW:
+		srcBits = 8;
+		dstBits = 16;
+		isSigned = false;
+		break;
+	case X86_INS_PMOVZXBD:
+		srcBits = 8;
+		dstBits = 32;
+		isSigned = false;
+		break;
+	case X86_INS_PMOVZXBQ:
+		srcBits = 8;
+		dstBits = 64;
+		isSigned = false;
+		break;
+	case X86_INS_PMOVZXWD:
+		srcBits = 16;
+		dstBits = 32;
+		isSigned = false;
+		break;
+	case X86_INS_PMOVZXWQ:
+		srcBits = 16;
+		dstBits = 64;
+		isSigned = false;
+		break;
+	case X86_INS_PMOVZXDQ:
+		srcBits = 32;
+		dstBits = 64;
+		isSigned = false;
+		break;
+	default: translatePseudoAsmGeneric(i, xi, irb); return;
+	}
+
+	unsigned n = 128 / dstBits;
+	op1 = loadOpBinaryOp1(xi, irb);
+
+	auto* srcVecTy = vecType(irb.getIntNTy(srcBits), 128 / srcBits);
+	Value* sv = irb.CreateBitCast(toI128(op1, irb), srcVecTy);
+
+	llvm::SmallVector<int, 16> mask;
+	for (unsigned k = 0; k < n; ++k)
+	{
+		mask.push_back(static_cast<int>(k));
+	}
+	Value* low = irb.CreateShuffleVector(sv, llvm::UndefValue::get(srcVecTy), mask);
+
+	auto* dstVecTy = vecType(irb.getIntNTy(dstBits), n);
+	Value* ext = isSigned ? irb.CreateSExt(low, dstVecTy) : irb.CreateZExt(low, dstVecTy);
+
+	storeOp(xi->operands[0], irb.CreateBitCast(ext, irb.getInt128Ty()), irb, eOpConv::NOTHING);
+}
+
 void Capstone2LlvmIrTranslatorX86_impl::translateSsePminMax(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY(i, xi, irb);

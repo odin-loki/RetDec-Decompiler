@@ -7979,3 +7979,116 @@ have not been started.
 
 The remaining 83 VEX forms with a translated SSE twin need a three-operand
 path and the VEX zeroing rule, not a dispatch entry.
+
+## Batch AC — the packed shifts and the widening moves
+
+### What it is
+
+The Batch AB entry closes with a list of ordinary instructions that are not
+translated at all, and the first two groups on it are these twenty. All of
+them fell through to pseudo-assembly:
+
+```
+psllw pslld psllq psrlw psrld psrlq psraw psrad
+pmovsxbw pmovsxbd pmovsxbq pmovsxwd pmovsxwq pmovsxdq
+pmovzxbw pmovzxbd pmovzxbq pmovzxwd pmovzxwq pmovzxdq
+```
+
+The packed shifts are in every vectorised loop that touches integers; the
+widenings are how a compiler turns a `char[]` into arithmetic.
+
+`scripts/ci/x86_vec_oracle.c` and `x86_vec_compare.cpp` are a fourth oracle
+shape — XMM in, XMM out — carrying both 64-bit halves of the destination
+before and after, so a translator that writes the right value to the wrong
+half is a mismatch rather than something nobody looked at.
+
+### AC-1: a shift past the element width is defined, and defined two ways
+
+This is the part that is not transcription. x86 does not leave a count at or
+past the element width undefined:
+
+```
+psllw by 16   0005000600070008_0001000200030004 -> 0000000000000000_0000000000000000
+psllw by 2^40 0005000600070008_0001000200030004 -> 0000000000000000_0000000000000000
+psraw by 20   ffff000180007fff_8000000700018000 -> ffff0000ffff0000_ffff00000000ffff
+psrad by 32   7fffffff00000001_80000001ffffffff -> 0000000000000000_ffffffffffffffff
+```
+
+A logical shift gives zero. An **arithmetic** right shift gives each element's
+sign bit broadcast across it. LLVM's `shl` and `lshr` are poison at or past
+the width, so the count is clamped to width-1 — which for the arithmetic case
+*is* the answer — and the logical cases are selected back to zero.
+
+Two more things the count is not:
+
+* It is **one value for the whole register**, taken from the low quadword of
+  the second operand, not one per lane. The upper quadword is not read at all;
+  the oracle fills it with noise, and reading it costs 1,871 mismatches.
+* It is a full 64 bits. Truncating it to the element width before asking
+  "is this too big" reads a count of 2^40 as a shift by zero.
+
+### AC-2: the widenings read the low elements, and how many follows the destination
+
+`pmovsxbq` writes two quadwords, so it reads two **bytes**; everything above
+the low sixteen bits of the source is untouched input. Reading the high lanes
+instead is 6,000 mismatches out of 10,000 — every row of every widening form,
+which is what a wrong shuffle mask looks like. Getting the sign wrong is
+quieter: 2,559, only on the PMOVZX half and only where a byte had its top bit
+set.
+
+### AC-3: a mutation came back green, and the thing it mutated was dead code
+
+The sixth mutation removed a guard I had added to the emulator's `select`, on
+the theory that a scalar condition with vector arms — `select i1 %c, <8 x i16>
+%a, <8 x i16> %b`, which is exactly what the shift guard produces — would trip
+the per-lane assertion. Removing it changed nothing.
+
+It changed nothing because `visitSelectInst` passes the **condition's** type
+to `executeSelectInst`, not the result's:
+
+```c
+Type* ty = I.getOperand(0)->getType();
+```
+
+so a scalar condition already takes the scalar branch, which is correct. The
+guard was unreachable. It has been reverted rather than shipped with a comment
+claiming it fixed something.
+
+This is the rule doing its job in the direction it is usually not needed for.
+A falsification run that passes is a result to check: usually the check finds
+the test is not looking, and this time it found that the code was not doing
+anything.
+
+### Falsification
+
+Each decision reverted on its own, with an md5 guard, against 10,000 rows:
+
+```
+AC1_no_clamp             381   psraw=190 psrad=191
+AC2_no_zero_select      1298   all six logical shift forms
+AC3_arith_clamp_zero     515   psraw=255 psrad=260
+AC4_widen_high_lanes    6000   all twelve widening forms, every row
+AC5_zext_becomes_sext   2559   the six PMOVZX forms only
+AC6_count_whole_reg     1871   all eight shift forms
+```
+
+### After
+
+```
+10,000 comparisons against the hardware, 0 mismatches,
+0 untranslated forms, 0 misencoded
+```
+
+"0 misencoded" is its own line because the encodings are hand-written. Each is
+disassembled and checked against the mnemonic it is supposed to be — a wrong
+ModRM would otherwise test one instruction against another's expected answers
+and report a translator bug that is really a typo in the test.
+
+C2L-01 floor: X86 2664 → 2709. 5,588 tests.
+
+### Still not covered
+
+45 of the 65 packed-integer instructions grouped in the Batch AB entry: the
+saturating adds and subtracts, `PMADDWD`, the multiply family, `PSHUFB` and
+the blends, the insert/extract pairs, the horizontal adds, `PACKSSWB` and
+friends, and `PTEST`. The oracle shape they need now exists.
