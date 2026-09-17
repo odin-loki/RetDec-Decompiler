@@ -395,6 +395,22 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- A test added on this branch failed CI because **the whole branch was verified
+  against the wrong LLVM**: CI builds with 18.1.3 and every measurement here was
+  taken on 20.1.2, both installed in the same container, with the version
+  printed on the check script's first line and never read. Batch BD's
+  oversized-GEP case assumes LLVM hands an out-of-bounds constant index through
+  to the converter; 20 does, 18 folds it away first. It now `GTEST_SKIP`s with
+  the reason where that happens instead of passing silently — verified LLVM 18
+  (2,253 pass, 1 skipped) and LLVM 20 (2,254 pass, assertion live).
+
+  That failure also aborted `standalone-check` before any of the six checks
+  added on this branch — `OPT-01`, `IDIOM-PHI-01`, `IDIOM-USE-01`, `B2L-01`,
+  `ORPH-01`, `L2HW-01` — so **none of them has ever run in CI**, and four
+  require LLVM ≥ 20 by their own guard, which CI does not have. Recorded in
+  Batch BL; not fixed here.
+
+
 - `B2L-01` and `ORPH-01` reported a full disk as a code problem. `B2L-01`
   builds 952 objects and an archive of them — about 1.5 GiB — and running out
   part-way surfaced as `ar: error reading <object>: No space left on device`,

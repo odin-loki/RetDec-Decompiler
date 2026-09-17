@@ -11310,3 +11310,80 @@ property of any single change.
   minutes on a cold cache. That is affordable on a CI runner and is a real cost
   on a developer's machine, and nothing measures whether the object cache
   actually gets reused there.
+
+---
+
+## Batch BL — the whole audit was verified on the wrong LLVM (2026-09-17)
+
+`standalone-check` went red on `main`. One test failed:
+
+```
+L2H-01: building against LLVM 18.1.3 (llvm-config-18)
+[  FAILED  ] LLVMInstructionConverterConstExpressionsTests
+             .ConstantGetElementPtrWithAnOffsetTooBigForAnInt32IsNotTruncated
+tests/.../llvm_instruction_converter_constants_tests.cpp:253: Failure
+Value of: addExpr
+  Actual: false
+```
+
+**CI builds against LLVM 18.1.3. Every measurement in this audit was taken on
+LLVM 20.1.2.** Both are installed in this container and the check script prints
+which one it picked on its first line. It was never read.
+
+So "2,254 tests pass" and the 68-of-68 gate sweeps were real measurements on a
+toolchain the project does not build with. One test happened to depend on a
+difference between the two and caught it; nothing else would have.
+
+### The test
+
+Batch BD's oversized-GEP case assumes LLVM hands an out-of-bounds constant
+index through to the converter. LLVM 20 does; LLVM 18 folds the expression away
+first, so the converter never sees a GEP, `addExpr` is null, and there is no
+offset to truncate.
+
+It now `GTEST_SKIP`s with the reason where that happens, rather than passing.
+A silent pass on the toolchain CI actually uses would make the test read as
+coverage it does not provide — which is the failure this audit has written down
+a dozen times in other people's code.
+
+Verified both ways: **LLVM 18 — 2,253 pass, 1 skipped; LLVM 20 — 2,254 pass**
+with the assertion live.
+
+### The part that is worse than the test
+
+L2H-01 aborts the job on failure, and the six checks added on this branch run
+*after* it in `standalone-check`:
+
+```
+L2H-01 llvmir2hll suite                             failure
+OPT-01 bin2llvmir rewrite semantics                 skipped
+IDIOM-PHI-01 idiom exchangers vs PHI nodes          skipped
+IDIOM-USE-01 idiom rewrites vs uses they did not    skipped
+B2L-01 bin2llvmir suites                            skipped
+ORPH-01 suites ctest never runs                     skipped
+L2HW-01 llvmir2hll warnings                         skipped
+```
+
+**None of the six has ever executed in CI.** They were falsified here, on
+LLVM 20, and wired into a job where the first failing step prevents them
+running at all. Whether they pass on LLVM 18 is unknown, and three of them
+(`OPT-01`, `B2L-01`, `IDIOM-*`) refuse to run below LLVM 20 by their own
+version guard — so on CI's toolchain they would `die` rather than pass, which
+is a second defect stacked behind the first and is not fixed here.
+
+### Still open
+
+- The version guard question is not answered: `OPT-01`, `IDIOM-PHI-01`,
+  `IDIOM-USE-01` and `B2L-01` require LLVM ≥ 20 and CI has 18. Either the
+  workflow installs a newer LLVM for those steps or the guards come down and
+  the checks are made to work on 18. Both are real work and neither is done
+  here.
+- Nothing pins the toolchain a gate measures against. A gate that silently
+  takes whichever `llvm-config` it finds first measures one thing locally and
+  another in CI, which is the same shape as every instrument failure in this
+  audit — the apparatus differing from what it is believed to be.
+- `ctest-linux` has been red on `main` since before this branch started —
+  eight consecutive runs including the base commit `b2a3b493`. It is the
+  workflow that builds the decompiler and runs the integration tests, so
+  nothing in this audit has been validated through an actual decompile. Not
+  caused here and not diagnosed here.
