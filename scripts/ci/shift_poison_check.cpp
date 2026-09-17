@@ -117,6 +117,15 @@ const Case CASES[] = {
 	{"mips", "sllv $1, $2, $3"},   {"mips", "srlv $1, $2, $3"},
 	{"mips", "srav $1, $2, $3"},
 
+	// ---- integer division: the DIV-01 half ----
+	{"x86_64", "div rcx"},         {"x86_64", "idiv rcx"},
+	{"x86_64", "div ecx"},         {"x86_64", "idiv ecx"},
+	{"x86_64", "div cl"},          {"x86_64", "idiv cl"},
+	{"arm64",  "sdiv x0, x1, x2"}, {"arm64",  "udiv x0, x1, x2"},
+	{"arm64",  "sdiv w0, w1, w2"}, {"arm64",  "udiv w0, w1, w2"},
+	{"mips",   "divu $2, $3"},
+	{"powerpc", "divw 3, 4, 5"},   {"powerpc", "divwu 3, 4, 5"},
+
 	// ---- PowerPC ----
 	{"powerpc", "slw 3, 4, 5"},    {"powerpc", "srw 3, 4, 5"},
 	{"powerpc", "sraw 3, 4, 5"},
@@ -130,7 +139,14 @@ bool assemble(const char* arch, const char* text, std::vector<uint8_t>& out)
 	if (!strcmp(arch, "x86_64"))      { a = KS_ARCH_X86;     mode = KS_MODE_64; }
 	else if (!strcmp(arch, "arm"))    { a = KS_ARCH_ARM;     mode = KS_MODE_ARM | KS_MODE_LITTLE_ENDIAN; }
 	else if (!strcmp(arch, "arm64"))  { a = KS_ARCH_ARM64;   mode = KS_MODE_LITTLE_ENDIAN; }
-	else if (!strcmp(arch, "mips"))   { a = KS_ARCH_MIPS;    mode = KS_MODE_MIPS32 | KS_MODE_BIG_ENDIAN; }
+	// Endianness has to agree with the TRANSLATOR's, below. It did not: the
+	// PowerPC entries were assembled big-endian and decoded little-endian,
+	// so `divw 3, 4, 5` translated as a float store and this checker was
+	// reporting "0 out of range" for PowerPC and MIPS while examining
+	// nothing. A checker measuring the wrong thing and reporting success is
+	// the exact failure this whole audit keeps finding in other people's
+	// instruments; it was in mine too.
+	else if (!strcmp(arch, "mips"))   { a = KS_ARCH_MIPS;    mode = KS_MODE_MIPS32; }
 	else if (!strcmp(arch, "powerpc")){ a = KS_ARCH_PPC;     mode = KS_MODE_PPC64 | KS_MODE_BIG_ENDIAN; }
 	else return false;
 
@@ -150,7 +166,9 @@ std::unique_ptr<Capstone2LlvmIrTranslator> makeTranslator(const char* arch, llvm
 	if (!strcmp(arch, "arm"))     return Capstone2LlvmIrTranslator::createArm(m);
 	if (!strcmp(arch, "arm64"))   return Capstone2LlvmIrTranslator::createArm64(m);
 	if (!strcmp(arch, "mips"))    return Capstone2LlvmIrTranslator::createMips32(m);
-	if (!strcmp(arch, "powerpc")) return Capstone2LlvmIrTranslator::createPpc64(m);
+	// CS_MODE_BIG_ENDIAN, to match the assembler above -- createPpc64(m)
+	// alone decodes little-endian.
+	if (!strcmp(arch, "powerpc")) return Capstone2LlvmIrTranslator::createPpc64(m, CS_MODE_BIG_ENDIAN);
 	return nullptr;
 }
 
@@ -216,6 +234,28 @@ Rng rangeOf(llvm::Value* v, unsigned depth = 0)
 			}
 			return r;
 		}
+		case llvm::Instruction::Xor:
+		{
+			// x ^ C, where C is a low-bit mask (2^k - 1) and x already fits
+			// inside it, stays inside it: flipping bits cannot leave the mask.
+			// PowerPC's sraw builds its shift amount exactly this way --
+			// ((0 - n) & 31) ^ 31 -- and without this the checker calls a
+			// provably-bounded amount unknown and fires on correct code.
+			for (unsigned k = 0; k < 2; ++k)
+			{
+				auto* c = constOp(k);
+				if (c == nullptr) continue;
+				const llvm::APInt& cv = c->getValue();
+				if (!(cv + 1).isPowerOf2()) return r;   // not a low-bit mask
+				Rng a = rangeOf(in->getOperand(1 - k), depth + 1);
+				if (!a.known || a.hi.ugt(cv)) return r;
+				r.known = true;
+				r.lo = llvm::APInt::getZero(bw);
+				r.hi = cv;
+				return r;
+			}
+			return r;
+		}
 		case llvm::Instruction::URem:
 		{
 			// x % C is at most C-1.
@@ -277,25 +317,69 @@ Rng rangeOf(llvm::Value* v, unsigned depth = 0)
 		{
 			auto* ci = llvm::cast<llvm::CallInst>(in);
 			auto* f = ci->getCalledFunction();
-			if (f == nullptr || f->getIntrinsicID() != llvm::Intrinsic::umin)
+			if (f == nullptr) return r;
+			auto id = f->getIntrinsicID();
+			if (id != llvm::Intrinsic::umin && id != llvm::Intrinsic::umax)
 			{
 				return r;
 			}
 			Rng a = rangeOf(ci->getArgOperand(0), depth + 1);
 			Rng b = rangeOf(ci->getArgOperand(1), depth + 1);
-			// umin needs only ONE side bounded: the result cannot exceed
-			// either argument.
+			if (id == llvm::Intrinsic::umin)
+			{
+				// umin needs only ONE side bounded ABOVE: the result cannot
+				// exceed either argument.
+				if (!a.known && !b.known) return r;
+				if (!a.known) { r.known = true; r.lo = llvm::APInt::getZero(bw); r.hi = b.hi; return r; }
+				if (!b.known) { r.known = true; r.lo = llvm::APInt::getZero(bw); r.hi = a.hi; return r; }
+				r.known = true;
+				r.lo = a.lo.ult(b.lo) ? a.lo : b.lo;
+				r.hi = a.hi.ult(b.hi) ? a.hi : b.hi;
+				return r;
+			}
+			// umax is the mirror: one side bounded BELOW is enough, which is
+			// exactly what a divisor guard needs -- umax(x, 1) is at least 1
+			// whatever x is, and that is the whole claim DIV-01 checks.
 			if (!a.known && !b.known) return r;
-			if (!a.known) { r.known = true; r.lo = llvm::APInt::getZero(bw); r.hi = b.hi; return r; }
-			if (!b.known) { r.known = true; r.lo = llvm::APInt::getZero(bw); r.hi = a.hi; return r; }
 			r.known = true;
-			r.lo = a.lo.ult(b.lo) ? a.lo : b.lo;
-			r.hi = a.hi.ult(b.hi) ? a.hi : b.hi;
+			r.hi = llvm::APInt::getAllOnes(bw);
+			if (!a.known) { r.lo = b.lo; return r; }
+			if (!b.known) { r.lo = a.lo; return r; }
+			r.lo = a.lo.ugt(b.lo) ? a.lo : b.lo;
+			if (a.hi.ult(r.hi) && b.hi.ult(r.hi))
+			{
+				r.hi = a.hi.ugt(b.hi) ? a.hi : b.hi;
+			}
 			return r;
 		}
 		default:
 			return r;
 	}
+}
+
+/// True when @p divisor can be zero, i.e. when this division may be immediate
+/// undefined behaviour.
+///
+/// This is SHIFT-01's sibling and exists for the same reason. A shift by too
+/// much is poison, which spreads; a division by zero is IMMEDIATE UB, which is
+/// worse -- it lets the optimiser delete the surrounding code, and for a
+/// decompiler that means deleting the path the reverser is reading. Neither is
+/// observable by running the IR, so neither the hardware oracles nor the gtests
+/// can see it.
+///
+/// Only the ZERO case is checked. `sdiv INT_MIN, -1` is also immediate UB, but
+/// it is a relation between the two operands rather than a property of one, so
+/// no bound on the divisor alone can express it; the translators guard it with
+/// a select and that half is not machine-checked here. Said plainly rather
+/// than quietly left out.
+bool mayBeZero(llvm::Value* divisor)
+{
+	if (auto* c = llvm::dyn_cast<llvm::ConstantInt>(divisor))
+	{
+		return c->isZero();
+	}
+	Rng r = rangeOf(divisor);
+	return !r.known || r.lo.isZero();
 }
 
 /// True when @p amt can reach @p width, i.e. when this shift may be poison.
@@ -312,6 +396,7 @@ int main(int argc, char** argv)
 	bool selfTest = argc > 1 && !strcmp(argv[1], "--self-test");
 
 	unsigned checked = 0, shifts = 0, bad = 0, skipped = 0;
+	unsigned divs = 0, badDivs = 0;
 
 	for (const auto& c : CASES)
 	{
@@ -348,9 +433,39 @@ int main(int argc, char** argv)
 		}
 		++checked;
 
+		if (getenv("SHIFT01_DUMP") && strstr(c.asmText, getenv("SHIFT01_DUMP")))
+		{
+			std::string fs;
+			llvm::raw_string_ostream fos(fs);
+			fn->print(fos);
+			printf("---- %s %s ----\n%s\n", c.arch, c.asmText, fs.c_str());
+		}
+
 		for (auto it = llvm::inst_begin(fn), e = llvm::inst_end(fn); it != e; ++it)
 		{
 			unsigned op = it->getOpcode();
+			if (op == llvm::Instruction::SDiv || op == llvm::Instruction::UDiv
+					|| op == llvm::Instruction::SRem || op == llvm::Instruction::URem)
+			{
+				if (llvm::isa<llvm::IntegerType>(it->getType()))
+				{
+					++divs;
+					if (getenv("SHIFT01_VERBOSE"))
+					{
+						printf("  div site: %-8s %-24s\n", c.arch, c.asmText);
+					}
+					if (mayBeZero(it->getOperand(1)))
+					{
+						++badDivs;
+						std::string ds;
+						llvm::raw_string_ostream dos(ds);
+						it->print(dos);
+						printf("  DIVZERO %-8s %-28s  %s\n",
+							   c.arch, c.asmText, ds.c_str());
+					}
+				}
+				continue;
+			}
 			if (op != llvm::Instruction::Shl
 					&& op != llvm::Instruction::LShr
 					&& op != llvm::Instruction::AShr)
@@ -432,11 +547,29 @@ int main(int argc, char** argv)
 				   "was reported as possibly out of range\n");
 			return 2;
 		}
-		printf("SHIFT-01: self-test ok -- unmasked flagged, masked not\n");
+		// And the division half: a bare loaded divisor must be flagged, and a
+		// umax'd one must not.
+		if (!mayBeZero(load))
+		{
+			printf("SHIFT-01: self-test FAILED -- a bare divisor was not "
+				   "reported as possibly zero\n");
+			return 2;
+		}
+		auto* guarded = irb.CreateBinaryIntrinsic(
+				llvm::Intrinsic::umax, load, irb.getInt8(1));
+		if (mayBeZero(guarded))
+		{
+			printf("SHIFT-01: self-test FAILED -- a umax-guarded divisor was "
+				   "reported as possibly zero\n");
+			return 2;
+		}
+		printf("SHIFT-01: self-test ok -- unmasked flagged, masked not; "
+			   "bare divisor flagged, guarded not\n");
 	}
 
 	printf("\n%u instructions translated, %u integer shifts examined, "
-		   "%u possibly out of range (%u skipped)\n",
-		   checked, shifts, bad, skipped);
-	return bad ? 1 : 0;
+		   "%u possibly out of range; %u divisions examined, %u possibly by "
+		   "zero (%u skipped)\n",
+		   checked, shifts, bad, divs, badDivs, skipped);
+	return (bad || badDivs) ? 1 : 0;
 }

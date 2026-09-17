@@ -20370,6 +20370,97 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, SBB_all_ones_from_all_ones_with_a_carr
 // sub-register read to its own width, so no MOVSX test could ever see what the
 // store did to the other half of the parent. Measured on hardware:
 // RCX = 0x00000000_ffffff00.
+// A divisor LLVM cannot prove non-zero makes div/idiv IMMEDIATE undefined
+// behaviour -- not poison. Immediate UB lets the optimiser delete the
+// surrounding code, which in a decompiler means deleting the path being read.
+// C makes division by zero undefined, so compilers emit a bare div with no
+// check: the #DE trap IS the check. Every x86 binary with a runtime division
+// reaches this.
+//
+// x86 defines no answer here -- the instruction traps and does not complete --
+// so these assert only that SOMETHING defined comes out, not a specific value.
+// Inventing one would put a claim in the output the hardware never makes.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, DIV_by_zero_is_defined)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RAX, 0x1234},
+		{X86_REG_RDX, 0x0},
+		{X86_REG_RCX, 0x0},
+	});
+
+	emulate("div rcx");
+
+	// The point is that this terminates with a value at all rather than
+	// emitting IR the optimiser may treat as unreachable.
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_RAX, ANY},
+		{X86_REG_RDX, ANY},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, IDIV_intmin_by_minus_one_is_defined)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RAX, 0x0},
+		{X86_REG_RDX, 0x8000000000000000},
+		{X86_REG_RCX, 0xffffffffffffffff},
+	});
+
+	emulate("idiv rcx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_RAX, ANY},
+		{X86_REG_RDX, ANY},
+	});
+}
+
+// The ordinary case must still divide -- the guard against over-correcting.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, IDIV_still_divides_after_the_guard)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RAX, 0xfffffffffffffff6}, // -10 as the low half
+		{X86_REG_RDX, 0xffffffffffffffff}, // sign extension
+		{X86_REG_RCX, 0x3},
+	});
+
+	emulate("idiv rcx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_RAX, 0xfffffffffffffffd}, // -3
+		{X86_REG_RDX, 0xffffffffffffffff}, // -1
+	});
+}
+
+// `aam 0` is the encoding D4 00: a divide by the literal zero, which
+// constant-folds straight to immediate UB. No compiler emits it; it is a
+// classic anti-disassembly pair and what junk bytes decode to when data is
+// disassembled as code. Falling over on exactly that input is the wrong
+// failure mode for a decompiler.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, AAM_zero_immediate_is_defined)
+{
+	SKIP_MODE_64;
+
+	setRegisters({
+		{X86_REG_AL, 0x25},
+	});
+
+	emulate("aam 0");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_AL, ANY},
+		{X86_REG_AH, ANY},
+		{X86_REG_ZF, ANY},
+		{X86_REG_SF, ANY},
+		{X86_REG_PF, ANY},
+	});
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, MOVSX_does_not_sign_past_the_destination)
 {
 	ONLY_MODE_64;

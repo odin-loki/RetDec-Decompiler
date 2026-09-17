@@ -327,7 +327,8 @@ fi
 
 [ "${bad}" = 0 ] || die "an architecture lost coverage"
 
-# ── SHIFT-01: no shift by a possibly-out-of-range amount ─────────────────────
+# ── SHIFT-01 / DIV-01: no shift by a possibly-out-of-range amount, and no
+# ── division by a divisor that may be zero ───────────────────────────────────
 #
 # The gtests above cannot see this one. They run the translated IR through
 # tests/llvmir-emul, and that interpreter reduces every shift amount modulo the
@@ -355,9 +356,9 @@ set +e
 shift_status=$?
 set -e
 if [ "${shift_status}" != 0 ]; then
-	grep -E 'POISON|self-test FAILED' "${WORKDIR}/shift.log" | head -60 >&2
+	grep -E 'POISON|DIVZERO|self-test FAILED' "${WORKDIR}/shift.log" | head -60 >&2
 	tail -2 "${WORKDIR}/shift.log" >&2
-	die "SHIFT-01: a translator emits a shift whose amount may exceed the operand width"
+	die "SHIFT-01: a translator emits a shift whose amount may exceed the operand width, or a division whose divisor may be zero"
 fi
 grep -E 'self-test ok|examined' "${WORKDIR}/shift.log" | sed 's/^/C2L-01: /'
 

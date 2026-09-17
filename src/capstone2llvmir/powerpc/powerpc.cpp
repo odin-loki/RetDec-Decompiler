@@ -921,6 +921,44 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateDivw(cs_insn* i, cs_ppc* pi
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb);
 	op1 = narrowToWord(op1, irb);
 	op2 = narrowToWord(op2, irb);
+	// Power says RT is UNDEFINED for a zero divisor -- and, for divw, for
+	// 0x80000000 / -1 -- while the instruction COMPLETES and takes no
+	// interrupt. LLVM's sdiv says something much stronger: immediate
+	// undefined behaviour, which lets the optimiser delete the surrounding
+	// code rather than merely leave a value unspecified.
+	//
+	// Since any value is a faithful model of "undefined register contents",
+	// one select on the divisor is the whole fix; there is no architectural
+	// answer to select back in, unlike ARM64 where the manual names one.
+	//
+	// CR0 needs no special-casing either: the LT/GT/EQ bits are undefined in
+	// exactly the cases being guarded, so deriving them from whatever the
+	// guard yields is already correct.
+	//
+	// Not theoretical: GCC guards PowerPC divisions with twi/tw, and every
+	// member of that trap family is a nullptr entry here, so the guard
+	// becomes an opaque call that constrains nothing and the division that
+	// follows is bare.
+	{
+		auto* dty = op2->getType();
+		unsigned dbits = dty->getIntegerBitWidth();
+		if (i->id == PPC_INS_DIVW)
+		{
+			auto* overflow = irb.CreateAnd(
+				irb.CreateICmpEQ(op1, llvm::ConstantInt::get(dty, llvm::APInt::getSignedMinValue(dbits))),
+				irb.CreateICmpEQ(op2, llvm::ConstantInt::getSigned(dty, -1)));
+			op2 = irb.CreateSelect(overflow, llvm::ConstantInt::get(dty, 1), op2);
+		}
+		// umax rather than a select on "is it zero": the two compute the same number
+		// -- umax(x, 1) is x for every non-zero x, since x as an UNSIGNED value is
+		// then at least 1, and is 1 when x is zero -- but only umax states the bound
+		// LOCALLY. A reader of `select(y == 0, 1, y)`, human or analysis, has to
+		// correlate the condition with the arms to see the result is non-zero, and
+		// DIV-01 below cannot. This is the same lesson SHIFT-01 taught on the shift
+		// side, where the clamp-and-select idiom made the checker fire on the fix.
+		op2 = irb.CreateBinaryIntrinsic(llvm::Intrinsic::umax, op2, llvm::ConstantInt::get(dty, 1));
+	}
+
 	auto* val = i->id == PPC_INS_DIVW
 			? irb.CreateSDiv(op1, op2)
 			: irb.CreateUDiv(op1, op2);

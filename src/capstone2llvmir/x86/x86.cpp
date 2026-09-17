@@ -1851,6 +1851,19 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAam(cs_insn* i, cs_x86* xi, llv
 		op0 = loadOpUnary(xi, irb, nullptr, al->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
 	}
 
+	// `aam 0`, the encoding D4 00, divides by the literal zero -- which
+	// constant-folds to immediate undefined behaviour, not to poison. No
+	// compiler emits it, but a decompiler does not get to choose its input:
+	// D4 00 is a classic anti-disassembly pair and is what junk bytes decode
+	// to when data is disassembled as code. Falling over on exactly that
+	// input is the wrong failure mode.
+	//
+	// As with DIV and IDIV, AAM with a zero immediate RAISES #DE, so no
+	// continuing execution observes a value here; the divisor is made defined
+	// and no answer is invented. For every other immediate the select folds
+	// away and this costs nothing.
+	op0 = irb.CreateBinaryIntrinsic(llvm::Intrinsic::umax, op0, llvm::ConstantInt::get(op0->getType(), 1));
+
 	auto* div = irb.CreateUDiv(al, op0);
 	auto* rem = irb.CreateURem(al, op0);
 
@@ -3030,6 +3043,52 @@ void Capstone2LlvmIrTranslatorX86_impl::translateDiv(cs_insn* i, cs_x86* xi, llv
 	// two's-complement bit pattern of RDX:RAX either way.
 	op1 = i->id == X86_INS_IDIV ? irb.CreateSExt(op1, op0->getType())  // X86_INS_IDIV - signed.
 								: irb.CreateZExt(op1, op0->getType()); // X86_INS_DIV  - unsigned.
+
+	// A divisor LLVM cannot prove non-zero makes this IMMEDIATE undefined
+	// behaviour -- not poison. Poison is a bad value that spreads; immediate
+	// UB lets the optimiser delete the surrounding code, which for a
+	// decompiler means deleting the code path the reverser is reading. The
+	// signed form has a second such case, INT_MIN / -1, at the DOUBLE width
+	// this dividend is assembled at.
+	//
+	// C makes division by zero undefined, so compilers emit a bare div with
+	// no check at all -- the #DE trap IS the check. Every x86 binary with a
+	// runtime division reaches this.
+	//
+	// The divisor is made safe and the result is NOT selected afterwards,
+	// which is the difference between this and the ARM64 fix. ARM64 DEFINES
+	// the answer for a zero divisor, so there it is produced. x86 defines no
+	// answer at all: DIV and IDIV RAISE #DE and the instruction does not
+	// complete, so no execution that continues past it can observe any value
+	// here. Inventing a specific one would put a claim in the decompiled
+	// output that the hardware never makes. Making it merely DEFINED is what
+	// this needs; which defined value it is does not matter.
+	//
+	// Modelling the trap as control flow is a separate and larger question --
+	// INT, INT3, BOUND, HLT, UD2, PowerPC tw/twi and MIPS teq are all
+	// modelled as nothing or as opaque calls today, and #DE belongs with them
+	// in whatever trap model this decompiler grows, designed once.
+	{
+		auto* dty = op0->getType();
+		unsigned dbits = dty->getIntegerBitWidth();
+		if (i->id == X86_INS_IDIV)
+		{
+			// The overflow pair is a relation between the two operands, so it
+			// needs a select; only the zero case can be stated as a bound.
+			auto* overflow = irb.CreateAnd(
+				irb.CreateICmpEQ(op0, llvm::ConstantInt::get(dty, llvm::APInt::getSignedMinValue(dbits))),
+				irb.CreateICmpEQ(op1, llvm::ConstantInt::getSigned(dty, -1)));
+			op1 = irb.CreateSelect(overflow, llvm::ConstantInt::get(dty, 1), op1);
+		}
+		// umax rather than a select on "is it zero": the two compute the same number
+		// -- umax(x, 1) is x for every non-zero x, since x as an UNSIGNED value is
+		// then at least 1, and is 1 when x is zero -- but only umax states the bound
+		// LOCALLY. A reader of `select(y == 0, 1, y)`, human or analysis, has to
+		// correlate the condition with the arms to see the result is non-zero, and
+		// DIV-01 below cannot. This is the same lesson SHIFT-01 taught on the shift
+		// side, where the clamp-and-select idiom made the checker fire on the fix.
+		op1 = irb.CreateBinaryIntrinsic(llvm::Intrinsic::umax, op1, llvm::ConstantInt::get(dty, 1));
+	}
 
 	auto* div = i->id == X86_INS_IDIV
 			? irb.CreateSDiv(op0, op1)  // X86_INS_IDIV - signed.

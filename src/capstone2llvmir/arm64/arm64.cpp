@@ -4093,7 +4093,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateDiv(cs_insn* i, cs_arm64* ai,
 	llvm::Value* val = nullptr;
 	if (i->id == ARM64_INS_UDIV)
 	{
-		auto* safe = irb.CreateSelect(divZero, one, op2);
+		auto* safe = irb.CreateBinaryIntrinsic(llvm::Intrinsic::umax, op2, one);
 		val = irb.CreateSelect(divZero, zero, irb.CreateUDiv(op1, safe));
 	}
 	else if (i->id == ARM64_INS_SDIV)
@@ -4102,8 +4102,9 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateDiv(cs_insn* i, cs_arm64* ai,
 		auto* intMin = llvm::ConstantInt::get(ty, llvm::APInt::getSignedMinValue(bits));
 		auto* minusOne = llvm::ConstantInt::getSigned(ty, -1);
 		auto* overflow = irb.CreateAnd(irb.CreateICmpEQ(op1, intMin), irb.CreateICmpEQ(op2, minusOne));
-		auto* bad = irb.CreateOr(divZero, overflow);
-		auto* safe = irb.CreateSelect(bad, one, op2);
+		// umax for the zero case so the bound is local (see DIV-01); the
+		// overflow pair relates both operands and needs the select.
+		auto* safe = irb.CreateBinaryIntrinsic(llvm::Intrinsic::umax, irb.CreateSelect(overflow, one, op2), one);
 		val = irb.CreateSelect(divZero, zero, irb.CreateSelect(overflow, intMin, irb.CreateSDiv(op1, safe)));
 	}
 	else

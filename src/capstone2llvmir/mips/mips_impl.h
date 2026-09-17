@@ -69,6 +69,11 @@ class Capstone2LlvmIrTranslatorMips_impl :
 		/// A float-to-integer conversion with the MIPS default result for NaN
 		/// and out-of-range inputs; see the definition. EVERY bad input gives
 		/// the maximum, including large negatives.
+		/// A divisor LLVM can prove is neither zero nor the signed-overflow
+		/// partner; see the definition.
+		llvm::Value*
+		generateSafeDivisor(llvm::Value* dividend, llvm::Value* divisor, bool isSigned, llvm::IRBuilder<>& irb);
+
 		llvm::Value* generateFpToIntDefault(llvm::Value* v, llvm::Type* intTy, llvm::IRBuilder<>& irb);
 
 		llvm::Value* getCurrentPc(cs_insn* i);

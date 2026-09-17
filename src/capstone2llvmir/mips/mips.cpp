@@ -1221,11 +1221,70 @@ void Capstone2LlvmIrTranslatorMips_impl::translateDiv(cs_insn* i, cs_mips* mi, l
 		op0 = narrowToWord(i, irb, op0);
 		op1 = narrowToWord(i, irb, op1);
 
+		// MIPS says the result is UNPREDICTABLE for a zero divisor, and says
+		// explicitly that NO arithmetic exception occurs. Those two together
+		// are much weaker than LLVM's `sdiv X, 0`, which is IMMEDIATE
+		// undefined behaviour: the architecture's own definition of
+		// UNPREDICTABLE requires that the operation must not halt or hang the
+		// processor, where immediate UB licenses the optimiser to delete the
+		// surrounding code outright.
+		//
+		// So the fix is one select on the divisor and nothing more. Because
+		// ANY value is architecturally permitted for LO and HI here, dividing
+		// by a substituted 1 is already exact -- there is no answer to select
+		// back in, unlike ARM64 where the architecture names one.
+		//
+		// This is not a theoretical input. GCC does guard MIPS divisions, but
+		// it spells the guard `teq $rt, $zero, 7` -- and MIPS_INS_TEQ is
+		// mapped to translateNop here, so the guard translates to literally
+		// nothing and the division that follows is bare.
+		//
+		// The width comes from the operand, because DDIV routes to this same
+		// function at 64 bits while DIV arrives narrowed to 32.
+		op1 = generateSafeDivisor(op0, op1, /*isSigned=*/true, irb);
+
 		auto* div = irb.CreateSDiv(op0, op1);
 		storeRegister(MIPS_REG_LO, div, irb);
 		auto* rem = irb.CreateSRem(op0, op1);
 		storeRegister(MIPS_REG_HI, rem, irb);
 	}
+}
+
+/**
+ * A divisor LLVM can prove is neither zero nor the signed-overflow partner.
+ *
+ * `sdiv X, 0` and `sdiv INT_MIN, -1` are IMMEDIATE undefined behaviour in
+ * LLVM -- not poison. The difference matters: poison is a bad value that
+ * propagates, while immediate UB lets the optimiser delete the surrounding
+ * code, which in a decompiler means deleting the path being read.
+ *
+ * MIPS calls the zero-divisor result UNPREDICTABLE and guarantees no
+ * exception, so any value is a faithful model and the caller needs no second
+ * select to restore an architectural answer. The width is taken from the
+ * operand so DDIV gets 64-bit constants and DIV gets 32-bit ones.
+ */
+llvm::Value* Capstone2LlvmIrTranslatorMips_impl::generateSafeDivisor(
+	llvm::Value* dividend, llvm::Value* divisor, bool isSigned, llvm::IRBuilder<>& irb)
+{
+	auto* ty = divisor->getType();
+	unsigned bits = ty->getIntegerBitWidth();
+	if (isSigned)
+	{
+		// The overflow pair relates the two operands, so it needs a select;
+		// only the zero case can be stated as a bound on the divisor alone.
+		auto* overflow = irb.CreateAnd(
+			irb.CreateICmpEQ(dividend, llvm::ConstantInt::get(ty, llvm::APInt::getSignedMinValue(bits))),
+			irb.CreateICmpEQ(divisor, llvm::ConstantInt::getSigned(ty, -1)));
+		divisor = irb.CreateSelect(overflow, llvm::ConstantInt::get(ty, 1), divisor);
+	}
+	// umax rather than a select on "is it zero": the two compute the same number
+	// -- umax(x, 1) is x for every non-zero x, since x as an UNSIGNED value is
+	// then at least 1, and is 1 when x is zero -- but only umax states the bound
+	// LOCALLY. A reader of `select(y == 0, 1, y)`, human or analysis, has to
+	// correlate the condition with the arms to see the result is non-zero, and
+	// DIV-01 below cannot. This is the same lesson SHIFT-01 taught on the shift
+	// side, where the clamp-and-select idiom made the checker fire on the fix.
+	return irb.CreateBinaryIntrinsic(llvm::Intrinsic::umax, divisor, llvm::ConstantInt::get(ty, 1));
 }
 
 /**
@@ -1238,6 +1297,10 @@ void Capstone2LlvmIrTranslatorMips_impl::translateDivu(cs_insn* i, cs_mips* mi, 
 	std::tie(op0, op1) = loadOpBinary(mi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
 	op0 = narrowToWord(i, irb, op0);
 	op1 = narrowToWord(i, irb, op1);
+	// See translateDiv: UNPREDICTABLE is not immediate UB, and GCC's guard is
+	// a trap this translator maps to a nop. Unsigned has no overflow case.
+	op1 = generateSafeDivisor(op0, op1, /*isSigned=*/false, irb);
+
 	auto* div = irb.CreateUDiv(op0, op1);
 	storeRegister(MIPS_REG_LO, div, irb);
 	auto* rem = irb.CreateURem(op0, op1);

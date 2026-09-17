@@ -9387,3 +9387,91 @@ bits instead.
 
 Anywhere an integer is read out of a floating-point register, the fixture's
 value assertion is decoration. Worth a sweep of its own.
+
+## Batch AP -- division by zero, and a checker that was measuring nothing
+
+### AP-1  Every remaining integer division emitted immediate undefined behaviour
+
+`sdiv`/`udiv`/`srem`/`urem` by zero is IMMEDIATE undefined behaviour in LLVM --
+not poison. Poison is a bad value that propagates; immediate UB lets the
+optimiser delete the surrounding code, which in a decompiler means deleting the
+path the reverser is reading. Twelve sites, all now guarded:
+
+  x86     DIV/IDIV quotient and remainder, plus the signed-overflow pair at the
+          DOUBLE width the dividend is assembled at
+  x86     AAM -- `aam 0` is the encoding D4 00, a divide by the literal zero
+  MIPS    DIV/DDIV and DIVU/DDIVU, LO and HI
+  Power   divw/divwu
+
+**The compiler's guard is a trap, and this translator erases it.** That is the
+part that makes this reachable rather than theoretical. GCC does check before
+dividing on MIPS and PowerPC -- but it spells the check `teq $rt, $zero, 7` and
+`twi`, and `MIPS_INS_TEQ` maps to `translateNop` while every PowerPC trap id is
+a nullptr entry. So the guard translates to nothing or to an opaque call that
+constrains no value, and the division that follows is bare. On x86 there is no
+guard to lose at all: C makes division by zero undefined, so compilers emit a
+bare `div` and the #DE trap IS the check.
+
+**The right fix is not the same in each place, and the difference is the
+architecture's, not a style choice:**
+
+  ARM64   DEFINES the answer (0), so the answer is produced -- select it back in
+  MIPS    says UNPREDICTABLE and guarantees no exception, so ANY value is a
+          faithful model; making the divisor safe is the whole fix
+  Power   says the register contents are UNDEFINED while the instruction
+          completes; likewise
+  x86     TRAPS -- no value exists, and no execution continuing past the
+          instruction can observe one. Making it defined is what matters;
+          inventing a specific answer would put a claim in the decompiled
+          output that the hardware never makes
+
+So only ARM64 selects a result. The others select only the divisor.
+
+Modelling #DE as control flow is a separate and larger question. INT, INT3,
+BOUND, HLT, UD2, PowerPC tw/twi and MIPS teq are all modelled as nothing or as
+opaque calls today; #DE belongs with them in whatever trap model this
+decompiler grows, designed once for the family rather than bolted onto DIV.
+
+### AP-2  DIV-01, and the guards restated so it can read them
+
+The checker is SHIFT-01's sibling and exists for the same reason: division by
+zero is not observable by running the IR, so neither the hardware oracles nor
+the gtests can see it.
+
+It required restating every guard. `select(y == 0, 1, y)` and `umax(y, 1)`
+compute the same number -- umax is `y` for every non-zero y, since y as an
+UNSIGNED value is then at least 1 -- but only umax states the bound LOCALLY,
+and a local analysis is the only kind that will not be fooled. This is exactly
+the lesson SHIFT-01 taught on the shift side, where the clamp-and-select idiom
+made the checker fire on the fix rather than on the bug.
+
+Only the zero case is machine-checked. `sdiv INT_MIN, -1` is also immediate UB,
+but it is a relation between the two operands rather than a property of one, so
+no bound on the divisor alone can express it. The translators guard it with a
+select and that half is not checked. Stated rather than quietly omitted.
+
+### AP-3  And SHIFT-01 itself had been measuring nothing for two architectures
+
+The PowerPC and MIPS entries were assembled big-endian and decoded
+little-endian, because the corpus passed no endianness to the translator while
+passing one to the assembler. `divw 3, 4, 5` was translating as a floating-point
+store. So SHIFT-01 had been reporting "0 possibly out of range" for those two
+architectures while examining instructions that were not the ones named.
+
+A checker measuring the wrong thing and reporting success is the precise
+failure this audit keeps finding in other people's instruments -- the shift
+oracle that would not draw the counts that mattered, the float comparison that
+could not distinguish denormals, the ctlz that ignored its own argument. It was
+in mine too, and it was found the same way: by reverting a fix and noticing the
+checker did not care.
+
+With the endianness fixed the corpus went from 169 shifts to 179, and two real
+division defects appeared that had been invisible.
+
+`rangeOf` also gained an `Xor` case, because PowerPC's `sraw` builds its shift
+amount as `((0 - n) & 31) ^ 31` -- provably in range, and reported as unknown
+without it. A checker that cannot follow a correct idiom fires on correct code,
+which is the one thing it must never do.
+
+Falsification: reverting the PowerPC divisor guard makes DIV-01 report 2
+divisions possibly by zero; reverting the MIPS guard, 4.
