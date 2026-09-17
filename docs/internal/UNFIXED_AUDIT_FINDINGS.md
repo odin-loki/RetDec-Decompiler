@@ -11235,3 +11235,78 @@ summary of what the *fix* was for, which is always broader than what the
   withdrawn claims stay withdrawn, and `check_doc_vs_code.py` that documents
   and code agree; neither reads a claim's headline against its own evidence
   column, and it is not obvious that a script could.
+
+---
+
+## Batch BK — the gates ran out of disk and said something else (2026-09-17)
+
+The push-gate sweep at the branch head failed two checks, and neither failure
+was in the code:
+
+```
+standalone bin2llvmir suites (system LLVM)     FAIL
+  B2L-01: compiling 952 translation units with 4 job(s)
+  ar: /tmp/gw8/build/b2l-cache/libretdec.a: error reading
+      .../src_llvmir2hll_llvm_llvmir2bir_converter_structure_converter.o:
+      No space left on device
+  B2L-01: FAIL could not build the archive
+
+standalone suites ctest never runs             FAIL
+  address_tests.cpp:(.text+0x28): undefined reference to
+      `retdec::common::Address::Address()'
+  [… twelve more …]
+  ORPH-01: FAIL tests/common did not link
+```
+
+`B2L-01` builds 952 objects and an archive of them, about 1.5 GiB. This
+container's writable allowance had been eaten by the object caches of earlier
+runs, and the build hit the wall mid-`ar`.
+
+Both messages are the gate's fault rather than the disk's.
+
+- `ar: error reading <object>: No space left on device` names the object it was
+  *reading*, so it reads as a corrupt or truncated input file. The disk clause
+  is at the end of a line that begins by blaming something else.
+- `ORPH-01` then linked against a half-written archive and reported thirteen
+  undefined references to `retdec::common::Address`, which is the shape of a
+  missing source file, not of a full disk. Nothing in its output pointed at
+  `B2L-01` at all, and the two checks are adjacent in the list.
+
+A gate that fails for an environmental reason and describes a code problem
+costs whoever reads it the time to disprove the thing it said.
+
+### Fixed
+
+`B2L-01` now asks before it starts: it reads the free space on the filesystem
+holding its work directory and refuses below 3 GiB, naming the figure and what
+it needs. It checks `ar`'s stderr for `No space left on device` and says so
+directly, and it counts the archive's members against the number of objects it
+handed over, because a truncated archive links as badly as a missing one and
+says less about why.
+
+`ORPH-01` checks the archive before using it — member count and the presence of
+the DWARF stub — and reports "it is incomplete, so check_bin2llvmir_tests.sh
+did not finish (a full disk is the usual reason)" instead of a page of link
+errors.
+
+Falsified: a hand-made one-member archive produces the ORPH-01 message; raising
+B2L-01's threshold above the free space produces its message with the real
+figure in it.
+
+### What this says about the sweep
+
+Every one of these eleven batches was verified individually — the suite green,
+the fix falsified by reverting it — and those verifications were all correct.
+The clean-worktree sweep still found something none of them could: the two
+newest gates are the two most expensive ones, and nothing before them had ever
+needed more than a few hundred megabytes. The property that broke is not a
+property of any single change.
+
+### Still open
+
+- 3 GiB is a number chosen to sit comfortably above the ~1.5 GiB measured here,
+  not a measured requirement. It is a threshold, not a budget.
+- `B2L-01` and `ORPH-01` between them now cost roughly 1.5 GiB and twenty-five
+  minutes on a cold cache. That is affordable on a CI runner and is a real cost
+  on a developer's machine, and nothing measures whether the object cache
+  actually gets reused there.

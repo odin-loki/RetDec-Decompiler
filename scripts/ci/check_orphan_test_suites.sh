@@ -54,6 +54,16 @@ die() { echo "ORPH-01: FAIL $*" >&2; exit 1; }
 [ -f "${B2L_DIR}/libretdec.a" ] \
 	|| die "${B2L_DIR}/libretdec.a is not there; run check_bin2llvmir_tests.sh with the same --workdir first"
 
+# An archive that exists but is truncated -- B2L-01 filling the disk part-way
+# through is how that happens -- fails every link here with a page of undefined
+# references that says nothing about the cause. Check it before using it.
+ARCHIVE_MEMBERS="$(ar t "${B2L_DIR}/libretdec.a" 2>/dev/null | wc -l)"
+[ "${ARCHIVE_MEMBERS}" -ge 800 ] \
+	|| die "${B2L_DIR}/libretdec.a holds only ${ARCHIVE_MEMBERS} members; it is incomplete, so check_bin2llvmir_tests.sh did not finish (a full disk is the usual reason)"
+
+[ -f "${B2L_DIR}/dwarf_stub.o" ] \
+	|| die "${B2L_DIR}/dwarf_stub.o is not there; check_bin2llvmir_tests.sh did not finish"
+
 # directory|the check that runs it, or the reason it is out.
 COVERED="
 bin2llvmir|scripts/ci/check_bin2llvmir_tests.sh

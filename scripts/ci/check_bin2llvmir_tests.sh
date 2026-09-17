@@ -90,6 +90,17 @@ if [ -z "${WORKDIR}" ]; then
 fi
 mkdir -p "${WORKDIR}/obj" "${WORKDIR}/tobj" "${WORKDIR}/dep"
 
+# 952 objects and the archive built from them come to something like 1.5 GB.
+# Running out part-way through does not announce itself as a disk problem: ar
+# reports `error reading <object>: No space left on device`, which reads like a
+# corrupt object file, and a partially written archive then fails whatever
+# links against it with a wall of undefined references. Ask first and say so.
+NEED_KB=$((3 * 1024 * 1024))
+AVAIL_KB="$(df -Pk "${WORKDIR}" | awk 'NR==2 {print $4}')"
+if [ -n "${AVAIL_KB}" ] && [ "${AVAIL_KB}" -lt "${NEED_KB}" ]; then
+	die "only $((AVAIL_KB / 1024)) MiB free on the filesystem holding ${WORKDIR}; this needs about 1.5 GiB for the objects and the archive, and fails confusingly when it runs out part-way"
+fi
+
 # Translation units that do not compile in this container.  A reason each, and
 # none of them reachable from tests/bin2llvmir.
 EXPECTED_UNCOMPILABLE="
@@ -211,8 +222,19 @@ mapfile -t ARCHIVE_OBJS < <(ls "${WORKDIR}"/obj/*.o \
 	| grep -v 'src_neural_mock_inference\.o$' \
 	| grep -v 'src_retdec_neural_refine_stub\.o$')
 rm -f "${WORKDIR}/libretdec.a"
-ar rcs "${WORKDIR}/libretdec.a" "${ARCHIVE_OBJS[@]}" \
-	|| die "could not build the archive"
+if ! ar rcs "${WORKDIR}/libretdec.a" "${ARCHIVE_OBJS[@]}" 2>"${WORKDIR}/ar.err"; then
+	sed -n '1,5p' "${WORKDIR}/ar.err" >&2
+	if grep -q 'No space left on device' "${WORKDIR}/ar.err"; then
+		die "ran out of disk building the archive; free space under ${WORKDIR} and re-run"
+	fi
+	die "could not build the archive"
+fi
+
+# A truncated archive links as badly as a missing one and says less about why,
+# so the member count is checked rather than assumed.
+MEMBERS="$(ar t "${WORKDIR}/libretdec.a" | wc -l)"
+[ "${MEMBERS}" -eq "${#ARCHIVE_OBJS[@]}" ] \
+	|| die "the archive holds ${MEMBERS} members and ${#ARCHIVE_OBJS[@]} were given to it; it is truncated, most likely by a full disk"
 
 mapfile -t TEST_SRCS < <(find tests/bin2llvmir -name '*.cpp' \
 	! -name 'simplifycfg_tests.cpp' | sort)

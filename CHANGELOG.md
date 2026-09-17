@@ -395,6 +395,18 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- `B2L-01` and `ORPH-01` reported a full disk as a code problem. `B2L-01`
+  builds 952 objects and an archive of them — about 1.5 GiB — and running out
+  part-way surfaced as `ar: error reading <object>: No space left on device`,
+  which names the object it was reading and so reads as a corrupt input;
+  `ORPH-01` then linked against the half-written archive and reported thirteen
+  undefined references to `retdec::common::Address`, pointing at nothing.
+  `B2L-01` now refuses to start below 3 GiB free, names the figure, detects
+  `ENOSPC` from `ar` directly, and counts the archive's members against the
+  objects it was given. `ORPH-01` checks the archive before using it and says
+  which check did not finish. Both messages falsified.
+
+
 - Six claim headlines in `docs/CLAIMS.md` corrected against their own evidence
   columns. Five were broader than what had been measured — "the `if`-nest to
   `switch` reconstruction runs the same body it replaced" became "…for the
