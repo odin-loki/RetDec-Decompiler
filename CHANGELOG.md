@@ -8,6 +8,30 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- **`B2L-01` (`scripts/ci/check_bin2llvmir_tests.sh`): `tests/bin2llvmir` now
+  runs here — 424 assertions across 35 suites that previously executed only in
+  the pinned-LLVM build.** `OPT-01`'s own header said this container "cannot
+  execute [tests/bin2llvmir] as a whole", and that was a measurement of the
+  link command rather than of the tests: linking the suites against a flat list
+  of objects leaves 616 undefined references, while linking the same objects as
+  an `ar` archive — where the linker takes only members something references —
+  leaves 27, and those are `-lcrypto` plus the vendored `tlsh`, `stb` and
+  `authenticode-parser` sources `check_fileformat_tests.sh` already builds.
+
+  Four of the suites it runs — `IdiomsMagicDivModTests`,
+  `StrengthReductionTests`, `RedundantLoadStoreTests`, `InstOptRdaTests` — were
+  written earlier in this audit for passes that had no tests at all, and had
+  never been executed. They pass.
+
+  23 of the tree's 952 translation units do not compile in this container and
+  none is reachable from these tests. They are listed in the gate's
+  `EXPECTED_UNCOMPILABLE` with a reason each, and the list is checked in both
+  directions: a unit that stops compiling and is not on it fails the gate, and
+  an entry that starts compiling fails it as a stale excuse.
+  `src/debugformat/dwarf.cpp` needs the LLVM 21 `DataExtractor` and is stubbed
+  by `scripts/ci/b2l_dwarf_stub.cpp`; `simplifycfg_tests.cpp` `#include`s an
+  LLVM source file and is the one test file skipped.
+
 - A semantic differential for the `while true` loop lowerings
   (`tests/llvmir2hll/optimizer/optimizers/while_true_lowering_semantics_tests.cpp`).
   It runs the function before and after the pass with a small interpreter and
@@ -338,6 +362,31 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   back to counting keywords in text. `GateReport::summary()` marks the fallback.
 
 ### Fixed
+
+- `CArithmExprEvaluator` folded a `BitCastExpr` between types of different
+  widths by `zextOrTrunc`-ing the operand. A bitcast reinterprets the *same*
+  bits; when the widths differ there are none to reinterpret, and the result
+  was a number the evaluator invented —
+  `BitCastExpr(ConstInt(0x3F800000, 32), Float(64))` came out as **5.24e-315**,
+  neither the `1.0f` those bits are nor anything else. The float→int direction
+  had the mirror of it. It now declines, as upstream does. Two tests asserted
+  the old behaviour and are corrected; two matching-width cases are added so
+  the fix is not "decline everything".
+
+- `LLVMInstructionConverter` built the offset of a GEP into a string literal as
+  a **32-bit** `ConstInt` whatever the index was, so an offset that did not fit
+  in an `int32` was truncated: `str + 4294967296` came out as `str + 0`, the
+  offset vanishing rather than being wrong by a visible amount. The width now
+  follows the value, and the index is read with `getSExtValue()` because it is
+  signed.
+
+  An earlier audit note had this as "index −1 prints as `+ 4294967295`". That
+  is not what happened, and falsifying the fix is what established it:
+  `ConstInt::create` truncates, so the zero-extension and the truncation cancel
+  for every index that fits in an `int32`. The test written against the
+  recorded claim passed with the old code restored, and the claim is corrected
+  in the audit record rather than repeated here.
+
 
 - **`WhileTrueToUForLoopOptimizer`'s do-while lowering produced a loop that
   never terminates.** It copied the loop body with `Statement::clone()`, which

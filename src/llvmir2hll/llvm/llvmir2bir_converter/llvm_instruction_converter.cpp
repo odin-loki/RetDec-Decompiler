@@ -17,6 +17,8 @@
 #include <llvm/IR/User.h>
 #include <llvm/IR/Value.h>
 
+#include <cstdint>
+
 #include "retdec/llvmir2hll/ir/add_op_expr.h"
 #include "retdec/llvmir2hll/ir/address_op_expr.h"
 #include "retdec/llvmir2hll/ir/array_index_op_expr.h"
@@ -872,10 +874,18 @@ ShPtr<Expression> LLVMInstructionConverter::convertGetElementPtrToExpression(
 								return strExpr;
 							}
 							// Non-zero offset: emit as str + N.
-							// The APInt value is widened to 32 bits so the
-							// BIR ConstInt always has a consistent size.
-							auto offset = ConstInt::create(
-								charIdx->getValue().getZExtValue(), 32);
+							//
+							// getSExtValue, not getZExtValue. A GEP index is
+							// signed, and reading -1 as unsigned gave
+							// 0xFFFFFFFFFFFFFFFF, which the 32-bit ConstInt
+							// below then truncated: `str + 4294967295` in the
+							// emitted C for what the IR says is `str - 1`.
+							// The width follows the value rather than being
+							// fixed at 32, so an offset that does not fit in
+							// an int32 is not truncated either.
+							const std::int64_t off = charIdx->getValue().getSExtValue();
+							const unsigned bits = (off >= INT32_MIN && off <= INT32_MAX) ? 32 : 64;
+							auto offset = ConstInt::create(off, bits, true);
 							return AddOpExpr::create(strExpr, offset);
 						}
 					} else {

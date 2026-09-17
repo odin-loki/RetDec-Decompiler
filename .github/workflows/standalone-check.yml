@@ -212,6 +212,17 @@ jobs:
       - name: IDIOM-USE-01 idiom rewrites vs uses they did not match
         run: bash scripts/ci/check_idiom_shared_use.sh --self-test
 
+      # B2L-01. tests/bin2llvmir is 424 assertions over the layer that rewrites
+      # the lifted IR, and none of them ran outside the pinned-LLVM build --
+      # including four suites added for passes that had no tests at all, which
+      # then joined the passes in not running. Linking them against an archive
+      # rather than a flat object list drops the closure from 616 undefined
+      # references to 27.
+      #
+      # It compiles 952 translation units, so it is the slowest step here.
+      - name: B2L-01 bin2llvmir suites
+        run: bash scripts/ci/check_bin2llvmir_tests.sh --jobs 4
+
   # C2L-01. tests/capstone2llvmir is 4,370 assertions and the only place ARM,
   # ARM64, MIPS and PowerPC instruction semantics are checked at all. It was on
   # standalone_check.sh's UNGATED_SUITES list, evaluated nowhere, for two

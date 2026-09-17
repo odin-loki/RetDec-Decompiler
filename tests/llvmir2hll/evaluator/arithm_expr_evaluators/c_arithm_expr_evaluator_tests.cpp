@@ -480,16 +480,33 @@ NumConstIntTypeSameBitWidthTruncCastTest) {
 	evaluateAndCheckResult(inputExpr, ShPtr<Constant>());
 }
 
-TEST_F(CArithmExprEvaluatorTests,
-NumConstIntBitCastExprFloatTypeTest) {
-	SCOPED_TRACE("BitCastExpr(2, FloatType)  ->   bitcast of 2");
+TEST_F(CArithmExprEvaluatorTests, NumConstIntBitCastExprToNarrowerFloatTypeIsNotEvaluated)
+{
+	SCOPED_TRACE("BitCastExpr(i64 2, float)  ->   not evaluated");
+	// This used to expect APFloat(IEEEsingle, APInt(32, 2)) -- the 64-bit
+	// operand truncated to 32 bits and then reinterpreted. Truncating is not
+	// reinterpreting: a bitcast between types of different widths has no same
+	// bits to reinterpret, and any answer here is invented. The visible case
+	// is BitCastExpr(ConstInt(0x3F800000, 32), Float(64)), which produced
+	// 5.24e-315 -- a denormal that is neither the 1.0f those bits are nor
+	// anything else.
 	ShPtr<BitCastExpr> inputExpr(BitCastExpr::create(
 		ConstInt::create(2, 64),
 		FloatType::create(32)
 	));
 
-	evaluateAndCheckResult(inputExpr, ConstFloat::create(
-		llvm::APFloat(llvm::APFloat::IEEEsingle(), llvm::APInt(32, 2))));
+	evaluateAndCheckResult(inputExpr, ShPtr<Constant>());
+}
+
+TEST_F(CArithmExprEvaluatorTests, NumConstIntBitCastExprToSameWidthFloatTypeIsEvaluated)
+{
+	SCOPED_TRACE("BitCastExpr(i32 0x3F800000, float)  ->   1.0f");
+	// The width matches, so there really are bits to reinterpret, and
+	// 0x3F800000 is the IEEE single encoding of 1.0.
+	ShPtr<BitCastExpr> inputExpr(BitCastExpr::create(ConstInt::create(0x3F800000, 32), FloatType::create(32)));
+
+	evaluateAndCheckResult(
+		inputExpr, ConstFloat::create(llvm::APFloat(llvm::APFloat::IEEEsingle(), llvm::APInt(32, 0x3F800000))));
 }
 
 //
@@ -1386,18 +1403,28 @@ NumConstIntTruncCastExprToLowerBitWidthTest) {
 	evaluateAndCheckResult(inputExpr, refResult);
 }
 
-TEST_F(CArithmExprEvaluatorTests,
-NumConstFloatBitCastExprToIntTypeTypeTest) {
-	SCOPED_TRACE("BitCastExpr(4.0, IntType)  ->   evaluated");
+TEST_F(CArithmExprEvaluatorTests, NumConstFloatBitCastExprToNarrowerIntTypeIsNotEvaluated)
+{
+	SCOPED_TRACE("BitCastExpr(double 125.28, i32)  ->   not evaluated");
+	// This used to assert only that something came out. A double is 64 bits
+	// and the target is 32, so what came out was the double's 64 raw bits in
+	// a constant claiming to be an i32.
 	ShPtr<BitCastExpr> inputExpr(BitCastExpr::create(
 		ConstFloat::create(llvm::APFloat(125.28)),
 		IntType::create(32)
 	));
 
 	ShPtr<ArithmExprEvaluator> evaluator(CArithmExprEvaluator::create());
-	ASSERT_TRUE(evaluator->evaluate(inputExpr)) <<
-		"expected evaluated expression, "
-		"but the expression was not evaluated";
+	ASSERT_FALSE(evaluator->evaluate(inputExpr)) << "a bitcast between a 64-bit double and a 32-bit int has no bits to "
+													"reinterpret, so it must not be folded";
+}
+
+TEST_F(CArithmExprEvaluatorTests, NumConstFloatBitCastExprToSameWidthIntTypeIsEvaluated)
+{
+	SCOPED_TRACE("BitCastExpr(double 125.28, i64)  ->   its raw bits");
+	ShPtr<BitCastExpr> inputExpr(BitCastExpr::create(ConstFloat::create(llvm::APFloat(125.28)), IntType::create(64)));
+
+	evaluateAndCheckResult(inputExpr, ConstInt::create(llvm::APFloat(125.28).bitcastToAPInt()));
 }
 
 } // namespace tests

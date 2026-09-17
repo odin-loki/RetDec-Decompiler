@@ -299,30 +299,55 @@ static const llvm::fltSemantics &floatSemanticsForBits(unsigned bits) {
 
 void CArithmExprEvaluator::resolveCast(ShPtr<BitCastExpr> expr,
 		ShPtr<Constant> &constant) {
-	if (isa<IntType>(expr->getType())) {
+	// A bitcast reinterprets the SAME bits. When the two types are not the
+	// same width there are no same bits to reinterpret, and anything this
+	// function returns for that case is a number it invented:
+	// `zextOrTrunc`-ing 0x3F800000 from 32 bits to 64 and reading it as a
+	// double gave 5.24e-315, a denormal that is not the 1.0f those bits are
+	// and not anything else either. Upstream declines to evaluate a mismatched
+	// bitcast, and so does this now -- declining costs a fold, and answering
+	// costs a wrong constant in the emitted C.
+	if (ShPtr<IntType> intType = cast<IntType>(expr->getType()))
+	{
 		if (ShPtr<ConstFloat> constFloat = cast<ConstFloat>(expr->getOperand())) {
-			constant = ConstInt::create(constFloat->getValue().bitcastToAPInt());
+			llvm::APInt bits = constFloat->getValue().bitcastToAPInt();
+			if (bits.getBitWidth() != intType->getSize())
+			{
+				canBeEvaluated = false;
+				return;
+			}
+			constant = ConstInt::create(bits);
 		} else {
 			canBeEvaluated = false;
 		}
-	} else if (ShPtr<FloatType> floatType = cast<FloatType>(expr->getType())) {
+	}
+	else if (ShPtr<FloatType> floatType = cast<FloatType>(expr->getType()))
+	{
 		// Reinterpret the raw bits of an integer constant as a float.
 		const auto &sem = floatSemanticsForBits(floatType->getSize());
+		const unsigned floatBits = llvm::APFloat::semanticsSizeInBits(sem);
 		if (ShPtr<ConstInt> constInt = cast<ConstInt>(constant)) {
 			llvm::APInt bits = constInt->getValue();
-			// Resize to match the target float's bit-width if needed.
-			unsigned floatBits = llvm::APFloat::semanticsSizeInBits(sem);
 			if (bits.getBitWidth() != floatBits)
-				bits = bits.zextOrTrunc(floatBits);
+			{
+				canBeEvaluated = false;
+				return;
+			}
 			constant = ConstFloat::create(llvm::APFloat(sem, bits));
-		} else if (ShPtr<ConstBool> constBool = cast<ConstBool>(constant)) {
-			unsigned floatBits = llvm::APFloat::semanticsSizeInBits(sem);
-			llvm::APInt bits(floatBits, constBool->getValue() ? 1 : 0, false);
-			constant = ConstFloat::create(llvm::APFloat(sem, bits));
-		} else {
+		}
+		else if (isa<ConstBool>(constant))
+		{
+			// A bool is one bit and no float is, so this is the mismatch
+			// above with no width worth comparing.
 			canBeEvaluated = false;
 		}
-	} else {
+		else
+		{
+			canBeEvaluated = false;
+		}
+	}
+	else
+	{
 		canBeEvaluated = false;
 	}
 }

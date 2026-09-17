@@ -11,6 +11,7 @@
 #include "llvmir2hll/ir/assertions.h"
 #include "llvmir2hll/llvm/llvmir2bir_converter_tests/base_tests.h"
 #include "retdec/llvmir2hll/ir/add_op_expr.h"
+#include "retdec/llvmir2hll/ir/const_int.h"
 #include "retdec/llvmir2hll/ir/assign_stmt.h"
 #include "retdec/llvmir2hll/ir/address_op_expr.h"
 #include "retdec/llvmir2hll/ir/array_index_op_expr.h"
@@ -166,6 +167,94 @@ ConstantGetElementPtrWhichGetsStringConstantIsConvertedCorrectly) {
 	auto callArg = cast<ConstString>(callExpr->getArg(1));
 	ASSERT_TRUE(callArg);
 	ASSERT_EQ("hello world"s, callArg->getValueAsEscapedCString());
+}
+
+TEST_F(
+	LLVMInstructionConverterConstExpressionsTests, ConstantGetElementPtrWithAPositiveOffsetIntoAStringBecomesStrPlusN)
+{
+	auto module = convertLLVMIR2BIR(R"(
+		@g = private constant [12 x i8] c"hello world\00"
+
+		define void @function() {
+			call i32 @puts(i8* getelementptr inbounds ([12 x i8], [12 x i8]* @g, i64 0, i64 6))
+			ret void
+		}
+
+		declare i32 @puts(i8*)
+	)");
+
+	auto f = module->getFuncByName("function");
+	ASSERT_TRUE(f);
+	auto callStmt = cast<CallStmt>(f->getBody());
+	ASSERT_TRUE(callStmt);
+	auto addExpr = cast<AddOpExpr>(callStmt->getCall()->getArg(1));
+	ASSERT_TRUE(addExpr) << "expected the offset to be emitted as str + N";
+	auto offset = cast<ConstInt>(addExpr->getSecondOperand());
+	ASSERT_TRUE(offset);
+	ASSERT_EQ(6, offset->getValue().getSExtValue());
+}
+
+TEST_F(LLVMInstructionConverterConstExpressionsTests, ConstantGetElementPtrWithANegativeOffsetIntoAStringKeepsItsSign)
+{
+	// An audit note claimed this case printed `str + 4294967295`. It did not,
+	// and falsifying the fix is what said so: restoring the old
+	// getZExtValue() left this test green. The old code read the index as
+	// unsigned and then built a 32-bit ConstInt from it, and
+	// ConstInt::create truncates -- so 0xFFFFFFFFFFFFFFFF became 0xFFFFFFFF
+	// became -1 again. The zero-extension and the truncation cancel for every
+	// index that fits in an int32, which is every index anyone writes.
+	//
+	// The case is kept because the behaviour is worth pinning, not because it
+	// ever regressed. The case that DID differ is the next test.
+	auto module = convertLLVMIR2BIR(R"(
+		@g = private constant [12 x i8] c"hello world\00"
+
+		define void @function() {
+			call i32 @puts(i8* getelementptr ([12 x i8], [12 x i8]* @g, i64 0, i64 -1))
+			ret void
+		}
+
+		declare i32 @puts(i8*)
+	)");
+
+	auto f = module->getFuncByName("function");
+	ASSERT_TRUE(f);
+	auto callStmt = cast<CallStmt>(f->getBody());
+	ASSERT_TRUE(callStmt);
+	auto addExpr = cast<AddOpExpr>(callStmt->getCall()->getArg(1));
+	ASSERT_TRUE(addExpr) << "expected the offset to be emitted as str + N";
+	auto offset = cast<ConstInt>(addExpr->getSecondOperand());
+	ASSERT_TRUE(offset);
+	ASSERT_EQ(-1, offset->getValue().getSExtValue()) << "a negative GEP index must not be read as unsigned";
+}
+
+TEST_F(LLVMInstructionConverterConstExpressionsTests, ConstantGetElementPtrWithAnOffsetTooBigForAnInt32IsNotTruncated)
+{
+	// Here the old code really did lose the value: it built a 32-bit ConstInt
+	// from the index whatever the index was, and ConstInt::create truncates.
+	// 2^32 became 0, so `str + 4294967296` was emitted as `str + 0` -- the
+	// offset silently vanished rather than being wrong by a visible amount.
+	auto module = convertLLVMIR2BIR(R"(
+		@g = private constant [12 x i8] c"hello world\00"
+
+		define void @function() {
+			call i32 @puts(i8* getelementptr ([12 x i8], [12 x i8]* @g, i64 0, i64 4294967296))
+			ret void
+		}
+
+		declare i32 @puts(i8*)
+	)");
+
+	auto f = module->getFuncByName("function");
+	ASSERT_TRUE(f);
+	auto callStmt = cast<CallStmt>(f->getBody());
+	ASSERT_TRUE(callStmt);
+	auto addExpr = cast<AddOpExpr>(callStmt->getCall()->getArg(1));
+	ASSERT_TRUE(addExpr) << "expected the offset to be emitted as str + N";
+	auto offset = cast<ConstInt>(addExpr->getSecondOperand());
+	ASSERT_TRUE(offset);
+	ASSERT_EQ(4294967296LL, offset->getValue().getSExtValue())
+		<< "an offset that does not fit in an int32 must not be truncated";
 }
 
 TEST_F(LLVMInstructionConverterConstExpressionsTests,

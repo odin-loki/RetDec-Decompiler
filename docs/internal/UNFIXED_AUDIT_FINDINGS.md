@@ -10594,3 +10594,201 @@ The body advances `acc` by two now.
   `evalExpr` and `Runner::run`. It refuses anything else rather than passing
   it, so an unmodellable case is a reported failure — but it is also a bound on
   what can be generated here.
+
+---
+
+## Batch BC — 424 assertions that ran nowhere (2026-09-17)
+
+Batch BA closed by naming the largest coverage gap in this audit:
+
+> The 616-symbol closure is the concrete reason `tests/bin2llvmir/` does not run
+> in this container. Making it run is a real piece of work — most of the tree,
+> or a stub layer for the providers — and it is the single largest gap in this
+> audit's coverage: bin2llvmir has 20 test directories and none of them
+> executes here.
+
+It turned out to be a smaller piece of work than that, because the 616 was an
+artefact of how the link was being done.
+
+### The whole trick is the archive
+
+`tests/bin2llvmir` does need most of the tree. It does not need most of the
+tree **linked in**. Linking two suites plus their passes, the providers and all
+of `src/config`, `src/common` and `src/serdes` as a flat list of objects leaves
+616 undefined references. Putting the same objects in an `ar` archive and
+letting the linker take only the members something references leaves **27** —
+and those 27 are `-lcrypto`, the vendored `tlsh`, `stb` and
+`authenticode-parser` sources that `check_fileformat_tests.sh` already builds,
+and one function in `src/debugformat/dwarf.cpp`.
+
+With a flat object list, `provider_init.o` drags in `YaraDetector` and
+`decoder_init.o` drags in four Capstone translators, none of which any
+bin2llvmir unit test reaches. With an archive, they are simply never pulled.
+The earlier conclusion — "this needs the whole tree" — was a measurement of the
+link command, not of the tests.
+
+### What now runs
+
+**424 assertions across 35 suites**, all passing:
+
+| suite | tests | | suite | tests |
+|---|--:|---|---|--:|
+| `AsmInstructionTests` | 76 | | `IdiomsMagicDivModTests` | 14 |
+| `ParamReturnTests` | 47 | | `UnreachableFuncsTests` | 13 |
+| `OptimizeTests` | 41 | | `StrengthReductionTests` | 6 |
+| `ToLlvmTypeVisitorTests` | 27 | | `RedundantLoadStoreTests` | 6 |
+| `ConfigTests` | 26 | | `InstOptRdaTests` | 3 |
+| `X87FpuAnalysisTests` | 25 | | `AsmInstructionRemoverTests` | 3 |
+| `LlvmUtilsTests` | 19 | | `PhiRemoverTests` | 1 |
+| … 21 more | | | | |
+
+Four of those — `IdiomsMagicDivModTests`, `StrengthReductionTests`,
+`RedundantLoadStoreTests`, `InstOptRdaTests` — were **written earlier in this
+audit and had never been executed**. They were added because the passes had no
+tests at all, and then they joined the passes in not running. They pass.
+
+`AsmInstructionRemoverTests.passRemovesEverythingRelatedToLlvmToAsmMapping`
+also passes, which is the first executable check on batch BA's
+`asm_inst_remover` change.
+
+### What it still cannot do, stated rather than swallowed
+
+23 of the tree's 952 translation units do not compile against the distribution
+LLVM 20, Capstone and gtest here. None is reachable from `tests/bin2llvmir` —
+the archive link proves that, because a member something referenced and could
+not find would be an undefined reference. They are listed in the gate's
+`EXPECTED_UNCOMPILABLE` with a reason each, and the gate checks that list **in
+both directions**: a translation unit that stops compiling and is not on the
+list fails it, and an entry that starts compiling fails it as a stale excuse.
+The reasons fall into five groups:
+
+- nine `capstone2llvmir` units need the vendored Capstone (`X86_REG_BND0`,
+  `ARM64_VAS_4B`, `PPC_REG_CR0LT`, `ARM_INS_FCONSTD` are not in the
+  distribution one);
+- seven need C++20 or C++23 (`std::span` in `cli_parser`, `std::countr_zero` in
+  `opencl`) and this harness compiles the tree as C++17;
+- three need a third-party library built from `deps/` (YARA, yaramod, whereami);
+- `src/utils/version.cpp` needs the `RETDEC_GIT_*` defines only CMake sets;
+- two are the already-recorded dead files, `types_propagator.cpp` and
+  `vtable_xref.cpp`, both of which this run independently confirmed do not
+  compile — which is what `check_cmake_sources.sh`'s `UNBUILT_SRC` says of them.
+
+Two further compromises:
+
+- `src/debugformat/dwarf.cpp` uses the LLVM 21 `DataExtractor` constructor and
+  the post-20 `DWARF/LowLevel/` header layout. `scripts/ci/b2l_dwarf_stub.cpp`
+  supplies an empty `DebugFormat::loadDwarf` so the link closes. No bin2llvmir
+  unit test loads DWARF; **one that did would silently see no debug info**, and
+  that is why the stub is a harness file carrying that sentence rather than a
+  change to the tree.
+- `tests/bin2llvmir/utils/simplifycfg_tests.cpp` does
+  `#include "../lib/Transforms/Scalar/SimplifyCFGPass.cpp"`, which needs the
+  LLVM source tree and not merely its headers. It is skipped, and it is the
+  only test file that is — 34 of 35 compile.
+
+### Cost
+
+The first run compiles 952 translation units. Objects are cached in the work
+directory and reused when newer than their source, so a re-run after touching
+one pass costs one compile and a link.
+
+### Still open
+
+- `OPT-01` and `IDIOM-USE-01` call the passes they cover directly out of a
+  shared object, a design chosen because linking the real test binary was
+  believed impossible here. That belief is now false. They are not redundant —
+  both are semantic differentials and `tests/bin2llvmir` is almost entirely
+  shape checks — but the shared-object trick is no longer the only option, and
+  a future semantic check for a pass can be an ordinary gtest instead.
+- The nine `capstone2llvmir` units are the biggest remaining hole: the
+  translator tests are covered separately by `C2L-01`, which builds its own
+  Capstone, but nothing in *this* harness can reach the decoder.
+
+---
+
+## Batch BD — two constants the backend invented (2026-09-17)
+
+Both of these were recorded in batch AV's "still open" list and are now fixed
+and covered. Both are the same kind of mistake: a conversion that had no right
+answer available produced one anyway.
+
+### `c_arithm_expr_evaluator.cpp` — a bitcast between different widths
+
+```cpp
+llvm::APInt bits = constInt->getValue();
+unsigned floatBits = llvm::APFloat::semanticsSizeInBits(sem);
+if (bits.getBitWidth() != floatBits)
+        bits = bits.zextOrTrunc(floatBits);
+constant = ConstFloat::create(llvm::APFloat(sem, bits));
+```
+
+A bitcast reinterprets the *same* bits. When the two types are not the same
+width there are no same bits to reinterpret, and `zextOrTrunc` is not a
+reinterpretation of anything — it is a different number.
+`BitCastExpr(ConstInt(0x3F800000, 32), Float(64))` came out as **5.24e-315**, a
+denormal that is neither the `1.0f` those bits are nor anything else. The
+float→int direction had the mirror of it: a 64-bit double bitcast to `i32`
+produced a constant holding the double's 64 raw bits and claiming to be an
+`i32`. Upstream declines to evaluate a mismatched bitcast; this now does too.
+
+Two tests asserted the old behaviour and have been corrected, which is the
+fourth time in this audit a test has had to be rewritten because it pinned a
+defect:
+
+- `NumConstIntBitCastExprFloatTypeTest` expected
+  `APFloat(IEEEsingle, APInt(32, 2))` from `BitCastExpr(i64 2, float)` — the
+  64-bit operand truncated and then reinterpreted.
+- `NumConstFloatBitCastExprToIntTypeTypeTest` asserted only that *something*
+  came out of `BitCastExpr(double 125.28, i32)`, which is an assertion the
+  defect satisfies as readily as the fix.
+
+Two matching-width cases are added alongside them, so the fix is not "decline
+everything": `i32 0x3F800000 → float` still folds to 1.0f, and
+`double → i64` still folds to that double's bits.
+
+### `llvm_instruction_converter.cpp` — a GEP offset truncated to 32 bits
+
+```cpp
+auto offset = ConstInt::create(charIdx->getValue().getZExtValue(), 32);
+```
+
+**The recorded finding for this one was wrong, and falsifying the fix is what
+said so.** Batch AV had it as *"truncates a GEP-into-string offset to 32 bits
+through `int64_t`, so index −1 prints as `+ 4294967295`"*. That reading is
+sound and the behaviour is not: `ConstInt::create(std::int64_t, unsigned, bool)`
+builds `APInt(bitWidth, (uint64_t)value, isSigned, implicitTrunc=true)`, so the
+zero-extension and the truncation **cancel**. `-1` zero-extends to
+`0xFFFFFFFFFFFFFFFF`, truncates to `0xFFFFFFFF`, and reads back as `-1`. That
+holds for every index that fits in an `int32`, which is every index anyone
+writes.
+
+The test written against the recorded claim passed with the old code restored.
+Reporting that as a confirmed fix would have been the fourth time this audit
+nearly shipped a claim it had not measured, and the first time on a finding
+rather than on an instrument.
+
+What the old code did lose is an offset that does **not** fit in an `int32`:
+the width was fixed at 32 whatever the index was, so `str + 4294967296` came
+out as **`str + 0`** — the offset vanished rather than being wrong by a visible
+amount. That is the case the fix addresses, and the case the new test pins;
+reverting the fix fails it and nothing else.
+
+`getSExtValue()` replaces `getZExtValue()` alongside it. On its own that changes
+no answer, for the reason above; it is there because the index is signed and
+reading it as unsigned is the kind of thing that stops cancelling the moment
+the width stops being fixed.
+
+Three tests: a positive offset comes out as `str + 6`; a negative one keeps its
+sign (kept to pin behaviour that never regressed, and labelled as such); and an
+offset of 2^32 is not truncated.
+
+### Still open
+
+- The negative case is out of bounds for the string it indexes. The decompiler
+  has to render what the IR contains either way, and `+ 4294967295` is
+  misleading in a way `- 1` is not; but nothing here decides whether such a GEP
+  should be rendered at all.
+- `floatSemanticsForBits` falls back to `IEEEdouble` for any width it does not
+  recognise, so a `FloatType` of, say, 48 bits silently becomes a 64-bit
+  bitcast — which the width check above now refuses, but by accident rather
+  than by design.
