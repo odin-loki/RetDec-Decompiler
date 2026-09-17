@@ -238,6 +238,14 @@ class LlvmIrEmulator : public llvm::InstVisitor<LlvmIrEmulator>
 		void visitShuffleVectorInst(llvm::ShuffleVectorInst& I);
 		void visitExtractValueInst(llvm::ExtractValueInst& I);
 		void visitInsertValueInst(llvm::InsertValueInst& I);
+		/// A barrier has no observable effect in a single-threaded interpreter,
+		/// but it must be VISITED: without this, FenceInst fell through to
+		/// visitInstruction and threw -- and LlvmIrEmulatorError's constructor
+		/// asserts, so the throw aborted the process while building the
+		/// exception. Never thrown, never caught, no failing test named. All
+		/// five translators emit a fence, and no barrier instruction had a test,
+		/// so the whole family was untestable by construction.
+		void visitFenceInst(llvm::FenceInst& I);
 		void visitInstruction(llvm::Instruction& I);
 
 	private:

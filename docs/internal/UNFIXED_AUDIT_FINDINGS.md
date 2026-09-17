@@ -9475,3 +9475,81 @@ which is the one thing it must never do.
 
 Falsification: reverting the PowerPC divisor guard makes DIV-01 report 2
 divisions possibly by zero; reverting the MIPS guard, 4.
+
+## Batch AQ -- the barrier family could not be tested at all, and five more ANYs
+
+### AQ-1  `fence` aborted the test binary, so no barrier instruction had a test
+
+`FenceInst` had no visitor, so it fell through to `visitInstruction`, which
+throws `LlvmIrEmulatorError` -- and that class's CONSTRUCTOR calls
+`assert(false)` (`exceptions.h:36`). The C2L gate compiles at `-O0` with no
+`NDEBUG`, so the assert is live: the exception aborts the process while it is
+being built. Never thrown, never caught, no failing test named.
+
+All five translators emit a fence -- x86 MFENCE/LFENCE/SFENCE, ARM and ARM64
+DMB/DSB/ISB, MIPS SYNC, PowerPC SYNC/ISYNC/LWSYNC -- and a grep of all five
+test files for any of those mnemonics returns ZERO. The family was untestable
+by construction, and the first person to write `emulate("mfence")` would have
+got a dead binary rather than a red test.
+
+`visitFenceInst` does nothing, which is correct: the ordering a fence imposes
+is not observable in a single-threaded interpreter. What IS observable, and
+what this makes testable, is that the translator emitted the RIGHT ordering --
+and x86 sends three instructions to one function that picks between
+SequentiallyConsistent, Acquire and Release, which is precisely the
+one-dispatch-key-covering-several-operations shape that produced AM-3, AM-8
+and AM-11. Eighteen tests now cover it.
+
+Falsification: removing `visitFenceInst` kills the binary with
+`Assertion 'false' failed` in the exception constructor, exit 134, naming no
+test.
+
+### AQ-2  sin, cos and log2 were missing from the floating-point block
+
+AM-12 added `x86_fp80` to the emulator's intrinsic block and turned four x87
+tests from `ANY` into numbers. Five more were left, for a subtler reason:
+`sin`, `cos` and `log2` had no case in the switch, and unlike `llvm.umin` they
+do NOT abort -- `IntrinsicLowering` knows them and rewrites them to
+`sinl`/`cosl`/`log2l`. The interpreter then meets an unresolvable external,
+takes the default-value path, and that path writes neither `FloatVal` nor
+`DoubleVal`. So every x87 transcendental evaluated to 0.0, quietly.
+
+FYL2X is `ST(1) x log2(ST(0))`. With log2 answering 0.0 the product is 0.0
+whatever the multiply does, so a dropped multiply or the operands the wrong way
+round were both invisible. FSINCOS's two-value push was checked for the TOP
+decrement and for neither value, so the sine and cosine being swapped would
+have passed.
+
+All five now assert numbers: cos(10) = -0.839..., sin(10) = -0.544...,
+7*log2(16) = 28, 7*log2(17) = 28.612..., and FSINCOS's sine in the original
+slot with the cosine pushed above it. `log`, `log10`, `exp` and `pow` were
+added at the same time, since they lower the same way and would have been the
+next silent zero.
+
+Unlike AM-12, which exposed F2XM1 computing 2^(x-1), every one of these five
+translators turned out to be CORRECT. That is worth recording too: the
+instrument was broken, the code under it was not.
+
+### Still open from the emulator audit, ranked
+
+  1. `visitLoadInst` never consults `I.getType()`, so a `load i8` and a
+     `load i32` are indistinguishable and the loaded value's width -- not the
+     type's -- flows into every downstream sext, trunc and binary operator.
+     This blinds the whole access-width and extension family on all five
+     architectures. A survey of all 270 memory-setting tests found every
+     literal already matches its mnemonic's access width, so the fix is a
+     no-op for correct translations and falsifying for wrong ones.
+  2. A `_poisonEvents` recording hook, which would make `getShiftAmount`'s
+     silent masking, `ctlz`/`cttz` ignoring `is_zero_poison`, out-of-range
+     `extractelement`/`insertelement`, and the ignored nsw/nuw/exact flags all
+     reportable instead of silently answered.
+  3. `fp128` is written to `IntVal` in one place and read from `DoubleVal` in
+     another, and `bitsToDouble()` keeps only word 0 -- so a Q-register
+     round-trip loses the upper 64 bits. Unreached today (no Q-register test
+     exists), a trap set for the first one.
+  4. Vector `fneg` and vector `ctlz`/`bswap` leaving empty aggregates. The doc
+     already records that `cnt` and `rev16` were written the awkward way
+     BECAUSE of this -- the instrument's gap is shaping the emitted IR.
+  5. Calls to functions defined in the module are never executed, which makes
+     the emulation-unpacking path in retdec.cpp work only for entirely
+     self-contained stubs.

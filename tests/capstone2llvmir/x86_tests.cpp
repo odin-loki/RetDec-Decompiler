@@ -13196,14 +13196,19 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_FCOS_compute)
 	emulate("fcos");
 
 	EXPECT_JUST_REGISTERS_LOADED({X87_REG_TOP, X86_REG_ST1});
+	// Was ANY against a call to cosl. The emulator's floating-point intrinsic
+	// block had no case for sin, cos or log2, so they reached
+	// IntrinsicLowering, became libcalls it cannot resolve, and the
+	// default-value path wrote neither FloatVal nor DoubleVal -- every x87
+	// transcendental evaluated to 0.0 and no test could tell.
 	EXPECT_JUST_REGISTERS_STORED({
-		{X86_REG_ST1, ANY},
+		{X86_REG_ST1, -0.8390715290764524},
 		{X87_REG_C2, false},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_VALUES_CALLED({
 		{_module.getFunction("llvm.fabs.f80"), {10.0}},
-		{_module.getFunction("cosl"), {10.0}},
+		{_module.getFunction("llvm.cos.f80"), {10.0}},
 	});
 }
 
@@ -13225,13 +13230,13 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_FSIN_compute)
 
 	EXPECT_JUST_REGISTERS_LOADED({X87_REG_TOP, X86_REG_ST1});
 	EXPECT_JUST_REGISTERS_STORED({
-		{X86_REG_ST1, ANY},
+		{X86_REG_ST1, -0.5440211108893698},
 		{X87_REG_C2, false},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_VALUES_CALLED({
 		{_module.getFunction("llvm.fabs.f80"), {10.0}},
-		{_module.getFunction("sinl"), {10.0}},
+		{_module.getFunction("llvm.sin.f80"), {10.0}},
 	});
 }
 
@@ -13253,17 +13258,21 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_FSINCOS_compute)
 	emulate("fsincos");
 
 	EXPECT_JUST_REGISTERS_LOADED({X87_REG_TOP, X86_REG_ST1});
+	// Both pushed values are now checked, and which one goes where: FSINCOS
+	// replaces ST(0) with the SINE and pushes the COSINE above it. The old
+	// expectation checked the TOP decrement and neither value, so the two
+	// being swapped would have passed.
 	EXPECT_JUST_REGISTERS_STORED({
-		{X86_REG_ST1, ANY},
-		{X86_REG_ST0, ANY},
+		{X86_REG_ST1, -0.5440211108893698}, // sin, in the original slot
+		{X86_REG_ST0, -0.8390715290764524}, // cos, pushed
 		{X87_REG_TOP, 0x0},
 		{X87_REG_C2, false},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_VALUES_CALLED({
 		{_module.getFunction("llvm.fabs.f80"), {10.0}},
-		{_module.getFunction("sinl"), {10.0}},
-		{_module.getFunction("cosl"), {10.0}},
+		{_module.getFunction("llvm.sin.f80"), {10.0}},
+		{_module.getFunction("llvm.cos.f80"), {10.0}},
 	});
 }
 
@@ -13372,13 +13381,16 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_FYL2X_compute)
 	emulate("fyl2x");
 
 	EXPECT_JUST_REGISTERS_LOADED({X87_REG_TOP, X86_REG_ST2, X86_REG_ST3});
+	// 7 * log2(16) = 28. With log2 answering 0.0 the product was 0.0 whatever
+	// the multiply did, so a dropped multiply or the operands the wrong way
+	// round were both invisible here.
 	EXPECT_JUST_REGISTERS_STORED({
 		{X87_REG_TOP, 0x3},
-		{X86_REG_ST3, ANY},
+		{X86_REG_ST3, 28.0},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_VALUES_CALLED({
-		{_module.getFunction("log2l"), {16.0}},
+		{_module.getFunction("llvm.log2.f80"), {16.0}},
 	});
 }
 
@@ -13400,13 +13412,15 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_FYL2XP1_compute)
 	emulate("fyl2xp1");
 
 	EXPECT_JUST_REGISTERS_LOADED({X87_REG_TOP, X86_REG_ST2, X86_REG_ST3});
+	// 7 * log2(16 + 1) = 28.612..., and the +1 is the whole difference from
+	// FYL2X. Asserting the number is what makes the two distinguishable.
 	EXPECT_JUST_REGISTERS_STORED({
 		{X87_REG_TOP, 0x3},
-		{X86_REG_ST3, ANY},
+		{X86_REG_ST3, 28.612239888752374},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_VALUES_CALLED({
-		{_module.getFunction("log2l"), {17.0}},
+		{_module.getFunction("llvm.log2.f80"), {17.0}},
 	});
 }
 
@@ -20459,6 +20473,57 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, AAM_zero_immediate_is_defined)
 		{X86_REG_SF, ANY},
 		{X86_REG_PF, ANY},
 	});
+}
+
+/// The ordering of the single fence in the translated function.
+///
+/// The barrier family had NO test on any of the five architectures, and could
+/// not have had one: FenceInst had no visitor, so it fell through to
+/// visitInstruction, which threw -- and LlvmIrEmulatorError's constructor
+/// asserts, so the throw aborted the process while constructing the exception.
+/// Never thrown, never caught, no failing test named. The first person to
+/// write emulate("mfence") would have got a dead binary.
+static llvm::AtomicOrdering fenceOrdering(llvm::Function* f)
+{
+	for (auto it = llvm::inst_begin(f), e = llvm::inst_end(f); it != e; ++it)
+	{
+		if (auto* fi = llvm::dyn_cast<llvm::FenceInst>(&*it))
+		{
+			return fi->getOrdering();
+		}
+	}
+	return llvm::AtomicOrdering::NotAtomic;
+}
+
+// MFENCE, LFENCE and SFENCE reach ONE translator function that picks between
+// three orderings -- the one-dispatch-key-covering-several-operations shape
+// that produced three separate defects in this audit, and the only one of
+// those that had no test at all.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, MFENCE_is_sequentially_consistent)
+{
+	SKIP_MODE_16;
+
+	emulate("mfence");
+
+	EXPECT_EQ(llvm::AtomicOrdering::SequentiallyConsistent, fenceOrdering(_function));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LFENCE_is_acquire)
+{
+	SKIP_MODE_16;
+
+	emulate("lfence");
+
+	EXPECT_EQ(llvm::AtomicOrdering::Acquire, fenceOrdering(_function));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, SFENCE_is_release)
+{
+	SKIP_MODE_16;
+
+	emulate("sfence");
+
+	EXPECT_EQ(llvm::AtomicOrdering::Release, fenceOrdering(_function));
 }
 
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, MOVSX_does_not_sign_past_the_destination)

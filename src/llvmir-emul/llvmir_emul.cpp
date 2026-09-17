@@ -3355,6 +3355,24 @@ void LlvmIrEmulator::visitCallInst(llvm::CallInst& I)
 				// is handled above: the exp2 would still be lowered to an
 				// exp2l this interpreter cannot call.
 				case Intrinsic::exp2: r = std::exp2(arg(0)); break;
+				// The transcendentals. These do NOT abort the way llvm.umin
+				// did -- IntrinsicLowering knows them and rewrites them to
+				// sinl/cosl/log2l -- which is worse, because this interpreter
+				// then meets an unresolvable external, takes the default-value
+				// path, and that path writes neither FloatVal nor DoubleVal.
+				// So every x87 transcendental silently evaluated to 0.0, and
+				// five tests asserted their register as ANY because of it.
+				//
+				// FYL2X is ST(1) x log2(ST(0)): with log2 answering 0.0 the
+				// product is 0.0 whatever the multiply does, so a dropped
+				// multiply or the wrong operand order was invisible.
+				case Intrinsic::sin: r = std::sin(arg(0)); break;
+				case Intrinsic::cos: r = std::cos(arg(0)); break;
+				case Intrinsic::log2: r = std::log2(arg(0)); break;
+				case Intrinsic::log: r = std::log(arg(0)); break;
+				case Intrinsic::log10: r = std::log10(arg(0)); break;
+				case Intrinsic::exp: r = std::exp(arg(0)); break;
+				case Intrinsic::pow: r = std::pow(arg(0), arg(1)); break;
 				default: handled = false; break;
 				}
 				results[lane] = r;
@@ -3931,6 +3949,22 @@ void LlvmIrEmulator::visitPHINode(llvm::PHINode& PN)
  * the current instruction is not handled -- it should have its own specialized
  * visit method, no instruction should be handled by this super visit method.
  */
+void LlvmIrEmulator::visitFenceInst(llvm::FenceInst& I)
+{
+	// Nothing to do: the ordering a fence imposes is not observable in a
+	// single-threaded interpreter. What IS observable, and what this makes
+	// testable, is that the translator emitted the RIGHT ordering -- x86
+	// sends MFENCE, LFENCE and SFENCE to one function that picks between
+	// SequentiallyConsistent, Acquire and Release, which is exactly the
+	// one-dispatch-key-covering-several-operations shape that produced three
+	// separate defects in this audit.
+	//
+	// Nothing is recorded here: the run loop already calls logInstruction()
+	// on every instruction before visiting it, so pushing again would count
+	// the fence twice.
+	(void)I;
+}
+
 void LlvmIrEmulator::visitInstruction(llvm::Instruction& I)
 {
 	if (I.getOpcode() == Instruction::FNeg)

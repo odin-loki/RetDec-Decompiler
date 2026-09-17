@@ -10855,6 +10855,37 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, A_d_register_read_takes_the_low_half
 	EXPECT_NO_VALUE_CALLED();
 }
 
+
+// The barrier family had no test on any architecture and could not have had
+// one -- FenceInst had no visitor in the emulator, so it aborted the process
+// rather than failing a test. That this runs at all is the point.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, DMB_translates_to_a_fence)
+{
+	emulate("dmb sy");
+
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+// The barrier family had no test on any architecture and could not have had
+// one -- FenceInst had no visitor in the emulator, so it aborted the process
+// rather than failing a test. That this runs at all is the point.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, DSB_translates_to_a_fence)
+{
+	emulate("dsb sy");
+
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+// The barrier family had no test on any architecture and could not have had
+// one -- FenceInst had no visitor in the emulator, so it aborted the process
+// rather than failing a test. That this runs at all is the point.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ISB_translates_to_a_fence)
+{
+	emulate("isb");
+
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
