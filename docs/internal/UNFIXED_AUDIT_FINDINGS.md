@@ -11395,8 +11395,113 @@ stated refusal beats a compile error.
   takes whichever `llvm-config` it finds first measures one thing locally and
   another in CI, which is the same shape as every instrument failure in this
   audit — the apparatus differing from what it is believed to be.
+  **Batch BM adds `PIN-01`, which compiles the tree against the pinned 23.1.0;
+  the individual gates still take the machine's `llvm-config`.**
 - `ctest-linux` has been red on `main` since before this branch started —
   eight consecutive runs including the base commit `b2a3b493`. It is the
   workflow that builds the decompiler and runs the integration tests, so
   nothing in this audit has been validated through an actual decompile. Not
-  caused here and not diagnosed here.
+  caused here and not diagnosed here. **Diagnosed and fixed in Batch BM.**
+
+---
+
+## Batch BM — the pinned LLVM is 23.1.0 and nothing compiled against it (2026-09-17)
+
+`ctest-linux` had been red on `main` for eight consecutive runs and the
+previous batch recorded that without diagnosing it. The build step fails on one
+line:
+
+```
+src/capstone2llvmir/x86/x86.cpp:6470:47: error: invalid conversion from
+    'llvm::Value*' to 'llvm::CallInst*' [-fpermissive]
+ 6470 |   top = irb.CreateUnaryIntrinsic(llvm::Intrinsic::roundeven, top);
+```
+
+`loadX87DataReg` returns `llvm::CallInst*`, so `auto* top` is a `CallInst*`,
+and `IRBuilder::CreateUnaryIntrinsic` returns `Value*` in LLVM 23. `Value* top`
+is the fix; `top` is only handed to `generateFpToSiDefined`, which takes a
+`Value*`.
+
+### The instrument gap, which is the finding
+
+`cmake/deps.cmake` pins `llvm-project-23.1.0.src.tar.xz` and `ctest-linux`
+builds it from source. Every check under `scripts/ci/` takes whatever
+`llvm-config` the machine has — 18 or 20 in this container, 20 in
+`standalone-check` since Batch BL. So the toolchain the project is *built*
+with was compiled against by exactly one workflow, the slowest one, and
+nothing cheap could see a break in it.
+
+Batch BL's heading — "the whole audit was verified on the wrong LLVM" — was
+understated. 20 is also the wrong one.
+
+`B2L-01`'s own header already held a symptom of this and read it as a local
+quirk. It lists `src/debugformat/dwarf.cpp` among 23 translation units that
+"do not compile against the distribution LLVM 20" because it uses a post-20
+`DataExtractor` constructor and header layout. The file is not wrong; the
+compiler was. Against 23 it compiles.
+
+### PIN-01
+
+`scripts/ci/check_pinned_llvm.py`. It reads the archive URL and SHA256 out of
+`cmake/deps.cmake` so the two cannot drift, fetches and verifies the archive,
+and builds it as far as `intrinsics_gen` and
+`llvm/Analysis/TargetLibraryInfo.inc` — tablegen-generated headers only, about
+two minutes and 3 GiB, no LLVM libraries. Then every entry of the project's
+own `compile_commands.json` is re-run as `-fsyntax-only` against those headers.
+
+Driving it from the compile database rather than a hand-written flag list is
+the point, and was learned the hard way: a first attempt with guessed flags
+reported fifty-odd failures, nearly all of them `src/cli_parser` needing
+`-std=c++20` and nothing to do with LLVM. The database says what CMake gives
+each translation unit.
+
+**948 of 950 compile clean.** The two that do not want `tree_sitter/api.h`,
+which the build's own download step writes and this check does not run; they
+are named in its output rather than silently dropped. 45 more are skipped
+because this build directory has not built Qt's autogen or YARA, also named.
+
+Falsified: reverting the one-line fix makes `PIN-01` fail with CI's message,
+same file, same line, same text. Its `--self-test` compiles a probe that
+assigns `CreateUnaryIntrinsic`'s result to a `CallInst*` and requires the
+compiler to reject it, so the check cannot pass while blind to the defect
+class it exists for.
+
+A clean re-run costs under a second: it stamps each translation unit it
+checked, and the stamp is invalidated by any header in `include/` or `src/`,
+by the script itself, and by the pinned LLVM's generated headers. A stamp keyed
+on the `.cpp` alone would keep saying "fine" after a header changed under it.
+
+`PIN-01` is local-only. `ctest-linux` compiles the same tree against the same
+pin, so CI does enforce it; what CI did not have was a way to say so in seconds
+rather than in a half-hour build.
+
+### Resolved: the first half of the red streak
+
+Run 238, the commit that bumped the pin to 23.1.0, failed for a different
+reason and has since resolved itself. `ExternalProject` found a cached build
+directory holding the *previous* archive, extracted it, and reported
+
+```
+CMake Error: The source directory
+  .../build/linux/external/src/llvm-project/llvm does not exist.
+```
+
+which is exactly what the comment above the pin in `cmake/deps.cmake` warns
+about. Later runs got a fresh cache key and built LLVM 23 without complaint.
+
+### Still open
+
+- `src/bin2llvmir/optimizations/types_propagator/types_propagator.cpp` is in
+  no `CMakeLists.txt` and is compiled by nothing. It does not compile: it calls
+  `resolveTypes()`, which its own header does not declare. It has never been
+  built. `check_cmake_sources.sh` did not catch it, and whether that is a hole
+  in that check or a deliberate exclusion is not established here.
+- `PIN-01` is `-fsyntax-only`. It sees declarations and types, not link-time
+  symbols and not template instantiations that only a real compile forces.
+  `ctest-linux` remains the only thing that builds and links the tree.
+- `tests/` is not covered by `PIN-01` at all — the compile database this
+  container has covers `src/` only, because tests were not enabled in that
+  configure. Whether the test tree compiles against the pin is unknown.
+- 45 translation units — Qt's generated sources, `src/gui`, `src/yaracpp` —
+  are skipped for want of a dependency this build directory has not built.
+  They are named, and they are not measured.

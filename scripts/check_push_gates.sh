@@ -119,6 +119,16 @@ CHECKS=(
 	"standalone idiom rewrites vs other uses:::bash scripts/ci/check_idiom_shared_use.sh --self-test"
 	"standalone bin2llvmir suites (system LLVM):::bash scripts/ci/check_bin2llvmir_tests.sh --workdir \"${B2L_WORKDIR:-$ROOT/build/b2l-cache}\" --jobs 4"
 	"standalone suites ctest never runs:::bash scripts/ci/check_orphan_test_suites.sh --b2l-workdir \"${B2L_WORKDIR:-$ROOT/build/b2l-cache}\""
+	# PIN-01 is the only check here that compiles against the LLVM
+	# cmake/deps.cmake actually pins. Every other one takes the machine's
+	# llvm-config -- 18 or 20 locally, 20 in standalone-check -- and a commit
+	# that compiled on 20 and not on 23 sat red in ctest-linux for a day and a
+	# half. The first run fetches the pinned archive and builds its
+	# tablegen-generated headers, minutes and about 3 GiB; after that it stamps
+	# what it checked and a clean re-run costs under a second. It needs a
+	# configured build directory for its compile_commands.json and says so.
+	"standalone tree vs the pinned LLVM:::${PY} scripts/ci/check_pinned_llvm.py --workdir \"${PIN_WORKDIR:-$ROOT/build/pin-cache}\" --jobs 4"
+	"standalone pinned LLVM (self-test):::${PY} scripts/ci/check_pinned_llvm.py --workdir \"${PIN_WORKDIR:-$ROOT/build/pin-cache}\" --self-test"
 	"standalone llvmir2hll warnings:::bash scripts/ci/check_llvmir2hll_warnings.sh --jobs 4"
 	# BOUND-01. if_to_switch_optimizer.cpp is 8,100 lines, of which some six
 	# thousand are forty near-identical compare-tree reconstructions written
@@ -188,6 +198,11 @@ LOCAL_ONLY=(
 	"scripts/check_format.sh"                     # CI diffs the merge base, not @{upstream}
 	"scripts/check_push_gates.sh"                 # this script
 	"scripts/standalone_check.sh"                 # run by standalone-check.yml with its own flags
+	# ctest-linux.yml builds these same sources against this same pin, so CI
+	# does enforce it; what CI does not have is a way to say so in seconds
+	# rather than in a half-hour build, and it needs a configured build
+	# directory that the standalone jobs do not create.
+	"scripts/ci/check_pinned_llvm.py"             # ctest-linux.yml compiles the same tree against the same pinned LLVM
 )
 
 if [ "${1:-}" = "--audit" ]; then

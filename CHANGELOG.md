@@ -8,6 +8,29 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- `PIN-01` (`scripts/ci/check_pinned_llvm.py`): compiles the tree against the
+  LLVM `cmake/deps.cmake` actually pins — 23.1.0 — rather than against whatever
+  `llvm-config` the machine has. It reads the archive URL and SHA256 out of
+  `cmake/deps.cmake` so the two cannot drift, verifies the download, builds it
+  as far as the tablegen-generated headers (`intrinsics_gen` and
+  `llvm/Analysis/TargetLibraryInfo.inc` — about two minutes, no LLVM
+  libraries), and re-runs every entry of the project's own
+  `compile_commands.json` as `-fsyntax-only` against them.
+
+  948 of 950 translation units compile clean. The two that do not want
+  `tree_sitter/api.h`, which the build's download step writes; they are named
+  in the output, as are the 45 skipped for Qt's autogen directories and YARA.
+  A clean re-run costs under a second — it stamps what it checked, and any
+  header under `include/` or `src/` invalidates the lot.
+
+  `--self-test` compiles a probe that assigns `CreateUnaryIntrinsic`'s result
+  to a `CallInst*` and requires the compiler to reject it, so the check cannot
+  pass while blind to the defect class it exists for.
+
+  Local-only by design: `ctest-linux` compiles the same tree against the same
+  pin, so CI enforces it; what CI did not have was a way to say so in seconds
+  rather than in a half-hour build.
+
 - `ORPH-01` (`scripts/ci/check_orphan_test_suites.sh`): runs the seven test
   directories that `ctest` does not register and no other check covers — 460
   assertions in `common`, `config`, `ctypes`, `ctypesparser`, `pdbparser`,
@@ -394,6 +417,17 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   back to counting keywords in text. `GateReport::summary()` marks the fallback.
 
 ### Fixed
+
+- **`ctest-linux` could not build the decompiler.** `translateFist` assigned
+  `IRBuilder::CreateUnaryIntrinsic`'s result to the `llvm::CallInst*` that
+  `loadX87DataReg` returns. That compiles on LLVM 20, whose
+  `CreateUnaryIntrinsic` returns `CallInst*`, and not on the 23.1.0 this
+  project pins, whose returns `Value*`. One-line fix; the value is only handed
+  to `generateFpToSiDefined`, which takes a `Value*` either way.
+
+  The reason it reached `main` is the larger half: no check in this repository
+  compiled against the pinned toolchain. `PIN-01` above is that check.
+  Reverting the fix makes it fail with CI's message, same file, same line.
 
 - A test added on this branch failed CI because **the whole branch was verified
   against the wrong LLVM**: CI builds with 18.1.3 and every measurement here was
