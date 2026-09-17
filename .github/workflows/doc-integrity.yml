@@ -84,3 +84,9 @@ jobs:
 
       - name: REL-06 CycloneDX pins
         run: python scripts/ci/generate_cyclonedx.py --out "$RUNNER_TEMP/retdec.cdx.json"
+
+      # BOUND-01. Every int64 bound that gets +/- 1 must be bounded away from
+      # the extreme that overflows. It ran only from check_push_gates.sh, which
+      # no workflow invokes, so until now it protected nothing that CI enforced.
+      - name: BOUND-01 int64 bound overflow guards
+        run: python scripts/ci/check_bound_guards.py --self-test

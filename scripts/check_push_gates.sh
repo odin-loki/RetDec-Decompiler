@@ -115,6 +115,7 @@ CHECKS=(
 	# requires the same answer, which is the question the text comparison was
 	# never asking.
 	"standalone bin2llvmir rewrites (semantics):::bash scripts/ci/check_bin2llvmir_opts.sh --self-test"
+	"standalone idiom exchangers vs PHI:::bash scripts/ci/check_idiom_phi_reach.sh --self-test"
 	# BOUND-01. if_to_switch_optimizer.cpp is 8,100 lines, of which some six
 	# thousand are forty near-identical compare-tree reconstructions written
 	# by copying. A copy carries its overflow guard with it, including into
@@ -168,6 +169,23 @@ WORKFLOW_ONLY=(
 	"scripts/run_benchmarks.sh"                   # needs a built decompiler
 )
 
+# The audit ran in one direction only -- workflow step with no gate here -- and
+# the other direction was where the hole was. Three gates added on this branch
+# (OPT-01, BOUND-01, IDIOM-PHI-01) ran ONLY from this script, and no workflow
+# invokes this script: ctest-linux.yml names it in a comment and nothing else
+# does. So they were enforced exactly when somebody remembered to run them by
+# hand, which is not enforcement. They are wired into standalone-check.yml and
+# doc-integrity.yml now, and the reverse check below keeps the next one from
+# repeating it.
+#
+# LOCAL_ONLY is the escape hatch, and like WORKFLOW_ONLY it exists to make the
+# omission say why.
+LOCAL_ONLY=(
+	"scripts/check_format.sh"                     # CI diffs the merge base, not @{upstream}
+	"scripts/check_push_gates.sh"                 # this script
+	"scripts/standalone_check.sh"                 # run by standalone-check.yml with its own flags
+)
+
 if [ "${1:-}" = "--audit" ]; then
 	status=0
 	listed="$(printf '%s\n' "${CHECKS[@]}")"
@@ -187,8 +205,36 @@ if [ "${1:-}" = "--audit" ]; then
 			fi
 		done < <(grep -oE '(bash|python3?) +[A-Za-z0-9_./-]+\.(sh|py)' "$wf" | awk '{print $2}' | sort -u)
 	done
+
+	# The other direction: a gate here that no workflow runs is a gate CI does
+	# not enforce.
+	ALL_WF="$(cat .github/workflows/*.yml 2>/dev/null)"
+	for entry in "${CHECKS[@]}"; do
+		name="${entry%%:::*}"
+		cmd="${entry#*:::}"
+		for script in $(printf '%s' "$cmd" \
+				| grep -oE '(scripts|tests)/[A-Za-z0-9_./-]+\.(sh|py)' | sort -u); do
+			[ -f "$script" ] || continue
+			skip=""
+			for only in "${LOCAL_ONLY[@]}"; do
+				[ "$only" = "$script" ] && skip=1
+			done
+			[ -n "$skip" ] && continue
+			# grep -qF <<< rather than printf | grep -qF: with `set -o
+			# pipefail`, grep -q exits the moment it matches, printf takes a
+			# SIGPIPE, and the pipeline reports 141 -- so a MATCH reads as a
+			# failure. It only bit when the match was far from the end of the
+			# 150k buffer, which is why the first run of this check reported
+			# 51 gates as unrun including several plainly in a workflow.
+			if ! grep -qF -- "$script" <<< "$ALL_WF"; then
+				echo "check_push_gates --audit: '$name' runs $script, which no workflow does"
+				status=1
+			fi
+		done
+	done
+
 	if [ $status -eq 0 ]; then
-		echo "check_push_gates --audit: every workflow script is covered"
+		echo "check_push_gates --audit: workflows and gates cover each other"
 	fi
 	exit $status
 fi

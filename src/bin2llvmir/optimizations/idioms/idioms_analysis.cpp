@@ -42,12 +42,28 @@ bool IdiomsAnalysis::analyse(llvm::BasicBlock & bb, llvm::Instruction * (IdiomsA
 			// Insert the new instruction into the basic block...
 			BasicBlock * InstParent = (*insn).getParent();
 
-			// If we replace a PHI with something that isn't a PHI,
-			// fix up the insertion point.
-			if (! isa<PHINode>(res) && isa<PHINode>(insn))
-				insn = InstParent->getFirstInsertionPt();
+			// If we replace a PHI with something that isn't a PHI, the
+			// replacement cannot go where the PHI was -- it has to go after
+			// the block's PHIs.  That moves the INSERTION POINT only.  Keeping
+			// it in a second iterator matters: this used to reassign `insn`
+			// itself, so the erase below removed whatever happened to be the
+			// first non-PHI instruction instead of the PHI being replaced --
+			// a live instruction, still having uses.  IdiomsGCC's
+			// exchangeSignedModuloByTwo does the same replacement correctly,
+			// with the PHI and the insertion point held apart exactly so.
+			//
+			// No exchanger registered here returns non-null for a PHI today:
+			// all 39 were called on PHIs of nine types, 351 pairs, and none
+			// fired (see Batch AY in docs/internal/UNFIXED_AUDIT_FINDINGS.md).
+			// So this is a trap for the next exchanger rather than a live
+			// defect, and it is disarmed rather than left to be stepped on.
+			BasicBlock::iterator insertPt = insn;
+			if (!isa<PHINode>(res) && isa<PHINode>(insn))
+			{
+				insertPt = InstParent->getFirstInsertionPt();
+			}
 
-			res->insertBefore(insn);
+			res->insertBefore(insertPt);
 
 			(*insn).eraseFromParent();
 		}

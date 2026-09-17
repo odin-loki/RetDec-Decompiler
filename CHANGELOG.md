@@ -8,6 +8,24 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- `IDIOM-PHI-01` (`scripts/ci/check_idiom_phi_reach.sh`,
+  `scripts/ci/idiom_phi_reach_probe.cpp`): the 39 per-basic-block idiom
+  exchangers are each called on a PHI node of nine types — 351 pairs — to
+  measure whether any of them accepts one. None does. The answer matters
+  because `IdiomsAnalysis::analyse` carries a fix-up for "an exchanger replaced
+  a PHI with a non-PHI" whose correctness depends entirely on that question,
+  and reading 39 near-identical matchers to answer it is the substitution this
+  audit exists to stop making.
+
+  The gate keeps the answer from going stale: it requires the probe to call
+  **every** exchanger the dispatcher registers, read out of the source rather
+  than listed by hand; requires the count claimed in the code comment to equal
+  the number registered; requires its own negative control (`lshr x, 3` must
+  still be rewritten) to fire; and fails if any exchanger starts accepting a
+  PHI. Falsified four ways — drop an exchanger from the probe, write the wrong
+  count in the comment, break the negative control, make an exchanger report a
+  hit — each of which fails it.
+
 - A **semantic** differential for `IfToSwitchOptimizer`
   (`tests/llvmir2hll/optimizer/optimizers/if_to_switch_semantics_tests.cpp`).
   Every other test on that pass checks the *shape* of the result: that a
@@ -300,6 +318,56 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   back to counting keywords in text. `GateReport::summary()` marks the fallback.
 
 ### Fixed
+
+- **Four gates that CI never ran are now wired into it.** No workflow invokes
+  `scripts/check_push_gates.sh` — `ctest-linux.yml` names it in a comment and
+  nothing else mentions it — so `OPT-01`, `BOUND-01`, `IDIOM-PHI-01` and
+  `GATE-01` were enforced exactly when somebody remembered to run them by hand.
+  `GATE-01` is the sharpest of them: it exists because the algorithm-recovery
+  regression gate was called with `|| true`, so a run could print
+  `REGRESSION: mean_f1 dropped by 0.10` and stay green — and the check written
+  to catch that ran nowhere either. They now run in `standalone-check.yml`,
+  `doc-integrity.yml` and `ci-smoke.yml`.
+
+- `check_push_gates.sh --audit` checked one direction only: a workflow step
+  with no gate in the list. The reverse — a gate no workflow runs — is what was
+  actually wrong, and is now checked too, with a `LOCAL_ONLY` list that makes
+  each deliberate omission state its reason.
+
+- The reverse audit's own first implementation was wrong, and wrong in a way
+  worth recording: `printf '%s' "$ALL_WF" | grep -qF -- "$script"` under
+  `set -o pipefail`. `grep -q` exits the instant it matches, `printf` takes a
+  `SIGPIPE` writing the remaining 150k, and the pipeline reports 141 — so a
+  **match** reads as a failure. It only bit when the match was far from the end
+  of the buffer, so the check reported 51 of 64 gates as unrun including
+  several plainly present in a workflow: right often enough to look like a real
+  finding. Replaced with a here-string, which has no pipeline to fail.
+
+- `OPT-01` named two different checks: `standalone-check.yml`'s pre-existing
+  `no new unread option fields` step, and the bin2llvmir rewrite-semantics
+  differ added on this branch, which prints that identifier and holds a row in
+  `docs/CLAIMS.md` under it. The workflow step is renamed `CFGOPT-01` — the
+  cheaper rename, since it was a label with no script-side identity, and the
+  more accurate one, since `OPT` there meant *options* and here means
+  *optimizations*.
+
+
+- `IdiomsAnalysis::analyse` used one variable for two things. Its fix-up for
+  replacing a PHI with a non-PHI moves the *insertion point* past the block's
+  PHIs, but it did so by reassigning `insn` — the instruction being replaced —
+  which is also what the following line erases. Had it fired it would have
+  deleted the first non-PHI instruction, live and with uses, and left the PHI
+  in place. The insertion point now lives in its own iterator, which is how the
+  same operation is already written correctly in
+  `IdiomsGCC::exchangeSignedModuloByTwo` 1,400 lines away.
+
+  Reported as what it is rather than more: measured over 351 exchanger/type
+  pairs, no exchanger registered today returns non-null for a PHI, so the
+  branch is unreachable and this is a trap for the fortieth exchanger rather
+  than a live miscompile. When the fix-up does not fire — which, measured, is
+  always — the generated code is unchanged. `IDIOM-PHI-01` above keeps that
+  measurement current.
+
 
 - `scripts/ci/check_llvmir2hll_tests.sh` printed its failure diagnostic through
   `head -n 40`, mixing the list of **which** tests failed with the assertion

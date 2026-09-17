@@ -167,15 +167,41 @@ jobs:
       - name: OCL-01 opencl library, kernels and suites
         run: bash scripts/ci/check_opencl_tests.sh --self-test
 
-      # OPT-01. A config field with a default and a doc comment is a promise
+      # CFGOPT-01. A config field with a default and a doc comment is a promise
       # that setting it changes something. Three on this branch did not keep it
       # and each was a real defect -- StringDetectorConfig's three dead detect*
       # switches, DVSA::Result::carvedAccesses, and
       # AbiArtifactMarker::Config::arm32/aarch64, where the flag that would
       # have stopped ARM32's scratch register being marked callee-saved existed
       # and nothing read it. This stops the class growing.
-      - name: OPT-01 no new unread option fields
+      # Named CFGOPT-01 rather than OPT-01: OPT-01 is the bin2llvmir rewrite
+      # semantics differ (scripts/ci/check_bin2llvmir_opts.sh), which prints
+      # that identifier and carries a row in docs/CLAIMS.md under it. Two
+      # checks sharing an identifier makes "OPT-01 failed" point at the wrong
+      # one, which is the sort of thing a claims register exists to prevent.
+      - name: CFGOPT-01 no new unread option fields
         run: python3 scripts/ci/check_unread_options.py --check
+
+      # OPT-01. bin2llvmir is where the lifted IR gets rewritten, and it had no
+      # gate of any kind: the only tests compared IR text for one of its
+      # passes, which answers "did the rewrite produce the instruction I wrote
+      # down", not "do the two programs compute the same thing". This runs both
+      # sides over a domain of inputs with LLVM's own constant folder and
+      # requires the same answer.
+      #
+      # It and IDIOM-PHI-01 below ran only from check_push_gates.sh, which no
+      # workflow invokes -- so until this step they protected nothing CI
+      # enforced. That asymmetry is now checked both ways by
+      # `check_push_gates.sh --audit`.
+      - name: OPT-01 bin2llvmir rewrite semantics
+        run: bash scripts/ci/check_bin2llvmir_opts.sh --self-test
+
+      # IDIOM-PHI-01. IdiomsAnalysis::analyse carries a fix-up for "an
+      # exchanger replaced a PHI with a non-PHI" whose correctness rests on a
+      # claim about all 39 exchangers. This measures the claim rather than
+      # leaving it in a comment to go stale.
+      - name: IDIOM-PHI-01 idiom exchangers vs PHI nodes
+        run: bash scripts/ci/check_idiom_phi_reach.sh --self-test
 
   # C2L-01. tests/capstone2llvmir is 4,370 assertions and the only place ARM,
   # ARM64, MIPS and PowerPC instruction semantics are checked at all. It was on

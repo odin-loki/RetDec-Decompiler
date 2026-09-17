@@ -136,6 +136,14 @@ jobs:
       - name: Algorithm recovery regression gate tests
         run: python tests/algorithm_recovery/test_regression_gate.py
 
+      # GATE-01. The step above covers the gate's decision function. It says
+      # nothing about whether the verdict reaches the run: the shell wrapper
+      # was called with `|| true`, so a run could print "REGRESSION: mean_f1
+      # dropped by 0.10" and stay green. This checks the wiring, takes a tenth
+      # of a second, and ran nowhere until now.
+      - name: GATE-01 recovery gate wiring
+        run: bash scripts/ci/check_recovery_gate_wiring.sh
+
       - name: Corpus binary resolution tests
         run: python tests/algorithm_recovery/test_corpus_resolve.py
 

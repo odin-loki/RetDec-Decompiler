@@ -10113,3 +10113,170 @@ the way an unregistered test looks healthy while `ctest` never runs it.
   bodies that assign a constant. A nest using anything else is refused rather
   than silently passed, which is the safe direction, but it is also a bound on
   what the generators can be extended to.
+
+---
+
+## Batch AY — a trap, and the measurement that says it is only a trap (2026-09-17)
+
+### The code
+
+`IdiomsAnalysis::analyse(BasicBlock&, exchanger)` is the per-instruction driver
+for 39 of the idiom rewriters. When an exchanger returns a replacement it does
+the usual four steps — RAUW, take the name, insert, erase — with one fix-up:
+
+```cpp
+// If we replace a PHI with something that isn't a PHI,
+// fix up the insertion point.
+if (! isa<PHINode>(res) && isa<PHINode>(insn))
+        insn = InstParent->getFirstInsertionPt();
+
+res->insertBefore(insn);
+
+(*insn).eraseFromParent();
+```
+
+The fix-up is right about the problem: a non-PHI cannot sit where a PHI was, so
+it has to go after the block's PHIs. It is wrong about the variable. `insn` is
+both *the instruction being replaced* and *the insertion point*, and the fix-up
+reassigns it. So when it fires, `res` is inserted correctly and then the **first
+non-PHI instruction is erased** — a live instruction, still having uses — while
+the PHI it was supposed to replace stays in the block.
+
+This is inherited code: `git blame` puts it in the initial import. The correct
+form of the same operation is already written 1,400 lines away in the same
+subsystem, in `IdiomsGCC::exchangeSignedModuloByTwo`, which keeps `phi` and the
+insertion iterator in separate variables and erases the former.
+
+### Reachability, measured rather than argued
+
+Whether any of this matters is not a question about the driver, it is a
+question about the 39 exchangers: does any of them return non-null for a PHI
+input? Reading 39 near-identical matchers to find out is the thing this audit
+has repeatedly done badly.
+
+So `scripts/ci/idiom_phi_reach_probe.cpp` builds a PHI at the top of a loop —
+the shape a lifted loop really produces — for each of nine types, calls every
+registered exchanger on it, and counts. **351 exchanger/type pairs. None
+fired.** A negative control follows: the same `exchangeBitShiftUDiv` that saw
+nothing in a PHI must fire on `lshr x, 3`, and does. Without that control a
+zero would equally mean the probe never called anything, which is a failure mode
+this audit has hit often enough to check for by default.
+
+So the branch is **unreachable with today's exchanger set**. This is reported
+as what it is: not a live miscompile, a trap for whoever writes the fortieth
+exchanger.
+
+### Fixed
+
+The insertion point now lives in its own iterator, so the erase always removes
+the instruction that was replaced. When the fix-up does not fire — which,
+measured, is always — the generated code is identical.
+
+This is deliberately *not* the same call as the withdrawn `stack.cpp` typed-
+alloca cache from batch AR. There the branch could not be shown reachable *and*
+the correct behaviour was not clear, so nothing was changed and the dead end
+was written down. Here the correct behaviour is unambiguous, is already written
+correctly elsewhere in the same subsystem, and costs one local variable.
+
+### Added
+
+`IDIOM-PHI-01` (`scripts/ci/check_idiom_phi_reach.sh`) makes the claim keep
+itself honest. A statement in a comment about what no exchanger does is exactly
+the kind of statement that goes quietly stale, so the gate:
+
+- requires the probe to call **every** exchanger the dispatcher registers,
+  parsed from `idioms_analysis.cpp` rather than listed by hand — a probe
+  silently covering half the set reports "none of them" just as cleanly as one
+  covering all of them;
+- requires the count claimed in the source comment to equal the number actually
+  registered;
+- requires the probe's negative control to fire;
+- fails if any exchanger starts accepting a PHI, pointing at the comment and
+  asking for a test of the exchanger that does.
+
+Falsified four ways, each of which fails it: drop one exchanger from the probe;
+write the wrong count in the comment; break the negative control; make an
+exchanger report a hit.
+
+### The gates CI never ran
+
+Wiring `IDIOM-PHI-01` into `scripts/check_push_gates.sh` raised a question the
+script itself could answer: what else in that list does CI never run?
+
+`check_push_gates.sh --audit` existed and checked one direction — a workflow
+step with no gate in the list. The other direction was never checked, and that
+is where the hole was. **No workflow invokes `check_push_gates.sh` at all**;
+`ctest-linux.yml` names it in a comment and nothing else mentions it. So four
+gates ran exactly when somebody remembered to run them by hand:
+
+| gate | what it protects |
+|---|---|
+| `OPT-01` | bin2llvmir rewrites preserve what a function computes |
+| `BOUND-01` | int64 bounds that get ±1 are guarded against the right extreme |
+| `IDIOM-PHI-01` | the claim that no idiom exchanger accepts a PHI |
+| `GATE-01` | the algorithm-recovery regression gate can actually fail a run |
+
+Three of the four were added on this branch, so this is a hole this audit dug.
+The fourth is the sharpest of them: `GATE-01` exists because
+`run_algorithm_recovery_ci.sh` called the regression gate with `|| true`, so a
+run could print `REGRESSION: mean_f1 dropped by 0.10` and stay green — and the
+check written to catch that ran nowhere either. A check on a check, neither of
+them running.
+
+All four are now wired: `OPT-01` and `IDIOM-PHI-01` into
+`standalone-check.yml`'s `system-llvm` job, which already installs the LLVM
+headers they need; `BOUND-01` into `doc-integrity.yml`; `GATE-01` into
+`ci-smoke.yml`, where it costs a tenth of a second. `--audit` now checks both
+directions, with a `LOCAL_ONLY` list that, like the existing `WORKFLOW_ONLY`,
+makes an omission state its reason.
+
+### The tenth instrument failure, in the check that found the ninth
+
+The reverse audit's first run reported **51 of 64 gates** as unrun by any
+workflow, including several plainly present in `doc-integrity.yml`. The check
+was:
+
+```sh
+if ! printf '%s' "$ALL_WF" | grep -qF -- "$script"; then
+```
+
+`check_push_gates.sh` runs under `set -uo pipefail`. `grep -q` exits the moment
+it matches, `printf` writing the remaining 150k takes a `SIGPIPE`, and with
+`pipefail` the pipeline reports **141 — so a match reads as a failure.** It
+only bit when the match was far from the end of the buffer, which is why the
+handful of scripts named in the last workflow read alphabetically were found
+and everything else was not: a wrong answer that was *right often enough to
+look like a real finding*.
+
+`grep -qF -- "$script" <<< "$ALL_WF"` has no pipeline and no early-exit
+signal. Falsified by adding a gate that names a script no workflow runs, which
+it reports.
+
+This is the tenth time in this audit that the instrument rather than the code
+gave the wrong answer, and it happened inside the check written in response to
+the ninth. The two failures have the same shape as every other one on the list:
+the reporting path is not the thing under test, so nothing tests it.
+
+### Also fixed
+
+`OPT-01` named two different checks. `standalone-check.yml` had carried an
+`OPT-01 no new unread option fields` step (`check_unread_options.py`) since
+before this branch, and the bin2llvmir semantics differ added here also calls
+itself `OPT-01`, prints that identifier, and holds a row in `docs/CLAIMS.md`
+under it. "OPT-01 failed" would have pointed at the wrong one. The workflow
+step is now `CFGOPT-01`, which is the cheaper rename — it was a label with no
+script-side identity — and is the more accurate one, since the `OPT` in the
+other reads as *optimizations* and here it meant *options*.
+
+### Still open
+
+- The probe establishes that no exchanger *accepts* a PHI. It does not exercise
+  `analyse()` itself, which is private, so the driver's normal path — RAUW,
+  name, insert, erase, and the iterator advance around it — has no executable
+  coverage in this container. `tests/bin2llvmir/` covers idioms by shape and
+  needs the full bin2llvmir build, which does not run here.
+- Nine types are probed: i1, i8, i16, i32, i64, float, double, `<4 x i32>` and
+  a pointer. The first pass covered only the seven scalars and left vector and
+  pointer PHIs to a reading — "no exchanger matches those shapes either" — which
+  is the substitution this audit exists to stop making, so they were measured
+  too.
