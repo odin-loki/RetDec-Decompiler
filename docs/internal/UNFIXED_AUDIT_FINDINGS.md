@@ -10388,3 +10388,105 @@ precisely to catch that and did, on its first run. It compares bodies now.
   is conservative in the safe direction: it can leave a node the old code would
   have removed. No case in the four shapes does so, and a leftover dead
   instruction is a cosmetic cost against a miscompile.
+
+---
+
+## Batch BA — two more erases that destroyed the check that would have stopped them (2026-09-17)
+
+Batch AZ's shape — *replace the uses with `undef` so the erase becomes legal* —
+turned out not to be confined to the idioms helper. A sweep for
+`replaceAllUsesWith(UndefValue` across `src/` found four sites. One is correct
+and two are the same defect.
+
+### Correct: `phi_remover.cpp`
+
+```cpp
+if (phi->getNumIncomingValues() == 0) {
+        phi->replaceAllUsesWith(llvm::UndefValue::get(phi->getType()));
+```
+
+A PHI with no incoming values genuinely has no defined value, so `undef` is its
+semantics rather than a way of silencing a check. Left alone.
+
+### Fixed: `asm_inst_remover.cpp`
+
+```cpp
+// Replace any surviving uses (e.g. from incomplete cleanup) with undef
+// so the global can be safely erased.
+if (global->getNumUses() > 0)
+        global->replaceAllUsesWith(UndefValue::get(global->getType()));
+global->eraseFromParent();
+```
+
+The comment says what it is doing and does not notice what that means. The
+llvm-to-asm mapping global's only intended users are the mapping stores — that
+is the entire body of `AsmInstruction::isLlvmToAsmInstruction` — and the loop
+directly above erases every one of them. So a use surviving to this point is,
+by construction, something that was never a mapping store. Giving it `undef` is
+not cleanup; it is a silent miscompile in whatever that instruction was doing,
+performed to make an erase legal.
+
+Now the global is erased only when nothing uses it. Leaving it costs an unused
+global in the output; undefing a live use costs correctness.
+
+### Fixed: `unreachable_funcs.cpp`
+
+```cpp
+// ... Clearing those uses avoids the
+// "Uses remain when a value is destroyed!" assertion in Value::~Value().
+for (auto& BB: *fn)
+        for (auto& I: BB)
+                if (!I.use_empty() && !I.getType()->isVoidTy())
+                        I.replaceAllUsesWith(UndefValue::get(I.getType()));
+fn->deleteBody();
+```
+
+Same shape, stated even more plainly: the assertion is being avoided rather
+than heeded. A use *inside* the function is about to be deleted with its
+definition and needs no `undef`; a use *outside* it belongs to a function that
+may well be reachable, and handing it `undef` corrupts that function to permit
+this deletion. The pass now checks whether any value in the body has a user in
+another function and, if so, declines to delete that body.
+
+### Neither fix is covered by a runnable check here, and here is the measurement
+
+`tests/bin2llvmir/` has suites for both passes, and both test files and both
+passes compile in this container. Linking them does not work: a strict link of
+the two suites plus their passes, the providers, and all of `src/config`,
+`src/common` and `src/serdes` leaves **616 undefined references**, spanning
+calling conventions, the demangler, `FileImage`, LTI, `SymbolicTree`,
+`ReachableFuncsAnalysis` and Capstone's `cs_free`.
+
+`--unresolved-symbols=ignore-all` — the trick that makes `OPT-01` and
+`IDIOM-USE-01` work — does not survive here, and fails in an instructive way.
+Those two gates never *call* an unresolved symbol; this binary does, during
+static initialisation, and the call lands wherever the null binding points. The
+crash reported as
+
+```
+free_dfa_content (dfa=0x40) at ./posix/regcomp.c:587
+__GI___regfree (preg=... <retdec::bin2llvmir::_emptyConfig+984>)
+retdec::config::Parameters::Parameters()
+```
+
+which reads as a genuine defect in `Parameters` — a `regfree` on a `regex_t`
+that was never compiled. `Parameters` has no regex member and no `regfree`
+call. It is a mis-bound call, symbolised into libc.
+
+So: the idioms fixes in batches AY and AZ are covered by gates that run here;
+these two are not. That is the honest state, and it is recorded rather than
+papered over with "the tests exist".
+
+### Still open
+
+- The 616-symbol closure is the concrete reason `tests/bin2llvmir/` does not
+  run in this container. Making it run is a real piece of work — most of the
+  tree, or a stub layer for the providers — and it is the single largest gap in
+  this audit's coverage: bin2llvmir has 20 test directories and none of them
+  executes here.
+- `asm_inst_remover`'s branch has not been shown reachable. Neither has
+  `unreachable_funcs`'s — its own comment says the IR that triggers it is
+  "unusual". Both were changed anyway, on the batch AY rule: when the correct
+  behaviour is unambiguous and the change is inert unless the branch fires, the
+  trap gets disarmed and the reachability is reported as unknown rather than
+  claimed.

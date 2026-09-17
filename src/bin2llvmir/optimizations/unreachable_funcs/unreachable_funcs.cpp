@@ -59,19 +59,43 @@ void stripDeadFunctionBodiesAndEraseUnused(const std::vector<Function*>& toRemov
 		{
 			continue;
 		}
-		// Replace any cross-function uses of this function's instruction values
-		// with undef before destroying the body.  In valid LLVM IR, instruction
-		// values do not escape their defining function; however, SSE-heavy
-		// binaries occasionally produce unusual IR patterns (e.g. from the
-		// ZEXT_TRUNC_OR_BITCAST store-conversion path) where an analysis pass
-		// may hold a cross-function reference.  Clearing those uses avoids the
-		// "Uses remain when a value is destroyed!" assertion in Value::~Value().
+		// This used to replace every use of every instruction in the body with
+		// undef before deleting it, to avoid the "Uses remain when a value is
+		// destroyed!" assertion when an SSE-heavy binary produced IR with a
+		// cross-function reference.
+		//
+		// That assertion is the signal, not the problem. A use inside this
+		// function is about to be deleted along with its definition and needs
+		// no undef; a use OUTSIDE it belongs to a function that may well be
+		// reachable, and handing it undef silently corrupts that function to
+		// make this deletion legal. Same shape as the idioms helper in batch
+		// AZ: the check that would have stopped the erase is destroyed to
+		// permit it.
+		//
+		// So a body whose values escape is not deleted. That costs keeping a
+		// function this pass wanted to remove, in a case its own comment calls
+		// unusual; deleting it costs correctness in a function that is kept.
+		bool escapes = false;
 		for (auto& BB: *fn)
 		{
 			for (auto& I: BB)
 			{
-				if (!I.use_empty() && !I.getType()->isVoidTy()) I.replaceAllUsesWith(UndefValue::get(I.getType()));
+				for (auto* u: I.users())
+				{
+					auto* ui = llvm::dyn_cast<Instruction>(u);
+					if (ui == nullptr || ui->getFunction() != fn)
+					{
+						escapes = true;
+						break;
+					}
+				}
+				if (escapes) break;
 			}
+			if (escapes) break;
+		}
+		if (escapes)
+		{
+			continue;
 		}
 		fn->deleteBody();
 	}

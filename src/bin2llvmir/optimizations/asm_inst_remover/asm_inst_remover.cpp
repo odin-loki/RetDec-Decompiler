@@ -87,14 +87,29 @@ bool AsmInstructionRemover::run(Module& M)
 	//
 	if (auto* global = AsmInstruction::getLlvmToAsmGlobalVariable(&M))
 	{
-		// Replace any surviving uses (e.g. from incomplete cleanup) with undef
-		// so the global can be safely erased.
-		if (global->getNumUses() > 0)
+		// This used to replace any surviving uses with undef "so the global
+		// can be safely erased". That is backwards. The global's only intended
+		// users are the llvm-to-asm mapping stores -- that is the whole of
+		// AsmInstruction::isLlvmToAsmInstruction -- and the loop above erases
+		// every one of them. So a use that survives to here is, by definition,
+		// something that was never a mapping store, and giving it undef is not
+		// cleanup: it is a silent miscompile in whatever that instruction was
+		// doing, done to make an erase legal.
+		//
+		// Leaving the global costs an unused global in the output. Undefing a
+		// live use costs correctness. The first is the one to pay, so a
+		// surviving use means the global stays.
+		//
+		// Unlike the eraseInstFromBasicBlock case in the idioms passes, this
+		// branch has NOT been shown to be reachable -- that would need a real
+		// binary through the whole pipeline, which this container cannot run.
+		// The behaviour is unambiguous either way, which is why it is changed
+		// rather than only recorded.
+		if (global->getNumUses() == 0)
 		{
-			global->replaceAllUsesWith(llvm::UndefValue::get(global->getType()));
+			global->eraseFromParent();
+			changed = true;
 		}
-		global->eraseFromParent();
-		changed = true;
 		AsmInstruction::setLlvmToAsmGlobalVariable(&M, nullptr);
 	}
 

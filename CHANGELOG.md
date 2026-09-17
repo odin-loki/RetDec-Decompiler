@@ -329,6 +329,31 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- Two more erases that destroyed the check that would have stopped them. A
+  sweep for `replaceAllUsesWith(UndefValue` found four sites; `phi_remover`'s
+  is correct (a PHI with no incoming values genuinely has no value), and two
+  are the same defect as the idioms helper above:
+
+  - `asm_inst_remover.cpp` undef'd any surviving use of the llvm-to-asm mapping
+    global "so the global can be safely erased". That global's only intended
+    users are the mapping stores the loop directly above erases, so a surviving
+    use is by construction something else — and giving it `undef` is a silent
+    miscompile, not cleanup. The global is now erased only when nothing uses
+    it.
+  - `unreachable_funcs.cpp` undef'd every use of every instruction in a body
+    before deleting it, explicitly to avoid the "Uses remain when a value is
+    destroyed!" assertion. A use inside the function dies with its definition
+    and needs no `undef`; a use outside it belongs to a function that may be
+    reachable. The pass now declines to delete a body whose values escape.
+
+  Neither branch has been shown reachable, and neither fix is covered by a
+  check that runs in this container — `tests/bin2llvmir/` has suites for both
+  passes, both compile, and a strict link leaves 616 undefined references
+  spanning calling conventions, the demangler, `FileImage`, LTI and Capstone.
+  That is stated rather than implied: the idioms fixes above are gated, these
+  two are not.
+
+
 - **An idiom rewrite could replace a use it had never matched with `undef`.**
   All 129 erase sites in `src/bin2llvmir/optimizations/idioms/` went through
   `IdiomsAbstract::eraseInstFromBasicBlock`, which did
