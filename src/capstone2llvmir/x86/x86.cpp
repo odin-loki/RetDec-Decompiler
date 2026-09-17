@@ -6450,7 +6450,9 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFist(cs_insn* i, cs_x86* xi, ll
 	EXPECT_IS_UNARY(i, xi, irb);
 
 	auto* topNum = loadX87Top(irb);
-	auto* top = loadX87DataReg(irb, topNum);
+	// Value*, not the CallInst* loadX87DataReg hands back: the roundeven below
+	// reassigns this, and IRBuilder's intrinsic creators return Value*.
+	llvm::Value* top = loadX87DataReg(irb, topNum);
 	auto* t = getIntegerTypeFromByteSize(_module, xi->operands[0].size);
 
 	// FISTTP truncates toward zero -- that is the whole reason SSE3 added it.
