@@ -11371,13 +11371,26 @@ running at all. Whether they pass on LLVM 18 is unknown, and three of them
 version guard — so on CI's toolchain they would `die` rather than pass, which
 is a second defect stacked behind the first and is not fixed here.
 
-### Still open
+### Resolved: CI installs LLVM 20
 
-- The version guard question is not answered: `OPT-01`, `IDIOM-PHI-01`,
-  `IDIOM-USE-01` and `B2L-01` require LLVM ≥ 20 and CI has 18. Either the
-  workflow installs a newer LLVM for those steps or the guards come down and
-  the checks are made to work on 18. Both are real work and neither is done
-  here.
+The workflow asked apt for `llvm-dev`, which is "whatever the runner image
+defaults to" — 18.1.3 on ubuntu-24.04. That is not a toolchain, it is a thing
+that changes underneath you, and it already had: the `capstone2llvmir` job a
+few lines further down this same workflow has installed `llvm-20-dev` all
+along, so the two halves of one file were measuring different compilers.
+
+`llvm-20-dev` now, in both. It is a plain apt package on the runner — the
+adjacent job proves that — so this is a one-word change, not a new apt source.
+
+The six checks' own `llvm-config` selection was hardcoded as
+`llvm-config-20 llvm-config-21 llvm-config`, which takes 20 over 21 and falls
+back to the runner default when neither exists. They use the same
+`compgen -c llvm-config | sort -Vru` the rest of the checks here use now, so
+"latest available" is what they get rather than a list that ages. The
+`LLVM ≥ 20` guards stay: they are satisfied now, and on an older toolchain a
+stated refusal beats a compile error.
+
+### Still open
 - Nothing pins the toolchain a gate measures against. A gate that silently
   takes whichever `llvm-config` it finds first measures one thing locally and
   another in CI, which is the same shape as every instrument failure in this

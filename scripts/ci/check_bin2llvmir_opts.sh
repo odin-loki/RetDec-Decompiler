@@ -58,7 +58,12 @@ done
 die() { echo "OPT-01: FAIL $*" >&2; exit 1; }
 
 if [ -z "${LLVM_CONFIG}" ]; then
-	for c in llvm-config-20 llvm-config-21 llvm-config; do
+	# Highest version available, the same way check_llvmir2hll_tests.sh and the
+	# other LLVM checks here pick theirs. A hardcoded list picks whatever was
+	# current when it was written: this one said `llvm-config-20 llvm-config-21
+	# llvm-config`, which would have taken 20 over 21 and fallen back to the
+	# runner's default -- 18 on ubuntu-24.04 -- when neither was installed.
+	for c in $(compgen -c llvm-config 2>/dev/null | sort -Vru) llvm-config; do
 		command -v "$c" >/dev/null 2>&1 && { LLVM_CONFIG="$c"; break; }
 	done
 fi

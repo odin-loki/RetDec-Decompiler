@@ -105,7 +105,8 @@ if [ "${actual}" != "${expected}" ]; then
 fi
 
 LLVM_CONFIG=""
-for c in llvm-config-20 llvm-config-21 llvm-config; do
+# Highest version available, matching the other LLVM checks here.
+for c in $(compgen -c llvm-config 2>/dev/null | sort -Vru) llvm-config; do
 	command -v "$c" >/dev/null 2>&1 && { LLVM_CONFIG="$c"; break; }
 done
 [ -n "${LLVM_CONFIG}" ] || die "no llvm-config found"

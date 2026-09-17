@@ -406,9 +406,16 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
   That failure also aborted `standalone-check` before any of the six checks
   added on this branch — `OPT-01`, `IDIOM-PHI-01`, `IDIOM-USE-01`, `B2L-01`,
-  `ORPH-01`, `L2HW-01` — so **none of them has ever run in CI**, and four
-  require LLVM ≥ 20 by their own guard, which CI does not have. Recorded in
-  Batch BL; not fixed here.
+  `ORPH-01`, `L2HW-01` — so none of them had ever run in CI.
+
+- **CI now installs `llvm-20-dev` instead of `llvm-dev`.** `llvm-dev` is
+  whatever the runner image defaults to, and the `capstone2llvmir` job in the
+  same workflow file had been installing `llvm-20-dev` all along — so the two
+  halves of one workflow were measuring different compilers. The six checks
+  above also picked their `llvm-config` from a hardcoded
+  `llvm-config-20 llvm-config-21 llvm-config`, which takes 20 over 21 and falls
+  back to the runner default when neither exists; they take the highest
+  available version now, the same way the older checks here already did.
 
 
 - `B2L-01` and `ORPH-01` reported a full disk as a code problem. `B2L-01`

@@ -66,15 +66,24 @@ jobs:
 
       # Neither of these builds the pinned llvm-project -- that is a multi-hour
       # job the ctest workflows do.  They build the two parts of the tree that
-      # need only the stable LLVM headers, against whatever LLVM the runner
-      # ships, so the suites behind RETDEC_TESTS get a signal on every push
-      # instead of on none.  gtest/gmock come from apt because
-      # tests/llvmir2hll uses TEST_F, MOCK_METHOD and gmock matchers, which the
-      # tests/standalone shim does not implement.
-      - name: Install LLVM headers, gtest and Capstone
+      # need only the stable LLVM headers, so the suites behind RETDEC_TESTS
+      # get a signal on every push instead of on none.  gtest/gmock come from
+      # apt because tests/llvmir2hll uses TEST_F, MOCK_METHOD and gmock
+      # matchers, which the tests/standalone shim does not implement.
+      #
+      # llvm-20-dev, not llvm-dev.  `llvm-dev` is whatever the runner image
+      # defaults to -- 18.1.3 on ubuntu-24.04 -- and "whatever the runner
+      # ships" is not a toolchain, it is a thing that changes under you. It
+      # already did: a test written and verified against LLVM 20 went red here
+      # on 18, because the two fold an out-of-bounds constant GEP index
+      # differently, and four of the checks below refuse to run under 20 at
+      # all. The capstone2llvmir job a few lines down has installed
+      # llvm-20-dev all along, so the two halves of this workflow were
+      # measuring different compilers.
+      - name: Install LLVM 20, gtest and Capstone
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq llvm-dev libgtest-dev libgmock-dev libcapstone-dev \
+          sudo apt-get install -y -qq llvm-20-dev libgtest-dev libgmock-dev libcapstone-dev \
                                       opencl-headers ocl-icd-opencl-dev pocl-opencl-icd
 
       # ADAPT-01. src/retdec/llvm_to_ssa.cpp is the single producer of the SSA
