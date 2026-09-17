@@ -115,6 +115,13 @@ CHECKS=(
 	# requires the same answer, which is the question the text comparison was
 	# never asking.
 	"standalone bin2llvmir rewrites (semantics):::bash scripts/ci/check_bin2llvmir_opts.sh --self-test"
+	# BOUND-01. if_to_switch_optimizer.cpp is 8,100 lines, of which some six
+	# thousand are forty near-identical compare-tree reconstructions written
+	# by copying. A copy carries its overflow guard with it, including into
+	# the mirror that needs the other extreme -- which is what happened to
+	# all six bounds of the six-level Ge function. Reading forty near-identical
+	# functions is the task a reader does badly and a differential does well.
+	"doc       int64 bound overflow guards:::${PY} scripts/ci/check_bound_guards.py --self-test"
 	# Runs after the entry above so that the capstone 5.0.9 it needs is already
 	# built. COV-01 itself wants a cross-compiled corpus and minutes, so what
 	# runs here is its self-test -- which is more than ran before, since

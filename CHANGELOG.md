@@ -23,6 +23,19 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   requires exactly one mismatch back, because a comparison that cannot report a
   difference proves nothing.
 
+- `BOUND-01` (`scripts/ci/check_bound_guards.py`): every int64 bound that gets
+  `+ 1` or `- 1` must be bounded away from the extreme that overflows — either
+  by a limit test or by an ordering constraint, both of which are sound and
+  both of which it accepts. 695 functions across 70 files, with a self-test
+  that requires it to accept both forms of guard and still catch a guard on the
+  wrong extreme.
+
+  It exists because `if_to_switch_optimizer.cpp` is 8,158 lines against
+  upstream's 200, some six thousand of them forty near-identical compare-tree
+  reconstructions written by copying — and a copy carries its overflow guard
+  into the mirror that needs the other extreme. Reading forty near-identical
+  functions is what a reader does badly and a differential does well.
+
 - `OPT-01` (`scripts/ci/check_bin2llvmir_opts.sh`,
   `scripts/ci/inst_opt_semantics_check.cpp`): a semantic differ for the
   bin2llvmir rewrites. bin2llvmir is the layer that rewrites the lifted IR and
@@ -266,6 +279,15 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   only consumer was that output. Measured with a `getenv` interposer over a
   201-instruction function: 5,025 calls before, 3 after (once per process). The
   strings are now built only when something will print them.
+
+- **`tryConvertGeWithSixLevelNestedSplitInThen` guarded the wrong extreme, six
+  times.** All six of its bounds are tested against `INT64_MAX` and then have
+  one subtracted from them; `- 1` is undefined at INT64_MIN. The guard refused
+  an input that is fine and accepted the one that is not. Its own three-level
+  sibling guards MIN correctly, and the Gt family — where the bound is used as
+  `+ 1` — guards MAX correctly, which is where the copy came from. At `-O0` the
+  overflow wraps and the pass then declines, so the consequence is undefined
+  behaviour in the decompiler rather than a visible miscompile.
 
 - **llvmir2hll, the layer that writes the C.** Six defects, five of them
   visible in the emitted output.

@@ -9949,3 +9949,73 @@ as the defect it should have caught.
   `tryConvert{Lt,Le,Gt,Ge}With{Three..Six}LevelNested*` functions. Those were
   not read. A differential check of each family against its mirror is the
   obvious next step and the likeliest home for a one-character asymmetry.
+
+## Batch AW — the six thousand lines nobody read (2026-09-17)
+
+`if_to_switch_optimizer.cpp` is 8,158 lines against upstream's 200. About six
+thousand of those are forty near-identical
+`tryConvert{Lt,Le,Gt,Ge}With{Three..Six}LevelNested*` functions, and the
+previous audit ended by naming them as the likeliest home for a one-character
+asymmetry and saying plainly that it had not read them.
+
+### Read them how
+
+Not by reading. Forty near-identical functions is the task a reader does badly.
+Three differentials were built instead, each one wrong before it was right,
+which is worth recording because the corrections are the method:
+
+1. **Mirror diff of the source text.** Drowned in variable-naming noise — one
+   family calls a bound `ub0` and its mirror calls it `f0Bound`.
+2. **Mirror diff of a semantic skeleton** — method calls, constants, operators,
+   identifiers dropped. Better, but reported all 18 pairs as differing, because
+   `ShPtr<X>` and `cast<X>` made every template bracket look like a comparison,
+   and `->` tokenised as a minus followed by a greater-than. With those
+   stripped, the remaining differences were legible.
+3. **Reading the legible differences**, two of which were false positives worth
+   stating: `OuterLt` computes `lastCase = firstCase + n - 1` where `OuterGt`
+   does not, because Lt needs the chain's last case and Gt already has its
+   first; and `Lt...ThreeLevel` tests `afterC == M` where `Gt...ThreeLevel`
+   tests `firstC == L + 1`, which is the same relation expressed from the other
+   end. A skeleton differential cannot know either of those. Both mirrors are
+   correct.
+
+That left one question sharp enough to check directly, and it became
+`scripts/ci/check_bound_guards.py` (BOUND-01): **every int64 bound that gets
+`+ 1` or `- 1` must be bounded away from the extreme that overflows.** `L + 1`
+is undefined at INT64_MAX and `F - 1` at INT64_MIN.
+
+That checker was also wrong twice before it was right. It first reported 19
+sites, most of them guarded by an *ordering* constraint rather than a limit
+test — `if (f1Bound <= f0Bound) return false;` makes `f1Bound` strictly greater
+than some int64, so `f1Bound - 1` cannot overflow, and that is as sound as an
+explicit guard. Teaching it that dropped 19 to 8. Three of the remaining eight
+were the same thing written without a closing paren the regex insisted on.
+
+### Fixed
+
+**`tryConvertGeWithSixLevelNestedSplitInThen`** guards all six of its bounds
+against `INT64_MAX` and then computes `fNBound - 1` from every one of them.
+`- 1` overflows at INT64_MIN. The guard is on the wrong extreme, six times: it
+refuses an input that is fine and accepts the one that is undefined. Its own
+three-level sibling guards MIN correctly, and the Gt family — where the bound
+really is used as `+ 1` — guards MAX correctly, which is where the copy came
+from.
+
+The consequence is narrow: at `-O0` the overflow wraps, and the comparison it
+feeds then almost always fails, so the pass declines rather than miscompiling.
+It is undefined behaviour in the decompiler either way, and it is the exact
+shape a sanitiser build exists to catch.
+
+### Still open
+
+- The other **thirty-nine** functions in those families were checked only
+  against BOUND-01 and the mirror differential. Neither says anything about
+  whether the compare-tree each one reconstructs matches the switch it emits.
+  That would need a differential of a different kind — build the nest, run both
+  shapes over a domain, compare — which is what OPT-01 does for bin2llvmir and
+  what does not exist for llvmir2hll.
+- `tryConvertGeWithSixLevelNestedSplitInThen` has no explicit monotonicity
+  check between its bounds, where the five-level sibling has three. It is not a
+  defect: `firstF == f0Bound` with `lastF == f1Bound - 1` and `nF >= 1` implies
+  `f1Bound > f0Bound` transitively. Recorded because the differential flagged it
+  and the reason it is fine is not obvious from the code.

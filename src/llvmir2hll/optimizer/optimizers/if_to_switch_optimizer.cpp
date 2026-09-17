@@ -5967,6 +5967,11 @@ bool IfToSwitchOptimizer::tryConvertGeWithSixLevelNestedSplitInThen(
 	if (isa<ConstInt>(oge0->getFirstOperand())) {
 		return false;
 	}
+	// Every bound here is used as `fNBound - 1`, which is undefined at
+	// INT64_MIN, not at INT64_MAX. All six guards tested the wrong extreme --
+	// carried over from the Gt family, where the bound is used as `+ 1` and
+	// MAX is the one that matters. The three-level sibling of this function
+	// guards MIN correctly. See scripts/ci/check_bound_guards.py.
 	ShPtr<ConstInt> f0Const(cast<ConstInt>(oge0->getSecondOperand()));
 	if (!f0Const) {
 		return false;
@@ -5975,7 +5980,8 @@ bool IfToSwitchOptimizer::tryConvertGeWithSixLevelNestedSplitInThen(
 	if (!apsIntToInt64(f0Const->getValue(), &f0Bound)) {
 		return false;
 	}
-	if (f0Bound == std::numeric_limits<int64_t>::max()) {
+	if (f0Bound == std::numeric_limits<int64_t>::min())
+	{
 		return false;
 	}
 	ShPtr<Expression> outerLhs(oge0->getFirstOperand());
@@ -6012,7 +6018,8 @@ bool IfToSwitchOptimizer::tryConvertGeWithSixLevelNestedSplitInThen(
 	if (!apsIntToInt64(f1Const->getValue(), &f1Bound)) {
 		return false;
 	}
-	if (f1Bound == std::numeric_limits<int64_t>::max()) {
+	if (f1Bound == std::numeric_limits<int64_t>::min())
+	{
 		return false;
 	}
 	if (!oge1->getFirstOperand()->isEqualTo(outerLhs)) {
@@ -6050,7 +6057,8 @@ bool IfToSwitchOptimizer::tryConvertGeWithSixLevelNestedSplitInThen(
 	if (!apsIntToInt64(f2Const->getValue(), &f2Bound)) {
 		return false;
 	}
-	if (f2Bound == std::numeric_limits<int64_t>::max()) {
+	if (f2Bound == std::numeric_limits<int64_t>::min())
+	{
 		return false;
 	}
 	if (!oge2->getFirstOperand()->isEqualTo(outerLhs)) {
@@ -6088,7 +6096,8 @@ bool IfToSwitchOptimizer::tryConvertGeWithSixLevelNestedSplitInThen(
 	if (!apsIntToInt64(f3Const->getValue(), &f3Bound)) {
 		return false;
 	}
-	if (f3Bound == std::numeric_limits<int64_t>::max()) {
+	if (f3Bound == std::numeric_limits<int64_t>::min())
+	{
 		return false;
 	}
 	if (!oge3->getFirstOperand()->isEqualTo(outerLhs)) {
@@ -6126,7 +6135,8 @@ bool IfToSwitchOptimizer::tryConvertGeWithSixLevelNestedSplitInThen(
 	if (!apsIntToInt64(f4Const->getValue(), &f4Bound)) {
 		return false;
 	}
-	if (f4Bound == std::numeric_limits<int64_t>::max()) {
+	if (f4Bound == std::numeric_limits<int64_t>::min())
+	{
 		return false;
 	}
 	if (!oge4->getFirstOperand()->isEqualTo(outerLhs)) {
@@ -6164,7 +6174,8 @@ bool IfToSwitchOptimizer::tryConvertGeWithSixLevelNestedSplitInThen(
 	if (!apsIntToInt64(f5Const->getValue(), &f5Bound)) {
 		return false;
 	}
-	if (f5Bound == std::numeric_limits<int64_t>::max()) {
+	if (f5Bound == std::numeric_limits<int64_t>::min())
+	{
 		return false;
 	}
 	if (!oge5->getFirstOperand()->isEqualTo(outerLhs)) {
