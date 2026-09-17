@@ -223,6 +223,15 @@ jobs:
       - name: B2L-01 bin2llvmir suites
         run: bash scripts/ci/check_bin2llvmir_tests.sh --jobs 4
 
+      # L2HW-01. Nothing compiled src/llvmir2hll with warnings on: L2H-01 uses
+      # -w because it is there to run the tests, and standalone_check.sh covers
+      # only the modules that need no third-party library. So -Wunused-function
+      # -- "this code is never called" -- had never been read for 312
+      # translation units. It was hiding a 213-line class that was never
+      # constructed and two helpers written for it.
+      - name: L2HW-01 llvmir2hll warnings
+        run: bash scripts/ci/check_llvmir2hll_warnings.sh --jobs 4
+
   # C2L-01. tests/capstone2llvmir is 4,370 assertions and the only place ARM,
   # ARM64, MIPS and PowerPC instruction semantics are checked at all. It was on
   # standalone_check.sh's UNGATED_SUITES list, evaluated nowhere, for two

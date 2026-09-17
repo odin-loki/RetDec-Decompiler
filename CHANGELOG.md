@@ -8,6 +8,16 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- `L2HW-01` (`scripts/ci/check_llvmir2hll_warnings.sh`): compiles all 312
+  translation units under `src/llvmir2hll` with `-Wall -Wextra
+  -Wno-unused-parameter` and compares the result against a list of six
+  warnings, each with a reason. Nothing read those warnings before: `L2H-01`
+  compiles with `-w` because it is there to run the tests, and
+  `standalone_check.sh` covers only the modules that need no third-party
+  library. Checked in both directions — a warning not on the list fails it, and
+  an entry that stops warning fails it as a stale excuse — and falsified three
+  ways, including by restoring the dead code below, which it catches.
+
 - **`B2L-01` (`scripts/ci/check_bin2llvmir_tests.sh`): `tests/bin2llvmir` now
   runs here — 424 assertions across 35 suites that previously executed only in
   the pinned-LLVM build.** `OPT-01`'s own header said this container "cannot
@@ -362,6 +372,17 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   back to counting keywords in text. `GateReport::summary()` marks the fallback.
 
 ### Fixed
+
+- Removed 270 lines of dead code from `goto_cfg_optimizer.cpp`: a 213-line
+  `FuncRewriter` class that was never constructed, and the `endsWithJump` and
+  `collectUntil` helpers written for it that nothing else called. The class had
+  not been reviewed either — two of its loop advances were `stmt = stmt;`, one
+  insert was `newIf->prependStatement(newIf)` (a statement inserted before
+  itself) with the next line beginning "Actually: we need to insert newIf where
+  ifStmt was", and it declared two members for the same function. The banner
+  below it described the traversal that replaced it, so it was known to be
+  superseded. All 2,246 llvmir2hll tests pass without it.
+
 
 - `LoopBoundJumpAnalysis` answered "no jump" in two cases where there was one.
   It decides whether a statement chain may be moved outside its enclosing loop,

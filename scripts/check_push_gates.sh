@@ -118,6 +118,7 @@ CHECKS=(
 	"standalone idiom exchangers vs PHI:::bash scripts/ci/check_idiom_phi_reach.sh --self-test"
 	"standalone idiom rewrites vs other uses:::bash scripts/ci/check_idiom_shared_use.sh --self-test"
 	"standalone bin2llvmir suites (system LLVM):::bash scripts/ci/check_bin2llvmir_tests.sh --workdir \"${B2L_WORKDIR:-$ROOT/build/b2l-cache}\" --jobs 4"
+	"standalone llvmir2hll warnings:::bash scripts/ci/check_llvmir2hll_warnings.sh --jobs 4"
 	# BOUND-01. if_to_switch_optimizer.cpp is 8,100 lines, of which some six
 	# thousand are forty near-identical compare-tree reconstructions written
 	# by copying. A copy carries its overflow guard with it, including into

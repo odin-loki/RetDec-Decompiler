@@ -10867,3 +10867,89 @@ the cases that defect causes and nothing else.
   makes the do-while lowering correct is the subject of batch BB's differential,
   which builds no nested loops — so the two fixes are each covered and their
   combination is not.
+
+---
+
+## Batch BF — 270 lines nothing called, and the warning nobody read (2026-09-17)
+
+### The code
+
+`goto_cfg_optimizer.cpp` carried a 213-line `FuncRewriter` class, recorded in
+batch AV as *"never constructed and visibly broken"*. That was accurate and
+understated. Inside it:
+
+- two of its loop advances were `stmt = stmt;` — a self-assignment where the
+  walk was meant to move on;
+- one of its inserts was `newIf->prependStatement(newIf)`, a statement inserted
+  before itself, with a comment on the same line reading
+  `// this inserts it before target...` and the next line beginning
+  `// Actually: we need to insert newIf where ifStmt was`;
+- it declared two members for the same function, `func` and `func_`.
+
+The banner immediately below it described the code that replaced it as
+*"a cleaner imperative traversal that avoids the ordering issues above"* — so
+the author knew it was superseded and left it in.
+
+Removed, together with `endsWithJump` and `collectUntil`, two helpers written
+for it that nothing else called. 270 lines. All 2,246 llvmir2hll tests still
+pass.
+
+### Why it sat there
+
+`-Wunused-function` says exactly this: *this code is never called*. Nothing in
+this repository reads it for `src/llvmir2hll`. `L2H-01` compiles those
+translation units with `-w`, because it exists to run the tests;
+`standalone_check.sh`, which does compile with warnings and keeps a baseline,
+covers only the modules that need no third-party library, and llvmir2hll needs
+LLVM. So the warning was emitted by nobody for 312 translation units.
+
+### Added
+
+`L2HW-01` (`scripts/ci/check_llvmir2hll_warnings.sh`) compiles all 312 with
+`-Wall -Wextra -Wno-unused-parameter` and compares the warnings against a list
+of six, each with a reason. Checked in both directions: a warning not on the
+list fails it, and an entry that stops warning fails it as a stale excuse.
+Falsified three ways — remove a real entry, add an entry that does not warn,
+and restore the file this batch cleaned up, which it catches.
+
+`-Wno-unused-parameter` is there because the visitor interfaces this tree is
+built on take parameters their overrides do not read, by design, in the
+hundreds.
+
+**What it would not have caught:** `-Wunused-function` does not flag an unused
+*class*. It flags the two helpers, and the class was found by following them.
+A gate that had been running would have pointed at `endsWithJump`, not at
+`FuncRewriter` — which is still how it should have been found, but the
+distinction is worth stating rather than claiming the gate covers the larger
+thing.
+
+### The six that remain, and why they are not simply wired
+
+All six are `-Wunused-function` on tables of symbolic names written for an API
+and never added to the function-parameter map. None is dead scaffolding; each
+is a feature that silently does nothing. Wiring them is not a matter of adding
+a line, because the map is keyed by function name and parameter position only:
+
+| table | what the map cannot say |
+|---|---|
+| `getSymbolicNamesForBSDSignals` | BSD and Linux number signals differently and there is no platform key, so wiring it gives one of the two wrong names |
+| `getSymbolicNamesForTCPOptions` | `setsockopt`'s `optname` means different things depending on its `level` argument |
+| `getSymbolicNamesForKqueueFilter` | kqueue is BSD/macOS; `sys/event.h` is not on this container |
+| `getSymbolicNamesForKqueueFlags` | same |
+| `getSymbolicNamesForDispatchQueueAttr` | libdispatch is macOS; no header here |
+| `getSymbolicNamesForWin32Error` | a **return** value, not a parameter; the map has no slot for one |
+
+The last four could be wired only by asserting an API from memory. This
+repository already has a gate against doing that — `check_libc_arity.py`
+measures arity from the real headers rather than recalling it — and the headers
+in question are not present here. So they are recorded, with the reason, rather
+than guessed at.
+
+### Still open
+
+- Extending the parameter map with a platform key, a dependent-argument key and
+  a return-value slot would make four of the six wirable. That is a design
+  change to the semantics layer and is not attempted here.
+- The scan covers `src/llvmir2hll` only. `src/bin2llvmir` is compiled with `-w`
+  by `B2L-01` for the same reason and has never been read for warnings either;
+  its density is unmeasured.
