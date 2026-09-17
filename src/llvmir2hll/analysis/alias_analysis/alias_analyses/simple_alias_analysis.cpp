@@ -117,12 +117,43 @@ const VarSet &SimpleAliasAnalysis::mayPointTo(ShPtr<Variable> var) const {
 }
 
 ShPtr<Variable> SimpleAliasAnalysis::pointsTo(ShPtr<Variable> var) const {
-	// Try single-assignment inference.
+	// The contract is "the variable to which @a var ALWAYS points", and
+	// callers take it at its word: ValueAnalysis records `*p` as a MUST access
+	// of exactly this variable, with everything else left out of the accessed
+	// set. So a wrong answer here does not cost an optimisation, it
+	// misattributes a write -- and every later pass reasons from that.
+	//
+	// singleAssignPointsTo answers a weaker question than the contract asks:
+	// it walks the function for assignments whose left-hand side is @a var and
+	// says "always" when it finds exactly one. Two things make that unsound,
+	// and both are refused here rather than inside the finder, because both
+	// are properties of the variable rather than of the assignments.
 	auto funcIt = varFuncMap.find(var);
-	if (funcIt != varFuncMap.end()) {
-		if (auto target = singleAssignPointsTo(var, funcIt->second)) {
-			return target;
-		}
+	if (funcIt == varFuncMap.end())
+	{
+		return ShPtr<Variable>();
+	}
+
+	// 1. The pointer's own address is taken somewhere. `foo(&p)` can repoint
+	//    it, and a finder that looks only at assignments TO p cannot see that
+	//    happen.
+	if (hasItem(allAddressedVars, var))
+	{
+		return ShPtr<Variable>();
+	}
+
+	// 2. The pointer is a parameter. Its incoming value is whatever the caller
+	//    passed, so an assignment inside the function says nothing about the
+	//    dereferences before it -- and this analysis has no program point to
+	//    distinguish them by.
+	if (funcIt->second && funcIt->second->hasParam(var))
+	{
+		return ShPtr<Variable>();
+	}
+
+	if (auto target = singleAssignPointsTo(var, funcIt->second))
+	{
+		return target;
 	}
 	return ShPtr<Variable>();
 }

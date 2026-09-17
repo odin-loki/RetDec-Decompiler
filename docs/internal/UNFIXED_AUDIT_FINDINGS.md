@@ -10953,3 +10953,76 @@ than guessed at.
 - The scan covers `src/llvmir2hll` only. `src/bin2llvmir` is compiled with `-w`
   by `B2L-01` for the same reason and has never been read for warnings either;
   its density is unmeasured.
+
+---
+
+## Batch BG — "always points to" said about something that did not (2026-09-17)
+
+`AliasAnalysis::pointsTo` is documented as returning *"the variable to which
+@a var **always** points"*, and `ValueAnalysis::computeAccessedVars` takes that
+literally:
+
+```cpp
+if (ShPtr<Variable> pointsToVar = aliasAnalysis->pointsTo(var)) {
+        accessedVarsInDeref[0].insert(pointsToVar);
+        mustInDeref[0] = true;          // <-- a MUST access of exactly this
+} else {
+        addToSet(aliasAnalysis->mayPointTo(var), accessedVarsInDeref[0]);
+        mustInDeref[0] = false;
+}
+```
+
+So a wrong answer does not cost an optimisation. It records a write through
+`*p` as a **must** write to one named variable and leaves every other variable
+out of the accessed set, and every pass downstream reasons from that.
+
+`SimpleAliasAnalysis::pointsTo` answered it with `singleAssignPointsTo`, which
+walks the function for assignments whose left-hand side is the pointer and
+says "always" when it finds exactly one. That is a weaker claim than the
+contract in three ways, all now refused.
+
+### 1. The pointer's own address is taken
+
+`SingleAssignFinder` overrides `AssignStmt` and `VarDefStmt` only. `foo(&p)` is
+a call, so it is not counted — and anything holding `&p` can repoint it. The
+analysis already tracks `allAddressedVars` for `mayBePointed`; `pointsTo` now
+consults it and declines.
+
+### 2. The pointer is a parameter
+
+Its incoming value is whatever the caller passed. One assignment inside the
+function says nothing about the dereferences before it, and a flow-insensitive
+analysis has no program point to tell those apart.
+
+### 3. The single assignment is nested inside an `if`, a loop or a `switch`
+
+It runs on some paths and not others, so "always" is false on the rest.
+`SingleAssignFinder` now tracks depth and treats a nested assignment as
+invalidating, exactly as it already treated a non-address one.
+
+Its depth tracking visits nested statements with the depth raised and the
+**successor** with it restored — the same distinction batch BE had to make in
+`LoopBoundJumpAnalysis`, and for the same reason: `OrderedAllVisitor::visit`
+walks the successor too, and the successor is not inside the construct.
+
+### Added
+
+Four tests. One is the positive case — a pointer assigned once at top level
+still resolves — so the three refusals are not "refuse everything". Restoring
+any one of the three fails exactly its own test and nothing else.
+
+### Still open
+
+- All three refusals are conservative in the safe direction: they turn a
+  "must" into a "may", which widens the accessed set. Nothing here measures
+  what that costs in output quality, and nothing in this repository would: the
+  decompiler does not run in this container.
+- A pointer assigned once at top level and then passed *by value* to a function
+  is still reported as always pointing. That is correct — passing a pointer by
+  value cannot repoint the caller's copy — but it is correct by an argument,
+  not by a test.
+- `mayPointTo`'s documented contract says it returns the singleton
+  `{pointsTo(var)}` when `pointsTo` is non-null. `SimpleAliasAnalysis` does not
+  do that: it returns the type-filtered addressed set regardless. The two are
+  not obliged to agree by anything the code checks, and this batch did not
+  change it.

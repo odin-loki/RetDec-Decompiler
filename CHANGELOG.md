@@ -373,6 +373,20 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- `SimpleAliasAnalysis::pointsTo` claimed "always points to" in three cases
+  where it did not. The contract is a **must**-alias claim and
+  `ValueAnalysis::computeAccessedVars` relies on it: a non-null answer makes
+  `*p` a must access of exactly that variable, with every other variable left
+  out of the accessed set — so a wrong answer misattributes a write rather than
+  costing an optimisation. Its single-assignment inference now declines when
+  the pointer's own address is taken (anything holding `&p` can repoint it, and
+  the finder sees only assignments whose left-hand side is `p`), when the
+  pointer is a parameter (its incoming value is the caller's), and when the one
+  assignment sits inside an `if`, a loop or a `switch` (it runs on some paths
+  and not others). Four tests, including the positive case so the refusals are
+  not "refuse everything"; restoring any one defect fails exactly its own test.
+
+
 - Removed 270 lines of dead code from `goto_cfg_optimizer.cpp`: a 213-line
   `FuncRewriter` class that was never constructed, and the `endsWithJump` and
   `collectUntil` helpers written for it that nothing else called. The class had

@@ -12,6 +12,7 @@
 #include "retdec/llvmir2hll/ir/assign_stmt.h"
 #include "retdec/llvmir2hll/ir/deref_op_expr.h"
 #include "retdec/llvmir2hll/ir/function_builder.h"
+#include "retdec/llvmir2hll/ir/if_stmt.h"
 #include "retdec/llvmir2hll/ir/int_type.h"
 #include "retdec/llvmir2hll/ir/pointer_type.h"
 #include "retdec/llvmir2hll/ir/return_stmt.h"
@@ -237,6 +238,113 @@ VariableWhoseAddressIsNotTakenMayNotBePointed) {
 
 	// `a` may not be pointed.
 	EXPECT_FALSE(analysis->mayBePointed(varA));
+}
+
+//
+// pointsTo() promises "the variable to which var ALWAYS points". ValueAnalysis
+// takes that literally: it records `*p` as a MUST access of exactly that
+// variable and leaves every other variable out of the accessed set, so a wrong
+// answer here misattributes a write rather than costing an optimisation. These
+// pin the three cases where the single-assignment inference used to say
+// "always" about something that was not.
+//
+
+TEST_F(SimpleAliasAnalysisTests, PointerAssignedOnceAtTopLevelDoesPointToThatVariable)
+{
+	// void test() {
+	//     int a;
+	//     int *p;
+	//     p = &a;
+	// }
+	//
+	// The positive case, so the three refusals below are not just "refuse
+	// everything".
+	auto varA = Variable::create("a", IntType::create(16));
+	auto varP = Variable::create("p", PointerType::create(IntType::create(16)));
+	testFunc->addLocalVar(varA);
+	testFunc->addLocalVar(varP);
+	testFunc->setBody(VarDefStmt::create(
+		varA, nullptr, VarDefStmt::create(varP, nullptr, AssignStmt::create(varP, AddressOpExpr::create(varA)))));
+
+	analysis->init(module);
+
+	EXPECT_EQ(varA, analysis->pointsTo(varP));
+}
+
+TEST_F(SimpleAliasAnalysisTests, PointerWhoseOwnAddressIsTakenDoesNotAlwaysPoint)
+{
+	// void test() {
+	//     int a;
+	//     int b;
+	//     int *p;
+	//     p = &a;
+	//     b = *&p;        // takes the address of p
+	// }
+	//
+	// Anything holding &p can repoint p, and the finder looks only at
+	// assignments whose left-hand side IS p, so it cannot see that happen.
+	auto varA = Variable::create("a", IntType::create(16));
+	auto varB = Variable::create("b", IntType::create(16));
+	auto varP = Variable::create("p", PointerType::create(IntType::create(16)));
+	testFunc->addLocalVar(varA);
+	testFunc->addLocalVar(varB);
+	testFunc->addLocalVar(varP);
+	auto takeAddr = AssignStmt::create(varB, DerefOpExpr::create(AddressOpExpr::create(varP)));
+	testFunc->setBody(VarDefStmt::create(
+		varA,
+		nullptr,
+		VarDefStmt::create(varP, nullptr, AssignStmt::create(varP, AddressOpExpr::create(varA), takeAddr))));
+
+	analysis->init(module);
+
+	EXPECT_EQ(ShPtr<Variable>(), analysis->pointsTo(varP))
+		<< "a pointer whose own address is taken cannot be said to always "
+		   "point anywhere";
+}
+
+TEST_F(SimpleAliasAnalysisTests, PointerAssignedOnlyInsideAnIfDoesNotAlwaysPoint)
+{
+	// void test() {
+	//     int a;
+	//     int *p;
+	//     if (a) {
+	//         p = &a;
+	//     }
+	// }
+	//
+	// The assignment runs on one path. "Always" is false on the other.
+	auto varA = Variable::create("a", IntType::create(16));
+	auto varP = Variable::create("p", PointerType::create(IntType::create(16)));
+	testFunc->addLocalVar(varA);
+	testFunc->addLocalVar(varP);
+	auto cond = IfStmt::create(varA, AssignStmt::create(varP, AddressOpExpr::create(varA)));
+	testFunc->setBody(VarDefStmt::create(varA, nullptr, VarDefStmt::create(varP, nullptr, cond)));
+
+	analysis->init(module);
+
+	EXPECT_EQ(ShPtr<Variable>(), analysis->pointsTo(varP))
+		<< "an assignment inside an if runs on some paths and not others";
+}
+
+TEST_F(SimpleAliasAnalysisTests, ParameterAssignedOnceDoesNotAlwaysPoint)
+{
+	// void test(int *p) {
+	//     int a;
+	//     p = &a;
+	// }
+	//
+	// Before the assignment, p is whatever the caller passed, and this
+	// analysis has no program point to tell the two apart.
+	auto varA = Variable::create("a", IntType::create(16));
+	auto varP = Variable::create("p", PointerType::create(IntType::create(16)));
+	testFunc->addParam(varP);
+	testFunc->addLocalVar(varA);
+	testFunc->setBody(VarDefStmt::create(varA, nullptr, AssignStmt::create(varP, AddressOpExpr::create(varA))));
+
+	analysis->init(module);
+
+	EXPECT_EQ(ShPtr<Variable>(), analysis->pointsTo(varP)) << "a parameter's incoming value is the caller's, not this "
+															  "assignment's";
 }
 
 } // namespace tests
