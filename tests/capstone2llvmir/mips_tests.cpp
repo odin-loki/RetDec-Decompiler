@@ -5798,6 +5798,55 @@ static uint32_t floatRegBits(float f)
 	return bits;
 }
 
+// MIPS does NOT saturate toward the nearer end. Its default result when the
+// Invalid Operation exception is masked -- which is how ordinary code runs --
+// is 2^(N-1) - 1 for every bad input alike: NaN, +infinity, AND a large
+// negative. That is the opposite of Power for the low end, and the four
+// architectures in this tree have four different rules here.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_TRUNC_W_out_of_range_high)
+{
+	SKIP_MODE_64;
+
+	float v = 1.0e30f;
+	setRegisters({
+		{MIPS_REG_F2, v},
+	});
+
+	emulate("trunc.w.s $f0, $f2");
+
+	EXPECT_EQ(0x7fffffffu, floatRegBits(getRegisterValueFloat(MIPS_REG_F0)));
+}
+
+// The one that separates MIPS from everyone else: a large NEGATIVE also gives
+// the maximum, not the minimum.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_TRUNC_W_out_of_range_low_is_also_max)
+{
+	SKIP_MODE_64;
+
+	float v = -1.0e30f;
+	setRegisters({
+		{MIPS_REG_F2, v},
+	});
+
+	emulate("trunc.w.s $f0, $f2");
+
+	EXPECT_EQ(0x7fffffffu, floatRegBits(getRegisterValueFloat(MIPS_REG_F0)));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_TRUNC_W_in_range_still_converts)
+{
+	SKIP_MODE_64;
+
+	float v = -3.7f;
+	setRegisters({
+		{MIPS_REG_F2, v},
+	});
+
+	emulate("trunc.w.s $f0, $f2");
+
+	EXPECT_EQ(0xfffffffdu, floatRegBits(getRegisterValueFloat(MIPS_REG_F0)));
+}
+
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CVT_W_s_rounds_to_nearest)
 {
 	SKIP_MODE_64;

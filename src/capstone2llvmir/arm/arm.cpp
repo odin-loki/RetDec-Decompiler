@@ -5,6 +5,7 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <cmath>
 #include <iomanip>
 
 #include <llvm/IR/Intrinsics.h>
@@ -310,6 +311,44 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadRegister(
  * A shift kind that is not one of those falls back to the unshifted register,
  * which is what this code did for all of them before.
  */
+/**
+ * A float-to-integer conversion with ARM's defined answer for the inputs that
+ * do not fit: NaN converts to zero, and an out-of-range magnitude saturates to
+ * the destination's minimum or maximum. LLVM's fptosi and fptoui call all
+ * three poison.
+ *
+ * NOT MEASURED -- this container is x86-64 with no ARM emulator, so this rests
+ * on the ARM ARM's FPToFixed() pseudocode rather than on an observation.
+ */
+llvm::Value* Capstone2LlvmIrTranslatorArm_impl::generateFpToIntSaturating(
+	llvm::Value* v, llvm::Type* intTy, bool isSigned, llvm::IRBuilder<>& irb)
+{
+	unsigned bits = intTy->getScalarSizeInBits();
+	auto* fpTy = v->getType();
+
+	auto* loF = llvm::ConstantFP::get(fpTy, isSigned ? -std::ldexp(1.0, static_cast<int>(bits - 1)) : 0.0);
+	auto* hiF = llvm::ConstantFP::get(fpTy, std::ldexp(1.0, static_cast<int>(isSigned ? bits - 1 : bits)));
+
+	auto* aboveLo = irb.CreateFCmpOGE(v, loF);
+	auto* inRange = irb.CreateAnd(aboveLo, irb.CreateFCmpOLT(v, hiF));
+
+	// The conversion is fed an in-range value on every path, so the IR carries
+	// no poison at all rather than poison that happens not to be selected.
+	auto* safe = irb.CreateSelect(inRange, v, llvm::ConstantFP::get(fpTy, 0.0));
+	auto* conv = isSigned ? irb.CreateFPToSI(safe, intTy) : irb.CreateFPToUI(safe, intTy);
+
+	auto* minV =
+		llvm::ConstantInt::get(intTy, isSigned ? llvm::APInt::getSignedMinValue(bits) : llvm::APInt::getZero(bits));
+	auto* maxV =
+		llvm::ConstantInt::get(intTy, isSigned ? llvm::APInt::getSignedMaxValue(bits) : llvm::APInt::getAllOnes(bits));
+
+	return irb.CreateSelect(
+		inRange,
+		conv,
+		irb.CreateSelect(
+			irb.CreateFCmpUNO(v, v), llvm::ConstantInt::get(intTy, 0), irb.CreateSelect(aboveLo, maxV, minV)));
+}
+
 llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadMemIndexTerm(cs_arm_op& op, llvm::IRBuilder<>& irb)
 {
 	auto* idx = loadRegister(op.mem.index, irb);
@@ -1093,7 +1132,12 @@ void Capstone2LlvmIrTranslatorArm_impl::translateVfpCvt(cs_insn* i, cs_arm* ai, 
 			src = irb.CreateCall(
 				llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::roundeven, src->getType()), {src});
 		}
-		val = isSigned ? irb.CreateFPToSI(src, dstTy) : irb.CreateFPToUI(src, dstTy);
+		// A32 uses the same FPToFixed() as A64: a NaN converts to zero and an
+		// out-of-range magnitude SATURATES to the destination's minimum or
+		// maximum. LLVM calls all three poison. See the ARM64 translator's
+		// generateFpToIntSaturating for the reasoning; this is the same rule
+		// written out here because the two translators share no base class.
+		val = generateFpToIntSaturating(src, dstTy, isSigned, irb);
 	}
 	else
 	{

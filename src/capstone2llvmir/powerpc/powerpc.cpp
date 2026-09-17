@@ -5,6 +5,7 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <cmath>
 #include <iomanip>
 
 #include "capstone2llvmir/powerpc/powerpc_impl.h"
@@ -451,6 +452,54 @@ llvm::Value* Capstone2LlvmIrTranslatorPowerpc_impl::loadCrX(
  * sraw. -- must NOT come through here: their word and their register value
  * have the same sign, and zero-extending would invert it.
  */
+/**
+ * A float-to-integer conversion with the Power ISA's defined answer for the
+ * inputs that do not fit.
+ *
+ * LLVM's fptosi and fptoui call a NaN, an infinity, or an out-of-range
+ * magnitude POISON. Power defines all three, and -- this is the part worth
+ * being careful about -- defines them differently from both x86 and ARM:
+ *
+ *   FCTIW/FCTIWZ   above 2^31-1 -> 0x7fffffff
+ *                  below -2^31  -> 0x80000000
+ *                  NaN          -> 0x80000000     (the MINIMUM, not zero)
+ *   FCTIWU/…UZ     above 2^32-1 -> 0xffffffff
+ *                  below 0      -> 0
+ *                  NaN          -> 0
+ *
+ * ARM sends a NaN to ZERO; x86 sends every bad input alike to the integer
+ * indefinite value. Three architectures, three rules, and the one thing they
+ * agree on is that none of them is poison. Copying a neighbour's helper here
+ * would have been wrong in a way no test would notice.
+ *
+ * NOT MEASURED: this container is x86-64 with no PowerPC emulator, so this
+ * rests on the Power ISA's stated results rather than an observation.
+ */
+llvm::Value* Capstone2LlvmIrTranslatorPowerpc_impl::generateFpToIntBounded(
+	llvm::Value* v, llvm::Type* intTy, bool isSigned, llvm::IRBuilder<>& irb)
+{
+	unsigned bits = intTy->getScalarSizeInBits();
+	auto* fpTy = v->getType();
+
+	auto* loF = llvm::ConstantFP::get(fpTy, isSigned ? -std::ldexp(1.0, static_cast<int>(bits - 1)) : 0.0);
+	auto* hiF = llvm::ConstantFP::get(fpTy, std::ldexp(1.0, static_cast<int>(isSigned ? bits - 1 : bits)));
+
+	auto* aboveLo = irb.CreateFCmpOGE(v, loF);
+	auto* inRange = irb.CreateAnd(aboveLo, irb.CreateFCmpOLT(v, hiF));
+
+	auto* safe = irb.CreateSelect(inRange, v, llvm::ConstantFP::get(fpTy, 0.0));
+	auto* conv = isSigned ? irb.CreateFPToSI(safe, intTy) : irb.CreateFPToUI(safe, intTy);
+
+	auto* minV =
+		llvm::ConstantInt::get(intTy, isSigned ? llvm::APInt::getSignedMinValue(bits) : llvm::APInt::getZero(bits));
+	auto* maxV =
+		llvm::ConstantInt::get(intTy, isSigned ? llvm::APInt::getSignedMaxValue(bits) : llvm::APInt::getAllOnes(bits));
+
+	// A NaN fails the ordered comparison above, so it lands on the minimum --
+	// which is exactly what Power specifies, for both signednesses.
+	return irb.CreateSelect(inRange, conv, irb.CreateSelect(aboveLo, maxV, minV));
+}
+
 void Capstone2LlvmIrTranslatorPowerpc_impl::storeCr0Word(llvm::IRBuilder<>& irb, cs_ppc* pi, llvm::Value* val)
 {
 	if (!pi->update_cr0)
@@ -1284,7 +1333,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateFpUnary(cs_insn* i, cs_ppc*
 		bool wide = (i->id == PPC_INS_FCTID || i->id == PPC_INS_FCTIDZ || i->id == PPC_INS_FCTIDUZ);
 		bool uns = (i->id == PPC_INS_FCTIWUZ || i->id == PPC_INS_FCTIDUZ);
 		auto* ity = wide ? irb.getInt64Ty() : irb.getInt32Ty();
-		llvm::Value* val = uns ? irb.CreateFPToUI(op1, ity) : irb.CreateFPToSI(op1, ity);
+		llvm::Value* val = generateFpToIntBounded(op1, ity, !uns, irb);
 		// The W forms leave the result in the low 32 bits and the ISA
 		// leaves the high 32 undefined. Widening by the result's own
 		// signedness is a defined choice; for the D forms these are

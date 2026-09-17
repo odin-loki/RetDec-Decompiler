@@ -7077,6 +7077,68 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCVT_f64_s32)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+/// The raw bits of a float register.
+///
+/// VCVT-to-integer leaves an INTEGER in an S register, and the fixture's
+/// comparison for a float register is EXPECT_NEAR(..., 0.001). The bit pattern
+/// of a small integer is a denormal -- 3 is 4.2e-45 -- so every such
+/// expectation compares equal to zero and to every other small integer. The
+/// VCVT_s32_f64 test below is one of those; it cannot fail on its value. These
+/// can.
+static uint32_t armFloatRegBits(float f)
+{
+	uint32_t bits = 0;
+	std::memcpy(&bits, &f, sizeof bits);
+	return bits;
+}
+
+// ARM's FPToFixed(): a NaN converts to ZERO and an out-of-range magnitude
+// SATURATES to the destination's minimum or maximum. LLVM's fptosi calls all
+// three poison.
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCVT_s32_saturates_high)
+{
+	ALL_MODES;
+
+	double v = 1.0e30;
+	setRegisters({
+		{ARM_REG_D1, v},
+	});
+
+	emulate("vcvt.s32.f64 s0, d1");
+
+	EXPECT_EQ(0x7fffffffu, armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCVT_s32_saturates_low)
+{
+	ALL_MODES;
+
+	double v = -1.0e30;
+	setRegisters({
+		{ARM_REG_D1, v},
+	});
+
+	emulate("vcvt.s32.f64 s0, d1");
+
+	EXPECT_EQ(0x80000000u, armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+}
+
+// The in-range case must still convert -- the guard against over-correcting.
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCVT_s32_in_range_still_converts)
+{
+	ALL_MODES;
+
+	double v = -3.7;
+	setRegisters({
+		{ARM_REG_D1, v},
+	});
+
+	emulate("vcvt.s32.f64 s0, d1");
+
+	// VCVT truncates toward zero: -3.7 -> -3.
+	EXPECT_EQ(0xfffffffdu, armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCVT_s32_f64)
 {
 	ALL_MODES;

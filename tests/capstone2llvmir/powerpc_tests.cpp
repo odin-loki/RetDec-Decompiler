@@ -11076,6 +11076,65 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FCMPU_unordered)
 	});
 }
 
+/// The raw bits of a double register.
+///
+/// fctiwz leaves an INTEGER in an FPR, and the fixture compares a double
+/// register with EXPECT_NEAR(..., 0.001). The bit pattern of a small integer
+/// is a denormal -- 3 is 1.5e-323 -- so the FCTIWZ test below cannot fail on
+/// its value. These can.
+static uint64_t ppcDoubleRegBits(double d)
+{
+	uint64_t bits = 0;
+	std::memcpy(&bits, &d, sizeof bits);
+	return bits;
+}
+
+// Power defines the out-of-range and NaN answers, and defines them DIFFERENTLY
+// from ARM: it saturates, and sends a NaN to the destination's MINIMUM rather
+// than to zero. The result is sign-extended into the 64-bit FPR.
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FCTIWZ_saturates_high)
+{
+	ALL_MODES;
+
+	double v = 1.0e30;
+	setRegisters({
+		{PPC_REG_F2, v},
+	});
+
+	emulate("fctiwz 1, 2");
+
+	EXPECT_EQ(0x000000007fffffffull, ppcDoubleRegBits(getRegisterValueDouble(PPC_REG_F1)));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FCTIWZ_saturates_low)
+{
+	ALL_MODES;
+
+	double v = -1.0e30;
+	setRegisters({
+		{PPC_REG_F2, v},
+	});
+
+	emulate("fctiwz 1, 2");
+
+	// 0x80000000 sign-extended into the 64-bit FPR.
+	EXPECT_EQ(0xffffffff80000000ull, ppcDoubleRegBits(getRegisterValueDouble(PPC_REG_F1)));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FCTIWZ_in_range_still_converts)
+{
+	ALL_MODES;
+
+	double v = -3.7;
+	setRegisters({
+		{PPC_REG_F2, v},
+	});
+
+	emulate("fctiwz 1, 2");
+
+	EXPECT_EQ(0xfffffffffffffffdull, ppcDoubleRegBits(getRegisterValueDouble(PPC_REG_F1)));
+}
+
 TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FCTIWZ)
 {
 	ALL_MODES;

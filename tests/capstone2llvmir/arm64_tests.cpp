@@ -7235,6 +7235,63 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ROR32_r_r_i)
 // udiv call it IMMEDIATE undefined behaviour -- not poison, which is a bad
 // value, but UB, which lets the optimiser delete the surrounding code. A
 // decompiler emitting that is asking LLVM to discard the path being read.
+// ARM's FPToFixed(): an out-of-range magnitude SATURATES and a NaN converts to
+// ZERO. LLVM's fptosi calls all three poison -- and poison is not a wrong
+// number that stays put, it is a licence for the optimiser.
+//
+// Each architecture in this tree defines this differently: ARM saturates with
+// NaN to zero, Power saturates with NaN to the MINIMUM, MIPS sends every bad
+// input to the MAXIMUM including large negatives, and x86 sends them all to
+// the integer indefinite value. Four rules; the tests are per-architecture for
+// that reason.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCVTZS_saturates_high)
+{
+	setRegisters({
+		{ARM64_REG_D1, 1.0e30},
+	});
+
+	emulate("fcvtzs w0, d1");
+
+	EXPECT_EQ(0x7fffffffu, getRegisterValueUnsigned(ARM64_REG_W0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCVTZS_saturates_low)
+{
+	setRegisters({
+		{ARM64_REG_D1, -1.0e30},
+	});
+
+	emulate("fcvtzs w0, d1");
+
+	EXPECT_EQ(0x80000000u, getRegisterValueUnsigned(ARM64_REG_W0));
+}
+
+// A negative value converts to ZERO under FCVTZU, not to the all-ones
+// saturation an unsigned conversion might suggest.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCVTZU_negative_is_zero)
+{
+	setRegisters({
+		{ARM64_REG_D1, -5.0},
+	});
+
+	emulate("fcvtzu w0, d1");
+
+	EXPECT_EQ(0x0u, getRegisterValueUnsigned(ARM64_REG_W0));
+}
+
+// And the ordinary in-range case must still convert.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCVTZS_in_range_still_converts)
+{
+	setRegisters({
+		{ARM64_REG_D1, -2.7},
+	});
+
+	emulate("fcvtzs w0, d1");
+
+	// FCVTZS truncates toward zero: -2.7 -> -2.
+	EXPECT_EQ(0xfffffffeu, getRegisterValueUnsigned(ARM64_REG_W0));
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SDIV_by_zero_is_zero)
 {
 	setRegisters({

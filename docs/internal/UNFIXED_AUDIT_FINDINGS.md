@@ -9325,3 +9325,65 @@ sdiv/udiv/srem/urem has a divisor provably non-zero, and that no sdiv can meet
 the INT_MIN / -1 pair. `rangeOf` already computes the lower bound it needs. It
 is not built here because it would immediately flag the MIPS and PowerPC
 divisions, which are recorded as open and want fixing in the same breath.
+
+## Batch AO -- the float-to-integer range guard, and four different answers
+
+The eight bare `CreateFPToSI`/`CreateFPToUI` sites recorded as open since Batch
+AG are now guarded. The interesting part is not that they needed guarding; it
+is that copying one architecture's guard to another would have been wrong
+everywhere, silently.
+
+LLVM calls a NaN, an infinity, or an out-of-range magnitude POISON. All four
+architectures in this tree define answers, and no two define the same one:
+
+    x86      every bad input alike  ->  the INTEGER INDEFINITE value, which is
+                                        the destination's minimum
+    ARM      NaN                    ->  0
+             out of range           ->  SATURATE toward the nearer end
+    Power    NaN                    ->  the destination's MINIMUM
+             out of range           ->  saturate toward the nearer end
+    MIPS     every bad input alike  ->  the destination's MAXIMUM, including
+                                        a large NEGATIVE one and -infinity
+
+The MIPS rule is the one that catches you out: its default result when the
+Invalid Operation exception is masked -- which is how ordinary code runs -- is
+2^(N-1) - 1 whatever went wrong, so -1.0e30 converts to 0x7fffffff and not to
+0x80000000. Power and ARM agree on saturation and disagree on NaN. x86 agrees
+with nobody.
+
+Four helpers, therefore, not one:
+
+    x86      generateFpToSiDefined      (already existed, Batch AG)
+    ARM64    generateFpToIntSaturating  arm64.cpp,   used by FCVTZS/ZU and by
+                                        the eight FCVT{A,M,N,P}{S,U} forms
+    ARM      generateFpToIntSaturating  arm.cpp,     used by VCVT/VCVTR
+    Power    generateFpToIntBounded     powerpc.cpp, used by the FCTIW/FCTID
+                                        family
+    MIPS     generateFpToIntDefault     mips.cpp,    used by TRUNC/ROUND/CEIL/
+                                        FLOOR and by CVT.W
+
+Each feeds its conversion a value that is in range on EVERY path, so the IR
+carries no poison at all rather than poison that happens not to be selected --
+the same discipline the x86 helper uses, and for the same reason: poison does
+not stay where it is put once the optimiser sees it.
+
+NOT MEASURED. This container is x86-64 and has no ARM, MIPS or PowerPC
+emulator, so unlike the x86 conversions these rest on the manuals' stated
+results rather than on observations. Said plainly rather than glossed.
+
+Falsification: reverting each architecture's guard alone fails 3 (ARM64, with
+the in-range test correctly still passing), 4 (ARM), 6 (MIPS) and 10 (Power)
+tests.
+
+### The vacuous-float-comparison class is wider than MIPS
+
+Batch AN found that a float register holding an INTEGER bit pattern cannot be
+checked with the fixture's `EXPECT_NEAR(..., 0.001)`, because every small
+integer's bit pattern is a denormal and they all compare equal to zero and to
+each other. That is not a MIPS problem. `ARM_INS_VCVT_s32_f64` and
+`PPC_INS_FCTIWZ` assert their results the same way and cannot fail on them
+either -- both are noted in place, and the new tests beside them compare raw
+bits instead.
+
+Anywhere an integer is read out of a floating-point register, the fixture's
+value assertion is decoration. Worth a sweep of its own.

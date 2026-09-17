@@ -91,6 +91,11 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		/// register; see the definition. The sign-extending word operations
 		/// must keep using storeCr0().
 		void storeCr0Word(llvm::IRBuilder<>& irb, cs_ppc* pi, llvm::Value* val);
+
+		/// A float-to-integer conversion with Power's defined answer for NaN and
+		/// out-of-range inputs; see the definition. Power's NaN answer is the
+		/// destination MINIMUM, not zero as on ARM.
+		llvm::Value* generateFpToIntBounded(llvm::Value* v, llvm::Type* intTy, bool isSigned, llvm::IRBuilder<>& irb);
 		void crFieldRegisters(uint32_t crReg, uint32_t& ltR, uint32_t& gtR, uint32_t& eqR, uint32_t& soR);
 
 		llvm::Value* roundToSingle(llvm::IRBuilder<>& irb, llvm::Value* val);

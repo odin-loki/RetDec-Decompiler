@@ -89,6 +89,10 @@ class Capstone2LlvmIrTranslatorArm_impl :
 		/// The index term of a memory operand, with its shift and sign but
 		/// without generateOperandShift()'s flag writes; see the definition.
 		llvm::Value* loadMemIndexTerm(cs_arm_op& op, llvm::IRBuilder<>& irb);
+		/// A float-to-integer conversion with ARM's defined answer for NaN and
+		/// out-of-range inputs; see the definition.
+		llvm::Value*
+		generateFpToIntSaturating(llvm::Value* v, llvm::Type* intTy, bool isSigned, llvm::IRBuilder<>& irb);
 		llvm::Value* generateOperandShift(
 				llvm::IRBuilder<>& irb,
 				cs_arm_op& op,

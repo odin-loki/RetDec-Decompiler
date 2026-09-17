@@ -5,6 +5,7 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <cmath>
 #include <iomanip>
 
 #include "capstone2llvmir/mips/mips_impl.h"
@@ -852,7 +853,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateFpToInt(cs_insn* i, cs_mips* m
 	default: throw GenericError("translateFpToInt(): unhandled instruction id");
 	}
 
-	llvm::Value* iv = irb.CreateFPToSI(src, irb.getIntNTy(dstBits));
+	llvm::Value* iv = generateFpToIntDefault(src, irb.getIntNTy(dstBits), irb);
 	auto* st = irb.CreateStore(irb.CreateBitCast(iv, dstTy), dstReg);
 	attachPointeeType(st, dstReg->getValueType());
 }
@@ -940,7 +941,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateCvt(cs_insn* i, cs_mips* mi, l
 		// is what the W in CVT.W means; CVT.L.fmt is the 64-bit one. This
 		// picked the width from the SOURCE, so cvt.w.d converted to 64 bits.
 		auto* iTy = irb.getInt32Ty();
-		op1 = irb.CreateFPToSI(op1, iTy);
+		op1 = generateFpToIntDefault(op1, iTy, irb);
 		auto* iTy2 = getRegisterType(r0)->isDoubleTy()
 				? irb.getInt64Ty()
 				: irb.getInt32Ty();
@@ -1887,6 +1888,46 @@ llvm::Value* Capstone2LlvmIrTranslatorMips_impl::narrowToWord(cs_insn* i, llvm::
 	}
 
 	return irb.CreateTrunc(val, irb.getInt32Ty());
+}
+
+/**
+ * A float-to-integer conversion with the MIPS default result for the inputs
+ * that do not fit.
+ *
+ * LLVM's fptosi calls a NaN, an infinity, or an out-of-range magnitude POISON.
+ * MIPS signals Invalid Operation, and when that exception is not enabled --
+ * which is the state ordinary code runs in -- the default result is
+ * 2^(N-1) - 1. For a word destination that is 0x7fffffff.
+ *
+ * Note what this means and how it differs from its neighbours: EVERY bad input
+ * gives the MAXIMUM, including a large NEGATIVE one and including -infinity.
+ * ARM saturates toward the nearer end and sends NaN to zero; Power saturates
+ * and sends NaN to the minimum; x86 sends everything to the integer indefinite
+ * value. Four architectures in this tree, four different rules. Reusing a
+ * neighbour's helper would produce a plausible number that is wrong in a way
+ * nothing here would notice.
+ *
+ * NOT MEASURED: this container is x86-64 with no MIPS emulator, so this rests
+ * on the MIPS64 manual's stated default result rather than on an observation.
+ */
+llvm::Value*
+Capstone2LlvmIrTranslatorMips_impl::generateFpToIntDefault(llvm::Value* v, llvm::Type* intTy, llvm::IRBuilder<>& irb)
+{
+	unsigned bits = intTy->getScalarSizeInBits();
+	auto* fpTy = v->getType();
+
+	auto* loF = llvm::ConstantFP::get(fpTy, -std::ldexp(1.0, static_cast<int>(bits - 1)));
+	auto* hiF = llvm::ConstantFP::get(fpTy, std::ldexp(1.0, static_cast<int>(bits - 1)));
+
+	// Ordered comparisons, so a NaN fails them and takes the default with
+	// everything else out of range.
+	auto* inRange = irb.CreateAnd(irb.CreateFCmpOGE(v, loF), irb.CreateFCmpOLT(v, hiF));
+
+	// The conversion is fed an in-range value on every path, so the IR carries
+	// no poison at all rather than poison that happens not to be selected.
+	auto* safe = irb.CreateSelect(inRange, v, llvm::ConstantFP::get(fpTy, 0.0));
+	return irb.CreateSelect(
+		inRange, irb.CreateFPToSI(safe, intTy), llvm::ConstantInt::get(intTy, llvm::APInt::getSignedMaxValue(bits)));
 }
 
 /**

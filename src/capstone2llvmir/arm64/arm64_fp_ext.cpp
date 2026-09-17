@@ -133,11 +133,12 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFCvtRound(
             throw GenericError("Arm64: translateFCvtRound(): unknown instruction");
     }
 
-    Value* intVal = isSigned
-        ? irb.CreateFPToSI(rounded, destTy)
-        : irb.CreateFPToUI(rounded, destTy);
+	// Same defined answers as FCVTZS/FCVTZU -- these differ from those only in
+	// the rounding applied first, not in what happens to an input that does
+	// not fit. See translateFCvtz's helper.
+	Value* intVal = generateFpToIntSaturating(rounded, destTy, isSigned, irb);
 
-    storeOp(ai->operands[0], intVal, irb);
+	storeOp(ai->operands[0], intVal, irb);
 }
 
 //===========================================================================

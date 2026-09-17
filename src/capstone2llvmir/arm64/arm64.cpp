@@ -5,6 +5,7 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <cmath>
 #include <iomanip>
 
 #include "retdec/utils/io/log.h"
@@ -4593,6 +4594,65 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFCvtf(cs_insn* i, cs_arm64* a
 /**
  * ARM64_INS_FCVTZS, ARM64_INS_FCVTZU
  */
+/**
+ * A float-to-integer conversion with ARM's defined answer for the inputs that
+ * do not fit.
+ *
+ * LLVM's fptosi and fptoui call a NaN, an infinity, or an out-of-range
+ * magnitude POISON. ARM defines all three, and defines them differently from
+ * x86: where x86 answers with the "integer indefinite" value (the
+ * destination's minimum) for every bad input alike, ARM SATURATES, and sends
+ * NaN to zero. FPToFixed() in the ARM ARM:
+ *
+ *     NaN                  ->  0
+ *     below the minimum    ->  the destination's minimum
+ *                              (0 for an unsigned destination)
+ *     at or above the max  ->  the destination's maximum
+ *
+ * so `fcvtzs w0, d0` with d0 = 1.0e30 is 0x7fffffff, with d0 = -1.0e30 is
+ * 0x80000000, and with d0 = NaN is 0. Poison is none of those, and unlike a
+ * merely wrong number it does not stay where it is put once the optimiser
+ * sees it.
+ *
+ * The conversion is fed a value that is in range on EVERY path, so the IR
+ * carries no poison at all rather than poison that happens not to be
+ * selected. Both bounds are exact in binary floating point -- 2^(N-1) is, and
+ * 2^(N-1)-1 is not, which is why the upper comparison is strict.
+ *
+ * NOT MEASURED. This container is x86-64 and has no ARM emulator, so unlike
+ * the x86 conversions this rests on the ARM ARM's pseudocode rather than on
+ * an observation. Stated rather than glossed.
+ */
+llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::generateFpToIntSaturating(
+	llvm::Value* v, llvm::Type* intTy, bool isSigned, llvm::IRBuilder<>& irb)
+{
+	unsigned bits = intTy->getScalarSizeInBits();
+	auto* fpTy = v->getType();
+
+	double loD = isSigned ? -std::ldexp(1.0, static_cast<int>(bits - 1)) : 0.0;
+	double hiD = std::ldexp(1.0, static_cast<int>(isSigned ? bits - 1 : bits));
+	auto* loF = llvm::ConstantFP::get(fpTy, loD);
+	auto* hiF = llvm::ConstantFP::get(fpTy, hiD);
+
+	// Ordered comparisons, so a NaN fails both and takes the NaN path below
+	// without needing a test of its own for the range decision.
+	auto* aboveLo = irb.CreateFCmpOGE(v, loF);
+	auto* belowHi = irb.CreateFCmpOLT(v, hiF);
+	auto* inRange = irb.CreateAnd(aboveLo, belowHi);
+
+	auto* safe = irb.CreateSelect(inRange, v, llvm::ConstantFP::get(fpTy, 0.0));
+	auto* conv = isSigned ? irb.CreateFPToSI(safe, intTy) : irb.CreateFPToUI(safe, intTy);
+
+	auto* minV =
+		llvm::ConstantInt::get(intTy, isSigned ? llvm::APInt::getSignedMinValue(bits) : llvm::APInt::getZero(bits));
+	auto* maxV =
+		llvm::ConstantInt::get(intTy, isSigned ? llvm::APInt::getSignedMaxValue(bits) : llvm::APInt::getAllOnes(bits));
+
+	auto* isNan = irb.CreateFCmpUNO(v, v);
+	auto* saturated = irb.CreateSelect(aboveLo, maxV, minV);
+	return irb.CreateSelect(inRange, conv, irb.CreateSelect(isNan, llvm::ConstantInt::get(intTy, 0), saturated));
+}
+
 void Capstone2LlvmIrTranslatorArm64_impl::translateFCvtz(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY(i, ai, irb);
@@ -4606,8 +4666,10 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFCvtz(cs_insn* i, cs_arm64* a
 	// is why it survived -- they differ exactly at the inputs that do not,
 	// and there the answer was poison rather than merely different.
 	// `fcvtzs x0, d0` with d0 = -1.0 became `fptoui double -1.0`.
-	case ARM64_INS_FCVTZS: op1 = irb.CreateFPToSI(op1, getRegisterType(ai->operands[0].reg)); break;
-	case ARM64_INS_FCVTZU: op1 = irb.CreateFPToUI(op1, getRegisterType(ai->operands[0].reg)); break;
+	case ARM64_INS_FCVTZS: op1 = generateFpToIntSaturating(op1, getRegisterType(ai->operands[0].reg), true, irb); break;
+	case ARM64_INS_FCVTZU:
+		op1 = generateFpToIntSaturating(op1, getRegisterType(ai->operands[0].reg), false, irb);
+		break;
 	default:
 		throw GenericError("Arm64: translateFCvtz(): Unsupported instruction id");
 	}

@@ -104,6 +104,11 @@ class Capstone2LlvmIrTranslatorArm64_impl :
 				llvm::Value* val,
 				llvm::Value* n,
 				bool updateFlags = false);
+		/// A float-to-integer conversion with ARM's defined answer for NaN and
+		/// for out-of-range inputs; see the definition.
+		llvm::Value*
+		generateFpToIntSaturating(llvm::Value* v, llvm::Type* intTy, bool isSigned, llvm::IRBuilder<>& irb);
+
 		llvm::Value* generateShiftRor(
 				llvm::IRBuilder<>& irb,
 				llvm::Value* val,
