@@ -1070,11 +1070,15 @@ job that already spends eight minutes building and seventeen in clang-tidy.
 It went into the nightly first, on the assumption that a full-corpus pass was
 expensive; the step timings said otherwise and it moved.
 
-No `--min-rate` on the full corpus yet: it reports, and the number becomes
-the floor in a follow-up commit that names the run it came from, exactly as
-the 24-binary slice was introduced. Until that number exists the tables say
-so, rather than printing a 0 nobody believes or a 216/216 nobody has
-measured.
+The full corpus reported rather than gated at first, so that the floor would
+be a measurement naming the run it came from, exactly as the 24-binary slice
+was introduced. That number now exists: run 276 measured 216/216, and the
+step carries `--min-rate 1.0000`. The corpus has since grown to 252 — six
+floating-point sources joined it, and until they did not one of its 367
+sources contained a `float` or a `double`, so every "emitted C compiles"
+figure before that was 216 integer programs. The floor is a rate, so the
+count moving does not touch it; what changed is that the rate now covers
+floating point at all.
 
 Stock RetDec's `0/216` is untouched — it was not re-measured and no claim
 about it changes.
@@ -8201,3 +8205,109 @@ Of the 65 packed-integer instructions grouped in the Batch AB entry, 25
 remain: `PSHUFB`, `PSHUFHW`/`PSHUFLW` and the blends; the `PINSR`/`PEXTR`
 pairs; the horizontal adds and subtracts; `PTEST`; `PHMINPOSUW`;
 `PMULHRSW`; `PMADDUBSW`; `PABSB`/`W`/`D` and the `PSIGN` family.
+
+## Batch AE — PSHUFB, the horizontal forms, and three odd ones out
+
+### What it is
+
+Sixteen more, all falling through to pseudo-assembly:
+
+```
+pshufb
+phaddw phaddd phaddsw phsubw phsubd phsubsw
+pabsb pabsw pabsd  psignb psignw psignd
+pmulhrsw pmaddubsw phminposuw
+```
+
+Each carries a rule that a plausible-looking translation gets wrong, and each
+of those rules is a separate mutation below.
+
+### AE-1: PSHUFB's control is data, and it has a branch in it
+
+The control is the second XMM operand, not an immediate, so the index is only
+known at run time and `shufflevector` cannot express it — its mask has to be
+constant. `extractelement` with a dynamic index can.
+
+The rule is not a permutation. A control byte with its **top bit set writes
+zero** rather than selecting a lane, and only the low four bits of the rest
+are an index. Masking with `0x0f` and forgetting the top bit answers with a
+byte from the source everywhere the hardware answers zero: 491 mismatches out
+of 500 rows.
+
+### AE-2: three outcomes, not two
+
+`PSIGN` negates on a negative control, keeps on a positive one, and writes
+**zero** on a control of exactly zero. A `negative ? -a : a` translation is
+right two-thirds of the time and silently wrong the rest: 1,009 mismatches
+across the three widths.
+
+### AE-3: the minimum signed value is its own absolute value
+
+`pabsb` of -128 is -128. x86 does not saturate it to 127, and neither does
+negating and letting it wrap — so the naive translation is the correct one
+here, and a translation that saturated "to be safe" is the wrong one. Adding
+that safety is 965 mismatches.
+
+### AE-4: the horizontal forms add within, not across
+
+`PHADDW` adds **adjacent pairs inside each operand** — the first operand's
+four sums fill the low half of the destination and the second's fill the high
+half. It is two independent reductions written side by side, not a lane-wise
+operation. `PHSUB` subtracts the second element of each pair from the first,
+and getting that backwards is 1,000 mismatches.
+
+### AE-5: rounding, asymmetry, and a tie
+
+```
+PMULHRSW    (a*b >> 14) + 1 >> 1. The +1 is the rounding; dropping it is off
+            by one on every product whose bit 14 is set -- 408 mismatches.
+PMADDUBSW   the FIRST operand's bytes are unsigned and the SECOND's are
+            signed. Widening both the same way is wrong whichever way is
+            picked -- 500 mismatches, every row.
+PHMINPOSUW  unsigned comparison (496 mismatches if signed), and ties take the
+            LOWEST index, which falls out of scanning upward with a strict
+            comparison. Using `<=` answers with the last of a tie instead:
+            245 mismatches.
+```
+
+The tie-breaking one is the finding that would be easiest to write and never
+notice. It needed a generator that produces equal words often enough to hit
+it, which the edge-drawing one from Batch AD does.
+
+### Falsification
+
+Each rule reverted on its own, with an md5 guard, against 28,000 rows:
+
+```
+AE1_pshufb_no_top_bit        491   pshufb
+AE2_pshufb_index_unmasked    500   pshufb
+AE3_phsub_operands_swapped  1000   phsubw phsubd
+AE4_phadds_no_saturate       796   phaddsw phsubsw
+AE5_pabs_saturates_intmin    965   pabsb pabsw pabsd
+AE6_psign_no_zero_case      1009   psignb psignw psignd
+AE7_pmulhrsw_no_rounding     408   pmulhrsw
+AE8_pmaddubsw_symmetric      500   pmaddubsw
+AE9_phminpos_tie_last        245   phminposuw
+AE10_phminpos_signed         496   phminposuw
+```
+
+Every one lands on exactly the instructions whose rule it breaks and on no
+others, which is what a per-instruction tally is for.
+
+### After
+
+```
+28,000 comparisons against the hardware, 0 mismatches,
+0 untranslated forms, 0 misencoded
+```
+
+C2L-01 floor: X86 2748 → 2781. 5,660 tests.
+
+### Still not covered
+
+Of the 65 packed-integer instructions, nine remain, and they are the ones
+that do not fit this harness: `PSHUFD`/`PSHUFHW`/`PSHUFLW`, `PBLENDW`,
+`BLENDPS`/`BLENDPD` take an immediate, and `PINSR`/`PEXTR` read or write a
+general-purpose register. `PTEST` and `PBLENDVB` need the flags and an
+implicit XMM0 respectively. None needs a new instrument, only a row format
+with an immediate in it.

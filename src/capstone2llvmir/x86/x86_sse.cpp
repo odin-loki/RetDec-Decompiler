@@ -1717,6 +1717,380 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSsePsadbw(cs_insn* i, cs_x86* x
 }
 
 /**
+ * PSHUFB -- permute bytes by a control vector held in the second operand.
+ *
+ * The control is data, not an immediate, so the index is only known at run
+ * time and `shufflevector` cannot express it -- its mask has to be constant.
+ * `extractelement` with a dynamic index can, which is what this uses.
+ *
+ * The rule has a branch in it that a plain permutation does not: a control
+ * byte with its TOP BIT set writes zero rather than selecting a lane, and
+ * only the low four bits of the rest are an index. A translation that masks
+ * with 0x0f and forgets the top bit answers with a byte from the source
+ * everywhere the hardware answers zero.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSsePshufb(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	unsigned totalBits = xi->operands[0].size * 8;
+	unsigned n = totalBits / 8;
+	if (totalBits % 8 != 0 || (n != 8 && n != 16))
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
+	auto* intTy = irb.getIntNTy(totalBits);
+	auto* vecTy = vecType(irb.getInt8Ty(), n);
+	Value* src = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op0, irb), intTy), vecTy);
+	Value* ctl = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op1, irb), intTy), vecTy);
+
+	auto* i8 = irb.getInt8Ty();
+	// The index is masked to the register's width, which is four bits for an
+	// XMM operand and three for an MMX one.
+	auto* idxMask = ConstantInt::get(i8, n - 1);
+	Value* res = llvm::UndefValue::get(vecTy);
+	for (unsigned lane = 0; lane < n; ++lane)
+	{
+		Value* c = irb.CreateExtractElement(ctl, (uint64_t)lane);
+		Value* picked = irb.CreateExtractElement(src, irb.CreateAnd(c, idxMask));
+		Value* zeroIt = irb.CreateICmpNE(irb.CreateAnd(c, ConstantInt::get(i8, 0x80)), ConstantInt::get(i8, 0));
+		Value* v = irb.CreateSelect(zeroIt, ConstantInt::get(i8, 0), picked);
+		res = irb.CreateInsertElement(res, v, (uint64_t)lane);
+	}
+
+	storeOp(
+		xi->operands[0],
+		irb.CreateZExtOrTrunc(irb.CreateBitCast(res, intTy), irb.getInt128Ty()),
+		irb,
+		eOpConv::NOTHING);
+}
+
+/**
+ * PHADDW/D/SW and PHSUBW/D/SW -- add or subtract ADJACENT pairs within each
+ * operand, rather than corresponding lanes across the two.
+ *
+ * The destination's low half comes from the first operand's pairs and its
+ * high half from the second's, so this is two independent reductions written
+ * side by side. The SW forms saturate; the others wrap.
+ *
+ * PHSUB subtracts the SECOND element of each pair from the first -- a[0]-a[1],
+ * not a[1]-a[0].
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSseHorizontalInt(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	unsigned bits = 0;
+	bool isAdd = true;
+	bool saturating = false;
+	switch (i->id)
+	{
+	case X86_INS_PHADDW: bits = 16; break;
+	case X86_INS_PHADDD: bits = 32; break;
+	case X86_INS_PHADDSW:
+		bits = 16;
+		saturating = true;
+		break;
+	case X86_INS_PHSUBW:
+		bits = 16;
+		isAdd = false;
+		break;
+	case X86_INS_PHSUBD:
+		bits = 32;
+		isAdd = false;
+		break;
+	case X86_INS_PHSUBSW:
+		bits = 16;
+		isAdd = false;
+		saturating = true;
+		break;
+	default: translatePseudoAsmGeneric(i, xi, irb); return;
+	}
+
+	unsigned totalBits = xi->operands[0].size * 8;
+	if (totalBits % (bits * 2) != 0)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned n = totalBits / bits;
+	unsigned half = n / 2;
+
+	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
+	auto* intTy = irb.getIntNTy(totalBits);
+	auto* vecTy = vecType(irb.getIntNTy(bits), n);
+	auto* halfTy = vecType(irb.getIntNTy(bits), half);
+	auto* wideTy = vecType(irb.getIntNTy(bits * 2), half);
+
+	Value* a = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op0, irb), intTy), vecTy);
+	Value* b = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op1, irb), intTy), vecTy);
+
+	llvm::SmallVector<int, 8> even, odd;
+	for (unsigned k = 0; k < n; k += 2)
+	{
+		even.push_back(static_cast<int>(k));
+		odd.push_back(static_cast<int>(k + 1));
+	}
+
+	auto pairwise = [&](Value* v) -> Value* {
+		Value* e = irb.CreateShuffleVector(v, llvm::UndefValue::get(vecTy), even);
+		Value* o = irb.CreateShuffleVector(v, llvm::UndefValue::get(vecTy), odd);
+		if (!saturating)
+		{
+			return isAdd ? irb.CreateAdd(e, o) : irb.CreateSub(e, o);
+		}
+		Value* ew = irb.CreateSExt(e, wideTy);
+		Value* ow = irb.CreateSExt(o, wideTy);
+		Value* r = isAdd ? irb.CreateAdd(ew, ow) : irb.CreateSub(ew, ow);
+		return irb.CreateTrunc(clampToRange(r, bits, true, irb), halfTy);
+	};
+
+	Value* ra = pairwise(a);
+	Value* rb = pairwise(b);
+
+	llvm::SmallVector<int, 16> cat;
+	for (unsigned k = 0; k < n; ++k)
+	{
+		cat.push_back(static_cast<int>(k));
+	}
+	Value* res = irb.CreateShuffleVector(ra, rb, cat);
+
+	storeOp(
+		xi->operands[0],
+		irb.CreateZExtOrTrunc(irb.CreateBitCast(res, intTy), irb.getInt128Ty()),
+		irb,
+		eOpConv::NOTHING);
+}
+
+/**
+ * PABSB/W/D -- elementwise absolute value.
+ *
+ * The minimum signed value has no positive counterpart, and x86 answers with
+ * it unchanged rather than saturating: `pabsb` of -128 is -128. Negating and
+ * letting it wrap is exactly that, so no special case is needed -- but a
+ * translation that saturated to 127 "to be safe" would be wrong.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSsePabs(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	unsigned bits = 0;
+	switch (i->id)
+	{
+	case X86_INS_PABSB: bits = 8; break;
+	case X86_INS_PABSW: bits = 16; break;
+	case X86_INS_PABSD: bits = 32; break;
+	default: translatePseudoAsmGeneric(i, xi, irb); return;
+	}
+
+	unsigned totalBits = xi->operands[0].size * 8;
+	if (totalBits % bits != 0)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned n = totalBits / bits;
+
+	op1 = loadOpBinaryOp1(xi, irb);
+	auto* intTy = irb.getIntNTy(totalBits);
+	auto* vecTy = vecType(irb.getIntNTy(bits), n);
+	Value* v = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op1, irb), intTy), vecTy);
+
+	Value* neg = irb.CreateNeg(v);
+	Value* res = irb.CreateSelect(irb.CreateICmpSLT(v, Constant::getNullValue(vecTy)), neg, v);
+
+	storeOp(
+		xi->operands[0],
+		irb.CreateZExtOrTrunc(irb.CreateBitCast(res, intTy), irb.getInt128Ty()),
+		irb,
+		eOpConv::NOTHING);
+}
+
+/**
+ * PSIGNB/W/D -- apply the sign of the second operand to the first.
+ *
+ * Three outcomes per lane, not two: a negative control negates, a positive
+ * one keeps, and a control of exactly ZERO writes zero. The zero case is the
+ * one a `negative ? -a : a` translation silently drops.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSsePsign(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	unsigned bits = 0;
+	switch (i->id)
+	{
+	case X86_INS_PSIGNB: bits = 8; break;
+	case X86_INS_PSIGNW: bits = 16; break;
+	case X86_INS_PSIGND: bits = 32; break;
+	default: translatePseudoAsmGeneric(i, xi, irb); return;
+	}
+
+	unsigned totalBits = xi->operands[0].size * 8;
+	if (totalBits % bits != 0)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned n = totalBits / bits;
+
+	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
+	auto* intTy = irb.getIntNTy(totalBits);
+	auto* vecTy = vecType(irb.getIntNTy(bits), n);
+	Value* a = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op0, irb), intTy), vecTy);
+	Value* b = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op1, irb), intTy), vecTy);
+
+	auto* zero = Constant::getNullValue(vecTy);
+	Value* res = irb.CreateSelect(
+		irb.CreateICmpSLT(b, zero), irb.CreateNeg(a), irb.CreateSelect(irb.CreateICmpEQ(b, zero), zero, a));
+
+	storeOp(
+		xi->operands[0],
+		irb.CreateZExtOrTrunc(irb.CreateBitCast(res, intTy), irb.getInt128Ty()),
+		irb,
+		eOpConv::NOTHING);
+}
+
+/**
+ * PMULHRSW -- multiply signed words, keep the high half, ROUNDED rather than
+ * truncated.
+ *
+ * `(a*b >> 14) + 1 >> 1` is the SDM's own formulation and it is not the same
+ * as taking the high sixteen bits: the +1 before the final shift is what
+ * rounds a half away from zero instead of down. Dropping it is off by one on
+ * every product whose bit 14 is set.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSsePmulhrsw(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	unsigned totalBits = xi->operands[0].size * 8;
+	if (totalBits % 16 != 0)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned n = totalBits / 16;
+
+	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
+	auto* intTy = irb.getIntNTy(totalBits);
+	auto* vecTy = vecType(irb.getInt16Ty(), n);
+	auto* wideTy = vecType(irb.getInt32Ty(), n);
+
+	Value* a = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op0, irb), intTy), vecTy);
+	Value* b = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op1, irb), intTy), vecTy);
+
+	Value* prod = irb.CreateMul(irb.CreateSExt(a, wideTy), irb.CreateSExt(b, wideTy));
+	Value* r = irb.CreateAShr(prod, ConstantInt::get(wideTy, APInt(32, 14)));
+	r = irb.CreateAdd(r, ConstantInt::get(wideTy, APInt(32, 1)));
+	r = irb.CreateAShr(r, ConstantInt::get(wideTy, APInt(32, 1)));
+
+	storeOp(
+		xi->operands[0],
+		irb.CreateZExtOrTrunc(irb.CreateBitCast(irb.CreateTrunc(r, vecTy), intTy), irb.getInt128Ty()),
+		irb,
+		eOpConv::NOTHING);
+}
+
+/**
+ * PMADDUBSW -- multiply UNSIGNED bytes by SIGNED bytes and add adjacent pairs,
+ * saturating.
+ *
+ * The asymmetry is the instruction: the first operand's bytes are unsigned and
+ * the second's are signed, so widening both the same way is wrong whichever
+ * way is picked. The pair sum is then saturated to a signed word, which the
+ * ordinary PMADDWD does not do.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSsePmaddubsw(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	unsigned totalBits = xi->operands[0].size * 8;
+	if (totalBits % 16 != 0)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned n = totalBits / 8;
+	unsigned half = n / 2;
+
+	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
+	auto* intTy = irb.getIntNTy(totalBits);
+	auto* byteTy = vecType(irb.getInt8Ty(), n);
+	auto* wordTy = vecType(irb.getInt16Ty(), n);
+	auto* halfWordTy = vecType(irb.getInt16Ty(), half);
+	auto* dwordTy = vecType(irb.getInt32Ty(), half);
+
+	Value* a = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op0, irb), intTy), byteTy);
+	Value* b = irb.CreateBitCast(irb.CreateZExtOrTrunc(toI128(op1, irb), intTy), byteTy);
+
+	// Unsigned first, signed second. A product of u8 and s8 spans
+	// [-32640, 32385], which a word holds, so only the pair SUM can overflow.
+	Value* prod = irb.CreateMul(irb.CreateZExt(a, wordTy), irb.CreateSExt(b, wordTy));
+
+	llvm::SmallVector<int, 8> even, odd;
+	for (unsigned k = 0; k < n; k += 2)
+	{
+		even.push_back(static_cast<int>(k));
+		odd.push_back(static_cast<int>(k + 1));
+	}
+	Value* e = irb.CreateShuffleVector(prod, llvm::UndefValue::get(wordTy), even);
+	Value* o = irb.CreateShuffleVector(prod, llvm::UndefValue::get(wordTy), odd);
+	Value* sum = irb.CreateAdd(irb.CreateSExt(e, dwordTy), irb.CreateSExt(o, dwordTy));
+	Value* res = irb.CreateTrunc(clampToRange(sum, 16, true, irb), halfWordTy);
+
+	storeOp(
+		xi->operands[0],
+		irb.CreateZExtOrTrunc(irb.CreateBitCast(res, intTy), irb.getInt128Ty()),
+		irb,
+		eOpConv::NOTHING);
+}
+
+/**
+ * PHMINPOSUW -- the smallest unsigned word and where it was.
+ *
+ * The value goes to bits 15:0 and its INDEX to bits 18:16; everything above
+ * is zeroed. Ties take the lowest index, which falls out of scanning upward
+ * with a strict comparison -- using `<=` instead would answer with the last
+ * of a tie rather than the first.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSsePhminposuw(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	unsigned totalBits = xi->operands[0].size * 8;
+	if (totalBits != 128)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	op1 = loadOpBinaryOp1(xi, irb);
+	auto* vecTy = vecType(irb.getInt16Ty(), 8);
+	Value* v = irb.CreateBitCast(toI128(op1, irb), vecTy);
+
+	auto* i16 = irb.getInt16Ty();
+	Value* best = irb.CreateExtractElement(v, (uint64_t)0);
+	Value* bestIdx = ConstantInt::get(i16, 0);
+	for (unsigned k = 1; k < 8; ++k)
+	{
+		Value* cur = irb.CreateExtractElement(v, (uint64_t)k);
+		Value* lt = irb.CreateICmpULT(cur, best);
+		best = irb.CreateSelect(lt, cur, best);
+		bestIdx = irb.CreateSelect(lt, ConstantInt::get(i16, k), bestIdx);
+	}
+
+	auto* i128 = irb.getInt128Ty();
+	Value* res = irb.CreateOr(
+		irb.CreateZExt(best, i128), irb.CreateShl(irb.CreateZExt(bestIdx, i128), ConstantInt::get(i128, 16)));
+
+	storeOp(xi->operands[0], res, irb, eOpConv::NOTHING);
+}
+
+/**
  * PSLLW/D/Q, PSRLW/D/Q, PSRAW/D -- the packed shifts, in both the
  * register/memory form and the immediate one. Capstone gives both the same
  * instruction id and distinguishes them by the operand's type.

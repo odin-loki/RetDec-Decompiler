@@ -16242,6 +16242,182 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, CVTTSD2SI_in_range_is_unaffected_by_th
 // value was executed on the host CPU; see scripts/ci/x86_vec_oracle.c.
 //
 
+//
+// Batch AE -- PSHUFB, the horizontal adds and subtracts, PABS, PSIGN and the
+// three odd ones out. All sixteen fell through to pseudo-assembly. Every
+// expected value was executed on the host CPU; see
+// scripts/ci/x86_vec_oracle.c.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PSHUFB_top_bit_of_the_control_writes_zero)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x0f0e0d0c0b0a0908ULL, 0x0706050403020100ULL);
+	setXmm(X86_REG_XMM1, 0x0405068384858687ULL, 0x8000810102820303ULL);
+
+	emulate("pshufb xmm0, xmm1");
+
+	// A control byte with its top bit set writes ZERO instead of selecting a
+	// lane. Masking with 0x0f and forgetting the top bit answers with a
+	// source byte everywhere the hardware answers zero.
+	EXPECT_EQ(0x0000000102000303ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0405060000000000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PSIGNB_has_three_outcomes_per_lane)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0xf0f1f2f3f4f5f6f7ULL, 0x0102030405060708ULL);
+	setXmm(X86_REG_XMM1, 0x0100ff0001ff0001ULL, 0x01ff0001ff000100ULL);
+
+	emulate("psignb xmm0, xmm1");
+
+	// Negative negates, positive keeps, and a control of exactly ZERO writes
+	// zero. The zero case is the one a `negative ? -a : a` drops.
+	EXPECT_EQ(0x01fe0004fb000700ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xf0000e00f40b00f7ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PABSB_of_the_minimum_signed_value_is_itself)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x8081828384858687ULL, 0x807f01ff02fe0380ULL);
+
+	emulate("pabsb xmm0, xmm1");
+
+	// -128 has no positive counterpart and x86 answers with it unchanged
+	// rather than saturating to 127. Negating and letting it wrap is
+	// exactly that.
+	EXPECT_EQ(0x807f010102020380ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x807f7e7d7c7b7a79ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PABSD_of_the_minimum_signed_value_is_itself)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x000000017fffffffULL, 0x80000000ffffffffULL);
+
+	emulate("pabsd xmm0, xmm1");
+
+	EXPECT_EQ(0x8000000000000001ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x000000017fffffffULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PHADDW_adds_adjacent_pairs_within_each_operand)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x0005000600070008ULL, 0x0001000200030004ULL);
+	setXmm(X86_REG_XMM1, 0x000e000f00100011ULL, 0x000a000b000c000dULL);
+
+	emulate("phaddw xmm0, xmm1");
+
+	// Not lane against lane across the two registers: pairs WITHIN each, the
+	// first operand's four sums in the low half and the second's in the high.
+	EXPECT_EQ(0x000b000f00030007ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x001d002100150019ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PHSUBW_subtracts_the_second_of_each_pair)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x000a0003000a0004ULL, 0x000a0001000a0002ULL);
+	setXmm(X86_REG_XMM1, 0x0014000700140008ULL, 0x0014000500140006ULL);
+
+	emulate("phsubw xmm0, xmm1");
+
+	// a[0]-a[1], not a[1]-a[0].
+	EXPECT_EQ(0xfff9fffafff7fff8ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xfff3fff4fff1fff2ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PHADDSW_saturates_where_PHADDW_wraps)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x0001000200030004ULL, 0x7fff7fff80008000ULL);
+	setXmm(X86_REG_XMM1, 0x0005000600070008ULL, 0x7fff7fff80008000ULL);
+
+	emulate("phaddsw xmm0, xmm1");
+
+	EXPECT_EQ(0x000300077fff8000ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x000b000f7fff8000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PMULHRSW_rounds_rather_than_truncates)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x8000000100020003ULL, 0x4000400040004000ULL);
+	setXmm(X86_REG_XMM1, 0x8000000100020003ULL, 0x4000200010000800ULL);
+
+	emulate("pmulhrsw xmm0, xmm1");
+
+	// (a*b >> 14) + 1 >> 1. The +1 is what rounds; dropping it is off by one
+	// on every product whose bit 14 is set.
+	EXPECT_EQ(0x2000100008000400ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x8000000000000000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PMADDUBSW_first_operand_unsigned_second_signed)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x8080808080808080ULL, 0xff80017f02fe0301ULL);
+	setXmm(X86_REG_XMM1, 0x8080808080808080ULL, 0x01ff7f800102feffULL);
+
+	emulate("pmaddubsw xmm0, xmm1");
+
+	// Widening both the same way is wrong whichever way is picked. The pair
+	// sum then saturates, which PMADDWD does not do.
+	EXPECT_EQ(0x007fc0ff01fefff9ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x8000800080008000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PHMINPOSUW_finds_the_minimum_and_its_index)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x000a0001000b000cULL, 0x0005000300070009ULL);
+
+	emulate("phminposuw xmm0, xmm1");
+
+	// The value in bits 15:0 and the index in bits 18:16; here the minimum is
+	// 1 at word 6.
+	EXPECT_EQ(0x0000000000060001ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0000000000000000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PHMINPOSUW_ties_take_the_lowest_index)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x0002000200020002ULL, 0x0002000200020002ULL);
+
+	emulate("phminposuw xmm0, xmm1");
+
+	// Every word equal, so the index is 0. Scanning upward with a strict
+	// comparison gives that; `<=` would answer with the last of the tie.
+	EXPECT_EQ(0x0000000000000002ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0000000000000000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, PADDSB_saturates_in_both_directions)
 {
 	ONLY_MODE_64;

@@ -98,9 +98,37 @@ FORM(o_packusdw, "packusdw %%xmm1, %%xmm0")
 FORM(o_pmaddwd,  "pmaddwd  %%xmm1, %%xmm0")
 FORM(o_psadbw,   "psadbw   %%xmm1, %%xmm0")
 
+/* ------------------------------------------- shuffle, horizontal, sign, abs */
+
+/* PSHUFB takes its control from the second XMM operand rather than an
+   immediate, so it fits this harness directly. Its rule has a branch in it:
+   a control byte with its top bit set writes ZERO rather than selecting a
+   lane, and only the low four bits of the rest are the index. */
+
+FORM(o_pshufb,   "pshufb   %%xmm1, %%xmm0")
+
+FORM(o_phaddw,   "phaddw   %%xmm1, %%xmm0")
+FORM(o_phaddd,   "phaddd   %%xmm1, %%xmm0")
+FORM(o_phaddsw,  "phaddsw  %%xmm1, %%xmm0")
+FORM(o_phsubw,   "phsubw   %%xmm1, %%xmm0")
+FORM(o_phsubd,   "phsubd   %%xmm1, %%xmm0")
+FORM(o_phsubsw,  "phsubsw  %%xmm1, %%xmm0")
+
+FORM(o_pabsb,    "pabsb    %%xmm1, %%xmm0")
+FORM(o_pabsw,    "pabsw    %%xmm1, %%xmm0")
+FORM(o_pabsd,    "pabsd    %%xmm1, %%xmm0")
+
+FORM(o_psignb,   "psignb   %%xmm1, %%xmm0")
+FORM(o_psignw,   "psignw   %%xmm1, %%xmm0")
+FORM(o_psignd,   "psignd   %%xmm1, %%xmm0")
+
+FORM(o_pmulhrsw,  "pmulhrsw  %%xmm1, %%xmm0")
+FORM(o_pmaddubsw, "pmaddubsw %%xmm1, %%xmm0")
+FORM(o_phminposuw,"phminposuw %%xmm1, %%xmm0")
+
 typedef Out (*Fn)(const uint64_t*, const uint64_t*);
 
-enum Kind { K_SHIFT, K_WIDEN, K_BIN };
+enum Kind { K_SHIFT, K_WIDEN, K_BIN, K_SHUF };
 
 static struct { const char* name; Fn fn; enum Kind kind; unsigned elem; } TBL[] = {
 	{"psllw", o_psllw, K_SHIFT, 16}, {"pslld", o_pslld, K_SHIFT, 32},
@@ -123,6 +151,16 @@ static struct { const char* name; Fn fn; enum Kind kind; unsigned elem; } TBL[] 
 	{"packsswb", o_packsswb, K_BIN, 16}, {"packssdw", o_packssdw, K_BIN, 32},
 	{"packuswb", o_packuswb, K_BIN, 16}, {"packusdw", o_packusdw, K_BIN, 32},
 	{"pmaddwd",  o_pmaddwd,  K_BIN, 16}, {"psadbw",   o_psadbw,   K_BIN, 8},
+	{"pshufb",   o_pshufb,   K_SHUF, 8},
+	{"phaddw",   o_phaddw,   K_BIN, 16}, {"phaddd",   o_phaddd,   K_BIN, 32},
+	{"phaddsw",  o_phaddsw,  K_BIN, 16}, {"phsubw",   o_phsubw,   K_BIN, 16},
+	{"phsubd",   o_phsubd,   K_BIN, 32}, {"phsubsw",  o_phsubsw,  K_BIN, 16},
+	{"pabsb",    o_pabsb,    K_BIN, 8},  {"pabsw",    o_pabsw,    K_BIN, 16},
+	{"pabsd",    o_pabsd,    K_BIN, 32},
+	{"psignb",   o_psignb,   K_BIN, 8},  {"psignw",   o_psignw,   K_BIN, 16},
+	{"psignd",   o_psignd,   K_BIN, 32},
+	{"pmulhrsw", o_pmulhrsw, K_BIN, 16}, {"pmaddubsw", o_pmaddubsw, K_BIN, 8},
+	{"phminposuw", o_phminposuw, K_BIN, 16},
 };
 
 /* random() gives 31 bits, so the obvious shift-and-xor leaves bit 31 and bit
@@ -192,6 +230,21 @@ int main(int argc, char** argv)
 				   hardware. Filling it with noise is how a translator that
 				   reads it shows up. */
 				b[1] = rnd64();
+			} else if (TBL[k].kind == K_SHUF) {
+				/* PSHUFB's control bytes have to reach both of its cases:
+				   a top bit set, which writes zero, and an ordinary index.
+				   Uniform noise sets the top bit half the time but spreads
+				   the indices over sixteen values, so they are drawn
+				   explicitly. */
+				a[0] = rnd64(); a[1] = rnd64();
+				uint64_t c[2] = {0, 0};
+				for (unsigned byte = 0; byte < 16; ++byte) {
+					uint64_t v = (random() % 4 == 0)
+							? (0x80u | (uint64_t)(random() & 0x7f))
+							: (uint64_t)(random() & 0x0f);
+					c[byte / 8] |= v << ((byte % 8) * 8);
+				}
+				b[0] = c[0]; b[1] = c[1];
 			} else if (TBL[k].kind == K_BIN) {
 				/* Uniform noise almost never saturates: two random bytes sum
 				   past 127 about a quarter of the time and past 255 almost

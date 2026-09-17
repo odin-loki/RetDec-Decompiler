@@ -431,6 +431,13 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		void translateSsePackedMul(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSsePmaddwd(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSsePsadbw(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSsePshufb(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSseHorizontalInt(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSsePabs(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSsePsign(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSsePmulhrsw(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSsePmaddubsw(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSsePhminposuw(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSsePalignr(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSsePavg(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateCvtSi2Ss(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);

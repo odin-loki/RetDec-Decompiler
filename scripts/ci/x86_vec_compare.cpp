@@ -45,6 +45,16 @@ static const struct { const char* name; const char* bytes; } ENC[] = {
 	{"packsswb", "66 0f 63 c1"}, {"packssdw", "66 0f 6b c1"},
 	{"packuswb", "66 0f 67 c1"}, {"packusdw", "66 0f 38 2b c1"},
 	{"pmaddwd",  "66 0f f5 c1"}, {"psadbw",   "66 0f f6 c1"},
+	{"pshufb",   "66 0f 38 00 c1"},
+	{"phaddw",   "66 0f 38 01 c1"}, {"phaddd",   "66 0f 38 02 c1"},
+	{"phaddsw",  "66 0f 38 03 c1"}, {"phsubw",   "66 0f 38 05 c1"},
+	{"phsubd",   "66 0f 38 06 c1"}, {"phsubsw",  "66 0f 38 07 c1"},
+	{"pabsb",    "66 0f 38 1c c1"}, {"pabsw",    "66 0f 38 1d c1"},
+	{"pabsd",    "66 0f 38 1e c1"},
+	{"psignb",   "66 0f 38 08 c1"}, {"psignw",   "66 0f 38 09 c1"},
+	{"psignd",   "66 0f 38 0a c1"},
+	{"pmulhrsw", "66 0f 38 0b c1"}, {"pmaddubsw", "66 0f 38 04 c1"},
+	{"phminposuw", "66 0f 38 41 c1"},
 };
 
 static std::vector<uint8_t> hexBytes(const char* s)
