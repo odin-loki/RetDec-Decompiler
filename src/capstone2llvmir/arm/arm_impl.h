@@ -90,6 +90,13 @@ class Capstone2LlvmIrTranslatorArm_impl :
 				llvm::IRBuilder<>& irb,
 				cs_arm_op& op,
 				llvm::Value* val);
+		enum class eShiftKind
+		{
+			Lsl,
+			Lsr,
+			Asr
+		};
+		llvm::Value* generateShiftCommon(llvm::IRBuilder<>& irb, llvm::Value* val, llvm::Value* n, eShiftKind kind);
 		llvm::Value* generateShiftAsr(
 				llvm::IRBuilder<>& irb,
 				llvm::Value* val,

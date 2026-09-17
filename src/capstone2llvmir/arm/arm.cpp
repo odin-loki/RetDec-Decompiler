@@ -361,18 +361,138 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::generateOperandShift(
 	}
 }
 
+/**
+ * ARM's register-controlled shifts are NOT modulo the operand width, which is
+ * what both LLVM's shift instructions and RetDec's own emulator do. The
+ * architecture reads the low EIGHT bits of the register -- `shift_n =
+ * UInt(R[s]<7:0>)`, so 0 to 255 -- and defines every one of those values:
+ *
+ *   n == 0       the value is unchanged and the carry is unchanged
+ *   1 <= n < 32  the ordinary shift; the carry is the last bit shifted out
+ *   n == 32      LSL gives 0 with carry = bit 0; LSR gives 0 with carry =
+ *                bit 31; ASR gives the sign broadcast with carry = bit 31
+ *   n > 32       LSL and LSR give 0 with carry 0; ASR gives the sign
+ *                broadcast with carry = bit 31
+ *
+ * Because the architecture's rule and LLVM's disagree, shifting by a raw `n`
+ * was a wrong VALUE and not only poison: `lsl r0, r1, r2` with r2 = 32
+ * answered r1 where the hardware answers 0. The carry was worse -- it was
+ * computed from `n - 1`, so the commonest runtime count of all, zero, gave
+ * `shl i32 %val, 0xffffffff`.
+ *
+ * Every shift below is by an amount masked to the width, so no poison is
+ * emitted on any path; the out-of-range answers are selected in afterwards.
+ */
+llvm::Value* Capstone2LlvmIrTranslatorArm_impl::generateShiftCommon(
+	llvm::IRBuilder<>& irb, llvm::Value* val, llvm::Value* n, eShiftKind kind)
+{
+	auto* ty = llvm::cast<llvm::IntegerType>(val->getType());
+	unsigned w = ty->getBitWidth();
+	auto* zero = llvm::ConstantInt::get(ty, 0);
+	auto* one = llvm::ConstantInt::get(ty, 1);
+	auto* widthC = llvm::ConstantInt::get(ty, w);
+	auto* maskC = llvm::ConstantInt::get(ty, w - 1);
+
+	// The low eight bits are the count. Harmless for the immediate forms,
+	// whose count is already at most 32.
+	n = irb.CreateAnd(irb.CreateZExtOrTrunc(n, ty), llvm::ConstantInt::get(ty, 0xff));
+
+	// Most shifts carry an immediate count, and then the whole thing is known
+	// here. Writing that case out keeps the IR free of selects -- and, for a
+	// non-zero count, avoids reading CPSR_C at all, which the general path
+	// below has to do in order to leave it alone when the count is zero.
+	if (auto* cn = llvm::dyn_cast<llvm::ConstantInt>(n))
+	{
+		uint64_t k = cn->getZExtValue();
+		if (k == 0)
+		{
+			// Neither the value nor the carry is touched.
+			return val;
+		}
+		unsigned cIdx = 0;
+		llvm::Value* cres = nullptr;
+		bool carryIsZero = false;
+		if (kind == eShiftKind::Lsl)
+		{
+			cres = k < w ? irb.CreateShl(val, llvm::ConstantInt::get(ty, k)) : llvm::cast<llvm::Value>(zero);
+			cIdx = k <= w ? static_cast<unsigned>(w - k) : 0;
+			carryIsZero = k > w;
+		}
+		else if (kind == eShiftKind::Lsr)
+		{
+			cres = k < w ? irb.CreateLShr(val, llvm::ConstantInt::get(ty, k)) : llvm::cast<llvm::Value>(zero);
+			cIdx = k <= w ? static_cast<unsigned>(k - 1) : 0;
+			carryIsZero = k > w;
+		}
+		else
+		{
+			unsigned amt = k < w ? static_cast<unsigned>(k) : w - 1;
+			cres = irb.CreateAShr(val, llvm::ConstantInt::get(ty, amt));
+			cIdx = k < w ? static_cast<unsigned>(k - 1) : w - 1;
+		}
+		llvm::Value* cv = carryIsZero ? llvm::cast<llvm::Value>(irb.getFalse())
+									  : irb.CreateTrunc(
+											irb.CreateAnd(irb.CreateLShr(val, llvm::ConstantInt::get(ty, cIdx)), one),
+											irb.getInt1Ty());
+		storeRegister(ARM_REG_CPSR_C, cv, irb);
+		return cres;
+	}
+
+	auto* isZero = irb.CreateICmpEQ(n, zero);
+	auto* below = irb.CreateICmpULT(n, widthC);
+	auto* atMost = irb.CreateICmpULE(n, widthC);
+	auto* safe = irb.CreateAnd(n, maskC);
+
+	llvm::Value* res = nullptr;
+	llvm::Value* cBit = nullptr;
+	if (kind == eShiftKind::Lsl)
+	{
+		res = irb.CreateSelect(below, irb.CreateShl(val, safe), zero);
+		// The last bit out is bit (w - n); at n == w that is bit 0, which the
+		// mask below produces without a special case.
+		auto* cShift = irb.CreateAnd(irb.CreateSub(widthC, n), maskC);
+		cBit = irb.CreateAnd(irb.CreateLShr(val, cShift), one);
+	}
+	else if (kind == eShiftKind::Lsr)
+	{
+		res = irb.CreateSelect(below, irb.CreateLShr(val, safe), zero);
+		auto* cShift = irb.CreateAnd(irb.CreateSub(n, one), maskC);
+		cBit = irb.CreateAnd(irb.CreateLShr(val, cShift), one);
+	}
+	else
+	{
+		// ASR at or past the width is the sign bit broadcast, which is the
+		// shift by w-1 that the clamp already produces.
+		auto* amt = irb.CreateSelect(below, safe, maskC);
+		res = irb.CreateAShr(val, amt);
+		auto* cShift = irb.CreateSelect(atMost, irb.CreateAnd(irb.CreateSub(n, one), maskC), maskC);
+		cBit = irb.CreateAnd(irb.CreateLShr(val, cShift), one);
+	}
+
+	// Past the width LSL and LSR shift everything out, so the carry is zero.
+	// ASR keeps the sign bit there, which cShift above already selects.
+	llvm::Value* carry = irb.CreateTrunc(cBit, irb.getInt1Ty());
+	if (kind != eShiftKind::Asr)
+	{
+		carry = irb.CreateSelect(atMost, carry, irb.getFalse());
+	}
+
+	// A count of zero must leave the CARRY alone, and that needs a select --
+	// a flag cannot be preserved without being read. The VALUE needs none:
+	// shifting by zero is the identity for all three kinds, so `res` already
+	// equals `val` there. A select for it would be unreachable, which a
+	// mutation removing it duly proved by changing nothing.
+	auto* oldC = irb.CreateZExtOrTrunc(loadRegister(ARM_REG_CPSR_C, irb), irb.getInt1Ty());
+	storeRegister(ARM_REG_CPSR_C, irb.CreateSelect(isZero, oldC, carry), irb);
+	return res;
+}
+
 llvm::Value* Capstone2LlvmIrTranslatorArm_impl::generateShiftAsr(
 		llvm::IRBuilder<>& irb,
 		llvm::Value* val,
 		llvm::Value* n)
 {
-	auto* cfOp1 = irb.CreateSub(n, llvm::ConstantInt::get(n->getType(), 1));
-	auto* cfShl = irb.CreateShl(llvm::ConstantInt::get(cfOp1->getType(), 1), cfOp1);
-	auto* cfAnd = irb.CreateAnd(cfShl, val);
-	auto* cfIcmp = irb.CreateICmpNE(cfAnd, llvm::ConstantInt::get(cfAnd->getType(), 0));
-	storeRegister(ARM_REG_CPSR_C, cfIcmp, irb);
-
-	return irb.CreateAShr(val, n);
+	return generateShiftCommon(irb, val, n, eShiftKind::Asr);
 }
 
 llvm::Value* Capstone2LlvmIrTranslatorArm_impl::generateShiftLsl(
@@ -380,14 +500,7 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::generateShiftLsl(
 		llvm::Value* val,
 		llvm::Value* n)
 {
-	auto* cfOp1 = irb.CreateSub(n, llvm::ConstantInt::get(n->getType(), 1));
-	auto* cfShl = irb.CreateShl(val, cfOp1);
-	auto* cfIntT = llvm::cast<llvm::IntegerType>(cfShl->getType());
-	auto* cfRightCount = llvm::ConstantInt::get(cfIntT, cfIntT->getBitWidth() - 1);
-	auto* cfLow = irb.CreateLShr(cfShl, cfRightCount);
-	storeRegister(ARM_REG_CPSR_C, cfLow, irb);
-
-	return irb.CreateShl(val, n);
+	return generateShiftCommon(irb, val, n, eShiftKind::Lsl);
 }
 
 llvm::Value* Capstone2LlvmIrTranslatorArm_impl::generateShiftLsr(
@@ -395,13 +508,7 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::generateShiftLsr(
 		llvm::Value* val,
 		llvm::Value* n)
 {
-	auto* cfOp1 = irb.CreateSub(n, llvm::ConstantInt::get(n->getType(), 1));
-	auto* cfShl = irb.CreateShl(llvm::ConstantInt::get(cfOp1->getType(), 1), cfOp1);
-	auto* cfAnd = irb.CreateAnd(cfShl, val);
-	auto* cfIcmp = irb.CreateICmpNE(cfAnd, llvm::ConstantInt::get(cfAnd->getType(), 0));
-	storeRegister(ARM_REG_CPSR_C, cfIcmp, irb);
-
-	return irb.CreateLShr(val, n);
+	return generateShiftCommon(irb, val, n, eShiftKind::Lsr);
 }
 
 llvm::Value* Capstone2LlvmIrTranslatorArm_impl::generateShiftRor(

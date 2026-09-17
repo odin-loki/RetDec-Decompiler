@@ -8600,3 +8600,85 @@ undefined behaviour in LLVM rather than poison — strictly worse, because it
 licenses deleting the surrounding code. `mips.cpp` already has
 `storeRegisterUnpredictable()` for exactly this and does not use it on the
 division path.
+
+## Batch AI — ARM's register-controlled shifts are not modulo
+
+### What the architecture says
+
+`shift_n = UInt(R[s]<7:0>)` — the low **eight** bits of the register, 0 to
+255 — and every one of those values is defined:
+
+```
+n == 0        the value is unchanged AND the carry is unchanged
+1 <= n < 32   the ordinary shift; the carry is the last bit shifted out
+n == 32       LSL gives 0 with carry = bit 0
+              LSR gives 0 with carry = bit 31
+              ASR gives the sign broadcast with carry = bit 31
+n > 32        LSL and LSR give 0 with carry 0
+              ASR gives the sign broadcast with carry = bit 31
+```
+
+LLVM's shifts are poison at or past the width, and RetDec's emulator reduces
+them modulo it. Both of those disagree with ARM, so shifting by a raw count
+was a wrong **value** and not only bad IR:
+
+```
+lsl r0, r1, r2   r1 = 1, r2 = 32     hardware r0 = 0        translator r0 = 1
+lsr r0, r1, r2   r1 = 0x80000000, r2 = 32
+                                     hardware r0 = 0        translator unchanged
+asr r0, r1, r2   r1 = 0x80000000, r2 = 32
+                                     hardware r0 = 0xffffffff  translator unchanged
+```
+
+The carry was worse. It was computed from `n - 1`, so the commonest runtime
+count of all — zero — gave `shl i32 %val, 0xffffffff`.
+
+### The immediate forms keep their old shape
+
+Most shifts carry an immediate count, and there the whole rule is known at
+translation time. That case is written out separately: it emits one shift and
+one carry with no selects, and — for a non-zero count — never reads CPSR_C.
+
+That matters beyond tidiness. The general path **must** read CPSR_C, because a
+count of zero has to leave the carry exactly as it was and a flag cannot be
+preserved without being read. Seven existing tests assert the set of registers
+a shift loads, and the register forms now load one more. Those expectations are
+updated rather than worked around; the immediate forms are unchanged.
+
+### A select that could never fire
+
+The first version also selected the VALUE on a zero count. A mutation removing
+it changed nothing, and the reason is that shifting by zero is the identity for
+all three kinds — `res` already equals `val` there. Removed. The carry select
+is not redundant and stays.
+
+### Two test values that agreed by accident
+
+`ARM_INS_LSL_reg_by_zero_changes_nothing` used `r1 = 0x0000abcd` with the
+carry preset to 1. Bit 0 of `0xabcd` is 1, so the carry that the buggy path
+computes and the carry that the correct path preserves are both 1, and the
+mutation passed. Changed to `0x0000abcc`, whose bit 0 is clear.
+
+### Falsification
+
+```
+AI1_no_eight_bit_mask          LSL_reg_reads_only_eight_bits_of_the_count
+AI2_no_out_of_range_value      LSL_reg_by_the_width_is_zero, ..._past_the_width
+AI4_zero_count_clobbers_carry  LSL_reg_by_zero_changes_nothing, ..._eight_bits
+AI5_no_carry_clear_past_width  LSL_reg_past_the_width_clears_the_carry
+AI6_asr_no_sign_broadcast      ASR_reg_past_the_width_broadcasts_the_sign, ...
+```
+
+C2L-01 floor: ARM 650 → 664. 5,705 tests.
+
+### Noted while here
+
+`ARM_INS_ADD_ror_reg` assembles `add r0, r1, r2, ASR r3`. The test is
+misnamed, and the consequence is that ROR with a register count has no test at
+all. Left as it is rather than renamed, because the fix is a new test and not a
+new name.
+
+Also unchanged: these helpers write CPSR_C whether or not the instruction sets
+flags, so a non-S `lsl` clobbers the carry. `ARM_INS_LSL` (`arm_tests.cpp`)
+currently pins that as expected. It is a separate question from the count, and
+this batch does not answer it.

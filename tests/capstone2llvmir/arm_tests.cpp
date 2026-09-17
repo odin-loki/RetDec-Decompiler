@@ -1126,7 +1126,12 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ADD_lsl_reg)
 
 	emulate("add r0, r1, r2, LSL r3");
 
-	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2, ARM_REG_R3});
+	// CPSR_C is now LOADED as well as stored. A register-controlled shift
+	// by zero must leave the carry exactly as it was, and a flag cannot be
+	// left alone without being read. The immediate forms still do not read
+	// it: their count is known at translation time, so the zero case is
+	// decided there rather than selected.
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2, ARM_REG_R3, ARM_REG_CPSR_C});
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM_REG_R0, 0x1020},
 		{ARM_REG_CPSR_C, false},
@@ -1167,7 +1172,12 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ADD_lsr_reg)
 
 	emulate("add r0, r1, r2, LSR r3");
 
-	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2, ARM_REG_R3});
+	// CPSR_C is now LOADED as well as stored. A register-controlled shift
+	// by zero must leave the carry exactly as it was, and a flag cannot be
+	// left alone without being read. The immediate forms still do not read
+	// it: their count is known at translation time, so the zero case is
+	// decided there rather than selected.
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2, ARM_REG_R3, ARM_REG_CPSR_C});
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM_REG_R0, 0x1020},
 		{ARM_REG_CPSR_C, false},
@@ -1208,7 +1218,12 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ADD_asr_reg)
 
 	emulate("add r0, r1, r2, ASR r3");
 
-	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2, ARM_REG_R3});
+	// CPSR_C is now LOADED as well as stored. A register-controlled shift
+	// by zero must leave the carry exactly as it was, and a flag cannot be
+	// left alone without being read. The immediate forms still do not read
+	// it: their count is known at translation time, so the zero case is
+	// decided there rather than selected.
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2, ARM_REG_R3, ARM_REG_CPSR_C});
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM_REG_R0, 0xfc001020},
 		{ARM_REG_CPSR_C, false},
@@ -1249,7 +1264,12 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ADD_ror_reg)
 
 	emulate("add r0, r1, r2, ASR r3");
 
-	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2, ARM_REG_R3});
+	// CPSR_C is now LOADED as well as stored. A register-controlled shift
+	// by zero must leave the carry exactly as it was, and a flag cannot be
+	// left alone without being read. The immediate forms still do not read
+	// it: their count is known at translation time, so the zero case is
+	// decided there rather than selected.
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2, ARM_REG_R3, ARM_REG_CPSR_C});
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM_REG_R0, 0x1020},
 		{ARM_REG_CPSR_C, false},
@@ -5220,6 +5240,133 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSL_imm)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+//
+// ARM's register-controlled shifts are not modulo the operand width. The
+// count is the low EIGHT bits of the register, 0..255, and every one of those
+// is defined. See docs/internal/UNFIXED_AUDIT_FINDINGS.md, Batch AI.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSL_reg_by_the_width_is_zero)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x00000001},
+		{ARM_REG_R2, 32},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("lsl r0, r1, r2");
+
+	// A shift by exactly the width gives zero, with the carry taking the last
+	// bit shifted out -- bit 0. `shl i32 %v, 32` is poison, and the emulator
+	// reduces it modulo 32, so this used to answer r1 unchanged.
+	EXPECT_EQ(0x0, getRegisterValueUnsigned(ARM_REG_R0));
+	EXPECT_EQ(1, getRegisterValueUnsigned(ARM_REG_CPSR_C));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSL_reg_past_the_width_clears_the_carry)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0xffffffff},
+		{ARM_REG_R2, 33},
+		{ARM_REG_CPSR_C, true},
+	});
+
+	emulate("lsl r0, r1, r2");
+
+	EXPECT_EQ(0x0, getRegisterValueUnsigned(ARM_REG_R0));
+	EXPECT_EQ(0, getRegisterValueUnsigned(ARM_REG_CPSR_C));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSL_reg_by_zero_changes_nothing)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x0000abcc}, // bit 0 CLEAR, so a computed carry is 0
+		{ARM_REG_R2, 0},
+		{ARM_REG_CPSR_C, true},
+	});
+
+	emulate("lsl r0, r1, r2");
+
+	// The value passes through AND the carry is left exactly as it was. The
+	// old carry path computed `n - 1`, so a count of zero -- the commonest
+	// runtime value there is -- gave `shl i32 %val, 0xffffffff`.
+	EXPECT_EQ(0x0000abcc, getRegisterValueUnsigned(ARM_REG_R0));
+	EXPECT_EQ(1, getRegisterValueUnsigned(ARM_REG_CPSR_C));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSL_reg_reads_only_eight_bits_of_the_count)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x0000abcc}, // bit 0 clear, as above
+		{ARM_REG_R2, 0x100},      // low eight bits are zero
+		{ARM_REG_CPSR_C, true},
+	});
+
+	emulate("lsl r0, r1, r2");
+
+	// shift_n is R[s]<7:0>, so 0x100 is a count of zero, not of 256.
+	EXPECT_EQ(0x0000abcc, getRegisterValueUnsigned(ARM_REG_R0));
+	EXPECT_EQ(1, getRegisterValueUnsigned(ARM_REG_CPSR_C));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSR_reg_by_the_width_takes_the_top_bit)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x80000000},
+		{ARM_REG_R2, 32},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("lsr r0, r1, r2");
+
+	EXPECT_EQ(0x0, getRegisterValueUnsigned(ARM_REG_R0));
+	EXPECT_EQ(1, getRegisterValueUnsigned(ARM_REG_CPSR_C));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ASR_reg_past_the_width_broadcasts_the_sign)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x80000000},
+		{ARM_REG_R2, 40},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("asr r0, r1, r2");
+
+	// ASR is the one direction where past the width is not zero: every bit
+	// becomes the sign, and the carry is that sign bit.
+	EXPECT_EQ(0xffffffff, getRegisterValueUnsigned(ARM_REG_R0));
+	EXPECT_EQ(1, getRegisterValueUnsigned(ARM_REG_CPSR_C));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ASR_reg_past_the_width_on_a_positive_value)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x7fffffff},
+		{ARM_REG_R2, 40},
+		{ARM_REG_CPSR_C, true},
+	});
+
+	emulate("asr r0, r1, r2");
+
+	EXPECT_EQ(0x0, getRegisterValueUnsigned(ARM_REG_R0));
+	EXPECT_EQ(0, getRegisterValueUnsigned(ARM_REG_CPSR_C));
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSL_reg)
 {
 	ALL_MODES;
@@ -5231,7 +5378,12 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSL_reg)
 
 	emulate("lsl r0, r1, r2");
 
-	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
+	// CPSR_C is now LOADED as well as stored. A register-controlled shift
+	// by zero must leave the carry exactly as it was, and a flag cannot be
+	// left alone without being read. The immediate forms still do not read
+	// it: their count is known at translation time, so the zero case is
+	// decided there rather than selected.
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2, ARM_REG_CPSR_C});
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM_REG_R0, 0x12340000},
 		{ARM_REG_CPSR_C, false},
@@ -5275,7 +5427,12 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSR_reg)
 
 	emulate("lsr r0, r2, r3");
 
-	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R2, ARM_REG_R3});
+	// CPSR_C is now LOADED as well as stored. A register-controlled shift
+	// by zero must leave the carry exactly as it was, and a flag cannot be
+	// left alone without being read. The immediate forms still do not read
+	// it: their count is known at translation time, so the zero case is
+	// decided there rather than selected.
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R2, ARM_REG_R3, ARM_REG_CPSR_C});
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM_REG_R0, 0x20},
 		{ARM_REG_CPSR_C, false},
@@ -5318,7 +5475,12 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ASR_reg)
 
 	emulate("asr r0, r2, r3");
 
-	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R2, ARM_REG_R3});
+	// CPSR_C is now LOADED as well as stored. A register-controlled shift
+	// by zero must leave the carry exactly as it was, and a flag cannot be
+	// left alone without being read. The immediate forms still do not read
+	// it: their count is known at translation time, so the zero case is
+	// decided there rather than selected.
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R2, ARM_REG_R3, ARM_REG_CPSR_C});
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM_REG_R0, 0xfc000020},
 		{ARM_REG_CPSR_C, false},
