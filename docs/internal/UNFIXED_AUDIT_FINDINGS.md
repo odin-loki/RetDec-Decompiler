@@ -9553,3 +9553,58 @@ instrument was broken, the code under it was not.
   5. Calls to functions defined in the module are never executed, which makes
      the emulation-unpacking path in retdec.cpp work only for entirely
      self-contained stubs.
+
+## Batch AR -- the load width, and the sharpest falsification in this audit
+
+### AR-1  `visitLoadInst` never consulted the load's declared type
+
+The emulator returned whatever width the value had been STORED at, so a
+`load i8` and a `load i32` from the same address were indistinguishable. Worse
+than that sounds: the stored width then silently substitutes for the type's
+width in everything downstream. `executeSExtInst` takes the sign bit from the
+stored width, and `visitBinaryOperator` normalises its operands to the wider of
+the two rather than to the instruction's own type.
+
+So `ldrsh r0, [r1]` translated as a BYTE sign-extending load gave exactly the
+same answer as the correct halfword one. The test writes 16 bits; the emulator
+hands back 16 bits whatever the load asked for; `sext` of a 16-bit APInt to 32
+is right either way. The entire access-width and extension family was
+unobservable -- LDRB/LDRH/LDRSB/LDRSH on ARM, LDRSW/LDPSW on ARM64,
+LB/LBU/LH/LHU/LWU on MIPS, LBZ/LHZ/LHA/LWA on PowerPC, and every x86 memory
+operand narrower than its register.
+
+The fix is one `zextOrTrunc` at the load site. Zero-extension is the only
+defensible widening: this memory model holds one value per address rather than
+bytes, so when a load asks for more than was stored the neighbouring bytes do
+not exist to be read. That leaves the aliasing half open -- a byte load at
+addr+1 after a word store at addr still reads nothing -- and this does not
+claim to close it.
+
+### The falsification is the point
+
+All 5,800 tests pass unchanged, which confirms the survey finding that every
+one of the 270 memory-setting tests already writes a literal matching its
+mnemonic's access width. A no-op for correct translations.
+
+Then the same translator mutation, `ldrsh` emitting a byte load, was run
+against both versions of the emulator:
+
+    with the load-width fix:     3 tests fail
+    without it:                  0 tests fail
+
+Zero. Not "fewer", not "a weaker signal" -- the defect was completely
+invisible, and every test in the suite passed with a translator that read the
+wrong number of bytes from memory.
+
+That is the cleanest statement of what this audit has been about. The
+instrument decides what can be found, and an instrument nobody has checked is
+an instrument that quietly bounds the entire test suite's power. Six separate
+times now the thing hiding a defect was not the code and not the test but the
+apparatus underneath both:
+
+  * the shift oracle that would not draw the counts that mattered;
+  * the float comparison that cannot distinguish denormals;
+  * `ctlz` ignoring the argument that decides its zero case;
+  * `x86_fp80` excluded from the intrinsic block, so x87 answered 0.0;
+  * SHIFT-01 decoding two architectures with the wrong endianness;
+  * and this.

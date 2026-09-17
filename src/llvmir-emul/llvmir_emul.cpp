@@ -3061,6 +3061,35 @@ void LlvmIrEmulator::visitLoadInst(llvm::LoadInst& I)
 		res = _globalEc.getMemory(ptrVal);
 	}
 
+	// The LOAD'S declared type decides the width, not whatever width the value
+	// happened to be stored at. Without this the two are indistinguishable, and
+	// the stored width then silently substitutes for the type's width in
+	// everything downstream -- executeSExtInst takes the sign bit from the
+	// STORED width, and visitBinaryOperator normalises its operands to the
+	// wider of the two rather than to the instruction's own type.
+	//
+	// So `ldrsh r0, [r1]` translated as a BYTE sign-extending load gave exactly
+	// the same answer as the correct halfword one: the test writes 16 bits, the
+	// emulator hands back 16 bits whatever the load asked for, and sext of a
+	// 16-bit APInt to 32 is right either way. The whole access-width and
+	// extension family -- LDRB/LDRH/LDRSB/LDRSH on ARM, LDRSW/LDPSW on ARM64,
+	// LB/LBU/LH/LHU/LWU on MIPS, LBZ/LHZ/LHA/LWA on PowerPC, and every x86
+	// memory operand narrower than its register -- was unobservable.
+	//
+	// Zero-extension is the only defensible widening here: this memory model
+	// holds one value per address rather than bytes, so when a load asks for
+	// more than was stored the neighbouring bytes do not exist to be read. That
+	// leaves the aliasing half of the problem open (a byte load at addr+1 after
+	// a word store at addr still reads nothing) and this does not claim to
+	// close it.
+	if (auto* ity = llvm::dyn_cast<llvm::IntegerType>(I.getType()))
+	{
+		if (res.IntVal.getBitWidth() != ity->getBitWidth())
+		{
+			res.IntVal = res.IntVal.zextOrTrunc(ity->getBitWidth());
+		}
+	}
+
 	_globalEc.setValue(&I, res);
 }
 

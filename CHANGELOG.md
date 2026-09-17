@@ -8,6 +8,60 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Four hardware oracles for the x86 translator, under `FLAG-01`. This container
+  is x86-64, so the architecture's answers are **measured** rather than read off
+  a manual: each oracle runs the real instruction on the host, records the
+  inputs, the result registers and the flags, and a comparator runs the same
+  case through the translator and the IR interpreter.
+  `scripts/ci/x86_flag_oracle.c` covers one-register arithmetic;
+  `x86_wide_oracle.c` covers MUL/IMUL/DIV/IDIV/SHLD/SHRD and the single-operand
+  shifts, carrying the full RAX and RDX before and after; `x86_sse_oracle.c`
+  covers XMM-in/GPR-or-flags-out; `x86_vec_oracle.c` covers XMM-in/XMM-out and
+  additionally disassembles each hand-written encoding to check it against the
+  mnemonic it is supposed to be. The four run 13,600, 17,200, 15,610 and 27,600
+  comparisons. Each carries a self-test that corrupts one expected value and
+  requires exactly one mismatch back, because a comparison that cannot report a
+  difference proves nothing.
+
+- `SHIFT-01` and `DIV-01` (`scripts/ci/shift_poison_check.cpp`, run inside
+  `C2L-01`): static checks that the translators emit no shift whose amount can
+  reach the operand's width, and no division whose divisor can be zero.
+
+  These exist because neither failure is observable by running the IR, so
+  neither the hardware oracles nor the gtests could see them. A shift by too
+  much is **poison**; a division by zero is **immediate undefined behaviour**,
+  which is worse — poison is a bad value that propagates, while immediate UB
+  lets the optimiser delete the surrounding code, and for a decompiler that
+  means deleting the code path the reverse engineer is reading. The interpreter
+  the tests run on reduces shift amounts modulo the operand width, which for a
+  rotate is the architecture's own rule, so poison-producing IR gave exactly the
+  right answer and passed. Two mutation tests came back green for precisely that
+  reason, which is what prompted this.
+
+  The check does not run the IR. For 83 instructions across all five
+  architectures it asks whether each emitted shift amount can reach the width
+  and whether each divisor can be zero: 179 shifts and 24 divisions, none
+  unsafe. It needed its own interval analysis — LLVM's `computeKnownBits`
+  carries a bitmask and cannot express "at most 8" more tightly than "at most
+  15", and `computeConstantRange` answers full-set for a plain `zext`; either
+  would have fired on the clamp-and-select idiom the *fix* uses rather than on
+  the bug.
+
+  Where a bound came from a branch rather than from the value, the translators
+  now say so with `umin`/`umax`, which is the identity for every value the block
+  actually runs on. That is better code and not an accommodation of the tool:
+  "this is in range because of a branch thirty lines up" is exactly the
+  reasoning that turned out to be wrong in six of the eight places this work
+  touched.
+
+- Barrier-instruction tests, eighteen of them, on x86, ARM and ARM64. There were
+  none on any architecture and there could not have been: `FenceInst` had no
+  visitor in the interpreter, so it fell through to a `throw` whose exception
+  class calls `assert(false)` in its **constructor**. The gate compiles at `-O0`
+  with no `NDEBUG`, so the process aborted while building the exception — never
+  thrown, never caught, no failing test named. All five translators emit a
+  fence.
+
 - Nine more verified kernels, taking `scripts/verify_esbmc.sh` from 50 proofs
   over four headers to **272 over thirteen**. Each exists because a survey found
   the same primitive re-derived at several call sites with at least one copy
@@ -162,6 +216,151 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   back to counting keywords in text. `GateReport::summary()` marks the fallback.
 
 ### Fixed
+
+- **Instruction translation, all five architectures.** Roughly forty defects,
+  found by sweeping `src/capstone2llvmir/` for five recurring shapes:
+  sub-register write width, shift counts not provably below the operand width,
+  one dispatch key covering more than one operation, sign versus zero extension,
+  and float-to-integer conversion without a range guard. The x86 findings are
+  measured on this host; the others are confirmed against the architecture
+  manuals and against capstone's own operand tables, and are marked as such
+  below because that is a weaker standard.
+
+  Measured on x86-64:
+
+  | | hardware | translator answered |
+  |---|---|---|
+  | `movsx ecx, ax` with AX = 0xff00 | `00000000ffffff00` | `ffffffffffffff00` |
+  | `movsx ax, bl` with BL = 0xff | `112233445566ffff` | all ones |
+  | `rep movsb`, ECX = 16 | RSI advances from RSI | RSI = RDI's result |
+  | `pushfq` after setting AC and ID | both set | both clear |
+  | `vmovmskps eax, ymm0`, all eight signs set | `0xff` | `0x0f` |
+  | `vmovaps xmm1, xmm3` | zeroes ymm1[255:128] | leaves it |
+  | `shl al, cl` with cl = 20 | `0x00` | `0x20` |
+  | `rol al, cl` with cl = 8 | value kept, **CF written** | CF left alone |
+  | `fistp` on 2.7 / 2.5 / 3.5 | 3 / 2 / 4 | 2 / 2 / 3 |
+  | `ficoms` on 0xffff against 0.0 | C0 = 0 | C0 = 1 |
+  | `f2xm1` on 0.5 | 0.41421356 | 0.70710678 |
+
+  `movsx` was the worst of these: `storeRegister` converted the value to the
+  **parent** register's width before deciding how to write it, and the 8- and
+  16-bit path is a read-modify-write whose `or` had no mask, so an all-ones sign
+  extension set every bit of the parent. `rep movs` stored one sum into both
+  pointers, so the source pointer landed on top of the destination — and
+  `rep movsb` is the inlined `memcpy` in current glibc. `pushfd` tested for
+  `POPFD`, an instruction never dispatched to it, so the branch was dead and the
+  CPUID probe concluded "unsupported" on every binary. `f2xm1` computed
+  `2^(x-1)` instead of `2^x - 1`; the two agree at exactly one point.
+
+  Shift and rotate counts at 8 and 16 bits were three different bugs wearing one
+  mask: all seven instructions masked the count to five bits and stopped, and
+  what the architecture does next is not the same for each. `SHL`/`SHR`/`SAR` do
+  not reduce and empty the operand; `ROL`/`ROR` reduce modulo the width and
+  still write CF when the *masked* count is non-zero; `RCL`/`RCR` reduce modulo
+  the width **plus one**, because the carry is a real extra bit. All three
+  measured.
+
+  Confirmed against the manuals rather than measured, for want of an emulator:
+  ARM and ARM64 `CLZ` declared their defined zero case poison; ARM's
+  `[Rn, -Rm]` dropped the minus and computed the wrong **address** (the sign is
+  `operand.subtracted`, not `mem.scale`, which this capstone never sets to -1);
+  the pre-indexed writeback moved the base by a different amount than the load
+  used; ARM64 `SDIV`/`UDIV` emitted immediate undefined behaviour where the
+  architecture defines 0; MIPS `LUI` did not sign-extend on MIPS64, breaking the
+  standard `lui`/`ori` constant idiom; MIPS `CVT.W` truncated where the ISA
+  rounds; PowerPC `MULLI` was translated as a word multiply, though there is no
+  "mulliw"; PowerPC's record forms compared 32 bits where 64-bit mode compares
+  the register.
+
+- **Float-to-integer conversion, eight sites.** Every one lacked the range
+  guard, and no two architectures define the same answer for an input that does
+  not fit — so a single shared helper would have been wrong three times out of
+  four. x86 answers with the integer indefinite value for every bad input; ARM
+  saturates and sends NaN to zero; Power saturates and sends NaN to the
+  *minimum*; MIPS sends every bad input to the *maximum*, including a large
+  negative and including -infinity. Four helpers.
+
+- **Division, twelve sites.** Division by zero is immediate undefined behaviour
+  in LLVM, and the reason this is reachable rather than theoretical is that the
+  compiler's guard is a **trap** which this decompiler erases: GCC checks before
+  dividing on MIPS with `teq $rt, $zero, 7` and on PowerPC with `twi`, and
+  `MIPS_INS_TEQ` was mapped to `translateNop` while every PowerPC trap id is a
+  null entry. The guard becomes nothing and the division that follows is bare.
+  On x86 there is no guard to lose at all — C makes division by zero undefined,
+  so compilers emit a bare `div` and the `#DE` trap *is* the check.
+
+  What the fix should be also differs per architecture, and the difference is
+  the architecture's rather than a matter of taste. ARM64 **defines** the answer
+  as 0, so the answer is produced. MIPS says the result is UNPREDICTABLE and
+  guarantees no exception, and Power says the register contents are undefined
+  while the instruction completes — for both, any value is a faithful model, so
+  only the divisor is guarded. x86 **traps**: no value exists, nothing
+  continuing past the instruction can observe one, and inventing a specific
+  answer would put a claim in the decompiled output that the hardware never
+  makes. Modelling `#DE` as control flow belongs with `INT`, `INT3`, `BOUND`,
+  `HLT`, `UD2`, PowerPC `tw`/`twi` and MIPS `teq` in a trap model designed once
+  for the family, not bolted onto `DIV`.
+
+- **The interpreter the translator tests run on** (`src/llvmir-emul/`), which
+  matters more than its own bug count: a gap here does not produce one wrong
+  test result, it makes a whole class of translator defect invisible.
+
+  `x86_fp80` was excluded from the floating-point intrinsic block although the
+  interpreter stores an fp80 in `DoubleVal` everywhere else, so every x87
+  intrinsic became an unexecutable libcall and four tests asserted only that a
+  call *appeared*. `sin`, `cos` and `log2` were missing from the same block, and
+  those do not abort — `IntrinsicLowering` rewrites them to `sinl`/`cosl`/
+  `log2l`, the interpreter meets an unresolvable external, and the default-value
+  path writes neither `FloatVal` nor `DoubleVal`, so every x87 transcendental
+  evaluated to **0.0** quietly. `FYL2X` is `ST(1) × log2(ST(0))`: with `log2`
+  answering zero the product is zero whatever the multiply does. `llvm.umin` had
+  no case at all and killed the test binary through `report_fatal_error` the
+  first time a translator emitted one. `FenceInst` had no visitor.
+
+  Nine tests moved from `ANY` to real numbers as a result, and the first of
+  those changes is what exposed `f2xm1`.
+
+  And `visitLoadInst` never consulted the load's declared type, so a `load i8`
+  and a `load i32` from one address were indistinguishable — with the stored
+  width then substituting for the type's width in everything downstream, since
+  `executeSExtInst` takes its sign bit from the stored width and
+  `visitBinaryOperator` normalises to the wider operand rather than to the
+  instruction's own type. The entire access-width and extension family was
+  unobservable: LDRB/LDRH/LDRSB/LDRSH, LDRSW/LDPSW, LB/LBU/LH/LHU/LWU,
+  LBZ/LHZ/LHA/LWA, and every x86 memory operand narrower than its register.
+
+  The measure of that one: translating `ldrsh` as a **byte** load fails three
+  tests with the fix in place and **zero** without it. Not a weaker signal —
+  the whole suite passed with a translator reading the wrong number of bytes
+  from memory.
+
+- **Tests that could not fail.** Several defects survived because the test
+  written for them asserted something vacuous, and these are recorded because
+  the shape recurs:
+
+  - The x86 harness truncates a sub-register read to that register's own width,
+    so no `movsx` test could observe what the store did to the rest of the
+    parent.
+  - The fixture compares a float register with `EXPECT_NEAR(..., 0.001)`. Every
+    instruction that leaves an *integer* in a floating-point register —
+    `CVT.W` on MIPS, `VCVT` on ARM, `FCTIWZ` on PowerPC — therefore had a value
+    assertion that could not fail, because the bit pattern of a small integer is
+    a denormal and every denormal is within 0.001 of zero and of every other.
+    `MIPS_INS_CVT_W_d` additionally set its input with an `_f32` literal into a
+    **double** register, so the value it converted was 5.3e-315.
+  - The two ARM64 `CLZ` tests pass a zero operand and assert the *correct*
+    answers, and passed anyway, because the interpreter's `ctlz` ignores the
+    argument that decides the zero case.
+  - The shift oracle declined to draw the counts that mattered at 8 and 16 bits,
+    justified by a comment asserting the destination was undefined there. The
+    hardware says it is not. The instrument was refusing to draw exactly the
+    input that would expose the bug, for the same misreading that produced it.
+  - `SHIFT-01`, added in this same cycle, had been measuring nothing for two
+    architectures: its corpus passed an endianness to the assembler and none to
+    the translator, so PowerPC and MIPS instructions were assembled big-endian
+    and decoded little-endian and `divw 3, 4, 5` was translating as a
+    floating-point store. Fixing that took the corpus from 169 shifts to 179 and
+    surfaced two real division defects.
 
 - Every proved kernel now has a caller, and three that did not were the reason
   `--routing` was written. `float_predicate.h` was the last: the four decisions
