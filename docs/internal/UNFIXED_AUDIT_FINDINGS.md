@@ -10019,3 +10019,97 @@ shape a sanitiser build exists to catch.
   defect: `firstF == f0Bound` with `lastF == f1Bound - 1` and `nF >= 1` implies
   `f1Bound > f0Bound` transitively. Recorded because the differential flagged it
   and the reason it is fine is not obvious from the code.
+
+---
+
+## Batch AX — the gate that hid a working test (2026-09-17)
+
+Batch AW closed with a gap named in its own words: the forty
+`tryConvert{Lt,Le,Gt,Ge}With{Three..Six}LevelNested*` functions in
+`if_to_switch_optimizer.cpp` had been checked against BOUND-01 and the mirror
+differential, and *"neither says anything about whether the compare-tree each
+one reconstructs matches the switch it emits"*. This batch builds that
+differential — and the interesting part is not the differential.
+
+### Added
+
+`tests/llvmir2hll/optimizer/optimizers/if_to_switch_semantics_tests.cpp`.
+It does not look at the shape of the result. It builds a nest, records which
+body runs for each value of the control variable over `v ∈ [-12, 40]`, runs
+`IfToSwitchOptimizer`, and requires the same answer for every value. Two
+generators, because the optimizer has two families of matcher:
+
+- **guard-plus-dense-chain**: `if (v < C) { if (v == a) … else if (v == a+1) … }`
+  over first ∈ [0,6], chain lengths 2–5, the bound on/one-below/one-above the
+  chain edge, and all four comparison orientations. 336 nests built, **112
+  converted**.
+- **contiguous partition**: a run of integers split into k+1 adjacent segments,
+  a dense chain on each, comparisons nested at the segment boundaries — which
+  is the shape `…SplitInThen` actually names. 3–7 segments, widths 1–3, firsts
+  {0,1,5}, four orientations. 180 built, **120 converted**.
+
+Both report their conversion count, because a generator that converts nothing
+compares nothing and would go green while measuring nothing. A first attempt at
+the second generator did exactly that — 0 of 600 — because it emitted nests
+whose bounds did not line up with their chains, and the deep matchers require
+`lastD == f0 - 1`, `firstC == f0`, and so on up the nest.
+
+A third test hand-builds a switch with one case value moved by one and requires
+the differential to see it, so the comparison machinery itself has to be able
+to fail.
+
+### The instrument, again
+
+Falsification of the new suite ran in two parts, because the file has two kinds
+of `addClause` call site: 32 inside the deep nested matchers, and 4 in the
+simple and chain converters.
+
+The **first run** mutated the 32 deep sites, shifting every emitted case value
+by one. The failure list came back with twenty `IfToSwitchOptimizerTests.*`
+shape tests and no sign of the new suite. Read at face value, that is a test
+that does not reach the code it was written for — and the honest response to it
+is to delete the test or state the limit, not to ship it.
+
+It was not that. `check_llvmir2hll_tests.sh` printed its failure diagnostic
+through `head -n 40`, and the cap fell inside an alphabetically sorted list
+whose `IfToSwitch**O**ptimizerTests` entries sort ahead of
+`IfToSwitch**S**emanticsTests`. The truth was in `run.log` the whole time:
+`IfToSwitchSemanticsTests.PartitionNestsOfEveryDepthRunTheSameBodyForEveryControlValue`
+had failed, on 31 failures rather than 20. The partition generator does reach
+the deep matchers, and the differential does catch an off-by-one in them.
+
+A second run mutating only the 4 simple and chain sites fails
+`ConvertedNestsRunTheSameBodyForEveryControlValue` and leaves the partition test
+green, which locates the two generators on the two families precisely.
+
+This is the ninth time in this audit that the apparatus, not the code and not
+the test, gave the wrong answer — and the second time it pointed at discarding
+something that worked. The first (batch AR) was a revert that never landed
+because `clang-format` had reflowed the lines the patch script matched on. The
+pattern in both: a step that *reports* on the experiment is not itself part of
+the experiment, so nothing checks it.
+
+So the diagnostic is fixed rather than worked around. `check_llvmir2hll_tests.sh`
+now prints the list of **which** tests failed without a cap, and caps only the
+assertion detail below it, and names the path to the full log. Names are cheap
+and are the thing a falsification run reads; detail is expensive and is not.
+
+### Fixed
+
+`tests/llvmir2hll/CMakeLists.txt` did not list the new file. The gate for that
+already exists — `check_cmake_sources.sh` reports a test source no CMakeLists
+names as *"a file nobody runs"* — and it caught it: the L2H-01 gate compiles
+`tests/llvmir2hll` by glob and so ran the suite regardless, which is precisely
+the way an unregistered test looks healthy while `ctest` never runs it.
+
+### Still open
+
+- The differential covers the shapes its two generators emit. It reaches at
+  least one deep matcher family, demonstrated; it does not enumerate all forty
+  functions, and there is no measurement here of which of the forty are
+  individually reached. A per-function reachability count would need the
+  optimizer to report which `tryConvert` fired, which it does not.
+- Its evaluator models `==`, `<`, `<=`, `>`, `>=` against a constant, and
+  bodies that assign a constant. A nest using anything else is refused rather
+  than silently passed, which is the safe direction, but it is also a bound on
+  what the generators can be extended to.

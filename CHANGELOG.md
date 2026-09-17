@@ -8,6 +8,35 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- A **semantic** differential for `IfToSwitchOptimizer`
+  (`tests/llvmir2hll/optimizer/optimizers/if_to_switch_semantics_tests.cpp`).
+  Every other test on that pass checks the *shape* of the result: that a
+  `SwitchStmt` came out, with these case values, in this order. A
+  reconstruction that moves one bound by one, or hangs a body on the
+  neighbouring case, produces a perfectly well-formed `SwitchStmt` and passes
+  all of them. This one does not look at the shape: it builds a nest, records
+  which body runs for each value of the control variable over `v` in
+  `[-12, 40]`, runs the optimizer, and requires the same answer for every
+  value.
+
+  Two generators, matching the pass's two families. A guard-plus-dense-chain
+  sweep builds 336 nests, of which the optimizer converts **112**; a
+  contiguous-partition sweep — the shape the `…SplitInThen` matchers actually
+  name — builds 180, of which it converts **120**. Both report their conversion
+  count, because a generator that converts nothing compares nothing and would
+  otherwise go green having measured nothing; a first version of the second one
+  did exactly that, 0 of 600. A third test hand-builds a switch with one case
+  value moved by one and requires the differential to notice, so the comparison
+  itself has to be able to fail.
+
+  Falsified in two parts, against the pass's 32 deep-matcher `addClause` sites
+  and its 4 simple/chain sites separately: mutating the deep sites fails the
+  partition test, mutating the simple sites fails the guard-plus-chain test.
+  This closes the gap named at the end of the previous batch — the forty
+  compare-tree reconstructions had been checked against `BOUND-01` and a mirror
+  differential, neither of which says whether the tree each rebuilds matches
+  the switch it emits.
+
 - Four hardware oracles for the x86 translator, under `FLAG-01`. This container
   is x86-64, so the architecture's answers are **measured** rather than read off
   a manual: each oracle runs the real instruction on the host, records the
@@ -271,6 +300,26 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   back to counting keywords in text. `GateReport::summary()` marks the fallback.
 
 ### Fixed
+
+- `scripts/ci/check_llvmir2hll_tests.sh` printed its failure diagnostic through
+  `head -n 40`, mixing the list of **which** tests failed with the assertion
+  detail under them. On a run with 31 failures the cap fell inside an
+  alphabetically sorted list, cutting it off between
+  `IfToSwitchOptimizerTests` and `IfToSwitchSemanticsTests` — so a test that had
+  correctly caught a seeded off-by-one read as having missed it, and the
+  correct response to that reading would have been to throw the test away. The
+  full list was in `run.log` the whole time. The names are now never truncated,
+  only the detail below them is, and the path to the full log is printed. This
+  is the second time in this audit that a reporting step, which nothing checks
+  because it is not itself part of the experiment, pointed at discarding
+  something that worked.
+
+- `tests/llvmir2hll/CMakeLists.txt` now lists the new semantics suite. The
+  L2H-01 gate compiles `tests/llvmir2hll` by glob and so ran it regardless,
+  which is exactly how an unregistered test file looks healthy while `ctest`
+  never runs it; `check_cmake_sources.sh` already gates for this and reports
+  it.
+
 
 - **`inst_opt::optimize` read the environment 25 times per instruction.** It
   runs once per instruction in the module and called `std::getenv` once per

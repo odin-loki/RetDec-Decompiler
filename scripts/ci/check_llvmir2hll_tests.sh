@@ -246,9 +246,18 @@ fi
 
 if ! "${BIN}" "${RUN_ARGS[@]}" > "${WORK}/run.log" 2>&1; then
 	echo "L2H-01: FAIL tests/llvmir2hll does not pass" >&2
-	grep -E '^\[  FAILED  \]|Failure$' "${WORK}/run.log" | head -n 40 >&2
+	# The list of WHICH tests failed is never truncated.  A capped list once
+	# cost a whole falsification run here: the cap fell just short of the one
+	# suite the run existed to look at, so a test that had correctly caught a
+	# seeded defect read as having missed it.  Detail is capped; names are not.
+	echo "--- failing tests ---" >&2
+	grep -aoE '^\[  FAILED  \] [A-Za-z][A-Za-z0-9_]*\.[A-Za-z0-9_]*' \
+		"${WORK}/run.log" | sort -u >&2
+	echo "--- first assertions ---" >&2
+	grep -aE 'Failure$' -A 3 "${WORK}/run.log" | head -n 60 >&2
 	echo "--- context ---" >&2
 	tail -n 40 "${WORK}/run.log" >&2
+	echo "L2H-01: full log: ${WORK}/run.log" >&2
 	exit 1
 fi
 

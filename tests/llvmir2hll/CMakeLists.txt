@@ -98,6 +98,7 @@ add_executable(tests-llvmir2hll
 	optimizer/optimizers/if_structure_optimizer_ext_tests.cpp
 	optimizer/optimizers/if_structure_optimizer_tests.cpp
 	optimizer/optimizers/if_to_switch_optimizer_tests.cpp
+	optimizer/optimizers/if_to_switch_semantics_tests.cpp
 	optimizer/optimizers/llvm_intrinsics_optimizer_tests.cpp
 	optimizer/optimizers/loop_last_continue_optimizer_tests.cpp
 	optimizer/optimizers/no_init_var_def_optimizer_tests.cpp
