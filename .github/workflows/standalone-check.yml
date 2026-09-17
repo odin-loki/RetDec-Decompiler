@@ -203,6 +203,15 @@ jobs:
       - name: IDIOM-PHI-01 idiom exchangers vs PHI nodes
         run: bash scripts/ci/check_idiom_phi_reach.sh --self-test
 
+      # IDIOM-USE-01. An idiom rewrite erases the inner nodes of the tree it
+      # matched. When one of those nodes was also read by something outside the
+      # tree, the helper doing the erase replaced that reader's operand with
+      # `undef` -- a silent miscompile that verifies clean. This runs the pass
+      # over shapes with and without a shared inner node and compares what the
+      # function computes before and after.
+      - name: IDIOM-USE-01 idiom rewrites vs uses they did not match
+        run: bash scripts/ci/check_idiom_shared_use.sh --self-test
+
   # C2L-01. tests/capstone2llvmir is 4,370 assertions and the only place ARM,
   # ARM64, MIPS and PowerPC instruction semantics are checked at all. It was on
   # standalone_check.sh's UNGATED_SUITES list, evaluated nowhere, for two

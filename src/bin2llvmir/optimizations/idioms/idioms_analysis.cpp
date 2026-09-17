@@ -67,6 +67,13 @@ bool IdiomsAnalysis::analyse(llvm::BasicBlock & bb, llvm::Instruction * (IdiomsA
 
 			(*insn).eraseFromParent();
 		}
+
+		// The exchanger may have queued inner nodes it could not erase while
+		// the root was still reading them.  The root is gone now, so this is
+		// the point where a genuinely dead one can go and a shared one has to
+		// stay.  Unconditional rather than inside `if (res)`: an exchanger can
+		// queue a node and still return nullptr.
+		drainDeferredErases();
 	}
 
 	return change_made;
@@ -305,6 +312,10 @@ bool IdiomsAnalysis::analyse(llvm::Function & f, llvm::Pass * p, int (IdiomsAnal
 	int num_idioms = 0;
 
 	num_idioms += IdiomsGCC::exchangeCondBitShiftDivMultiBB(f, p);
+
+	// The function-level exchangers do their own replace-and-erase, so the
+	// queue is drained once they are finished rather than per instruction.
+	drainDeferredErases();
 
 	// The doc comment above says "true whenever an exchange has been made".
 	// This returned the opposite, and it is what Idioms::runOnFunction hands

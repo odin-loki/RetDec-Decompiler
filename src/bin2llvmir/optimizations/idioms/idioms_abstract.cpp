@@ -46,15 +46,72 @@ bool IdiomsAbstract::findBranchDependingOn(llvm::BranchInst ** br, llvm::BasicBl
  * @param val instruction value to look for
  * @param bb BasicBlock to erase instruction from
  */
-void IdiomsAbstract::eraseInstFromBasicBlock(llvm::Value * val, llvm::BasicBlock * bb) {
+void IdiomsAbstract::eraseInstFromBasicBlock(llvm::Value* val, llvm::BasicBlock* bb) const
+{
 	for (llvm::BasicBlock::iterator end = bb->end(), i = bb->begin(); i != end; ++i) {
 		llvm::Value * rem = static_cast<llvm::Value*>(&(*i));
-		if (val == rem) {
-			rem->replaceAllUsesWith(llvm::UndefValue::get(val->getType()));
-			(*i).eraseFromParent();
-			break;
+		if (val != rem)
+		{
+			continue;
+		}
+
+		// This used to be replaceAllUsesWith(UndefValue) followed by an erase,
+		// which erases unconditionally and makes every remaining reader of the
+		// value read `undef`.  That is right only when the idiom's own root
+		// was the value's sole reader.  It is not always:
+		//
+		//     %y = lshr i32 %x, 31
+		//     %z = xor  i32 %y, 1     <- ((X u>> 31) ^ 1), rewritten to X >= 0
+		//     %w = add  i32 %y, 5     <- nothing to do with the idiom
+		//
+		// exchangeGreaterEqualZero fires on %z and erases %y, and %w becomes
+		// `add i32 undef, 5`.  Measured, not reasoned about: see IDIOM-USE-01.
+		//
+		// The root is still live at this point -- the driver replaces it after
+		// the exchanger returns -- so "is this dead" cannot be decided here.
+		// Queue it and let drainDeferredErases() decide once the rewrite is
+		// complete.
+		if (!rem->use_empty())
+		{
+			m_deferredErase.push_back(llvm::WeakTrackingVH(rem));
+			return;
+		}
+
+		(*i).eraseFromParent();
+		return;
+	}
+}
+
+void IdiomsAbstract::drainDeferredErases() const
+{
+	// Erasing one queued value can be what makes the next one dead, and the
+	// queue is in no particular order, so this repeats until a pass over the
+	// whole queue erases nothing.
+	bool progress = true;
+	while (progress)
+	{
+		progress = false;
+		for (auto& handle: m_deferredErase)
+		{
+			llvm::Value* v = handle;
+			if (!v)
+			{
+				continue; // erased by some other rewrite already
+			}
+			auto* inst = llvm::dyn_cast<llvm::Instruction>(v);
+			if (!inst || !inst->use_empty() || inst->isTerminator())
+			{
+				continue;
+			}
+			if (inst->mayHaveSideEffects())
+			{
+				continue; // dead by use count is not dead by effect
+			}
+			inst->eraseFromParent();
+			progress = true;
 		}
 	}
+	m_deferredErase.clear();
 }
 
 /**

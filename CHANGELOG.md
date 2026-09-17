@@ -8,6 +8,16 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- `IDIOM-USE-01` (`scripts/ci/check_idiom_shared_use.sh`,
+  `scripts/ci/idiom_shared_use_check.cpp`): builds four idiom shapes twice,
+  runs the real pass on one, and evaluates both over thirteen inputs with
+  LLVM's own constant folder, requiring the same answer. `undef` reached by the
+  rewrite but not by the original is reported as its own failure rather than
+  folded away, because that is the defect it exists for. Each case reports
+  whether the pass changed anything, so a shape the pass declines shows as
+  "measured nothing" instead of passing quietly, and `--self-test` adds a
+  function nothing rewrites and requires exactly that report.
+
 - `IDIOM-PHI-01` (`scripts/ci/check_idiom_phi_reach.sh`,
   `scripts/ci/idiom_phi_reach_probe.cpp`): the 39 per-basic-block idiom
   exchangers are each called on a PHI node of nine types — 351 pairs — to
@@ -318,6 +328,37 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   back to counting keywords in text. `GateReport::summary()` marks the fallback.
 
 ### Fixed
+
+- **An idiom rewrite could replace a use it had never matched with `undef`.**
+  All 129 erase sites in `src/bin2llvmir/optimizations/idioms/` went through
+  `IdiomsAbstract::eraseInstFromBasicBlock`, which did
+  `replaceAllUsesWith(UndefValue)` and then erased unconditionally. That
+  `replaceAllUsesWith` was what made the erase legal — LLVM refuses to erase an
+  instruction that still has users, so undef'ing them turned "this has other
+  readers, do not delete it" into "deleted, and they read undef". The one
+  signal that would have stopped the erase was destroyed to permit it.
+
+  Demonstrated, not inferred: for
+
+  ```llvm
+  %y = lshr i32 %x, 31
+  %z = xor  i32 %y, 1     ; rewritten to X >= 0
+  %w = add  i32 %y, 5     ; nothing to do with the idiom
+  ```
+
+  the rewrite produced `%w = add i32 undef, 5`. The pass reported success and
+  the module verified.
+
+  The helper cannot answer "is this dead" when it is asked — the idiom's root
+  still reads the node, because the driver replaces the root only after the
+  exchanger returns. So it queues such nodes as weak handles instead of
+  guessing, and a new `drainDeferredErases()` empties the queue once the
+  rewrite is complete, erasing what is genuinely dead and leaving what is not.
+  It runs to a fixpoint, since erasing one node can be what makes the next
+  dead. `eraseInstFromBasicBlock` is no longer `static`; the bases inherit
+  `IdiomsAbstract` virtually, so there is exactly one queue and no call site
+  changed.
+
 
 - **Four gates that CI never ran are now wired into it.** No workflow invokes
   `scripts/check_push_gates.sh` — `ctest-linux.yml` names it in a comment and

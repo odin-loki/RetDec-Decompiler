@@ -10280,3 +10280,111 @@ other reads as *optimizations* and here it meant *options*.
   pointer PHIs to a reading — "no exchanger matches those shapes either" — which
   is the substitution this audit exists to stop making, so they were measured
   too.
+
+---
+
+## Batch AZ — the rewrite that undefs what it did not match (2026-09-17)
+
+### The defect
+
+An idiom rewrite matches a small tree of instructions and replaces it. The
+tree's inner nodes then have to go, and every one of the 129 call sites in
+`src/bin2llvmir/optimizations/idioms/` did that through one helper:
+
+```cpp
+void IdiomsAbstract::eraseInstFromBasicBlock(Value * val, BasicBlock * bb) {
+        ...
+        if (val == rem) {
+                rem->replaceAllUsesWith(UndefValue::get(val->getType()));
+                (*i).eraseFromParent();
+                break;
+        }
+}
+```
+
+`replaceAllUsesWith` is doing something very specific here: it is making the
+erase legal. LLVM refuses to erase an instruction that still has users, so
+undef'ing them first turns "this has other readers, I must not delete it" into
+"deleted, and they now read undef". The one signal that would have stopped the
+erase is the thing being destroyed to permit it.
+
+That is correct exactly when the idiom's own root was the node's only reader.
+Measured, it is not always:
+
+```llvm
+%y = lshr i32 %x, 31
+%z = xor  i32 %y, 1     ; ((X u>> 31) ^ 1) -- exchangeGreaterEqualZero matches
+%w = add  i32 %y, 5     ; nothing to do with the idiom
+```
+
+`exchangeGreaterEqualZero` fires on `%z`, erases `%y`, and `%w` becomes
+`add i32 undef, 5`. The pass reports success, the module verifies, and the
+emitted C is wrong. Unlike batch AY's PHI fix-up, **this one is reachable and
+was demonstrated before it was fixed**, on ordinary single-block IR that any
+lifted `x >= 0` would produce next to any other use of the sign bit.
+
+### Why the helper could not just check
+
+The obvious fix — refuse to erase when `use_empty()` is false — declines every
+time. At the moment the exchanger calls the helper, the idiom's *root* is still
+in the block and still reads the inner node; the driver does not replace the
+root until the exchanger returns. So "is this dead" is not answerable at the
+point the question is asked.
+
+So the helper now queues instead of guessing. A node with no users is erased at
+once; a node with users goes into a list of `WeakTrackingVH` — weak handles,
+because another rewrite in the same pass may erase one first — and
+`drainDeferredErases()` empties the list after the driver has finished the
+rewrite. By then a genuinely dead node has no users and goes; a node something
+else reads keeps its users and stays. The drain runs to a fixpoint, because
+erasing one node can be what makes the next one dead.
+
+`eraseInstFromBasicBlock` stops being `static` for this. The bases inherit
+`IdiomsAbstract` **virtually**, so `IdiomsAnalysis` has exactly one of them and
+one queue; no call site changed.
+
+### Added
+
+`IDIOM-USE-01` (`scripts/ci/check_idiom_shared_use.sh`,
+`scripts/ci/idiom_shared_use_check.cpp`). It does not check the shape of the
+rewrite. It builds each shape twice, runs the real pass on one, and evaluates
+both over thirteen inputs with LLVM's own constant folder, requiring the same
+answer. `undef` reached by the rewrite but not by the original is reported as
+its own failure rather than folded away, since that is the defect.
+
+Four shapes: the `((X u>> 31) ^ 1)` idiom with its inner node private and with
+it shared, the `((X ^ -1) u>> 31)` form shared, and the signed-modulo-by-power-
+of-two tree shared. Each case reports whether the pass changed anything, so a
+shape the pass declines shows as "measured nothing" rather than passing
+quietly.
+
+### Two instrument corrections, both caught by the check's own self-test
+
+The first version asserted that in the shared case the `lshr` must **survive**.
+It did not, and the differential called that a failure — wrongly. A *different*
+exchanger, `exchangeLessThanZero`, had rewritten `%y = lshr %x, 31` into
+`zext(icmp slt %x, 0)`, which computes the same thing. The assertion encoded an
+implementation detail rather than the property that matters, which is what the
+function computes. Replaced with the evaluator.
+
+The second was in the "did the pass change anything" report, which compared the
+two functions' dumps. A dump opens with `define ... @name`, and the two
+functions necessarily have different names, so **every** case reported as
+rewritten — including the deliberately inert one. The `--self-test` case exists
+precisely to catch that and did, on its first run. It compares bodies now.
+
+### Still open
+
+- Reverting the fix fails exactly one of the four shapes. The other two shared
+  cases are rewritten without leaving a live `undef` in this construction, so
+  this demonstrates the class rather than enumerating the 129 call sites. A
+  differential that generates the shared-use variant of every idiom
+  automatically would be the stronger instrument and does not exist.
+- The evaluator models one basic block and instructions LLVM's folder can fold
+  from a single integer argument. Multi-block idioms — `exchangeCondBitShift
+  DivMultiBB`, `exchangeSignedModuloByTwo` — call the same helper and are not
+  covered.
+- The drain refuses to erase anything with side effects or a terminator, which
+  is conservative in the safe direction: it can leave a node the old code would
+  have removed. No case in the four shapes does so, and a leftover dead
+  instruction is a cosmetic cost against a miscompile.
