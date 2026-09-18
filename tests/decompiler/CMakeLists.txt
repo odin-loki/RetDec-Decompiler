@@ -367,6 +367,37 @@ if(APPLE)
             "${CMAKE_SOURCE_DIR}/src/retdec-decompiler/profiles"
             "${_GUI_BUNDLE_SHARE}/profiles"
     )
+    # macdeployqt ships cocoa, not offscreen. MAC-01 then makes the bundle
+    # stop searching Homebrew, so QT_QPA_PLATFORM=offscreen aborts with
+    # "no Qt platform plugin could be initialized". Put offscreen in the
+    # staged bundle; MAC-01 rewrites its rpaths with everything else.
+    set(_OFFSCREEN "")
+    foreach(_qt_root IN LISTS CMAKE_PREFIX_PATH)
+        foreach(_rel
+                "plugins/platforms/libqoffscreen.dylib"
+                "share/qt/plugins/platforms/libqoffscreen.dylib"
+                "lib/qt-6/plugins/platforms/libqoffscreen.dylib")
+            if(EXISTS "${_qt_root}/${_rel}")
+                set(_OFFSCREEN "${_qt_root}/${_rel}")
+                break()
+            endif()
+        endforeach()
+        if(_OFFSCREEN)
+            break()
+        endif()
+    endforeach()
+    if(_OFFSCREEN)
+        list(APPEND _GUI_STAGE_EXTRA_COMMANDS
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "${_GUI_STAGE_DST}/Contents/PlugIns/platforms"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${_OFFSCREEN}"
+                "${_GUI_STAGE_DST}/Contents/PlugIns/platforms/libqoffscreen.dylib"
+        )
+        message(STATUS "tests/decompiler: staging Qt offscreen plugin from ${_OFFSCREEN}")
+    else()
+        message(WARNING "tests/decompiler: libqoffscreen.dylib not found under CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}")
+    endif()
 else()
     set(_GUI_STAGE_SRC "$<TARGET_FILE_DIR:retdec-gui>")
     set(_GUI_STAGE_DST "${_GUI_STAGING}")

@@ -550,8 +550,15 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   bundle) and then the `.framework`; signing only the directory left QtGui
   `code object is not signed at all`. Homebrew's Qt keg also puts
   `Contents -> Versions/Current` beside `Versions/`, which is an app layout
-  and a framework layout at once; `--fix` removes `Contents` before
-  signing. `ctest-macos` was red on every push until this.
+  and a framework layout at once; `--fix` removes `Contents` and restores
+  the `Current` / top-level binary symlinks macdeployqt flattened into
+  real files. `ctest-macos` was red on every push until this.
+
+- `gui_headless_decompile_fib` on macOS aborted after MAC-01 made the
+  bundle stop searching Homebrew: `QT_QPA_PLATFORM=offscreen` and
+  macdeployqt only ships cocoa. The staging step copies
+  `libqoffscreen.dylib` into the bundle so the headless test has a
+  platform plugin that is inside the rpath-rewritten tree.
 
 - `OrderedAllVisitor::visitStmt` walked successor chains by recursing
   `visit()` → `visitStmt()` per statement. A long straight-line function
