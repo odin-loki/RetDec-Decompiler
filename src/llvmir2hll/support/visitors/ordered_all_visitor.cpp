@@ -556,22 +556,23 @@ void OrderedAllVisitor::visit(ShPtr<UnknownType> type) {
 }
 
 /**
-* @brief Visits the given statement, and possibly its successors or nested
-*        statements.
-*
-* @param[in] stmt Statement to be visited.
-* @param[in] visitSuccessors If @c true, a successor of @a stmt is also visited
-*                            (and a successor of this successor, and so on).
-* @param[in] visitNestedStmts If @c true, nested statements are also visited,
-*                             e.g. loop, if, and switch statement's bodies.
-*
-* If @a stmt has already been accessed, this function does nothing. If @a stmt
-* is the null pointer, it also does nothing. Before visiting @a stmt, this
-* function adds it to @c accessedStmts.
-*/
+ * @brief Visits the given statement, and possibly its successors or nested
+ *        statements.
+ *
+ * @param[in] stmt Statement to be visited.
+ * @param[in] visitSuccessors If @c true, a successor of @a stmt is also visited
+ *                            (and a successor of this successor, and so on).
+ * @param[in] visitNestedStmts If @c true, nested statements are also visited,
+ *                             e.g. loop, if, and switch statement's bodies.
+ *
+ * If @a stmt has already been accessed, this function does nothing. If @a stmt
+ * is the null pointer, it also does nothing. Before visiting @a stmt, this
+ * function adds it to @c accessedStmts.
+ */
 void OrderedAllVisitor::visitStmt(ShPtr<Statement> stmt, bool visitSuccessors,
 		bool visitNestedStmts) {
-	if (stmt && !hasItem(accessedStmts, stmt)) {
+	if (stmt && !hasItem(accessedStmts, stmt))
+	{
 		this->visitSuccessors = visitSuccessors;
 		this->visitNestedStmts = visitNestedStmts;
 		accessedStmts.insert(stmt);
