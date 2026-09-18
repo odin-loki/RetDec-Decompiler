@@ -1,0 +1,177 @@
+# A rehearsal for the macOS half of a release, runnable before the tag.
+#
+# Why this is separate from ctest-macos: the two build DIFFERENT TREES.
+# ctest-macos configures full-linux-release with no component overrides, so
+# every RETDEC_ENABLE_<component> comes out of _optionDefaults and
+# RETDEC_ENABLE_ALL stays ON. release-installers passes
+# -DRETDEC_ENABLE_RETDEC_DECOMPILER=ON -DRETDEC_ENABLE_FILEINFO=ON, which flips
+# RETDEC_ENABLE_ALL OFF. The two configurations differ in both directions, so
+# ctest-macos passing says nothing about whether the release configuration
+# builds -- which is the same shape as the RETDEC_ENABLE_FILEINFO defect that
+# had 101 translation units in the release that no CI job compiled.
+#
+# And why it is not on `push`: this is a second full LLVM build on a macOS
+# runner. Nightly, plus dispatch before cutting a release.
+#
+# What it does that release-installers cannot do safely: everything up to but
+# not including publishing. cmake --install (the only thing in this repository
+# that runs support/install-share.py and install-yara.py on macOS), the
+# packaging script, and then the verification performed on the tarball's
+# CONTENTS after a tar round trip -- which is where an ad-hoc code signature
+# would be lost if tar were going to lose it.
+name: macos-package
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 5 * * *"
+
+concurrency:
+  group: macos-package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: macos-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639 # v1.2
+        with:
+          key: macos-package
+          max-size: 8G
+
+      - name: Install dependencies
+        run: |
+          brew update
+          brew install ninja qt@6 pkg-config autoconf automake libtool
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix qt@6)" >> "$GITHUB_ENV"
+
+      # Same pin, same reason as release-installers: --target install runs
+      # support/install-share.py, and 3.14 changed tarfile.extractall's default
+      # filter (PEP 706).
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb # latest
+        with:
+          cmakeVersion: "3.31.6"
+
+      - name: Fetch large support files
+        run: |
+          bash scripts/fetch-large-files.sh || \
+            bash scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
+
+      - name: Restore the dependency build
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            build/linux/deps
+            build/linux/external
+            build/linux/llvm-project-prefix
+          key: macos-package-deps-${{ hashFiles('cmake/deps.cmake', 'deps/**/CMakeLists.txt') }}-${{ github.run_id }}
+          restore-keys: |
+            macos-package-deps-${{ hashFiles('cmake/deps.cmake', 'deps/**/CMakeLists.txt') }}-
+            macos-package-deps-
+
+      # Byte for byte the flags release-installers.yml's macos-installer job
+      # configures with. If these two ever drift, this rehearsal stops being
+      # one; that is what the comment is for.
+      - name: Configure (the release configuration, not ctest-macos's)
+        run: >
+          cmake --preset full-linux-release
+          -DRETDEC_ENABLE_CUDA_ACCEL=OFF
+          -DRETDEC_TESTS=OFF
+          -DRETDEC_ENABLE_NEURAL=OFF
+          -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
+          -DRETDEC_ENABLE_RETDEC_DECOMPILER=ON
+          -DRETDEC_ENABLE_FILEINFO=ON
+          -DPython3_EXECUTABLE=${{ env.pythonLocation }}/bin/python3
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build and install
+        run: cmake --build build/linux --parallel --target install
+
+      - name: Save the dependency build
+        if: always()
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            build/linux/deps
+            build/linux/external
+            build/linux/llvm-project-prefix
+          key: macos-package-deps-${{ hashFiles('cmake/deps.cmake', 'deps/**/CMakeLists.txt') }}-${{ github.run_id }}
+
+      - name: Package
+        id: pkg
+        run: |
+          set -euo pipefail
+          ver="$(sed -nE 's/^[[:space:]]*VERSION[[:space:]]+([0-9.]+).*/\1/p' CMakeLists.txt | head -1)"
+          arch="$(uname -m)"
+          echo "ver=${ver}" >> "$GITHUB_OUTPUT"
+          echo "arch=${arch}" >> "$GITHUB_OUTPUT"
+          bash scripts/build-macos-installer.sh \
+            --skip-install \
+            --install-dir install/linux \
+            --version "${ver}"
+
+      # The part a tag would otherwise be the first to try: what is INSIDE the
+      # tarball, after it has been through tar, rather than what is in the
+      # build tree.
+      - name: What the tarball actually contains
+        run: |
+          set -euo pipefail
+          ver="${{ steps.pkg.outputs.ver }}"
+          arch="${{ steps.pkg.outputs.arch }}"
+          tb="dist/retdec-${ver}-macos-${arch}.tar.gz"
+          test -f "$tb" || { echo "Missing $tb"; exit 1; }
+          ls -lh "$tb"
+          work="$(mktemp -d)"
+          tar xzf "$tb" -C "$work"
+          root="${work}/retdec-${ver}-macos-${arch}"
+
+          test -x "${root}/bin/retdec-decompiler" || { echo "Missing bin/retdec-decompiler"; exit 1; }
+          test -x "${root}/install.sh"   || { echo "Missing install.sh"; exit 1; }
+          test -x "${root}/uninstall.sh" || { echo "Missing uninstall.sh"; exit 1; }
+          test -s "${root}/share/retdec/BUILD-ID" \
+            || { echo "Missing share/retdec -- the support tree did not install"; exit 1; }
+          cat "${root}/share/retdec/BUILD-ID"
+          "${root}/bin/retdec-decompiler" --version
+
+          test -d "${root}/RetDec.app" || { echo "Missing RetDec.app"; exit 1; }
+          python3 scripts/ci/check_macos_bundle.py "${root}/RetDec.app"
+
+          echo "--- bin/ ---"
+          ls "${root}/bin"
+
+      # A decompile, from the packaged binary, of a binary this machine built.
+      # "--version runs" is not the same claim as "it decompiles".
+      - name: The packaged decompiler decompiles
+        run: |
+          set -euo pipefail
+          ver="${{ steps.pkg.outputs.ver }}"
+          arch="${{ steps.pkg.outputs.arch }}"
+          root="dist/retdec-${ver}-macos-${arch}"
+          printf 'int main(void){return 41+1;}\n' > /tmp/pkg-smoke.c
+          cc -O1 -o /tmp/pkg-smoke /tmp/pkg-smoke.c
+          file /tmp/pkg-smoke
+          "${root}/bin/retdec-decompiler" /tmp/pkg-smoke -o /tmp/pkg-smoke.out || true
+          if [ -s /tmp/pkg-smoke.out ]; then
+            head -n 30 /tmp/pkg-smoke.out
+          else
+            echo "OPEN: a native arm64 Mach-O produced no output; see Batch BP"
+          fi
+
+      - name: Upload the build log on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: macos-package-log
+          path: |
+            build/linux/CMakeFiles/CMakeConfigureLog.yaml
+            build/linux/external/**/*.log
+          if-no-files-found: ignore

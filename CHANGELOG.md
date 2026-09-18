@@ -546,6 +546,23 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   which names it. It does **not** check that mirrors serve the same bytes: the
   `URL_HASH` beside them is what does that, and is why adding a mirror is safe.
 
+- **`macos-package`, a rehearsal for the macOS half of a release.** Everything
+  the release does up to but not including publishing: the *release*
+  configuration (not `ctest-macos`'s — the two build different trees, and
+  `RETDEC_ENABLE_ALL` flips between them), `cmake --build --target install`,
+  the packaging script, and then verification of what is **inside the tarball
+  after a tar round trip** rather than what is in the build tree.
+
+  That last part matters because `cmake --install` is the only thing in this
+  repository that runs `support/install-share.py` and `install-yara.py` on
+  macOS, and until now the first machine ever to do so would have been a tag.
+  It checks `share/retdec/BUILD-ID`, runs MAC-01 on the extracted `RetDec.app`,
+  and decompiles a binary with the packaged decompiler — because "`--version`
+  runs" is not the same claim as "it decompiles".
+
+  `workflow_dispatch` and nightly, not on every push: it is a second full LLVM
+  build on a macOS runner.
+
 - **The macOS release job would have overwritten the Linux install script.**
   A GitHub release asset is named after the **basename** of the path, not the
   path. `linux-installer` uploads `releases/linux/install.sh`, which lands as
