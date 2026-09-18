@@ -124,8 +124,19 @@ jobs:
       - name: Build the tests
         run: cmake --build build/linux --parallel
 
-      - name: Unit tests
-        run: ctest --test-dir build/linux -L unit --output-on-failure
+      # Not `-L unit`. That label selects six tests. The tree registers 46 with
+      # ctest and 31 of them carry no label at all, so the label filter
+      # ctest-linux and ctest-windows both use has been skipping thirty gtest
+      # suites -- 2,158 test cases -- that CI compiles and links on every run
+      # and then never executes. This job is the one that builds the whole
+      # tree, so it runs the whole registered set with no filter: nothing can
+      # fall through a selector that is not there. TESTSEL-01 keeps it that
+      # way.
+      #
+      # --timeout bounds a single hanging test to ten minutes rather than
+      # ctest's 1500-second default times however many tests are left.
+      - name: Every registered test
+        run: ctest --test-dir build/linux --output-on-failure --timeout 600
 
       - name: Save the CMake build
         if: always()

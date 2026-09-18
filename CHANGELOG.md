@@ -8,6 +8,29 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- `TESTSEL-01` (`scripts/ci/check_test_selection.py`): fails when a test this
+  tree registers with `add_test()` is selected by no `ctest` command line in
+  any workflow. Thirty were.
+
+  `tests/` registers 46 tests. Fifteen carry a `LABELS` property; thirty-one
+  carry none. Every `ctest` invocation in CI filtered on a label — `-L unit`,
+  which selects six, and `-L integration`, which selects six more — so thirty
+  gtest suites holding **2,158 test cases** were compiled, linked and cached by
+  the macOS job on every run and then never executed by anything. The Linux and
+  Windows jobs do not even build them.
+
+  This is the same shape as the `RETDEC_ENABLE_FILEINFO` defect found the same
+  week: a selector narrower than the thing it is reported as covering. A green
+  "Unit tests" step that runs 6 of 46 registered tests is nobody's lie; it is
+  one the label filter tells on everyone's behalf, every run, for free.
+
+  Half of it had even been written down — `standalone-check.yml` carried a
+  comment saying "every module suite under `tests/` is invisible to it" — and
+  left standing. Writing a defect down is not finding it twice.
+
+  `ctest-macos`, the one job that builds the whole tree, now runs `ctest` with
+  no `-L` at all. Falsified by putting `-L unit` back, which names all thirty.
+
 - `PORT-02` (`scripts/ci/check_alternative_tokens.py`): fails on `or`, `and`,
   `not` and the other alternative operator spellings. They are standard C++ and
   gcc and clang accept them; MSVC does not without `/permissive-`, and what it
@@ -435,6 +458,24 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   back to counting keywords in text. `GateReport::summary()` marks the fallback.
 
 ### Fixed
+
+- **A hung step on Windows was unbounded and unreadable.** The first
+  `ctest-windows` run that ever got past the link reached "GUI unit tests
+  (headless)", printed nothing, and sat there for 47 minutes; the step's
+  `timeout-minutes: 360` meant it would have sat there for six hours. The step
+  ran `retdec-gui-tests.exe` bare, so nothing bounded it — and because the job
+  never finished, there was no run log archive to read either, and the log tail
+  the API returns starts wherever the size cap falls, which for that job was
+  somewhere inside OpenSSL's compile.
+
+  A hang nobody can look at is worse than a failure. The step is bounded and
+  self-diagnosing now: the exe runs with its output redirected to a file and a
+  wall-clock limit, and whatever it wrote is printed whether it exits, times
+  out, or dies. `--gtest_list_tests` runs first under its own shorter bound,
+  because it loads every DLL and runs no test body — which separates the two
+  possibilities that look identical from outside: the binary cannot start at
+  all (a missing DLL on Windows raises a dialog box and blocks forever) versus
+  one test hanging. Both `ctest` steps gained `--timeout` for the same reason.
 
 - **The test fixtures could not find `stdio.h` on macOS.** `tests/decompiler`
   compiles `fib.c` and the corpus fixtures by invoking the C compiler directly

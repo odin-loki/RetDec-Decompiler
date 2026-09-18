@@ -126,8 +126,60 @@ jobs:
           Write-Host "Staged $($gui.Name), $($dec.Name), $($fi.Name) into $dest"
           Write-Host "Staged decompiler-config.json into $share"
 
+      # The first Windows run that ever got this far sat here for 47 minutes
+      # and printed nothing, and would have sat here for six hours: the step
+      # ran the exe bare, so nothing bounded it, and because the job never
+      # finished there was no log archive to read either. A hang that cannot
+      # be looked at is worse than a failure.
+      #
+      # So: the exe runs under a wall-clock bound with its output redirected to
+      # a file, and whatever it managed to write is printed whether it exits,
+      # times out, or dies. --gtest_list_tests first separates the two
+      # possibilities that look identical from outside -- the binary cannot
+      # start at all (a missing DLL puts up a dialog box on Windows and blocks
+      # forever) versus one test hanging -- because listing tests loads every
+      # DLL and runs no test body.
       - name: GUI unit tests (headless)
-        run: .\build\windows\tests\gui\retdec-gui-tests.exe
+        timeout-minutes: 25
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          $exe = Resolve-Path ".\build\windows\tests\gui\retdec-gui-tests.exe"
+          Write-Host "--- beside the exe ---"
+          Get-ChildItem (Split-Path $exe) -Name | Sort-Object
+
+          function Invoke-Bounded($label, $argList, $seconds) {
+            $out = Join-Path $env:RUNNER_TEMP "$label.out"
+            $err = Join-Path $env:RUNNER_TEMP "$label.err"
+            $p = Start-Process -FilePath $exe -ArgumentList $argList -PassThru `
+                   -NoNewWindow -RedirectStandardOutput $out -RedirectStandardError $err
+            $done = $p.WaitForExit($seconds * 1000)
+            # The no-argument overload after the timed one is what makes
+            # ExitCode and the redirected streams reliable.
+            if ($done) { $p.WaitForExit() }
+            if (-not $done) {
+              Write-Host "::error::$label did not finish in $seconds s -- killing it"
+              Stop-Process -Id $p.Id -Force
+              Start-Sleep -Seconds 2
+            }
+            Write-Host "--- $label stdout ---"
+            if (Test-Path $out) { Get-Content $out }
+            Write-Host "--- $label stderr ---"
+            if (Test-Path $err) { Get-Content $err }
+            if (-not $done) { return 124 }
+            return $p.ExitCode
+          }
+
+          # Loads every DLL the tests need and runs no test body. If THIS is
+          # what hangs or fails, the problem is starting the binary.
+          $rc = Invoke-Bounded "gtest-list" @("--gtest_list_tests") 180
+          if ($rc -ne 0) {
+            Write-Host "::error::retdec-gui-tests.exe cannot even list its tests (rc=$rc)"
+            exit 1
+          }
+
+          $rc = Invoke-Bounded "gtest-run" @("--gtest_color=no") 900
+          if ($rc -ne 0) { exit $rc }
 
       - name: Unit tests
         shell: pwsh
@@ -136,7 +188,7 @@ jobs:
           if (-not (Test-Path -LiteralPath $py)) { $py = "python" }
           # Same interpreter CMake/ctest use; --user can miss that prefix.
           & $py -m pip install pyyaml
-          ctest --test-dir build/windows -L unit --output-on-failure
+          ctest --test-dir build/windows -L unit --output-on-failure --timeout 600
 
       - name: Integration tests
-        run: ctest --test-dir build/windows --output-on-failure -L integration
+        run: ctest --test-dir build/windows --output-on-failure -L integration --timeout 600

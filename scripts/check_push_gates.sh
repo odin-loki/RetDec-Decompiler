@@ -66,6 +66,11 @@ CHECKS=(
 	# MSVC rejects with a syntax cascade naming neither the token nor the cause.
 	"ci-smoke  no alternative operator tokens:::${PY} scripts/ci/check_alternative_tokens.py"
 	"ci-smoke  alternative tokens (self-test):::${PY} scripts/ci/check_alternative_tokens.py --self-test"
+	# TESTSEL-01 reads the tree's add_test() names and every ctest command line
+	# in .github/workflows. It is text-only, so it runs here in under a second
+	# and catches a suite that is built and never executed.
+	"ci-smoke  every registered test is run:::${PY} scripts/ci/check_test_selection.py"
+	"ci-smoke  test selection (self-test):::${PY} scripts/ci/check_test_selection.py --self-test"
 	"ci-smoke  preset cache leaks (self-test):::${PY} scripts/ci/check_cmake_presets.py --self-test"
 	"ci-smoke  preset cache leaks:::${PY} scripts/ci/check_cmake_presets.py CMakePresets.json cmake/superbuild/CMakePresets.json"
 	"ci-smoke  unread build options (self-test):::${PY} scripts/ci/check_cmake_options.py --self-test"

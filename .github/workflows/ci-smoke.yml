@@ -98,6 +98,13 @@ jobs:
           python3 scripts/ci/check_alternative_tokens.py --self-test
           python3 scripts/ci/check_alternative_tokens.py
 
+      # A test that ctest knows about and no workflow selects is a test that
+      # gets compiled, linked, cached and never run. Thirty of them were.
+      - name: TESTSEL-01 every registered test is run by some workflow
+        run: |
+          python3 scripts/ci/check_test_selection.py --self-test
+          python3 scripts/ci/check_test_selection.py
+
       - name: Every declared build option is read by the build
         run: |
           python3 scripts/ci/check_cmake_options.py --self-test

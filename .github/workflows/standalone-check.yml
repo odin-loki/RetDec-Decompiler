@@ -114,6 +114,13 @@ jobs:
       # So `ctest -L unit` selects only the three tests/ directories that set
       # LABELS themselves (decompiler, managed_integration, neural). Every
       # module suite under tests/ is invisible to it.
+      #
+      # That was written down here and left standing. It is fixed now, on the
+      # one job that builds the whole tree: ctest-macos runs `ctest` with no
+      # -L, which is the whole registered set, and TESTSEL-01 in ci-smoke
+      # fails if any registered test goes back to being selected by nothing.
+      # ctest-linux and ctest-windows still name their build targets
+      # explicitly, so reason 1 above still holds for them.
       - name: L2H-01 llvmir2hll suite
         run: bash scripts/ci/check_llvmir2hll_tests.sh --jobs 4
 
