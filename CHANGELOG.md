@@ -43,11 +43,19 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   QtPdf and QtVirtualKeyboard in separate formulas.
 
   The cause is upstream of all of it: **Homebrew's Qt is not relocatable.** Its
-  frameworks carry absolute install names into `/opt/homebrew` and drag in
-  Homebrew's icu, glib, pcre2, brotli, zstd and openssl, and macdeployqt cannot
-  rewrite that. `ctest-macos` and the installer job take Qt from the official
-  archives now (`jurplel/install-qt-action`, the same action `ctest-windows`
-  already used), which are relocatable and carry only the modules asked for.
+  frameworks carry absolute install names into `/opt/homebrew`, and Homebrew
+  ships QtPdf and QtVirtualKeyboard in separate formulas, so its `qt@6` leaves
+  plugins in the bundle for modules that are not on the machine at all.
+
+  Taking Qt from the official archives instead was tried and does not build:
+  Qt 6.7.3's macOS archive puts `-framework AGL` on the link line of anything
+  that links `Qt6::Gui`, and Apple has removed AGL from the SDK —
+  `ld: framework 'AGL' not found`, on a clean configure. So Homebrew's Qt is
+  what macOS builds against, and MAC-01 is what makes the bundle shippable:
+  it rewrites an install name that points out of the bundle to its `@rpath`
+  form, and it deletes a **plugin** whose dependency resolves nowhere, because
+  a plugin that cannot load is not providing anything. It never deletes
+  anything under `MacOS/` or `Frameworks/`.
 
   `--fix` copies what is missing into `Contents/Frameworks`, rewrites the
   references to `@rpath`, adds the `LC_RPATH` that reaches there from wherever
@@ -529,6 +537,22 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   back to counting keywords in text. `GateReport::summary()` marks the fallback.
 
 ### Fixed
+
+- **One zlib URL, one outage, one red build.** `ctest-windows` failed with
+
+  ```
+  SHA256 hash of .../zlib-1.3.1.tar.gz does not match expected value
+    expected: '9a93b2b7…'
+      actual: 'e21df9a9…'
+  ```
+
+  three times over, from `zlib.net`. The hash check did exactly its job — it
+  refused whatever that was — and then the build had nowhere else to go,
+  because `ZLIB_URL` was one URL. It is a list now, tried in order: madler's
+  GitHub release asset first (byte-identical to zlib.net's tarball — same
+  SHA256, 1,512,791 bytes, verified — and CDN-served), then `zlib.net/fossils`.
+  The bare `https://www.zlib.net/zlib-1.3.1.tar.gz` is *not* in the list; it is
+  a 355-byte error page.
 
 - **A Windows file dialog nobody could close.** With the per-suite harness
   below, the hang named itself: 43 of 44 GUI test suites pass, and

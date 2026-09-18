@@ -48,27 +48,24 @@ jobs:
       # autoconf/automake/libtool are for YARA, which bootstraps with autotools:
       # its configure step runs ./bootstrap.sh, and the first run of this job
       # died on `autoreconf: command not found`. macOS runners ship neither.
+      #
+      # Qt is Homebrew's, and that was tried the other way round first. The
+      # official Qt 6.7.3 macOS archive -- the one ctest-windows uses, through
+      # jurplel/install-qt-action -- puts `-framework AGL` on the link line of
+      # anything that links Qt6::Gui, and Apple removed AGL from the macOS SDK:
+      #
+      #     ld: framework 'AGL' not found
+      #
+      # It is a clean configure and a dead link, so that route is closed until
+      # the pinned Qt version moves. Homebrew's Qt builds. What it costs is
+      # relocatability -- its frameworks carry absolute install names into
+      # /opt/homebrew -- and that is what MAC-01 exists to repair and verify,
+      # below.
       - name: Install dependencies
         run: |
           brew update
-          brew install ninja pkg-config autoconf automake libtool
-
-      # Qt comes from the official installer, not from Homebrew, and the
-      # difference is the whole of MAC-01. Homebrew's Qt frameworks carry
-      # absolute install names into /opt/homebrew and drag in Homebrew's own
-      # icu, glib, pcre2, brotli, zstd and openssl; macdeployqt cannot relocate
-      # that, so the bundle it produced named five libraries in someone else's
-      # prefix and three plugins whose modules -- QtPdf, QtVirtualKeyboard --
-      # Homebrew ships in separate formulas that were not installed at all.
-      # The official archives are relocatable and carry only what is asked for,
-      # which is the same reason ctest-windows uses this action.
-      - uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4
-        with:
-          version: "6.7.3"
-          host: mac
-          target: desktop
-          arch: clang_64
-          archives: qtbase qtsvg
+          brew install ninja qt@6 pkg-config autoconf automake libtool
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix qt@6)" >> "$GITHUB_ENV"
 
       - uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb # latest
         with:
@@ -88,10 +85,10 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: build/linux
-          key: ctest-macos-qt2-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}-${{ github.run_id }}
+          key: ctest-macos-qt3-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}-${{ github.run_id }}
           restore-keys: |
-            ctest-macos-qt2-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}-
-            ctest-macos-qt2-
+            ctest-macos-qt3-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}-
+            ctest-macos-qt3-
 
       # full-linux-release is the preset the documentation tells a macOS reader
       # to use, so it is the one measured. Interprocedural optimisation is off
@@ -182,7 +179,7 @@ jobs:
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: build/linux
-          key: ctest-macos-qt2-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}-${{ github.run_id }}
+          key: ctest-macos-qt3-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}-${{ github.run_id }}
 
       - name: Upload the build log on failure
         if: failure()

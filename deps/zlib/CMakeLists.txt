@@ -87,7 +87,10 @@ retdec_compiler_launcher_args(_ZLIB_LAUNCHER_ARGS)
 
 ExternalProject_Add(retdec-zlib
 	PREFIX "${_RETDEC_ZLIB_EP}"
-	URL "${ZLIB_URL}"
+	# Unquoted on purpose: ZLIB_URL is a ;-separated LIST of mirrors and
+	# ExternalProject tries each in turn. Quoting it would hand over one
+	# argument with a semicolon in it.
+	URL ${ZLIB_URL}
 	URL_HASH "SHA256=${ZLIB_ARCHIVE_SHA256}"
 	DOWNLOAD_NAME zlib-1.3.1.tar.gz
 	DOWNLOAD_EXTRACT_TIMESTAMP TRUE

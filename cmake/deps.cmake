@@ -58,9 +58,23 @@ set(YARAMOD_ARCHIVE_SHA256
 )
 
 # zlib (bundled for Linux/Unix -> Windows MinGW cross so LLVM can use LLVM_ENABLE_ZLIB=ON).
+#
+# A LIST, tried in order. One URL is one outage away from a red build: a
+# ctest-windows run failed with
+#
+#     SHA256 hash of .../zlib-1.3.1.tar.gz does not match expected value
+#       expected: '9a93b2b7...'
+#         actual: 'e21df9a9...'
+#
+# three times over, from zlib.net. The hash check did its job -- it refused
+# whatever that was -- and then the build had nowhere else to go. madler's
+# GitHub release asset is byte-identical to zlib.net's tarball (same SHA256,
+# 1,512,791 bytes, verified) and is served by a CDN, so it goes first.
+# The bare https://www.zlib.net/zlib-1.3.1.tar.gz is NOT a fallback: it is a
+# 355-byte error page.
 set(ZLIB_URL
-	"https://zlib.net/fossils/zlib-1.3.1.tar.gz"
-	CACHE STRING "URL of zlib tarball for bundled cross builds (fossils mirror; root zlib.net path may 404)."
+	"https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz;https://zlib.net/fossils/zlib-1.3.1.tar.gz"
+	CACHE STRING "URLs of the zlib tarball, tried in order (GitHub release asset, then zlib.net fossils)."
 )
 set(ZLIB_ARCHIVE_SHA256
 	"9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23"

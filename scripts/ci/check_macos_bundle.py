@@ -178,6 +178,27 @@ def inside(p: Path, bundle: Path) -> bool:
         return False
 
 
+def is_plugin(p: Path, bundle: Path) -> bool:
+    plugins = (bundle / "Contents" / "PlugIns").resolve()
+    try:
+        p.resolve().relative_to(plugins)
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def rpath_id_for(p: Path, bundle: Path) -> str:
+    """The @rpath install name a file inside the bundle should carry.
+
+    For a framework that is @rpath/Foo.framework/Versions/A/Foo, keeping the
+    version layout: a bare @rpath/Foo would not match what anything links."""
+    parts = p.resolve().parts
+    for i, part in enumerate(parts):
+        if part.endswith(".framework"):
+            return "@rpath/" + "/".join(parts[i:])
+    return f"@rpath/{p.name}"
+
+
 def rpath_to_frameworks(holder: Path, bundle: Path) -> str:
     """An @loader_path rpath that reaches Contents/Frameworks from holder."""
     fw = (bundle / "Contents" / "Frameworks").resolve()
@@ -192,6 +213,8 @@ class Report:
         self.unresolved: list[tuple[str, str]] = []
         self.foreign: list[tuple[str, str]] = []
         self.frameworks: list[tuple[str, str]] = []
+        self.stale_ids: list[str] = []
+        self.pruned: list[str] = []
 
 
 def walk(bundle: Path, fix: bool) -> Report:
@@ -211,6 +234,25 @@ def walk(bundle: Path, fix: bool) -> Report:
             own_id = install_name_of(f)
         except subprocess.CalledProcessError:
             continue
+
+        # An install name that points out of the bundle is not a load and does
+        # not break dyld -- what a binary loads is decided by the DEPENDENT's
+        # load command, not by the id. macdeployqt still normally rewrites it,
+        # and four of Homebrew's Qt frameworks come through with
+        # /opt/homebrew/... ids. Leaving them is a trap for whoever links
+        # against the bundled framework next, so --fix rewrites them; without
+        # --fix they are listed and do not fail the check.
+        if own_id is not None and not own_id.startswith("@") and \
+                not own_id.startswith(SYSTEM_PREFIXES) and \
+                not inside(Path(own_id), bundle):
+            rel = str(f.relative_to(bundle))
+            rep.stale_ids.append(f"{rel}  (id {own_id})")
+            if fix:
+                # Not run(): a read-only file in the bundle should report as a
+                # stale id on the second walk, not as a traceback.
+                subprocess.run(
+                    ["install_name_tool", "-id", rpath_id_for(f, bundle), str(f)],
+                    capture_output=True, text=True)
 
         for dep in deps:
             if dep.startswith(SYSTEM_PREFIXES):
@@ -237,6 +279,23 @@ def walk(bundle: Path, fix: bool) -> Report:
                         add_rpath(f, rpath_to_frameworks(f, bundle))
                         rep.rewritten.append(f"{f.name}: rpath -> Frameworks for {name}")
                     continue
+                # A PLUGIN whose dependency is nowhere cannot load, so it is
+                # not providing anything -- it is a file macdeployqt copied in
+                # for a Qt module this build does not have. Homebrew ships
+                # QtPdf and QtVirtualKeyboard in separate formulas, so its
+                # qt@6 leaves libqpdf.dylib and libqtvirtualkeyboardplugin.dylib
+                # in the bundle naming modules that are not on the machine.
+                # Deleting one is safe by construction; deleting anything
+                # under MacOS/ or Frameworks/ would not be, and is not done.
+                if fix and is_plugin(f, bundle):
+                    rel = f.relative_to(bundle)
+                    try:
+                        f.unlink()
+                    except OSError as exc:
+                        rep.unresolved.append((str(rel), f"{dep} (and: {exc})"))
+                        continue
+                    rep.pruned.append(f"{rel}  (needs {dep})")
+                    break
                 rep.unresolved.append((str(f.relative_to(bundle)), dep))
                 continue
 
@@ -347,6 +406,14 @@ Load command 21
     assert expand("/usr/lib/libz.1.dylib", holder, bundle, []) == \
         [Path("/usr/lib/libz.1.dylib")]
 
+    # An id rewritten for a framework keeps the version layout; a plain dylib
+    # gets its basename.
+    assert rpath_id_for(bundle / "Contents" / "Frameworks" / "QtDBus.framework" /
+                        "Versions" / "A" / "QtDBus", bundle) == \
+        "@rpath/QtDBus.framework/Versions/A/QtDBus"
+    assert rpath_id_for(bundle / "Contents" / "Frameworks" / "libbrotlicommon.1.dylib",
+                        bundle) == "@rpath/libbrotlicommon.1.dylib"
+
     # The rpath written into a plugin has to climb out to Contents/Frameworks.
     assert rpath_to_frameworks(holder, bundle) == "@loader_path/../../Frameworks"
     assert rpath_to_frameworks(bundle / "Contents" / "MacOS" / "retdec-gui",
@@ -386,11 +453,26 @@ def main() -> int:
             print(f"  copied  {n}")
         for n in rep.rewritten:
             print(f"  rewrote {n}")
+        for n in rep.stale_ids:
+            print(f"  id      {n}")
+        for n in rep.pruned:
+            print(f"  pruned  {n}")
         resign(bundle)
         # Look again with fresh eyes: the repair has to have actually worked.
         rep = walk(bundle, fix=False)
 
+    # stdout is block-buffered when it is a pipe and stderr is not, so without
+    # this the failures below print BEFORE the repair that preceded them and
+    # the log reads as if the fix had not run.
+    sys.stdout.flush()
+
     ok = True
+    if rep.stale_ids:
+        # Not a failure: see the comment at the rewrite. Worth printing.
+        print(f"MAC-01: note {len(rep.stale_ids)} install name(s) still point "
+              f"outside the bundle")
+        for n in rep.stale_ids:
+            print(f"  {n}")
     if rep.unresolved:
         ok = False
         print(f"MAC-01: FAIL {len(rep.unresolved)} load command(s) resolve to "
