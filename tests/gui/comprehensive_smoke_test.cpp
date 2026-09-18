@@ -73,6 +73,8 @@
 #include <memory>
 #include <random>
 
+#include <cstdio>
+
 using namespace retdec::gui;
 
 namespace {
@@ -282,10 +284,21 @@ TEST_F(ComprehensiveSmokeTest, EveryMenuActionTriggersWithoutCrash)
 	// Skip Quit (would terminate the test process).
 	QSet<QString> skip{QStringLiteral("&Quit"), QStringLiteral("Quit")};
 
-	ModalCloser closer(60, 20);
+	// The closer has to outlive the loop. At 60 iterations of 20 ms it covered
+	// 1.2 seconds; the loop is at least 15 ms per action and any action that
+	// opens a dialog costs more, so with forty-odd menu entries the closer
+	// stopped somewhere in the middle and every modal after that point blocked
+	// forever. Size it to the work.
+	ModalCloser closer(actions.size() * 20 + 200, 20);
 	for (QAction* a: actions)
 	{
 		if (skip.contains(a->text())) continue;
+		// stderr, unbuffered, before the trigger: if an action blocks anyway,
+		// the last line in the log is the one that did it. stdout would not
+		// survive -- the CRT buffers a redirected stream and the harness kills
+		// the process.
+		std::fprintf(stderr, "[menu] %s\n", a->text().toUtf8().constData());
+		std::fflush(stderr);
 		a->trigger();
 		pump(15);
 	}

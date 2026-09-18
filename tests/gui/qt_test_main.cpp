@@ -16,6 +16,7 @@
 #include "retdec/gui/launch_options.h"
 
 #include <QApplication>
+#include <QCoreApplication>
 #include <QByteArray>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -85,7 +86,17 @@ int main(int argc, char** argv) {
     enableCrtDebugHeap();
     sandboxQSettings();
 
-    static retdec::gui::ParsedLaunchOptions gLaunch;
+	// Qt's static QFileDialog::getOpenFileName / getSaveFileName use the
+	// PLATFORM's file dialog when the platform theme offers one. On Windows
+	// that is a native Win32 dialog, which is not a QWidget -- so
+	// QApplication::activeModalWidget() returns nullptr, the test harness's
+	// ModalCloser cannot find anything to close, and the first menu action
+	// that opens a file dialog blocks the process forever. That is what hung
+	// ctest-windows for 47 minutes at ComprehensiveSmokeTest.
+	// Qt's own widget dialogs are closeable; ask for those.
+	QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+
+	static retdec::gui::ParsedLaunchOptions gLaunch;
     gLaunch = retdec::gui::parseLaunchOptions(argc, argv);
     retdec_gui_test_argc = gLaunch.argc;
     retdec_gui_test_argv = gLaunch.argvPtrs.data();

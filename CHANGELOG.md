@@ -530,6 +530,30 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- **A Windows file dialog nobody could close.** With the per-suite harness
+  below, the hang named itself: 43 of 44 GUI test suites pass, and
+  `ComprehensiveSmokeTest` stops at `EveryMenuActionTriggersWithoutCrash`.
+
+  Qt's static `QFileDialog::getOpenFileName` / `getSaveFileName` use the
+  *platform's* file dialog when the platform theme offers one. On Windows that
+  is a native Win32 dialog, which is not a `QWidget` — so
+  `QApplication::activeModalWidget()` returns `nullptr`, the test harness's
+  `ModalCloser` finds nothing to close, and the first menu action that opens a
+  file dialog blocks the process forever. `mainwindow.cpp` calls those static
+  functions in fourteen places. `qt_test_main.cpp` sets
+  `Qt::AA_DontUseNativeDialogs` now, which is Qt's own widget dialog and is
+  closeable.
+
+  `ModalCloser` was also sized wrong for the job: 60 iterations of 20 ms is
+  1.2 seconds, and the loop is at least 15 ms per action over forty-odd menu
+  entries. It stopped somewhere in the middle, and every modal after that point
+  blocked whatever the platform. It is sized to the work now.
+
+  And the loop writes each action's name to **stderr**, flushed, before
+  triggering it. stdout would not survive: the CRT buffers a redirected stream
+  and the harness kills the process, so the one line that matters is the one
+  that gets thrown away.
+
 - **A hung step on Windows was unbounded and unreadable.** The first
   `ctest-windows` run that ever got past the link reached "GUI unit tests
   (headless)", printed nothing, and sat there for 47 minutes; the step's
