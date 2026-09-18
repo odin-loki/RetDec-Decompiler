@@ -11905,9 +11905,23 @@ cases that look identical from outside: the binary not starting at all (a
 missing DLL on Windows raises a dialog box and blocks forever) versus one test
 hanging. Both `ctest` steps take `--timeout` for the same reason.
 
-**Not yet diagnosed.** Why it hung is still unknown; the run that would say was
-cancelled to free the runner. The next `ctest-windows` run either gets past it
-or reports which of the two it is, in the log, on its own.
+**Half diagnosed on the next run.** `--gtest_list_tests` printed all two
+hundred-odd tests, so the binary starts, loads its DLLs, and what hangs is a
+test body — not the missing-DLL case.
+
+*Which* body is not something a single bounded run can say. gtest writes to
+stdout, the Windows CRT fully buffers a redirected stream, and killing the
+process discards that buffer, so the `[ RUN ] Name` line naming the hung test
+is exactly what does not survive. The step runs one process per test suite
+now, which does not depend on buffering: the suite that times out is the one
+that timed out. It prints a per-suite table with times either way, so the
+answer is in the log whether or not anything hangs.
+
+That first bounded version also reported `rc=` followed by the entire list of
+tests, which is the PowerShell form of the same mistake this batch is about:
+`Get-Content` inside a function writes to the *output* stream, so the function
+returned the file's contents rather than the exit code. Everything the child
+writes goes out through `Write-Host` now.
 
 ### Also fixed here
 

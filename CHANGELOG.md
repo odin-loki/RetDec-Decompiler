@@ -518,13 +518,25 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   somewhere inside OpenSSL's compile.
 
   A hang nobody can look at is worse than a failure. The step is bounded and
-  self-diagnosing now: the exe runs with its output redirected to a file and a
-  wall-clock limit, and whatever it wrote is printed whether it exits, times
-  out, or dies. `--gtest_list_tests` runs first under its own shorter bound,
-  because it loads every DLL and runs no test body — which separates the two
-  possibilities that look identical from outside: the binary cannot start at
-  all (a missing DLL on Windows raises a dialog box and blocks forever) versus
-  one test hanging. Both `ctest` steps gained `--timeout` for the same reason.
+  self-diagnosing now, and it answered the first question on the next run:
+  `--gtest_list_tests` printed all two hundred-odd tests, so the binary starts,
+  loads its DLLs, and what hangs is a test body — not the "missing DLL raises a
+  dialog box and blocks forever" case that looks identical from outside.
+
+  *Which* test body cannot be read off a single bounded run. gtest writes to
+  stdout, the Windows CRT fully buffers a redirected stream, and killing the
+  process throws that buffer away — so the `[ RUN ] Name` line that names the
+  hung test is precisely what does not survive. The step runs one process per
+  test suite instead, which does not depend on buffering at all: the suite that
+  times out is the one that timed out, and the log carries a per-suite table
+  with times. Both `ctest` steps gained `--timeout` for the same reason.
+
+  The first version of the step also had a bug worth keeping in view, because
+  it is the PowerShell version of the same mistake: `Get-Content` inside a
+  function writes to the *output* stream, so the function returned the file's
+  contents instead of the exit code, and the step reported
+  `rc=` followed by the entire list of tests. Everything the child process
+  writes goes out through `Write-Host` now.
 
 - **The test fixtures could not find `stdio.h` on macOS.** `tests/decompiler`
   compiles `fib.c` and the corpus fixtures by invoking the C compiler directly

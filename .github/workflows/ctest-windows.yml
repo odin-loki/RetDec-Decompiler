@@ -126,60 +126,100 @@ jobs:
           Write-Host "Staged $($gui.Name), $($dec.Name), $($fi.Name) into $dest"
           Write-Host "Staged decompiler-config.json into $share"
 
-      # The first Windows run that ever got this far sat here for 47 minutes
-      # and printed nothing, and would have sat here for six hours: the step
-      # ran the exe bare, so nothing bounded it, and because the job never
-      # finished there was no log archive to read either. A hang that cannot
-      # be looked at is worse than a failure.
+      # The first Windows run that ever got this far sat at this step for 47
+      # minutes printing nothing, and with timeout-minutes: 360 on the job it
+      # would have sat there for six hours. Worse: a job that has not finished
+      # has no log archive, so the only readable thing was the tail the API
+      # returns, and that tail starts wherever the size cap falls -- for that
+      # job, somewhere inside OpenSSL's compile.
       #
-      # So: the exe runs under a wall-clock bound with its output redirected to
-      # a file, and whatever it managed to write is printed whether it exits,
-      # times out, or dies. --gtest_list_tests first separates the two
-      # possibilities that look identical from outside -- the binary cannot
-      # start at all (a missing DLL puts up a dialog box on Windows and blocks
-      # forever) versus one test hanging -- because listing tests loads every
-      # DLL and runs no test body.
+      # The bounded version answered the first question immediately:
+      # --gtest_list_tests printed all 200-odd tests, so the binary starts, it
+      # loads its DLLs, and what hangs is a test body.
+      #
+      # Which one cannot be read off a single bounded run. gtest writes to
+      # stdout, the CRT fully buffers a redirected stream, and killing the
+      # process throws that buffer away -- so the "[ RUN ] Name" line naming
+      # the hung test is exactly what does not survive. Running one process per
+      # test suite does not depend on buffering at all: the suite that times
+      # out is the one that timed out.
       - name: GUI unit tests (headless)
-        timeout-minutes: 25
+        timeout-minutes: 30
         shell: pwsh
         run: |
           $ErrorActionPreference = "Continue"
-          $exe = Resolve-Path ".\build\windows\tests\gui\retdec-gui-tests.exe"
+          $exe = (Resolve-Path ".\build\windows\tests\gui\retdec-gui-tests.exe").Path
           Write-Host "--- beside the exe ---"
-          Get-ChildItem (Split-Path $exe) -Name | Sort-Object
+          Get-ChildItem (Split-Path $exe) -Name | Sort-Object | Out-Host
 
-          function Invoke-Bounded($label, $argList, $seconds) {
-            $out = Join-Path $env:RUNNER_TEMP "$label.out"
-            $err = Join-Path $env:RUNNER_TEMP "$label.err"
-            $p = Start-Process -FilePath $exe -ArgumentList $argList -PassThru `
-                   -NoNewWindow -RedirectStandardOutput $out -RedirectStandardError $err
-            $done = $p.WaitForExit($seconds * 1000)
+          # Everything the child wrote goes out through Write-Host. Piping
+          # Get-Content into the output stream instead makes it part of this
+          # function's RETURN VALUE, which is how the first version of this
+          # step reported "rc=" followed by the entire list of tests.
+          function Invoke-Bounded {
+            param([string]$Label, [string[]]$ArgList, [int]$Seconds, [string]$OutFile)
+            $err = Join-Path $env:RUNNER_TEMP "$Label.err"
+            $p = Start-Process -FilePath $exe -ArgumentList $ArgList -PassThru `
+                   -NoNewWindow -RedirectStandardOutput $OutFile -RedirectStandardError $err
+            $done = $p.WaitForExit($Seconds * 1000)
             # The no-argument overload after the timed one is what makes
             # ExitCode and the redirected streams reliable.
-            if ($done) { $p.WaitForExit() }
-            if (-not $done) {
-              Write-Host "::error::$label did not finish in $seconds s -- killing it"
+            if ($done) {
+              $p.WaitForExit()
+            } else {
+              Write-Host "::error::$Label did not finish in $Seconds s -- killing it"
               Stop-Process -Id $p.Id -Force
               Start-Sleep -Seconds 2
             }
-            Write-Host "--- $label stdout ---"
-            if (Test-Path $out) { Get-Content $out }
-            Write-Host "--- $label stderr ---"
-            if (Test-Path $err) { Get-Content $err }
+            if (Test-Path $err) { Get-Content $err | ForEach-Object { Write-Host $_ } }
             if (-not $done) { return 124 }
-            return $p.ExitCode
+            return [int]$p.ExitCode
           }
 
-          # Loads every DLL the tests need and runs no test body. If THIS is
-          # what hangs or fails, the problem is starting the binary.
-          $rc = Invoke-Bounded "gtest-list" @("--gtest_list_tests") 180
+          # Loads every DLL and runs no test body: if this fails, the problem
+          # is starting the binary, not any test in it.
+          $list = Join-Path $env:RUNNER_TEMP "gtest-list.out"
+          $rc = Invoke-Bounded "gtest-list" @("--gtest_list_tests") 180 $list
           if ($rc -ne 0) {
-            Write-Host "::error::retdec-gui-tests.exe cannot even list its tests (rc=$rc)"
+            Write-Host "::error::retdec-gui-tests.exe cannot list its tests (rc=$rc)"
+            if (Test-Path $list) { Get-Content $list | ForEach-Object { Write-Host $_ } }
             exit 1
           }
 
-          $rc = Invoke-Bounded "gtest-run" @("--gtest_color=no") 900
-          if ($rc -ne 0) { exit $rc }
+          $suites = @()
+          foreach ($line in (Get-Content $list)) {
+            if ($line -match '^(\S+)\.\s*$') { $suites += $Matches[1] }
+          }
+          if ($suites.Count -eq 0) {
+            Write-Host "::error::--gtest_list_tests named no test suite"
+            Get-Content $list | ForEach-Object { Write-Host $_ }
+            exit 1
+          }
+          Write-Host "--- $($suites.Count) test suite(s), one process each ---"
+
+          $hung = @()
+          $failed = @()
+          foreach ($s in $suites) {
+            $safe = $s -replace '[^A-Za-z0-9_]', '_'
+            $o = Join-Path $env:RUNNER_TEMP "suite-$safe.out"
+            $sw = [System.Diagnostics.Stopwatch]::StartNew()
+            $rc = Invoke-Bounded "suite-$safe" @("--gtest_color=no", "--gtest_filter=$s.*") 120 $o
+            $sw.Stop()
+            $secs = [math]::Round($sw.Elapsed.TotalSeconds, 1)
+            if ($rc -eq 0) {
+              Write-Host ("  {0,-48} ok   {1,7}s" -f $s, $secs)
+            } else {
+              $what = if ($rc -eq 124) { "HUNG" } else { "FAIL" }
+              Write-Host ("  {0,-48} {1} {2,7}s  rc={3}" -f $s, $what, $secs, $rc)
+              if ($rc -eq 124) { $hung += $s } else { $failed += $s }
+              if (Test-Path $o) { Get-Content $o | ForEach-Object { Write-Host $_ } }
+            }
+          }
+
+          if ($hung.Count -gt 0) { Write-Host "::error::hung: $($hung -join ', ')" }
+          if ($failed.Count -gt 0) { Write-Host "::error::failed: $($failed -join ', ')" }
+          if ($hung.Count -gt 0 -or $failed.Count -gt 0) { exit 1 }
+          Write-Host "all $($suites.Count) GUI test suite(s) passed"
 
       - name: Unit tests
         shell: pwsh
