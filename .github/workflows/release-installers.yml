@@ -476,3 +476,192 @@ jobs:
           files: dist/retdec-${{ needs.release.outputs.version }}-x86_64.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # macOS had no release job at all until now: release-installers built Windows
+  # and Linux, README and docs/BUILD_REFERENCE.md advertised the full-linux-*
+  # presets as "Linux/WSL/macOS", and nothing in this repository had ever
+  # compiled the tree on a Mac. ctest-macos is the build; this is the package.
+  #
+  # It mirrors linux-installer step for step, with the three things that are
+  # different about macOS handled in scripts/build-macos-installer.sh and
+  # scripts/ci/check_macos_bundle.py rather than here: the GUI is an .app
+  # bundle, its Qt libraries need bringing in off the build machine, and
+  # Gatekeeper quarantines anything a browser downloaded.
+  macos-installer:
+    needs: release
+    runs-on: macos-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Detect prebuilt macOS tarball
+        id: prebuilt
+        run: |
+          ver="${{ needs.release.outputs.version }}"
+          arch="$(uname -m)"
+          tb="dist/retdec-${ver}-macos-${arch}.tar.gz"
+          if [ -f "$tb" ]; then
+            echo "has=true" >> "$GITHUB_OUTPUT"
+            echo "Found prebuilt macOS tarball in dist/ — skipping rebuild"
+          fi
+          echo "arch=${arch}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify prebuilt macOS tarball
+        if: steps.prebuilt.outputs.has == 'true' || (github.event_name == 'workflow_dispatch' && inputs.skip_build)
+        run: |
+          ver="${{ needs.release.outputs.version }}"
+          tb="dist/retdec-${ver}-macos-${{ steps.prebuilt.outputs.arch }}.tar.gz"
+          test -f "$tb" || { echo "Missing $tb"; exit 1; }
+
+      # autoconf/automake/libtool are for YARA, which bootstraps with autotools
+      # and is not on a macOS runner by default.
+      - name: Install dependencies
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        run: |
+          brew update --quiet || true
+          brew install ninja qt@6 pkg-config autoconf automake libtool || true
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix qt@6)" >> "$GITHUB_ENV"
+
+      - uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb # latest
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        with:
+          cmakeVersion: "3.31.6"
+
+      - name: ccache
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639 # v1.2
+        with:
+          key: installer-macos
+          max-size: 8G
+
+      - name: Restore macOS dep cache
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            build/linux/deps
+            build/linux/external
+            build/linux/llvm-project-prefix
+          key: installer-macos-deps-${{ hashFiles('cmake/deps.cmake', 'deps/**/CMakeLists.txt') }}-${{ github.run_id }}
+          restore-keys: |
+            installer-macos-deps-${{ hashFiles('cmake/deps.cmake', 'deps/**/CMakeLists.txt') }}-
+            installer-macos-deps-
+
+      - name: Fetch large support files
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        run: |
+          bash scripts/fetch-large-files.sh || \
+            bash scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
+
+      # The same option set linux-installer configures with. RETDEC_ENABLE_FILEINFO
+      # is the one that matters: it is OFF by default, the release turns it ON,
+      # and that is 101 translation units no ctest job compiled until PIN-01
+      # started refusing a database configured without it.
+      - name: Configure (full-linux-release, CPU-only)
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        run: >
+          cmake --preset full-linux-release
+          -DRETDEC_ENABLE_CUDA_ACCEL=OFF
+          -DRETDEC_TESTS=OFF
+          -DRETDEC_ENABLE_NEURAL=OFF
+          -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
+          -DRETDEC_ENABLE_RETDEC_DECOMPILER=ON
+          -DRETDEC_ENABLE_FILEINFO=ON
+
+      - name: Build and package macOS tarball
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        id: macos_pkg
+        run: |
+          set -euo pipefail
+          {
+            df -h
+            cmake --build build/linux --parallel --target install
+            bash scripts/build-macos-installer.sh \
+              --skip-install \
+              --install-dir install/linux \
+              --version "${{ needs.release.outputs.version }}"
+          } 2>&1 | tee build-macos.log
+
+      - name: Annotate macOS build failure
+        if: failure() && steps.macos_pkg.outcome == 'failure'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("build-macos.log")
+          if not p.exists():
+              print("::error::macOS installer failed and build-macos.log is missing")
+              raise SystemExit(0)
+          raw = p.read_text(errors="replace").splitlines()
+          keys = ("FAILED", "error:", "CMake Error", "cannot find", "fatal",
+                  "No space", "ninja: build stopped", "MAC-01: FAIL")
+          hits = [ln for ln in raw if any(k in ln for k in keys)]
+          lines = (hits[-20:] + raw[-30:]) if hits else raw[-50:]
+          text = "%0A".join(x.replace("%", "%25") for x in lines)
+          print(f"::error::macOS installer build failed%0A{text}")
+          PY
+
+      - name: Upload macOS build log
+        if: failure() && steps.macos_pkg.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: macos-installer-build-log
+          path: build-macos.log
+          if-no-files-found: ignore
+
+      - name: Save macOS dep cache
+        if: always() && steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            build/linux/deps
+            build/linux/external
+            build/linux/llvm-project-prefix
+          key: installer-macos-deps-${{ hashFiles('cmake/deps.cmake', 'deps/**/CMakeLists.txt') }}-${{ github.run_id }}
+
+      # What is in the tarball, rather than that a tarball exists. The CLI has
+      # to run on this machine, the install scripts have to be there, and if a
+      # GUI bundle was packaged its signature has to verify after the round
+      # trip through tar -- which is where extended attributes get lost.
+      - name: Verify macOS release artifacts
+        run: |
+          set -euo pipefail
+          ver="${{ needs.release.outputs.version }}"
+          arch="${{ steps.prebuilt.outputs.arch }}"
+          tb="dist/retdec-${ver}-macos-${arch}.tar.gz"
+          test -f "$tb" || { echo "Missing $tb"; exit 1; }
+          work="$(mktemp -d)"
+          tar xzf "$tb" -C "$work"
+          root="${work}/retdec-${ver}-macos-${arch}"
+          test -x "${root}/bin/retdec-decompiler" || { echo "Missing bin/retdec-decompiler"; exit 1; }
+          test -x "${root}/install.sh" || { echo "Missing install.sh"; exit 1; }
+          test -x "${root}/uninstall.sh" || { echo "Missing uninstall.sh"; exit 1; }
+          "${root}/bin/retdec-decompiler" --version
+          if [ -d "${root}/RetDec.app" ]; then
+            python3 scripts/ci/check_macos_bundle.py "${root}/RetDec.app"
+          else
+            echo "::warning::the macOS package has no GUI bundle"
+          fi
+          test -f releases/macos/install.sh || { echo "Missing releases/macos/install.sh"; exit 1; }
+          test -f releases/macos/uninstall.sh || { echo "Missing releases/macos/uninstall.sh"; exit 1; }
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign macOS tarball
+        run: |
+          ver="${{ needs.release.outputs.version }}"
+          arch="${{ steps.prebuilt.outputs.arch }}"
+          cosign sign-blob --yes \
+            --bundle "dist/retdec-${ver}-macos-${arch}.tar.gz.sigstore.json" \
+            "dist/retdec-${ver}-macos-${arch}.tar.gz"
+
+      - name: Upload macOS release assets
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ needs.release.outputs.tag }}
+          files: |
+            dist/retdec-${{ needs.release.outputs.version }}-macos-${{ steps.prebuilt.outputs.arch }}.tar.gz
+            dist/retdec-${{ needs.release.outputs.version }}-macos-${{ steps.prebuilt.outputs.arch }}.tar.gz.sigstore.json
+            releases/macos/install.sh
+            releases/macos/uninstall.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -71,6 +71,11 @@ CHECKS=(
 	# and catches a suite that is built and never executed.
 	"ci-smoke  every registered test is run:::${PY} scripts/ci/check_test_selection.py"
 	"ci-smoke  test selection (self-test):::${PY} scripts/ci/check_test_selection.py --self-test"
+	# MAC-01 needs otool/install_name_tool/codesign, so only its parsers can
+	# run here. The bundle itself is checked by ctest-macos and again by
+	# release-installers, on the staged copy and on what comes back out of
+	# the tarball.
+	"ctest-macos  GUI bundle checker (self-test):::${PY} scripts/ci/check_macos_bundle.py --self-test"
 	"ci-smoke  preset cache leaks (self-test):::${PY} scripts/ci/check_cmake_presets.py --self-test"
 	"ci-smoke  preset cache leaks:::${PY} scripts/ci/check_cmake_presets.py CMakePresets.json cmake/superbuild/CMakePresets.json"
 	"ci-smoke  unread build options (self-test):::${PY} scripts/ci/check_cmake_options.py --self-test"

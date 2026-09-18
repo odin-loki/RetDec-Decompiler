@@ -247,9 +247,18 @@ endif()
 if(APPLE)
     find_program(MACDEPLOYQT_EXECUTABLE macdeployqt HINTS "${Qt6_DIR}/../../../bin")
     if(MACDEPLOYQT_EXECUTABLE)
+        # No -dmg. macdeployqt's -dmg calls `hdiutil create`, which refuses to
+        # overwrite; POST_BUILD runs on every relink, so the second build of a
+        # tree reports
+        #
+        #     ERROR: Bundle creation error: "hdiutil: create failed - File exists"
+        #
+        # on a build that is otherwise fine. A disk image is a packaging step,
+        # not a build step: scripts/build-macos-installer.sh --dmg makes one,
+        # after removing a stale one.
         add_custom_command(TARGET retdec-gui POST_BUILD
             COMMAND "${MACDEPLOYQT_EXECUTABLE}"
-                "$<TARGET_BUNDLE_DIR:retdec-gui>" -dmg
+                "$<TARGET_BUNDLE_DIR:retdec-gui>"
             COMMENT "Running macdeployqt for retdec-gui"
         )
     endif()

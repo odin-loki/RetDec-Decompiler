@@ -124,6 +124,21 @@ jobs:
       - name: Build the tests
         run: cmake --build build/linux --parallel
 
+      # The bundle the macOS installer job ships. macdeployqt leaves some of
+      # its libraries pointing into this machine's Homebrew prefix -- libwebp,
+      # libsharpyuv and libbrotlicommon, which Qt's image-format plugins pull
+      # in -- and then reports "code object is not signed at all". An app whose
+      # libraries live on the build machine opens nowhere else, so this is a
+      # step and not a note. --fix brings them in and re-signs; the check then
+      # looks again and fails if anything still points out of the bundle or the
+      # signature does not verify.
+      - name: MAC-01 the GUI bundle resolves inside itself and verifies
+        run: |
+          python3 scripts/ci/check_macos_bundle.py --self-test
+          APP="$(find build/linux -maxdepth 4 -name 'retdec-gui.app' -type d | head -n1)"
+          test -n "$APP" || { echo "no retdec-gui.app was built"; exit 1; }
+          python3 scripts/ci/check_macos_bundle.py --fix "$APP"
+
       # Not `-L unit`. That label selects six tests. The tree registers 46 with
       # ctest and 31 of them carry no label at all, so the label filter
       # ctest-linux and ctest-windows both use has been skipping thirty gtest

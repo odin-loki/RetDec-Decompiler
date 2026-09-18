@@ -8,6 +8,55 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- **A macOS release.** `release-installers.yml` built Windows and Linux;
+  macOS had no job at all, while `README.md` and `docs/BUILD_REFERENCE.md`
+  described the `full-linux-*` presets as "Linux/WSL/macOS". `ctest-macos`
+  (added earlier in this section) is the build; `macos-installer` is the
+  package, mirroring `linux-installer` step for step.
+
+  `scripts/build-macos-installer.sh` stages `dist/retdec-<ver>-macos-<arch>.tar.gz`
+  with `bin/`, `lib/`, `share/`, `RetDec.app`, and generated `install.sh` /
+  `uninstall.sh` (also committed to `releases/macos/`). Three things are
+  different from Linux and each is a way a macOS package fails on a machine
+  that is not the one that built it: the GUI is an `.app` bundle rather than a
+  file in `bin/`; its Qt libraries are deployed by macdeployqt, which leaves
+  some of them pointing into the build machine's Homebrew prefix; and
+  Gatekeeper refuses to open anything a browser downloaded that is not
+  notarised, so `install.sh` strips `com.apple.quarantine` from what it
+  installs and says so.
+
+- `MAC-01` (`scripts/ci/check_macos_bundle.py`): walks every Mach-O load
+  command in `retdec-gui.app`, and fails when one points outside the bundle or
+  the signature does not verify.
+
+  It was failing. Every macOS build reported `no file at
+  "/opt/homebrew/opt/webp/lib/libwebp.7.dylib"` and two more like it, then
+  `retdec-gui.app: code object is not signed at all`, and did not fail the
+  build. That was recorded and left, on the grounds that nothing depended on
+  the bundle — which stopped being true the moment there was an installer job
+  to ship it.
+
+  `--fix` copies what is missing into `Contents/Frameworks`, rewrites the
+  references to `@rpath`, adds the `LC_RPATH` that reaches there from wherever
+  the referring file sits, re-signs innermost-first, and then **looks again**:
+  the repair has to hold under a fresh walk and under
+  `codesign --verify --deep --strict`. It runs in `ctest-macos` on the build
+  tree, in the installer on the staged copy, and once more on the copy
+  extracted back out of the tarball — because extended attributes are exactly
+  what a tar round trip loses.
+
+  Its `--self-test` drives the `otool -L`, `otool -l` and `@rpath` /
+  `@loader_path` / `@executable_path` resolution against recorded tool output,
+  so the part that is easy to get wrong is tested on any platform.
+
+- `macdeployqt` no longer runs with `-dmg` as a `POST_BUILD` step.
+  `hdiutil create` refuses to overwrite, and `POST_BUILD` runs on every
+  relink, so the second build of a macOS tree reported
+  `ERROR: Bundle creation error: "hdiutil: create failed - File exists"` on a
+  build that was otherwise fine. A disk image is a packaging step;
+  `scripts/build-macos-installer.sh --dmg` makes one, after removing a stale
+  one.
+
 - `TESTSEL-01` (`scripts/ci/check_test_selection.py`): fails when a test this
   tree registers with `add_test()` is selected by no `ctest` command line in
   any workflow. Thirty were.
