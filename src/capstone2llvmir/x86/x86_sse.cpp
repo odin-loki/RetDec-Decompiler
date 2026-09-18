@@ -194,14 +194,14 @@ void Capstone2LlvmIrTranslatorX86_impl::translateMovShDup(
     unsigned lane0 = isHigh ? 1 : 0;
     unsigned lane1 = isHigh ? 3 : 2;
 
-    // Build shuffle: [lane0, lane0, lane1, lane1]
-    std::vector<int> mask = {
-        static_cast<uint32_t>(lane0),
-        static_cast<uint32_t>(lane0),
-        static_cast<uint32_t>(lane1),
-        static_cast<uint32_t>(lane1)
-    };
-    Value* shuf = irb.CreateShuffleVector(v, v, mask);
+	// Build shuffle: [lane0, lane0, lane1, lane1]
+	// int, not uint32_t: this is a std::vector<int> and a braced initialiser
+	// does not narrow. gcc and clang warn; MSVC rejects it outright with
+	// "error C2398: conversion from 'uint32_t' to 'T' requires a narrowing
+	// conversion", which is what the first Windows build to get this far said.
+	std::vector<int> mask = {
+		static_cast<int>(lane0), static_cast<int>(lane0), static_cast<int>(lane1), static_cast<int>(lane1)};
+	Value* shuf = irb.CreateShuffleVector(v, v, mask);
     storeOp(xi->operands[0], asXmm(shuf, irb), irb, eOpConv::NOTHING);
 }
 
@@ -444,13 +444,12 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSsePshufd(
     auto* vec4i = vecType(irb.getInt32Ty(), 4);
     Value* v = irb.CreateBitCast(src, vec4i);
 
-    std::vector<int> mask = {
-        static_cast<uint32_t>((ctrl >> 0) & 3),
-        static_cast<uint32_t>((ctrl >> 2) & 3),
-        static_cast<uint32_t>((ctrl >> 4) & 3),
-        static_cast<uint32_t>((ctrl >> 6) & 3)
-    };
-    Value* shuffled = irb.CreateShuffleVector(v, v, mask);
+	std::vector<int> mask = {
+		static_cast<int>((ctrl >> 0) & 3),
+		static_cast<int>((ctrl >> 2) & 3),
+		static_cast<int>((ctrl >> 4) & 3),
+		static_cast<int>((ctrl >> 6) & 3)};
+	Value* shuffled = irb.CreateShuffleVector(v, v, mask);
     storeOp(xi->operands[0], irb.CreateBitCast(shuffled, irb.getInt128Ty()),
             irb, eOpConv::NOTHING);
 }

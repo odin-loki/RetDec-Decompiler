@@ -62,6 +62,10 @@ CHECKS=(
 	# accident.
 	"ci-smoke  no bare Unix library names:::${PY} scripts/ci/check_portable_link_names.py"
 	"ci-smoke  bare Unix lib names (self-test):::${PY} scripts/ci/check_portable_link_names.py --self-test"
+	# PORT-02 is the same shape: standard C++ that gcc and clang accept and
+	# MSVC rejects with a syntax cascade naming neither the token nor the cause.
+	"ci-smoke  no alternative operator tokens:::${PY} scripts/ci/check_alternative_tokens.py"
+	"ci-smoke  alternative tokens (self-test):::${PY} scripts/ci/check_alternative_tokens.py --self-test"
 	"ci-smoke  preset cache leaks (self-test):::${PY} scripts/ci/check_cmake_presets.py --self-test"
 	"ci-smoke  preset cache leaks:::${PY} scripts/ci/check_cmake_presets.py CMakePresets.json cmake/superbuild/CMakePresets.json"
 	"ci-smoke  unread build options (self-test):::${PY} scripts/ci/check_cmake_options.py --self-test"

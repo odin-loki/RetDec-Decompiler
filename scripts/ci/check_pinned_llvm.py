@@ -271,6 +271,11 @@ def load_jobs(db_path, subs, rebase=None):
             argv.append(parts[i])
             i += 1
         argv.insert(1, "-fsyntax-only")
+        # A braced initialiser that narrows is a warning to gcc and clang and a
+        # hard error to MSVC ("error C2398: ... requires a narrowing
+        # conversion"). One in src/capstone2llvmir/x86/x86_sse.cpp cost a
+        # 35-minute Windows round. Promoting it here turns that into seconds.
+        argv.insert(2, "-Werror=narrowing")
         # Every path in the command is absolute and the -o is gone, so the
         # working directory only has to exist. A rebased database names one
         # inside a build tree this checkout does not have.

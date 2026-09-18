@@ -93,6 +93,11 @@ jobs:
           python3 scripts/ci/check_portable_link_names.py --self-test
           python3 scripts/ci/check_portable_link_names.py
 
+      - name: PORT-02 no C++ source uses an alternative operator token
+        run: |
+          python3 scripts/ci/check_alternative_tokens.py --self-test
+          python3 scripts/ci/check_alternative_tokens.py
+
       - name: Every declared build option is read by the build
         run: |
           python3 scripts/ci/check_cmake_options.py --self-test

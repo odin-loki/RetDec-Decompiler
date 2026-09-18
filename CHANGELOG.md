@@ -8,6 +8,17 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- `PORT-02` (`scripts/ci/check_alternative_tokens.py`): fails on `or`, `and`,
+  `not` and the other alternative operator spellings. They are standard C++ and
+  gcc and clang accept them; MSVC does not without `/permissive-`, and what it
+  reports instead is a syntax cascade naming neither the token nor the cause.
+  One `or` in `src/capstone2llvmir/x86/x86.cpp` did exactly that.
+
+  It blanks raw strings before searching, which is not incidental: the
+  `bin2llvmir` and `llvmir2hll` tests hold LLVM IR in `R"(...)"` literals and
+  LLVM IR spells its instructions `and`, `or` and `xor`. A checker without that
+  reports seventy of those and one real defect.
+
 - `PORT-01` (`scripts/ci/check_portable_link_names.py`): fails when a
   `target_link_libraries` names a bare Unix library — `z`, `dl`, `rt`,
   `pthread` and the rest — outside a block that states the platform. It runs on
@@ -424,6 +435,17 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   back to counting keywords in text. `GateReport::summary()` marks the fallback.
 
 ### Fixed
+
+- **Two more Windows-only build failures, once zlib stopped hiding them.**
+  `src/capstone2llvmir/x86/x86.cpp` used the alternative operator token `or`,
+  which MSVC rejects, and `src/capstone2llvmir/x86/x86_sse.cpp` initialised a
+  `std::vector<int>` from `static_cast<uint32_t>` expressions in two places —
+  a narrowing conversion, which gcc and clang warn about and MSVC rejects with
+  `error C2398`. Both are `||` and `int` now.
+
+  `PIN-01` compiles with `-Werror=narrowing` from here, which is how the second
+  pair of narrowing sites in that file was found — before Windows could spend
+  another 35-minute round reporting them one build at a time.
 
 - **Windows could not build at all.** `retdec-jvm-parser` and
   `retdec-dex-parser` inflate JAR and APK entries and linked the bare Unix

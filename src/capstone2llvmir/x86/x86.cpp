@@ -6477,7 +6477,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFist(cs_insn* i, cs_x86* xi, ll
 	// one of those poison.
 	storeOp(xi->operands[0], generateFpToSiDefined(top, t, irb), irb);
 
-	if (i->id == X86_INS_FISTP or i->id == X86_INS_FISTTP) // pop
+	if (i->id == X86_INS_FISTP || i->id == X86_INS_FISTTP) // pop
 	{
 		x87IncTop(irb, topNum);
 	}
