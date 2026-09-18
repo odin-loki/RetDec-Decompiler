@@ -519,8 +519,19 @@ jobs:
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
         run: |
           brew update --quiet || true
-          brew install ninja qt@6 pkg-config autoconf automake libtool || true
-          echo "CMAKE_PREFIX_PATH=$(brew --prefix qt@6)" >> "$GITHUB_ENV"
+          brew install ninja pkg-config autoconf automake libtool || true
+
+      # Not Homebrew's Qt. See the comment in ctest-macos.yml: Homebrew's
+      # frameworks carry absolute install names into /opt/homebrew, which is a
+      # bundle that opens on the build machine and nowhere else.
+      - uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        with:
+          version: "6.7.3"
+          host: mac
+          target: desktop
+          arch: clang_64
+          archives: qtbase qtsvg
 
       - uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb # latest
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)

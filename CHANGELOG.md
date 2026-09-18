@@ -36,6 +36,19 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   the bundle — which stopped being true the moment there was an installer job
   to ship it.
 
+  What it found on its first run was worse than the three errors macdeployqt
+  printed: five load commands into `/opt/homebrew` and three plugins —
+  `libqpdf`, `libqtvirtualkeyboardplugin` — naming Qt modules that were not in
+  the bundle and not installed on the machine either, because Homebrew ships
+  QtPdf and QtVirtualKeyboard in separate formulas.
+
+  The cause is upstream of all of it: **Homebrew's Qt is not relocatable.** Its
+  frameworks carry absolute install names into `/opt/homebrew` and drag in
+  Homebrew's icu, glib, pcre2, brotli, zstd and openssl, and macdeployqt cannot
+  rewrite that. `ctest-macos` and the installer job take Qt from the official
+  archives now (`jurplel/install-qt-action`, the same action `ctest-windows`
+  already used), which are relocatable and carry only the modules asked for.
+
   `--fix` copies what is missing into `Contents/Frameworks`, rewrites the
   references to `@rpath`, adds the `LC_RPATH` that reaches there from wherever
   the referring file sits, re-signs innermost-first, and then **looks again**:
@@ -45,9 +58,18 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   extracted back out of the tarball — because extended attributes are exactly
   what a tar round trip loses.
 
-  Its `--self-test` drives the `otool -L`, `otool -l` and `@rpath` /
-  `@loader_path` / `@executable_path` resolution against recorded tool output,
-  so the part that is easy to get wrong is tested on any platform.
+  Its `--self-test` drives the `otool -L`, `otool -D`, `otool -l` and
+  `@rpath` / `@loader_path` / `@executable_path` resolution against recorded
+  tool output, so the part that is easy to get wrong is tested on any platform.
+
+  Two of its own defects were found by running it, and both are in the
+  self-test now. `otool -L` prints a dylib's **own** install name as its first
+  line, so a framework already inside the bundle read as depending on the
+  Homebrew copy of itself — and the repair then copied that Homebrew copy in
+  beside it. And a framework is a directory with a version layout, a Resources
+  tree and an `Info.plist`: flattening one to `Contents/Frameworks/<name>`
+  makes a file that loads and a bundle that does not verify. A framework
+  outside the bundle is reported now, with what it means, and not touched.
 
 - `macdeployqt` no longer runs with `-dmg` as a `POST_BUILD` step.
   `hdiutil create` refuses to overwrite, and `POST_BUILD` runs on every

@@ -51,8 +51,24 @@ jobs:
       - name: Install dependencies
         run: |
           brew update
-          brew install ninja qt@6 pkg-config autoconf automake libtool
-          echo "CMAKE_PREFIX_PATH=$(brew --prefix qt@6)" >> "$GITHUB_ENV"
+          brew install ninja pkg-config autoconf automake libtool
+
+      # Qt comes from the official installer, not from Homebrew, and the
+      # difference is the whole of MAC-01. Homebrew's Qt frameworks carry
+      # absolute install names into /opt/homebrew and drag in Homebrew's own
+      # icu, glib, pcre2, brotli, zstd and openssl; macdeployqt cannot relocate
+      # that, so the bundle it produced named five libraries in someone else's
+      # prefix and three plugins whose modules -- QtPdf, QtVirtualKeyboard --
+      # Homebrew ships in separate formulas that were not installed at all.
+      # The official archives are relocatable and carry only what is asked for,
+      # which is the same reason ctest-windows uses this action.
+      - uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4
+        with:
+          version: "6.7.3"
+          host: mac
+          target: desktop
+          arch: clang_64
+          archives: qtbase qtsvg
 
       - uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb # latest
         with:
@@ -72,10 +88,10 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: build/linux
-          key: ctest-macos-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}-${{ github.run_id }}
+          key: ctest-macos-qt2-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}-${{ github.run_id }}
           restore-keys: |
-            ctest-macos-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}-
-            ctest-macos-
+            ctest-macos-qt2-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}-
+            ctest-macos-qt2-
 
       # full-linux-release is the preset the documentation tells a macOS reader
       # to use, so it is the one measured. Interprocedural optimisation is off
@@ -166,7 +182,7 @@ jobs:
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: build/linux
-          key: ctest-macos-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}-${{ github.run_id }}
+          key: ctest-macos-qt2-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}-${{ github.run_id }}
 
       - name: Upload the build log on failure
         if: failure()

@@ -74,6 +74,21 @@ def run(cmd: list[str]) -> str:
 OTOOL_DEP_RE = re.compile(r"^\s+(\S+)\s+\(compatibility version")
 
 
+def parse_otool_D(out: str) -> str | None:
+    """The LC_ID_DYLIB install name from `otool -D`, or None for a program.
+
+    This matters: `otool -L` prints a dylib's OWN install name as its first
+    line, so without it the id reads as a dependency on itself. Homebrew's Qt
+    frameworks have an absolute id into /opt/homebrew, and that is how the
+    first version of this check "found" a foreign dependency in a framework it
+    had already copied into the bundle -- and then copied the Homebrew one in
+    beside it under a flat name."""
+    lines = [l for l in out.splitlines() if l.strip()]
+    # First line is the file that was asked about; a second line, if any, is
+    # the install name.
+    return lines[1].strip() if len(lines) > 1 else None
+
+
 def parse_otool_L(out: str, is_dylib_id_first: bool = True) -> list[str]:
     """Dependencies from `otool -L`. The id line of a dylib is not one."""
     lines = [l for l in out.splitlines() if OTOOL_DEP_RE.match(l)]
@@ -144,6 +159,13 @@ def deps_of(p: Path) -> list[str]:
     return parse_otool_L(run(["otool", "-L", str(p)]))
 
 
+def install_name_of(p: Path) -> str | None:
+    try:
+        return parse_otool_D(run(["otool", "-D", str(p)]))
+    except subprocess.CalledProcessError:
+        return None
+
+
 def rpaths_of(p: Path) -> list[str]:
     return parse_otool_rpaths(run(["otool", "-l", str(p)]))
 
@@ -169,6 +191,7 @@ class Report:
         self.rewritten: list[str] = []
         self.unresolved: list[tuple[str, str]] = []
         self.foreign: list[tuple[str, str]] = []
+        self.frameworks: list[tuple[str, str]] = []
 
 
 def walk(bundle: Path, fix: bool) -> Report:
@@ -185,16 +208,16 @@ def walk(bundle: Path, fix: bool) -> Report:
         try:
             deps = deps_of(f)
             rpaths = rpaths_of(f)
+            own_id = install_name_of(f)
         except subprocess.CalledProcessError:
             continue
 
-        own_id = f.name
         for dep in deps:
             if dep.startswith(SYSTEM_PREFIXES):
                 continue
-            # A dylib's own LC_ID_DYLIB comes back from otool -L too.
-            if dep.endswith("/" + own_id) and dep.startswith("@rpath/") and \
-                    (fw / own_id).exists() and (fw / own_id).samefile(f):
+            # A dylib's own LC_ID_DYLIB is the first thing otool -L prints. It
+            # is not a dependency.
+            if own_id is not None and dep == own_id:
                 continue
 
             candidates = expand(dep, f, bundle, rpaths)
@@ -215,6 +238,16 @@ def walk(bundle: Path, fix: bool) -> Report:
                         rep.rewritten.append(f"{f.name}: rpath -> Frameworks for {name}")
                     continue
                 rep.unresolved.append((str(f.relative_to(bundle)), dep))
+                continue
+
+            # A framework is a directory with a version layout, a Resources
+            # tree and an Info.plist, and relocating one is macdeployqt's job.
+            # Flattening it to Contents/Frameworks/<name> produces a file that
+            # loads and a bundle that does not verify, so this reports and does
+            # not touch it. In practice one here means the Qt in use is not
+            # relocatable -- Homebrew's is not.
+            if ".framework/" in dep or ".framework/" in str(resolved):
+                rep.frameworks.append((str(f.relative_to(bundle)), dep))
                 continue
 
             # Resolved, but outside the bundle: a Homebrew prefix, an Xcode
@@ -287,6 +320,14 @@ Load command 21
 """
     assert parse_otool_rpaths(otool_l) == [
         "@executable_path/../Frameworks", "/opt/homebrew/lib"], parse_otool_rpaths(otool_l)
+
+    otool_D_dylib = """/opt/homebrew/lib/QtDBus.framework/Versions/A/QtDBus:
+/opt/homebrew/opt/qtbase/lib/QtDBus.framework/Versions/A/QtDBus
+"""
+    assert parse_otool_D(otool_D_dylib) == \
+        "/opt/homebrew/opt/qtbase/lib/QtDBus.framework/Versions/A/QtDBus"
+    # A program has no LC_ID_DYLIB, so otool -D prints only the header.
+    assert parse_otool_D("retdec-gui.app/Contents/MacOS/retdec-gui:\n") is None
 
     bundle = Path("/tmp/x/retdec-gui.app")
     holder = bundle / "Contents" / "PlugIns" / "imageformats" / "libqwebp.dylib"
@@ -362,6 +403,21 @@ def main() -> int:
               f"the bundle", file=sys.stderr)
         for who, dep in rep.foreign:
             print(f"  {who}  ->  {dep}", file=sys.stderr)
+    if rep.frameworks:
+        ok = False
+        print(f"MAC-01: FAIL {len(rep.frameworks)} load command(s) name a "
+              f"framework outside the bundle", file=sys.stderr)
+        for who, dep in rep.frameworks:
+            print(f"  {who}  ->  {dep}", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("  Relocating a framework is macdeployqt's job and this does not "
+              "do it by hand.", file=sys.stderr)
+        print("  A framework here means the Qt that built this is not "
+              "relocatable: Homebrew's", file=sys.stderr)
+        print("  qt@6 carries absolute install names into /opt/homebrew. Build "
+              "against the", file=sys.stderr)
+        print("  official Qt archives instead (jurplel/install-qt-action).",
+              file=sys.stderr)
 
     signed, detail = verify(bundle)
     if not signed:
