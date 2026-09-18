@@ -11708,3 +11708,78 @@ Darwin and the runner is arm64, which nothing here has targeted either.
   now would be exactly the unbacked claim the register exists to prevent.
 - The version is still 2.0.21 with the whole of this branch under
   `[Unreleased]`.
+
+---
+
+## Batch BP — macOS builds the decompiler; Windows links it (2026-09-18)
+
+Both platforms went from "never compiled" and "broken since August" to
+building the tree, in five rounds each. What each round found, in order, and
+what it cost:
+
+### Windows
+
+| round | how far | what stopped it |
+|---|---|---|
+| 1 | 10 s | `jvm_jar_reader.cpp(26): Cannot open include file: 'zlib.h'` |
+| 2 | 4 min | `LNK1104: cannot open file 'zlibstatic.lib'` — zlib installs `zlibstaticd.lib` in Debug |
+| 3 | 35 min, 7,000 lines | `error C2065: 'or'`, and `error C2398` narrowing in `x86_sse.cpp` |
+| 4 | 1107 of 1157 targets | `LNK2019: __imp_RtlGetLastNtStatus` — `deps/llvm` has no native-Windows branch |
+
+Round 2's diagnosis was **wrong** and is withdrawn in the tree: it concluded
+the ExternalProject was never scheduled, from a log tail whose window began
+after the ExternalProject had already run. The run's own log archive — one zip,
+one file per step — showed it plainly. That is the instrument for CI logs from
+here; the API's `tail_lines` starts wherever the size cap falls.
+
+### macOS
+
+| round | how far | what stopped it |
+|---|---|---|
+| 1 | configure ✓, deps ✓ (35 min) | `./bootstrap.sh: autoreconf: command not found` — YARA wants autotools |
+| 2 | YARA ✓ | the same narrowing, which **clang rejects outright** (`-Wc++11-narrowing` is an error, not a warning) |
+| 3 | **decompiler built** | the smoke decompile |
+
+The configure succeeded on the first attempt with the preset the documentation
+advertises, and the dependency build — LLVM 23.1.0 from source on arm64 — had
+no failures at all. Those were the two large unknowns.
+
+### Open: a native arm64 Mach-O decompiles to nothing
+
+The macOS-built decompiler runs. Given a Mach-O arm64 binary produced by the
+runner's own `cc`, it reports
+
+```
+Running phase: Unpacking ( 0.02s )
+Running phase: Initialization ( 0.03s )
+Running phase: Post-pipeline analysis ( 0.03s )
+```
+
+and writes an empty output file. The decoding phases never run.
+
+`src/fileformat/file_format/macho/macho_format.cpp` does know the type —
+`case MachO::CPU_TYPE_ARM64: return Architecture::ARM;` — and the fat-binary
+preference list includes `CPU_TYPE_ARM64`. Whether the input is rejected
+earlier, or decoded as 32-bit ARM and yields nothing, is **not established
+here**, and the mapping of ARM64 onto `Architecture::ARM` is worth reading in
+its own right.
+
+This is not a macOS build defect and it does not block a macOS build. It is a
+question about Mach-O arm64 input on any host, and no `ARCH-01` case covers
+Mach-O at all — the corpus is ELF.
+
+`ctest-macos` no longer fails on it. The job asserts that the binary it built
+links and runs, attempts the Mach-O anyway with `continue-on-error`, and prints
+the outcome on every run so the answer stays in the log. The functional measure
+for the job is the unit test suite.
+
+### Still open
+
+- The macOS unit tests have not run yet. The build reached them for the first
+  time in round 3.
+- No macOS installer job exists in `release-installers.yml`.
+- `docs/CLAIMS.md` still gains no macOS row. It gets one when `ctest-macos`
+  passes, not before.
+- libc++ deprecates `char_traits<T>` for `T` outside the standard five, and
+  `include/retdec/utils/string.h:28` instantiates `std::basic_string<WideCharType>`.
+  A warning today; libc++ says it will be removed.
