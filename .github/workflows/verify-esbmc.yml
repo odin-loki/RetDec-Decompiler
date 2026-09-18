@@ -96,7 +96,7 @@ jobs:
       # proofs are.
       - name: Cache the ESBMC release build
         id: esbmc-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.local/esbmc
           key: esbmc-${{ env.ESBMC_TAG }}
@@ -147,7 +147,7 @@ jobs:
 
       - name: Cache the ESBMC release build
         id: esbmc-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.local/esbmc
           key: esbmc-${{ env.ESBMC_TAG }}
