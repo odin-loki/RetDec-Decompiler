@@ -567,33 +567,16 @@ void OrderedAllVisitor::visit(ShPtr<UnknownType> type) {
 *
 * If @a stmt has already been accessed, this function does nothing. If @a stmt
 * is the null pointer, it also does nothing. Before visiting @a stmt, this
-* function adds it to @c accessedStmts. Successors are walked iteratively so
-* a long straight-line function cannot overflow the stack.
+* function adds it to @c accessedStmts.
 */
 void OrderedAllVisitor::visitStmt(ShPtr<Statement> stmt, bool visitSuccessors,
 		bool visitNestedStmts) {
-	// Walk the successor chain iteratively. Recursing visit() -> visitStmt()
-	// for each successor overflows the default 1 MB Windows stack on a long
-	// straight-line function (ctest-windows decompiler_smoke_cli_fib ended
-	// STATUS_BREAKPOINT after ~250 AssignStmt frames). visit() methods still
-	// call visitStmt(successor) when the member flag is set; clear that flag
-	// around accept() so the base implementations do not recurse.
-	const bool savedVisitSuccessors = this->visitSuccessors;
-	const bool savedVisitNestedStmts = this->visitNestedStmts;
-	this->visitNestedStmts = visitNestedStmts;
-
-	while (stmt && !hasItem(accessedStmts, stmt)) {
+	if (stmt && !hasItem(accessedStmts, stmt)) {
+		this->visitSuccessors = visitSuccessors;
+		this->visitNestedStmts = visitNestedStmts;
 		accessedStmts.insert(stmt);
-		this->visitSuccessors = false;
 		stmt->accept(this);
-		if (!visitSuccessors) {
-			break;
-		}
-		stmt = stmt->getSuccessor();
 	}
-
-	this->visitSuccessors = savedVisitSuccessors;
-	this->visitNestedStmts = savedVisitNestedStmts;
 }
 
 /**

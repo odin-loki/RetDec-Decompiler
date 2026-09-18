@@ -51,9 +51,16 @@ if(MSVC)
 	)
 	# Increase the stack size of the created binaries on MS Windows because the
 	# default value is too small. The default Linux value is 8388608 (8 MB).
+	# OrderedAllVisitor::visitStmt is recursive on purpose: subclasses such as
+	# GotoTargetAnalysis override it and must see every successor. A Debug
+	# MSVC frame is large enough that a long straight-line function overflows
+	# 1 MB and even 16 MB; Ninja also dropped the old LINK_FLAGS /STACK.
+	# 64 MB matches what ctest-windows needs for fib, and target_link_options
+	# is what the Ninja generator actually puts on the link line.
 	set_property(TARGET retdec-decompiler
-		APPEND_STRING PROPERTY LINK_FLAGS " /STACK:16777216"
+		APPEND_STRING PROPERTY LINK_FLAGS " /STACK:67108864"
 	)
+	target_link_options(retdec-decompiler PRIVATE "/STACK:67108864")
 	# Allow the 32b version of bin2llvmir on Windows handle addresses larger
 	# than 2 GB (up to 4 GB).
 	#
