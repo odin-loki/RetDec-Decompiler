@@ -60,6 +60,20 @@ add_test(NAME retdec_cli_unit
 set_tests_properties(retdec_cli_unit PROPERTIES
     TIMEOUT 60 LABELS "decompiler;unit;scripts")
 
+# The fixtures below invoke the C compiler directly rather than through a
+# CMake target, which on macOS means invoking the one inside Xcode.app with
+# none of the flags CMake would normally add. Without a sysroot it cannot find
+# the SDK at all:
+#
+#     fib.c:1:10: fatal error: 'stdio.h' file not found
+#
+# CMAKE_OSX_SYSROOT is the SDK CMake picked for the rest of the build, so the
+# fixtures use the same one.
+set(_FIXTURE_SYSROOT "")
+if(APPLE AND CMAKE_OSX_SYSROOT)
+    set(_FIXTURE_SYSROOT -isysroot "${CMAKE_OSX_SYSROOT}")
+endif()
+
 # ── Build fib.c test binary at configure/build time ───────────────────────────
 set(_FIB_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../test_binaries/fib.c")
 set(_FIB_BIN "${CMAKE_CURRENT_BINARY_DIR}/fib_smoke${CMAKE_EXECUTABLE_SUFFIX}")
@@ -83,7 +97,7 @@ if(MSVC)
 else()
     add_custom_command(
         OUTPUT "${_FIB_BIN}"
-        COMMAND ${CMAKE_C_COMPILER} -O1 -o "${_FIB_BIN}" "${_FIB_SRC}"
+        COMMAND ${CMAKE_C_COMPILER} ${_FIXTURE_SYSROOT} -O1 -o "${_FIB_BIN}" "${_FIB_SRC}"
         DEPENDS "${_FIB_SRC}"
         COMMENT "Building fib_smoke test binary"
         VERBATIM
@@ -114,7 +128,7 @@ foreach(_name IN LISTS _CORPUS_NATIVE_SOURCES)
     else()
         add_custom_command(
             OUTPUT "${_bin}"
-            COMMAND ${CMAKE_C_COMPILER} -O0 -fno-inline -fno-builtin -o "${_bin}" "${_src}"
+            COMMAND ${CMAKE_C_COMPILER} ${_FIXTURE_SYSROOT} -O0 -fno-inline -fno-builtin -o "${_bin}" "${_src}"
             DEPENDS "${_src}"
             COMMENT "Building corpus fixture ${_name}"
             VERBATIM

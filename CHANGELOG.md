@@ -436,6 +436,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- **The test fixtures could not find `stdio.h` on macOS.** `tests/decompiler`
+  compiles `fib.c` and the corpus fixtures by invoking the C compiler directly
+  rather than through a CMake target. On macOS that is the compiler inside
+  `Xcode.app`, which without a sysroot finds no SDK at all —
+  `fib.c:1:10: fatal error: 'stdio.h' file not found`. They pass
+  `CMAKE_OSX_SYSROOT`, the SDK CMake chose for the rest of the build, now.
+
 - **`fileinfo` did not compile against the pinned LLVM, and nothing was
   looking.** `RETDEC_ENABLE_FILEINFO` is OFF by default and no workflow turns
   it on; `release-installers.yml` does. So the release ships 101 translation

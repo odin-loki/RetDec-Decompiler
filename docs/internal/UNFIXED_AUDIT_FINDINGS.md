@@ -11773,6 +11773,25 @@ links and runs, attempts the Mach-O anyway with `continue-on-error`, and prints
 the outcome on every run so the answer stays in the log. The functional measure
 for the job is the unit test suite.
 
+### Open: the macOS GUI bundle is not deployable
+
+`retdec-gui.app` is assembled and signed during the macOS build, and the
+deploy step reports, without failing the build:
+
+```
+ERROR: Cannot resolve rpath "@rpath/libwebp.7.dylib"
+ERROR: Cannot resolve rpath "@rpath/libsharpyuv.0.dylib"
+ERROR: Cannot resolve rpath "@rpath/libbrotlicommon.1.dylib"
+ERROR: codesign verification error:
+ERROR: "...retdec-gui.app: invalid signature (code or signature have been modified)"
+```
+
+Three of Qt's transitive dylibs are not found inside the bundle and the
+signature does not verify afterwards. Nothing depends on it yet, because there
+is no macOS installer job, and nothing will until there is one — which is
+exactly when a bundle that does not verify stops being cosmetic. Not
+investigated here.
+
 ### Still open
 
 - The macOS unit tests have not run yet. The build reached them for the first
