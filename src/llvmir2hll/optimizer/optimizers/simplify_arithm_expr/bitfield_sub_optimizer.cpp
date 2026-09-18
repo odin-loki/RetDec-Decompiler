@@ -67,7 +67,7 @@ static unsigned exprBitWidth(ShPtr<Expression> expr) {
 /// Return the value of @a ci as a uint64_t, or 0 on failure.
 static uint64_t constVal(ShPtr<ConstInt> ci) {
 	if (!ci) return 0;
-	const llvm::APInt &v = ci->getValue();
+	const llvm::APInt& v = ci->getValue();
 	if (v.getActiveBits() > 64) return 0;
 	return v.getZExtValue();
 }

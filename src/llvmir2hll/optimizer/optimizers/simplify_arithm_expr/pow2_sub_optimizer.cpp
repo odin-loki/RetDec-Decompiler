@@ -51,7 +51,7 @@ bool isPow2(ShPtr<ConstInt> ci, unsigned& log2out) {
 	// Stay in APInt. getZExtValue() asserts once the constant has more than
 	// 64 active bits; ctest-windows Debug decompiler_smoke_cli_fib died
 	// STATUS_BREAKPOINT (0x80000003) here on an i128 power of two.
-	const llvm::APInt &v = ci->getValue();
+	const llvm::APInt& v = ci->getValue();
 	if (!v.isPowerOf2()) return false;
 	log2out = v.logBase2();
 	return true;
