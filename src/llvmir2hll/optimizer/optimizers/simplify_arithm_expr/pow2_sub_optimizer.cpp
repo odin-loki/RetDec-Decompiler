@@ -47,14 +47,14 @@ std::string Pow2SubOptimizer::getId() const {
 namespace {
 
 bool isPow2(ShPtr<ConstInt> ci, unsigned& log2out) {
-    if (!ci || !ci->isPositive()) return false;
-    // Stay in APInt. getZExtValue() asserts once the constant has more than
-    // 64 active bits; ctest-windows Debug decompiler_smoke_cli_fib died
-    // STATUS_BREAKPOINT (0x80000003) here on an i128 power of two.
-    const llvm::APInt &v = ci->getValue();
-    if (!v.isPowerOf2()) return false;
-    log2out = v.logBase2();
-    return true;
+	if (!ci || !ci->isPositive()) return false;
+	// Stay in APInt. getZExtValue() asserts once the constant has more than
+	// 64 active bits; ctest-windows Debug decompiler_smoke_cli_fib died
+	// STATUS_BREAKPOINT (0x80000003) here on an i128 power of two.
+	const llvm::APInt &v = ci->getValue();
+	if (!v.isPowerOf2()) return false;
+	log2out = v.logBase2();
+	return true;
 }
 
 bool isUnsigned(ShPtr<Expression> expr) {
@@ -105,12 +105,12 @@ void Pow2SubOptimizer::visit(ShPtr<ModOpExpr> expr) {
     unsigned log2 = 0;
     if (!isPow2(ci, log2) || log2 == 0) return;
     auto base = expr->getFirstOperand();
-    unsigned bits = 32;
-    if (auto t = cast<IntType>(base->getType())) bits = t->getSize();
-    if (log2 >= bits) return;
-    // 1ULL << n is undefined for n >= 64; build the mask at the operand width.
-    llvm::APInt mask = llvm::APInt::getLowBitsSet(bits, log2);
-    optimizeExpr(expr, BitAndOpExpr::create(base, ConstInt::create(mask, false)));
+	unsigned bits = 32;
+	if (auto t = cast<IntType>(base->getType())) bits = t->getSize();
+	if (log2 >= bits) return;
+	// 1ULL << n is undefined for n >= 64; build the mask at the operand width.
+	llvm::APInt mask = llvm::APInt::getLowBitsSet(bits, log2);
+	optimizeExpr(expr, BitAndOpExpr::create(base, ConstInt::create(mask, false)));
 }
 
 void Pow2SubOptimizer::visit(ShPtr<NegOpExpr> expr) {

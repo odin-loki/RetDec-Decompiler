@@ -225,8 +225,8 @@ BiggerAddAndSubAndMulExpression) {
 		"got `" << outConstInt << "`";
 }
 
-TEST_F(SimplifyArithmExprOptimizerTests,
-MulByPowerOfTwoWiderThanSixtyFourBitsDoesNotAbort) {
+TEST_F(SimplifyArithmExprOptimizerTests, MulByPowerOfTwoWiderThanSixtyFourBitsDoesNotAbort)
+{
 	// return a * 2^64; // i128
 	//
 	// Pow2SubOptimizer::isPow2 used to call APInt::getZExtValue(), which
@@ -235,20 +235,14 @@ MulByPowerOfTwoWiderThanSixtyFourBitsDoesNotAbort) {
 	ShPtr<Variable> varA(Variable::create("a", IntType::create(128)));
 	llvm::APInt twoTo64(128, 1);
 	twoTo64 = twoTo64.shl(64);
-	ShPtr<MulOpExpr> returnExpr(
-		MulOpExpr::create(
-			varA,
-			ConstInt::create(twoTo64, false)
-	));
+	ShPtr<MulOpExpr> returnExpr(MulOpExpr::create(varA, ConstInt::create(twoTo64, false)));
 	ShPtr<ReturnStmt> returnStmt(ReturnStmt::create(returnExpr));
 	testFunc->setBody(returnStmt);
 
 	optimize(module);
 
 	ShPtr<BitShlOpExpr> shl(cast<BitShlOpExpr>(returnStmt->getRetVal()));
-	ASSERT_TRUE(shl) <<
-		"expected `BitShlOpExpr`, "
-		"got `" << returnStmt->getRetVal() << "`";
+	ASSERT_TRUE(shl);
 	EXPECT_EQ(varA, shl->getFirstOperand());
 	ShPtr<ConstInt> shift(cast<ConstInt>(shl->getSecondOperand()));
 	ASSERT_TRUE(shift);
