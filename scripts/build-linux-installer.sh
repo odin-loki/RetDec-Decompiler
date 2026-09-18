@@ -9,7 +9,8 @@
 #   --build-dir DIR     CMake binary directory (default: build/linux)
 #   --install-dir DIR   cmake --install prefix (default: install/linux)
 #   --dist-dir DIR      Output directory for artifacts (default: dist)
-#   --version VER       Override version tag (default: git describe or 5.0)
+#   --version VER       Override version tag (default: git describe, else the
+#                       project version in CMakeLists.txt)
 #   --preset PRESET     CMake preset used with --build (default: full-linux-release)
 #   --build             Run cmake --build before install
 #   --skip-install      Skip cmake --install (reuse existing install-dir)
@@ -87,7 +88,14 @@ _detect_version() {
 		git -C "${RETDEC_ROOT}" describe --tags --always
 		return
 	fi
-	echo "5.0"
+	# The project's own version, which is what CMakeLists.txt itself falls back
+	# to when git describe finds no tag. The literal "5.0" that used to be here
+	# is upstream Avast's last release and has not been this tree's version
+	# since the fork -- and it is not inert: it is written into the PATH comment
+	# in the generated install.sh, so releases/linux/install.sh in git says
+	# "# RetDec (5.0)" today.
+	sed -nE 's/^[[:space:]]*VERSION[[:space:]]+([0-9.]+).*/\1/p' \
+		"${RETDEC_ROOT}/CMakeLists.txt" | head -1
 }
 
 _write_install_scripts() {

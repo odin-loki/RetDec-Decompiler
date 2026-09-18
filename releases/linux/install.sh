@@ -87,7 +87,7 @@ if [[ "$ADD_PATH" -eq 0 && "$ASSUME_YES" -eq 0 ]]; then
 fi
 
 if [[ "$ADD_PATH" -eq 1 ]]; then
-	_snippet="# RetDec (5.0)"
+	_snippet="# RetDec (2.0.21)"
 	_path_line="export PATH=\"${PREFIX}/bin:\${PATH}\""
 	if [[ -f "${HOME}/.bashrc" ]] && grep -Fq "${PREFIX}/bin" "${HOME}/.bashrc"; then
 		echo "PATH already references ${PREFIX}/bin in ~/.bashrc"

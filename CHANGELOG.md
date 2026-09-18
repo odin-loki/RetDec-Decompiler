@@ -546,6 +546,17 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   which names it. It does **not** check that mirrors serve the same bytes: the
   `URL_HASH` beside them is what does that, and is why adding a mirror is safe.
 
+- **The Linux installer told users they had RetDec 5.0.** When `git describe`
+  finds no tag — which is what `actions/checkout` gives by default —
+  `build-linux-installer.sh` fell back to a literal `"5.0"`. That is upstream
+  Avast's last release, not this tree's version since the fork, and it is not
+  inert: the value goes into the PATH comment of the generated `install.sh`, so
+  `releases/linux/install.sh` in git says `# RetDec (5.0)` and writes that line
+  into the user's `~/.bashrc`. The fallback is the project's own
+  `CMakeLists.txt` version now, which is the same fallback `CMakeLists.txt`
+  itself uses, and the committed script is corrected. Found by the version-bump
+  pass, which expected to replace a version string and found a different one.
+
 - **One zlib URL, one outage, one red build.** `ctest-windows` failed with
 
   ```
