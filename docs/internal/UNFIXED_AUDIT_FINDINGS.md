@@ -11802,3 +11802,135 @@ investigated here.
 - libc++ deprecates `char_traits<T>` for `T` outside the standard five, and
   `include/retdec/utils/string.h:28` instantiates `std::basic_string<WideCharType>`.
   A warning today; libc++ says it will be removed.
+
+## Batch BQ — 2,158 test cases selected by nothing, and a Mac app that opens on one machine (2026-09-18)
+
+Three findings from getting Windows and macOS to a state a release could be
+cut from. Two are instrument failures of the same shape as Batch BM's: a
+measurement narrower than the thing it was read as measuring.
+
+### Fixed: thirty registered test suites that no workflow ran
+
+`tests/` registers 46 tests with `add_test()`. Fifteen carry a `LABELS`
+property. Every `ctest` invocation in `.github/workflows` filtered on one:
+
+```
+ctest --test-dir build/linux -L unit --output-on-failure
+ctest --test-dir build/linux --output-on-failure -L integration
+```
+
+`-L unit` selects six. `-L integration` selects six. The other thirty-four
+registrations — thirty distinct gtest suites holding **2,158 test cases** —
+were selected by nothing. `ctest-macos` compiled and linked all of them on
+every run, cached them, and never executed one. `ctest-linux` and
+`ctest-windows` name their build targets explicitly, so they do not even build
+them.
+
+The step that reported this was called "Unit tests" and it was green.
+
+Half of it was already written down. `standalone-check.yml` carries, above the
+L2H-01 step, a comment ending:
+
+> So `ctest -L unit` selects only the three `tests/` directories that set
+> `LABELS` themselves (decompiler, managed_integration, neural). Every module
+> suite under `tests/` is invisible to it.
+
+That was correct, and it sat there. Writing a defect down is not finding it
+twice; a comment is not a check, and the same sentence would have been just as
+true on the day of a release.
+
+`ctest-macos`, the one job that builds the whole tree, now runs `ctest` with no
+`-L` at all. TESTSEL-01 (`scripts/ci/check_test_selection.py`) reads every
+`add_test()` name and its labels, reads every `ctest` command line in the
+workflows, applies `-L`/`-LE`/`-R`/`-E` the way ctest does, and fails on a test
+selected by nothing. Falsified by restoring `-L unit` on the macOS step, which
+names all thirty.
+
+**What it does not cover.** Selection, not building. `ctest-linux` and
+`ctest-windows` still build a named subset, so those two jobs still run a
+subset; the check cannot tell that from a job that builds everything. Making
+the Linux job build all thirty suites is a separate question — in
+`full-linux-debug`, thirty binaries each statically linking LLVM is a disk
+problem on a GitHub runner, and that is measured before it is attempted.
+
+### Fixed: the macOS GUI bundle (Batch BP's open item)
+
+Recorded in Batch BP as cosmetic on the grounds that nothing depended on it.
+Adding a macOS installer job is exactly what stops that being true.
+
+macdeployqt left three of Qt's transitive dylibs — `libwebp`, `libsharpyuv`,
+`libbrotlicommon`, pulled in by the image-format plugins — pointing at the
+build machine's Homebrew prefix, and then reported `code object is not signed
+at all`. An app whose libraries live in `/opt/homebrew` opens on the machine
+that built it and nowhere else.
+
+MAC-01 (`scripts/ci/check_macos_bundle.py`) walks every Mach-O load command in
+the bundle. `/usr/lib` and `/System` are the operating system and stay;
+anything else — an absolute path into a Homebrew prefix, or an `@rpath` that
+resolves outside the bundle — is copied into `Contents/Frameworks`, the
+referring file is rewritten to `@rpath/<name>` and given an `LC_RPATH` that
+reaches there from where it sits, and the copy is walked in turn. Everything is
+then re-signed innermost-first and the check **looks again**: the repair has to
+hold under a fresh walk and under `codesign --verify --deep --strict`.
+
+It runs three times on a release: in `ctest-macos` on the build tree, in
+`macos-installer` on the staged copy, and once more on the copy extracted back
+out of the tarball — because a tar round trip is what loses extended
+attributes, and a signature is an extended attribute.
+
+**What it does not cover.** The signature is ad-hoc, not a Developer ID, and
+the package is not notarised. Gatekeeper still quarantines a browser download;
+`install.sh` strips `com.apple.quarantine` from what it installs and the
+package README says so in the open. Proper notarisation needs an Apple
+Developer account and is not a thing CI can invent.
+
+### Fixed: a hung Windows step nobody could look at
+
+The first `ctest-windows` run that ever got past the link reached "GUI unit
+tests (headless)", printed nothing, and sat there for 47 minutes. The step ran
+`retdec-gui-tests.exe` bare, so nothing bounded it, and `timeout-minutes: 360`
+on the job meant it would have sat there for six hours.
+
+The second half is worse than the first. A job that has not finished has no log
+archive, so the only thing readable was the tail the API returns — and that
+tail starts wherever the size cap falls, which for that job was somewhere
+inside OpenSSL's compile. Forty-seven minutes of a step producing no output,
+and no way to see what it was doing.
+
+The step is bounded and self-diagnosing now: output redirected to a file, a
+wall-clock limit, and whatever was written printed whether the process exits,
+times out, or dies. `--gtest_list_tests` runs first under a shorter bound,
+because it loads every DLL and runs no test body — which separates the two
+cases that look identical from outside: the binary not starting at all (a
+missing DLL on Windows raises a dialog box and blocks forever) versus one test
+hanging. Both `ctest` steps take `--timeout` for the same reason.
+
+**Not yet diagnosed.** Why it hung is still unknown; the run that would say was
+cancelled to free the runner. The next `ctest-windows` run either gets past it
+or reports which of the two it is, in the log, on its own.
+
+### Also fixed here
+
+- `macdeployqt` no longer runs with `-dmg` as a `POST_BUILD` command.
+  `hdiutil create` refuses to overwrite and `POST_BUILD` runs on every relink,
+  so the second build of a macOS tree reported
+  `ERROR: Bundle creation error: "hdiutil: create failed - File exists"` on a
+  build that was otherwise fine.
+- `docs/CLAIMS.md` gains `C-MACOS`, `C-MACOS-BUNDLE` and `C-TEST-SELECTION`.
+  `C-PINNED-LLVM`'s translation-unit count is corrected from 948/950 to
+  1,054/1,101, which is where it went when PIN-01 started refusing a build
+  configured without the options `release-installers.yml` turns on.
+
+### Still open
+
+- A native arm64 Mach-O decompiles to nothing (Batch BP). `ctest-macos`
+  attempts it on every run and prints the outcome; no `ARCH-01` case covers
+  Mach-O at all, because that corpus is ELF.
+- libc++ deprecates `char_traits<T>` for `T` outside the standard five, and
+  `include/retdec/utils/string.h:28` instantiates
+  `std::basic_string<WideCharType>`. A warning today; libc++ says it will be
+  removed.
+- `src/.../types_propagator.cpp` is in no `CMakeLists.txt` and does not
+  compile.
+- `ctest-linux` and `ctest-windows` build a named subset of targets, so the
+  thirty suites above run on macOS only.

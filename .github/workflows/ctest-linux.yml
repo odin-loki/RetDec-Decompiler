@@ -11,6 +11,14 @@ env:
   RETDEC_GUI_HEADLESS: "1"
   QT_QPA_PLATFORM: offscreen
 
+# A push on top of a push leaves the older run building for another
+# forty minutes on a result nobody will read. standalone-check has had
+# this since it was written; these two did not, and two macOS runs
+# building LLVM side by side is how that was noticed.
+concurrency:
+  group: ctest-linux-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   integration:
     runs-on: ubuntu-latest
