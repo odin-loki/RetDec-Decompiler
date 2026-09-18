@@ -426,12 +426,69 @@ def strip_ambiguous_contents(fw: Path) -> None:
         shutil.rmtree(contents)
 
 
+def restore_framework_symlinks(fw: Path) -> None:
+    """macdeployqt/copy flattens a framework into real files.
+
+    A valid framework is symlinks at the root and at Versions/Current. A
+    copy leaves a real binary at Foo.framework/Foo and a real Versions/Current
+    directory; codesign then sees an app (top-level executable) and a
+    framework (Versions/) in the same directory.
+    """
+    versions = fw / "Versions"
+    if not versions.is_dir():
+        return
+    ver = None
+    if (versions / "A").is_dir() and not (versions / "A").is_symlink():
+        ver = "A"
+    else:
+        for p in versions.iterdir():
+            if p.name != "Current" and p.is_dir() and not p.is_symlink():
+                ver = p.name
+                break
+    if ver is None:
+        return
+
+    current = versions / "Current"
+    if current.exists() and not current.is_symlink():
+        if current.is_dir():
+            shutil.rmtree(current)
+        else:
+            current.unlink()
+        current.symlink_to(ver)
+
+    stem = fw.name[:-len(".framework")] if fw.name.endswith(".framework") else fw.stem
+    top_bin = fw / stem
+    if top_bin.exists() and not top_bin.is_symlink():
+        if top_bin.is_dir():
+            shutil.rmtree(top_bin)
+        else:
+            top_bin.unlink()
+        top_bin.symlink_to(f"Versions/Current/{stem}")
+
+    top_res = fw / "Resources"
+    if top_res.exists() and not top_res.is_symlink():
+        if top_res.is_dir():
+            shutil.rmtree(top_res)
+        else:
+            top_res.unlink()
+        top_res.symlink_to("Versions/Current/Resources")
+
+
 def codesign_adhoc(path: Path) -> None:
     p = subprocess.run(["codesign", "--force", "--timestamp=none", "--sign", "-",
                         str(path)], capture_output=True, text=True)
     if p.returncode != 0:
         err = (p.stderr or p.stdout or "").strip()
         print(f"MAC-01: codesign failed ({path}): {err}", file=sys.stderr)
+        if path.suffix == ".framework" and path.is_dir():
+            for child in sorted(path.iterdir(), key=lambda c: c.name):
+                if child.is_symlink():
+                    kind, dest = "symlink", f" -> {child.readlink()}"
+                elif child.is_dir():
+                    kind, dest = "dir", ""
+                else:
+                    kind, dest = "file", ""
+                print(f"    {kind:7} {child.name}{dest}", file=sys.stderr)
 
 
 def resign(bundle: Path) -> None:
@@ -451,6 +508,7 @@ def resign(bundle: Path) -> None:
     )
     for fw in frameworks:
         strip_ambiguous_contents(fw)
+        restore_framework_symlinks(fw)
         versions = fw / "Versions"
         if versions.is_dir():
             for ver_dir in versions.iterdir():
@@ -559,6 +617,8 @@ Load command 21
         "the not-fix branch no longer records an unreachable dependency"
     assert "strip_ambiguous_contents" in inspect.getsource(resign), \
         "resign no longer strips Homebrew's Contents+Versions Qt layout"
+    assert "restore_framework_symlinks" in inspect.getsource(resign), \
+        "resign no longer restores flattened framework symlinks"
 
     print("MAC-01: self-test OK")
 
