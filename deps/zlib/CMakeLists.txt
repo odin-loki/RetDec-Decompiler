@@ -29,8 +29,22 @@ file(MAKE_DIRECTORY "${ZLIB_INSTALL_DIR}/include")
 # file name is the platform's own decoration of that: libzlibstatic.a under
 # MinGW and GNU, zlibstatic.lib under MSVC. It was hardcoded to the MinGW
 # spelling while this was a MinGW-only directory.
+#
+# The `d` is zlib's, not CMake's. It sets the debug postfix on its own targets,
+# which beats the CMAKE_DEBUG_POSTFIX this passed in, so a Debug build installs
+# zlibstaticd.lib whatever we ask for. Measured, from the first Windows run
+# that got this far:
+#
+#     -- Installing: .../zlib-install/lib/zlibstaticd.lib
+#
+# ctest-windows configures full-windows-debug, so this is the build that name
+# has to be right for.
+set(_zlib_postfix "")
+if(MSVC AND RETDEC_EP_CMAKE_BUILD_TYPE STREQUAL "Debug")
+	set(_zlib_postfix "d")
+endif()
 set(RETDEC_ZLIB_STATIC_LIB
-	"${ZLIB_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}zlibstatic${CMAKE_STATIC_LIBRARY_SUFFIX}")
+	"${ZLIB_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}zlibstatic${_zlib_postfix}${CMAKE_STATIC_LIBRARY_SUFFIX}")
 set(_RETDEC_ZLIB_EP "${CMAKE_BINARY_DIR}/external/zlib-ep")
 
 set(_ZLIB_CMAKE_EXTRA "")
@@ -50,10 +64,8 @@ if(MSVC)
 	# honoured under CMP0091 NEW, and zlib's own cmake_minimum_required puts it
 	# at OLD, so the policy default goes across too.
 	#
-	# And CMAKE_DEBUG_POSTFIX is cleared, because a Debug build would otherwise
-	# install zlibstaticd.lib and BUILD_BYPRODUCTS above names zlibstatic.lib.
-	# ctest-windows configures full-windows-debug, so that is the build this
-	# would have broken.
+	# The debug postfix is NOT handled here: zlib sets it on its own targets and
+	# wins, so the file name above accounts for it instead.
 	if(RETDEC_EP_CMAKE_BUILD_TYPE STREQUAL "Debug")
 		set(_zlib_rt_debug "Debug")
 	else()
@@ -67,7 +79,6 @@ if(MSVC)
 	list(APPEND _ZLIB_CMAKE_EXTRA
 		"-DCMAKE_POLICY_DEFAULT_CMP0091=NEW"
 		"-DCMAKE_MSVC_RUNTIME_LIBRARY=${_zlib_rt}"
-		"-DCMAKE_DEBUG_POSTFIX="
 	)
 endif()
 

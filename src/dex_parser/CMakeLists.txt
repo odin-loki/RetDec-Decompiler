@@ -17,16 +17,12 @@ target_link_libraries(retdec-dex-parser
 
 # The ordering, stated rather than inherited. retdec::deps::zlib is an
 # INTERFACE target whose link entry is a PATH into the bundled build, so the
-# only thing that can make the ExternalProject run before this archive is a
-# target-level dependency. It propagates from the interface target on Linux --
-# measured, with a standalone reproduction -- and the first Windows run with
-# the bundled zlib still linked before it existed:
-#
-#     LINK : fatal error LNK1104: cannot open file
-#         'external\zlib-install\lib\zlibstatic.lib'
-#
-# with no sign of the zlib build having been scheduled at all. Saying it here
-# costs one line and does not depend on how propagation behaves.
+# only thing that can order the ExternalProject before this archive is a
+# target-level dependency. It does propagate from the interface target --
+# measured on Linux with a standalone reproduction, and the Windows log shows
+# the zlib build finishing four minutes before the link that wanted it -- so
+# this line is belt and braces rather than the fix for anything. It costs one
+# line and does not depend on how propagation behaves.
 if(TARGET retdec-zlib)
     add_dependencies(retdec-dex-parser retdec-zlib)
 endif()
