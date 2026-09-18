@@ -556,9 +556,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 - `gui_headless_decompile_fib` on macOS aborted after MAC-01 made the
   bundle stop searching Homebrew: `QT_QPA_PLATFORM=offscreen` and
-  macdeployqt only ships cocoa. The staging step copies
-  `libqoffscreen.dylib` into the bundle so the headless test has a
-  platform plugin that is inside the rpath-rewritten tree.
+  macdeployqt only ships cocoa (`Available platform plugins are: cocoa.`).
+  The test uses cocoa on Apple and offscreen everywhere else;
+  `RETDEC_GUI_HEADLESS=1` still suppresses windows.
 
 - `OrderedAllVisitor::visitStmt` walked successor chains by recursing
   `visit()` → `visitStmt()` per statement. A long straight-line function

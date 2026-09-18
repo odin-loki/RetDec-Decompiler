@@ -22,7 +22,11 @@ on:
 
 env:
   RETDEC_GUI_HEADLESS: "1"
-  QT_QPA_PLATFORM: offscreen
+  # cocoa, not offscreen: macdeployqt puts libqcocoa.dylib in the bundle and
+  # MAC-01 then stops the app searching Homebrew. offscreen is not in the
+  # bundle; gui_headless_decompile_fib aborted with "Available platform
+  # plugins are: cocoa."
+  QT_QPA_PLATFORM: cocoa
 
 # A push on top of a push leaves the older run building for another
 # forty minutes on a result nobody will read. standalone-check has had
