@@ -436,6 +436,19 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- **`fileinfo` did not compile against the pinned LLVM, and nothing was
+  looking.** `RETDEC_ENABLE_FILEINFO` is OFF by default and no workflow turns
+  it on; `release-installers.yml` does. So the release ships 101 translation
+  units that no CI job has ever compiled, and two of them were broken:
+  `fileinfo.cpp` handed `llvm::install_fatal_error_handler` a handler taking
+  `const std::string&`, which stopped being `fatal_error_handler_t` some LLVM
+  releases ago, and `macho_detector.cpp` calls `pow()` without `<cmath>`.
+
+  `PIN-01` now reads the build's `CMakeCache.txt` and refuses to run against a
+  database configured without the options the release turns on — otherwise it
+  reports a clean tree that cannot be released. With `fileinfo` in, it checks
+  1054 translation units rather than 953.
+
 - **Every CI build reported its version as `-128-NOTFOUND`.** `git describe
   --tags` fails on a checkout with no tags, which is what `actions/checkout`
   produces by default, and `GetGitRevisionDescription` returns git's exit

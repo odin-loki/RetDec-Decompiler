@@ -81,6 +81,19 @@ FETCHED_HEADERS = ("tree_sitter/",)
 # Space the LLVM source tree and its tablegen build need.
 MIN_FREE_GIB = 4
 
+# Options release-installers.yml turns on that are OFF by default. A compile
+# database configured without them does not contain the sources the release
+# ships, and this check would then pass over a tree that cannot be released.
+#
+# That is not hypothetical. RETDEC_ENABLE_FILEINFO is OFF by default, no
+# workflow turns it on, and release-installers does -- so fileinfo's 101
+# translation units were compiled by nothing. Two of them do not build against
+# the pinned LLVM: fileinfo.cpp passed llvm::install_fatal_error_handler a
+# handler taking const std::string&, which stopped being the type some releases
+# ago, and macho_detector.cpp calls pow() without <cmath>. Windows found the
+# first after a 45-minute round; the second was still ahead of it.
+RELEASE_OPTIONS = ("RETDEC_ENABLE_FILEINFO", "RETDEC_ENABLE_RETDEC_DECOMPILER")
+
 
 def die(msg):
     print(f"PIN-01: FAIL {msg}", file=sys.stderr)
@@ -385,6 +398,21 @@ def main():
     if not arch:
         guess = sorted((cap.parent).glob("capstone-*/arch"))
         arch = str(guess[0]) if guess else ""
+
+    cache = db.parent / "CMakeCache.txt"
+    if cache.is_file():
+        text = cache.read_text(encoding="utf-8", errors="replace")
+        off = [o for o in RELEASE_OPTIONS
+               if re.search(rf"^{o}:BOOL=(OFF|0|FALSE|NO)$", text, re.M)]
+        if off:
+            die(f"{', '.join(off)} is OFF in {cache}, so the database does not "
+                f"contain the sources release-installers.yml builds. "
+                f"Reconfigure with " +
+                " ".join(f"-D{o}=ON" for o in off) + ", or this check passes "
+                f"over a tree that cannot be released.")
+    else:
+        print(f"PIN-01: no CMakeCache.txt beside {db}; cannot confirm the "
+              f"database covers the release configuration")
 
     src_root = configured_source_root(db)
     rebase = None

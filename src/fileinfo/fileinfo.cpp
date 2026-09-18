@@ -130,7 +130,17 @@ struct ErrorHandlerInfo
  * @param reason Unused
  * @param gen_crash_diag Unused
  */
-void fatalErrorHandler(void *user_data, const std::string& /*reason*/, bool /*gen_crash_diag*/)
+// const char*, not const std::string&: that is what
+// llvm::fatal_error_handler_t has been since LLVM changed it, and the
+// pinned 23.1.0 declares
+//
+//   using fatal_error_handler_t =
+//       void (*)(void *user_data, const char *reason, bool gen_crash_diag);
+//
+// The old spelling is not a conversion the compiler will make, and no CI job
+// saw it: RETDEC_ENABLE_FILEINFO is OFF by default and every workflow leaves
+// it off, while release-installers turns it ON.
+void fatalErrorHandler(void* user_data, const char* /*reason*/, bool /*gen_crash_diag*/)
 {
 	ProgParams* params = static_cast<ErrorHandlerInfo*>(user_data)->params;
 	FileInformation *fileinfo = static_cast<ErrorHandlerInfo*>(user_data)->fileinfo;
