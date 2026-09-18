@@ -17,6 +17,20 @@ git_describe(
 	RETDEC_GIT_VERSION_TAG
 	"--tags"
 )
+# git describe fails on a checkout with no tags -- which is what
+# actions/checkout gives you by default -- and GetGitRevisionDescription hands
+# back its exit status with -NOTFOUND glued on. Every CI build of this tree has
+# therefore reported
+#
+#     RetDec version :  -128-NOTFOUND
+#
+# 128 being git's exit code. It is cosmetic in CI and it is not cosmetic in a
+# release binary, so the project's own version is the fallback.
+if(NOT RETDEC_GIT_VERSION_TAG OR RETDEC_GIT_VERSION_TAG MATCHES "NOTFOUND")
+	set(RETDEC_GIT_VERSION_TAG "v${PROJECT_VERSION}")
+	message(STATUS
+		"Version: git describe found no tag; using v${PROJECT_VERSION}")
+endif()
 string(TIMESTAMP RETDEC_BUILD_DATE UTC)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)

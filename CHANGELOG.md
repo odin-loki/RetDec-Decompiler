@@ -436,6 +436,20 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- **Every CI build reported its version as `-128-NOTFOUND`.** `git describe
+  --tags` fails on a checkout with no tags, which is what `actions/checkout`
+  produces by default, and `GetGitRevisionDescription` returns git's exit
+  status with `-NOTFOUND` appended. The project's own version is the fallback
+  now, so a build without tags says `v2.0.21` rather than an error code.
+
+- **yaramod could not build on macOS.** Its nested ExternalProjects — fmt, re2
+  and googletest under `deps/pog` — build with `cmake --build . -- -j`. A bare
+  `-j` means "as many jobs as you like" to Make and is an error to Ninja
+  (`ninja: option requires an argument -- j`), and which of the two those
+  nested configures inherit is platform-dependent: Make on Linux and Windows,
+  Ninja on macOS. The yaramod ExternalProject pins `Unix Makefiles` on Apple,
+  which fixes it without depending on upstream's exact text.
+
 - **LLVM got none of its Windows system libraries.** `deps/llvm`'s link chain
   ran `if(UNIX) ... elseif(MINGW) ...` and stopped, so a native Windows build
   passed LLVM no system libraries at all. The build reached 1107 of 1157

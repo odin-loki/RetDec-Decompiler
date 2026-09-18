@@ -64,8 +64,28 @@ endif()
 # ccache/sccache, when this build has one. See retdec_compiler_launcher_args.
 retdec_compiler_launcher_args(_YARAMOD_LAUNCHER_ARGS)
 
+# yaramod 4.8.1's nested ExternalProjects -- fmt, re2, googletest under
+# deps/pog -- build with `cmake --build . -- -j`. A bare -j means "as many jobs
+# as you like" to Make and is an error to Ninja:
+#
+#     [11/41] Performing build step for 'fmt-dep'
+#     cmake --build . -- -j
+#     ninja: option requires an argument -- j
+#
+# Which one those nested configures pick is inherited, and on macOS it is
+# Ninja, so the whole yaramod build dies there. Linux and Windows get Make and
+# do not. Pinning the generator for this one ExternalProject is the fix that
+# does not depend on upstream's text, which matters here: the patch file beside
+# this one rewrites yaramod's CMakeLists by exact string, and a bug in a
+# sub-sub-project's build command is not something to chase that way.
+set(_YARAMOD_GENERATOR "")
+if(APPLE)
+	set(_YARAMOD_GENERATOR CMAKE_GENERATOR "Unix Makefiles")
+endif()
+
 ExternalProject_Add(yaramod-project
 	SOURCE_DIR ${YARAMOD_SOURCE_DIR}
+	${_YARAMOD_GENERATOR}
 	URL ${_YARAMOD_URL}
 	URL_HASH SHA256=${YARAMOD_ARCHIVE_SHA256}
 	DOWNLOAD_NAME yaramod.zip
