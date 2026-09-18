@@ -71,6 +71,10 @@ CHECKS=(
 	# and catches a suite that is built and never executed.
 	"ci-smoke  every registered test is run:::${PY} scripts/ci/check_test_selection.py"
 	"ci-smoke  test selection (self-test):::${PY} scripts/ci/check_test_selection.py --self-test"
+	# DEPS-01: a dependency whose only source is one origin server stops
+	# the build when that server has a bad day. One did.
+	"ci-smoke  dependency URLs are mirrored:::${PY} scripts/ci/check_dependency_urls.py"
+	"ci-smoke  dependency URLs (self-test):::${PY} scripts/ci/check_dependency_urls.py --self-test"
 	# MAC-01 needs otool/install_name_tool/codesign, so only its parsers can
 	# run here. The bundle itself is checked by ctest-macos and again by
 	# release-installers, on the staged copy and on what comes back out of

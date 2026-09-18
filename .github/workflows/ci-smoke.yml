@@ -105,6 +105,12 @@ jobs:
           python3 scripts/ci/check_test_selection.py --self-test
           python3 scripts/ci/check_test_selection.py
 
+      # One URL is one outage away from a red build, and one was.
+      - name: DEPS-01 every dependency URL is mirrored or on a CDN
+        run: |
+          python3 scripts/ci/check_dependency_urls.py --self-test
+          python3 scripts/ci/check_dependency_urls.py
+
       - name: Every declared build option is read by the build
         run: |
           python3 scripts/ci/check_cmake_options.py --self-test

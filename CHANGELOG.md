@@ -538,6 +538,14 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- `DEPS-01` (`scripts/ci/check_dependency_urls.py`): every `<NAME>_URL` in
+  `cmake/deps.cmake` either holds more than one URL or points at a host where a
+  single one is enough — a GitHub release asset or tag archive, which is
+  immutable and CDN-served. zlib was the one exception in twelve, and the
+  exception is what broke. Falsified by putting the single `zlib.net` URL back,
+  which names it. It does **not** check that mirrors serve the same bytes: the
+  `URL_HASH` beside them is what does that, and is why adding a mirror is safe.
+
 - **One zlib URL, one outage, one red build.** `ctest-windows` failed with
 
   ```
