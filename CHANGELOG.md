@@ -545,9 +545,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   with `bundle format is ambiguous` on Homebrew's `QtQmlMeta.framework`.
   Basename-only lookup looked for `Contents/Frameworks/QtCore`; the file is
   `Contents/Frameworks/QtCore.framework/Versions/A/QtCore`. `--fix` now adds
-  an `LC_RPATH` that reaches that layout, and resigns each `.framework` as a
-  bundle rather than signing the inner Mach-O files. `ctest-macos` was red
-  on every push until this.
+  an `LC_RPATH` that reaches that layout. Resign signs `Versions/<ver>/`
+  Mach-O files (skipping the `Current` symlink — that was the ambiguous
+  bundle) and then the `.framework`; signing only the directory left QtGui
+  `code object is not signed at all`. `ctest-macos` was red on every push
+  until this.
 
 - `OrderedAllVisitor::visitStmt` walked successor chains by recursing
   `visit()` → `visitStmt()` per statement. A long straight-line function

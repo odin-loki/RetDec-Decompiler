@@ -407,13 +407,23 @@ def _inside_framework(p: Path) -> bool:
     return any(part.endswith(".framework") for part in p.parts)
 
 
+def codesign_adhoc(path: Path) -> None:
+    p = subprocess.run(["codesign", "--force", "--timestamp=none", "--sign", "-",
+                        str(path)], capture_output=True, text=True)
+    if p.returncode != 0:
+        err = (p.stderr or p.stdout or "").strip()
+        print(f"MAC-01: codesign failed ({path}): {err}", file=sys.stderr)
+
+
 def resign(bundle: Path) -> None:
     """Ad-hoc signature, innermost first; the bundle itself last.
 
-    Sign each .framework as a bundle, not the Mach-O files inside it.
-    Signing Versions/A/QtQmlMeta (and the Versions/Current symlink target)
-    as loose binaries is what produced `bundle format is ambiguous (could
-    be app or framework)` on Homebrew Qt 6's QtQmlMeta.framework.
+    Sign the real Mach-O at Versions/<ver>/, then the .framework, then
+    everything else. Skip symlinks: Versions/Current -> A, and the
+    top-level Foo.framework/Foo link. Signing through Current is what
+    produced `bundle format is ambiguous` on QtQmlMeta.framework; signing
+    only the .framework directory and not Versions/A/Foo left QtGui
+    `code object is not signed at all` under --verify --deep.
     """
     frameworks = sorted(
         (p for p in bundle.rglob("*.framework") if p.is_dir()),
@@ -421,15 +431,23 @@ def resign(bundle: Path) -> None:
         reverse=True,
     )
     for fw in frameworks:
-        subprocess.run(["codesign", "--force", "--timestamp=none", "--sign", "-",
-                        str(fw)], capture_output=True, text=True)
+        versions = fw / "Versions"
+        if versions.is_dir():
+            for ver_dir in versions.iterdir():
+                if ver_dir.is_symlink() or not ver_dir.is_dir():
+                    continue
+                for f in ver_dir.rglob("*"):
+                    if f.is_symlink():
+                        continue
+                    if is_macho(f):
+                        codesign_adhoc(f)
+        codesign_adhoc(fw)
 
-    files = [f for f in macho_files(bundle) if not _inside_framework(f)]
-    for f in sorted(files, key=lambda p: len(p.parts), reverse=True):
-        subprocess.run(["codesign", "--force", "--timestamp=none", "--sign", "-",
-                        str(f)], capture_output=True, text=True)
-    subprocess.run(["codesign", "--force", "--timestamp=none", "--sign", "-",
-                    str(bundle)], capture_output=True, text=True)
+    for f in sorted(macho_files(bundle), key=lambda p: len(p.parts), reverse=True):
+        if _inside_framework(f):
+            continue
+        codesign_adhoc(f)
+    codesign_adhoc(bundle)
 
 
 def verify(bundle: Path) -> tuple[bool, str]:
