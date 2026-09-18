@@ -436,6 +436,25 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- **LLVM got none of its Windows system libraries.** `deps/llvm`'s link chain
+  ran `if(UNIX) ... elseif(MINGW) ...` and stopped, so a native Windows build
+  passed LLVM no system libraries at all. The build reached 1107 of 1157
+  targets and died at the final link:
+
+  ```
+  LLVMSupport.lib(ErrorHandling.cpp.obj) : error LNK2019: unresolved external
+      symbol __imp_RtlGetLastNtStatus referenced in function
+      "class std::error_code __cdecl llvm::mapLastWindowsError(void)"
+  ```
+
+  `RtlGetLastNtStatus` is `ntdll`'s. An `elseif(MSVC)` branch now names the set
+  LLVM's own `llvm-config --system-libs` reports on Windows.
+
+  `PORT-01` flagged `uuid` in that new branch, correctly by its own rule and
+  wrongly by intent — `uuid.lib` is the Windows SDK's. Its condition recognised
+  only Unix platform statements, which was half a rule; `MSVC`, `WIN32` and
+  `MSYS` count now, and its self-test covers a Windows branch.
+
 - **Two more Windows-only build failures, once zlib stopped hiding them.**
   `src/capstone2llvmir/x86/x86.cpp` used the alternative operator token `or`,
   which MSVC rejects, and `src/capstone2llvmir/x86/x86_sse.cpp` initialised a

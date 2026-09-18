@@ -52,9 +52,14 @@ UNIX_LIBS = {
 KEYWORDS = {"PUBLIC", "PRIVATE", "INTERFACE", "LINK_PUBLIC", "LINK_PRIVATE",
             "LINK_INTERFACE_LIBRARIES", "optimized", "debug", "general"}
 
-# Conditions that state the platform, so a Unix name under them is a choice.
+# Conditions that state the platform, so a bare name under them is a choice
+# rather than an oversight. MSVC and WIN32 are in the list for the same reason
+# the Unix names are, and were added after this check flagged `uuid` inside an
+# elseif(MSVC) that links LLVM's Windows system libraries: uuid.lib is the
+# Windows SDK's and naming it there is correct. A rule that only recognised
+# Unix platform statements was half a rule.
 PLATFORM_COND = re.compile(
-    r"\b(UNIX|APPLE|LINUX|MINGW|CYGWIN|ANDROID|BSD)\b|NOT\s+WIN32|NOT\s+MSVC",
+    r"\b(UNIX|APPLE|LINUX|MINGW|CYGWIN|ANDROID|BSD|MSVC|WIN32|MSYS)\b",
     re.IGNORECASE)
 
 
@@ -133,9 +138,16 @@ if(UNIX AND NOT APPLE)
     target_link_libraries(x PRIVATE rt)
 endif()
 """
+    windows = """
+add_library(x a.cpp)
+if(MSVC)
+    target_link_libraries(x INTERFACE ntdll uuid ws2_32)
+endif()
+"""
     with tempfile.TemporaryDirectory() as td:
         for name, text, want in (("broke", broke, 1), ("fixed", fixed, 0),
-                                 ("stated", stated, 0)):
+                                 ("stated", stated, 0),
+                                 ("windows", windows, 0)):
             p = Path(td) / f"{name}.txt"
             p.write_text(text)
             got = len(scan(text, p))

@@ -427,6 +427,31 @@ elseif(MINGW)
 	if(RETDEC_LLVM_WITH_ZLIB)
 		target_link_libraries(llvm INTERFACE ${ZLIB_LIBRARIES})
 	endif()
+elseif(MSVC)
+	# This chain had no branch for native Windows at all -- UNIX, MINGW, and
+	# nothing else -- so MSVC got none of the system libraries LLVM's Support
+	# layer calls into. The build reached 1107 of 1157 targets and ended at the
+	# final link:
+	#
+	#   LLVMSupport.lib(ErrorHandling.cpp.obj) : error LNK2019: unresolved
+	#       external symbol __imp_RtlGetLastNtStatus referenced in function
+	#       "class std::error_code __cdecl llvm::mapLastWindowsError(void)"
+	#   retdec-decompiler.exe : fatal error LNK1120: 1 unresolved externals
+	#
+	# RtlGetLastNtStatus is ntdll's. The others are what LLVM's own
+	# `llvm-config --system-libs` names on Windows; naming an import library
+	# nothing references costs nothing, and leaving one out costs a 45-minute
+	# round to find out which.
+	target_link_libraries(llvm
+		INTERFACE
+			ntdll
+			psapi
+			shell32
+			ole32
+			uuid
+			advapi32
+			ws2_32
+	)
 endif()
 
 # Install includes.
