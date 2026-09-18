@@ -562,14 +562,18 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 - `OrderedAllVisitor::visitStmt` walked successor chains by recursing
   `visit()` → `visitStmt()` per statement. A long straight-line function
-  overflows the default 1 MB Windows stack: `ctest-windows`
-  `decompiler_smoke_cli_fib` died `STATUS_BREAKPOINT` (`0x80000003`) after
-  ~250 `AssignStmt` frames, and the GUI/parity fib tests failed with it.
-  The walk stays recursive: `GotoTargetAnalysis` and
-  `UnreachableCodeInCFGRemover` override `visitStmt` and must run for
-  every successor (an iterative walk in the base skipped them and failed
-  L2H-01). `retdec-decompiler` now links `/STACK:67108864` through
-  `target_link_options`, which Ninja actually puts on the link line.
+  overflows the default 1 MB Windows stack. The walk stays recursive:
+  `GotoTargetAnalysis` and `UnreachableCodeInCFGRemover` override
+  `visitStmt` and must run for every successor. `retdec-decompiler` now
+  links `/STACK:67108864` through `target_link_options`.
+
+- `ctest-windows` `decompiler_smoke_cli_fib` was not a stack overflow.
+  Debug aborted in `Pow2SubOptimizer::isPow2` on
+  `APInt::getZExtValue()` (`getActiveBits() <= 64`) while simplifying an
+  i128 power of two — `STATUS_BREAKPOINT` (`0x80000003`). `isPow2` now
+  uses `APInt::isPowerOf2()` / `logBase2()`, the urem mask is built with
+  `APInt::getLowBitsSet`, and `BitfieldSubOptimizer` skips constants
+  wider than 64 bits instead of asserting.
 
 - `DEPS-01` (`scripts/ci/check_dependency_urls.py`): every `<NAME>_URL` in
   `cmake/deps.cmake` either holds more than one URL or points at a host where a

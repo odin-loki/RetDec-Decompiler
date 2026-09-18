@@ -9,6 +9,7 @@
 
 #include "retdec/llvmir2hll/evaluator/arithm_expr_evaluators/strict_arithm_expr_evaluator.h"
 #include "retdec/llvmir2hll/ir/add_op_expr.h"
+#include "retdec/llvmir2hll/ir/bit_shl_op_expr.h"
 #include "retdec/llvmir2hll/ir/bit_xor_op_expr.h"
 #include "retdec/llvmir2hll/ir/const_float.h"
 #include "retdec/llvmir2hll/ir/const_int.h"
@@ -222,6 +223,36 @@ BiggerAddAndSubAndMulExpression) {
 	EXPECT_EQ(result->getValue(), outConstInt->getValue()) <<
 		"expected `" << result << "`, "
 		"got `" << outConstInt << "`";
+}
+
+TEST_F(SimplifyArithmExprOptimizerTests,
+MulByPowerOfTwoWiderThanSixtyFourBitsDoesNotAbort) {
+	// return a * 2^64; // i128
+	//
+	// Pow2SubOptimizer::isPow2 used to call APInt::getZExtValue(), which
+	// asserts once the constant has more than 64 active bits. ctest-windows
+	// Debug decompiler_smoke_cli_fib died STATUS_BREAKPOINT there.
+	ShPtr<Variable> varA(Variable::create("a", IntType::create(128)));
+	llvm::APInt twoTo64(128, 1);
+	twoTo64 = twoTo64.shl(64);
+	ShPtr<MulOpExpr> returnExpr(
+		MulOpExpr::create(
+			varA,
+			ConstInt::create(twoTo64, false)
+	));
+	ShPtr<ReturnStmt> returnStmt(ReturnStmt::create(returnExpr));
+	testFunc->setBody(returnStmt);
+
+	optimize(module);
+
+	ShPtr<BitShlOpExpr> shl(cast<BitShlOpExpr>(returnStmt->getRetVal()));
+	ASSERT_TRUE(shl) <<
+		"expected `BitShlOpExpr`, "
+		"got `" << returnStmt->getRetVal() << "`";
+	EXPECT_EQ(varA, shl->getFirstOperand());
+	ShPtr<ConstInt> shift(cast<ConstInt>(shl->getSecondOperand()));
+	ASSERT_TRUE(shift);
+	EXPECT_EQ(64u, shift->getValue().getZExtValue());
 }
 
 } // namespace tests
