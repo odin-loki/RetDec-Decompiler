@@ -407,6 +407,25 @@ def _inside_framework(p: Path) -> bool:
     return any(part.endswith(".framework") for part in p.parts)
 
 
+def strip_ambiguous_contents(fw: Path) -> None:
+    """Homebrew Qt frameworks ship Contents -> Versions/Current beside Versions/.
+
+    codesign then reports `bundle format is ambiguous (could be app or
+    framework)` for every Qt*.framework, including QtCore. An app bundle
+    uses Contents/; a framework uses Versions/. Both at once is the
+    Homebrew layout, not a valid bundle, and --verify --deep fails the
+    whole .app on the first such subcomponent.
+    """
+    contents = fw / "Contents"
+    versions = fw / "Versions"
+    if not (contents.exists() and versions.is_dir()):
+        return
+    if contents.is_symlink() or contents.is_file():
+        contents.unlink()
+    elif contents.is_dir():
+        shutil.rmtree(contents)
+
+
 def codesign_adhoc(path: Path) -> None:
     p = subprocess.run(["codesign", "--force", "--timestamp=none", "--sign", "-",
                         str(path)], capture_output=True, text=True)
@@ -431,6 +450,7 @@ def resign(bundle: Path) -> None:
         reverse=True,
     )
     for fw in frameworks:
+        strip_ambiguous_contents(fw)
         versions = fw / "Versions"
         if versions.is_dir():
             for ver_dir in versions.iterdir():
@@ -537,6 +557,8 @@ Load command 21
     assert "rep.unresolved.append(" in src.split("if resolved is None:", 1)[1] \
         .split("# Resolved, but outside", 1)[0], \
         "the not-fix branch no longer records an unreachable dependency"
+    assert "strip_ambiguous_contents" in inspect.getsource(resign), \
+        "resign no longer strips Homebrew's Contents+Versions Qt layout"
 
     print("MAC-01: self-test OK")
 

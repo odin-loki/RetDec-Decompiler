@@ -548,8 +548,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   an `LC_RPATH` that reaches that layout. Resign signs `Versions/<ver>/`
   Mach-O files (skipping the `Current` symlink — that was the ambiguous
   bundle) and then the `.framework`; signing only the directory left QtGui
-  `code object is not signed at all`. `ctest-macos` was red on every push
-  until this.
+  `code object is not signed at all`. Homebrew's Qt keg also puts
+  `Contents -> Versions/Current` beside `Versions/`, which is an app layout
+  and a framework layout at once; `--fix` removes `Contents` before
+  signing. `ctest-macos` was red on every push until this.
 
 - `OrderedAllVisitor::visitStmt` walked successor chains by recursing
   `visit()` → `visitStmt()` per statement. A long straight-line function
