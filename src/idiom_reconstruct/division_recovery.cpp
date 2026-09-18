@@ -123,6 +123,18 @@ struct u128 {
         uint64_t r = lo + o.lo;
         return {r, hi + o.hi + (r < lo ? 1u : 0u)};
     }
+	// MSVC will not convert u128 to uint64_t for built-in '-' / '=='
+	// (the conversion is explicit). verifyUnsigned/verifySigned write
+	// twoNk - 1 and ceilDiv(cand) == M, which failed the Release installer.
+	u128 operator-(const u128& o) const
+	{
+		uint64_t r = lo - o.lo;
+		return {r, hi - o.hi - (lo < o.lo ? 1u : 0u)};
+	}
+	bool operator==(const u128& o) const
+	{
+		return lo == o.lo && hi == o.hi;
+	}
     u128 operator*(uint64_t b) const {
         uint64_t rhi;
         uint64_t rlo = _umul128(lo, b, &rhi);
