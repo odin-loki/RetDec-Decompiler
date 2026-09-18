@@ -37,10 +37,13 @@ jobs:
           key: ctest-macos
           max-size: 8G
 
+      # autoconf/automake/libtool are for YARA, which bootstraps with autotools:
+      # its configure step runs ./bootstrap.sh, and the first run of this job
+      # died on `autoreconf: command not found`. macOS runners ship neither.
       - name: Install dependencies
         run: |
           brew update
-          brew install ninja qt@6 pkg-config
+          brew install ninja qt@6 pkg-config autoconf automake libtool
           echo "CMAKE_PREFIX_PATH=$(brew --prefix qt@6)" >> "$GITHUB_ENV"
 
       - uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb # latest
@@ -52,12 +55,18 @@ jobs:
           bash scripts/fetch-large-files.sh || \
             bash scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
 
-      - name: Cache CMake build
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      # restore/save rather than the combined action, because the combined one
+      # saves only when the job succeeds. The dependency build here is LLVM 23
+      # from source -- 35 minutes on the first run -- and every red round would
+      # otherwise pay it again.
+      - name: Restore the CMake build
+        id: build-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: build/linux
-          key: ctest-macos-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}
+          key: ctest-macos-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}-${{ github.run_id }}
           restore-keys: |
+            ctest-macos-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}-
             ctest-macos-
 
       # full-linux-release is the preset the documentation tells a macOS reader
@@ -96,6 +105,13 @@ jobs:
 
       - name: Unit tests
         run: ctest --test-dir build/linux -L unit --output-on-failure
+
+      - name: Save the CMake build
+        if: always()
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: build/linux
+          key: ctest-macos-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}-${{ github.run_id }}
 
       - name: Upload the build log on failure
         if: failure()
