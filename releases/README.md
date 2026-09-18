@@ -86,7 +86,7 @@ removes `com.apple.quarantine` from what it installs; by hand that is
 
 CI workflow **`.github/workflows/release-installers.yml`** publishes all three platforms when you:
 
-1. **Tag a release:** `git tag v2.0.21 && git push origin v2.0.21`
+1. **Tag a release:** `git tag v2.0.22 && git push origin v2.0.22`
 2. **Manual dispatch:** Actions → *release-installers* → Run workflow
 
 After changing install/uninstall scripts locally, commit the updated `releases/linux/` and `releases/macos/` files.

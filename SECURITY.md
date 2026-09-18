@@ -8,7 +8,7 @@
 | < 2.0   | No        |
 
 Security fixes land on `main` and the latest `v2.0.x` tag (currently
-[`v2.0.21`](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.0.21)).
+[`v2.0.22`](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.0.22)).
 
 ## Reporting a vulnerability
 

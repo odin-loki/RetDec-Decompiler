@@ -6,6 +6,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ## [Unreleased]
 
+## [2.0.22] — 2026-09-18
+
 ### Added
 
 - **A macOS release.** `release-installers.yml` built Windows and Linux;
@@ -537,6 +539,23 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   back to counting keywords in text. `GateReport::summary()` marks the fallback.
 
 ### Fixed
+
+- `MAC-01` left 17 `@rpath/Foo.framework/Versions/A/Foo` load commands
+  unresolved after `--fix`, then `codesign --verify --deep --strict` failed
+  with `bundle format is ambiguous` on Homebrew's `QtQmlMeta.framework`.
+  Basename-only lookup looked for `Contents/Frameworks/QtCore`; the file is
+  `Contents/Frameworks/QtCore.framework/Versions/A/QtCore`. `--fix` now adds
+  an `LC_RPATH` that reaches that layout, and resigns each `.framework` as a
+  bundle rather than signing the inner Mach-O files. `ctest-macos` was red
+  on every push until this.
+
+- `OrderedAllVisitor::visitStmt` walked successor chains by recursing
+  `visit()` → `visitStmt()` per statement. A long straight-line function
+  overflows the default 1 MB Windows stack: `ctest-windows`
+  `decompiler_smoke_cli_fib` died `STATUS_BREAKPOINT` (`0x80000003`) after
+  ~250 `AssignStmt` frames, and the GUI/parity fib tests failed with it.
+  The successor walk is iterative; nested bodies still go through
+  `visitStmt`.
 
 - `DEPS-01` (`scripts/ci/check_dependency_urls.py`): every `<NAME>_URL` in
   `cmake/deps.cmake` either holds more than one URL or points at a host where a

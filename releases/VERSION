@@ -1,4 +1,6 @@
-﻿version=2.0.21
+﻿version=2.0.22
 linux_install=releases/linux/install.sh
 linux_uninstall=releases/linux/uninstall.sh
-updated=2026-08-25T00:00:00+00:00
+macos_install=releases/macos/install.sh
+macos_uninstall=releases/macos/uninstall.sh
+updated=2026-09-18T00:00:00+00:00

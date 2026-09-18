@@ -202,8 +202,43 @@ def rpath_id_for(p: Path, bundle: Path) -> str:
 def rpath_to_frameworks(holder: Path, bundle: Path) -> str:
     """An @loader_path rpath that reaches Contents/Frameworks from holder."""
     fw = (bundle / "Contents" / "Frameworks").resolve()
-    rel = os.path.relpath(fw, holder.resolve().parent)
+    rel = os.path.relpath(fw, holder.resolve().parent).replace("\\", "/")
     return f"@loader_path/{rel}"
+
+
+def bundled_dep_candidates(dep: str, fw: Path, flat_target: Path) -> list[Path]:
+    """Where an @rpath / basename load command would live inside Frameworks.
+
+    Flat dylibs are Frameworks/<basename>. Qt frameworks are
+    Frameworks/QtCore.framework/Versions/A/QtCore -- looking up only the
+    basename misses those, which is why --fix left 17 @rpath framework
+    deps unresolved on the first ctest-macos run that executed MAC-01.
+    """
+    out: list[Path] = []
+    if dep.startswith("@rpath/"):
+        out.append(_norm(fw / dep[len("@rpath/"):]))
+    if flat_target not in out:
+        out.append(flat_target)
+    return out
+
+
+def bundled_dep(dep: str, fw: Path, flat_target: Path) -> Path | None:
+    return next((c for c in bundled_dep_candidates(dep, fw, flat_target)
+                 if c.exists()), None)
+
+
+def ensure_writable(f: Path) -> None:
+    try:
+        mode = f.stat().st_mode
+        if not (mode & 0o200):
+            f.chmod(mode | 0o200)
+    except OSError:
+        pass
+
+
+def strip_signature(f: Path) -> None:
+    subprocess.run(["codesign", "--remove-signature", str(f)],
+                   capture_output=True, text=True)
 
 
 class Report:
@@ -250,6 +285,8 @@ def walk(bundle: Path, fix: bool) -> Report:
             if fix:
                 # Not run(): a read-only file in the bundle should report as a
                 # stale id on the second walk, not as a traceback.
+                ensure_writable(f)
+                strip_signature(f)
                 subprocess.run(
                     ["install_name_tool", "-id", rpath_id_for(f, bundle), str(f)],
                     capture_output=True, text=True)
@@ -272,9 +309,11 @@ def walk(bundle: Path, fix: bool) -> Report:
             target = fw / name
 
             if resolved is None:
-                if target.exists():
-                    # A file of that name is in Contents/Frameworks, but this
-                    # referrer has no rpath that reaches it. --fix gives it one.
+                present = bundled_dep(dep, fw, target)
+                if present is not None:
+                    # A file this load command names is in Contents/Frameworks,
+                    # but this referrer has no rpath that reaches it. --fix
+                    # gives it one.
                     #
                     # Without --fix there is nothing to do AND nothing to be
                     # pleased about: the load command still resolves to
@@ -283,14 +322,18 @@ def walk(bundle: Path, fix: bool) -> Report:
                     # the verify-only pass -- the LAST gate before a release
                     # uploads the tarball -- reported OK for a bundle that
                     # cannot start, as long as a same-named file happened to be
-                    # sitting in Frameworks.
+                    # sitting in Frameworks. Basename-only lookup then repeated
+                    # the hole for Qt frameworks: Frameworks/QtCore does not
+                    # exist, Frameworks/QtCore.framework/Versions/A/QtCore does.
+                    shown = present.relative_to(fw) if inside(present, fw) else present.name
                     if fix:
                         add_rpath(f, rpath_to_frameworks(f, bundle))
-                        rep.rewritten.append(f"{f.name}: rpath -> Frameworks for {name}")
+                        rep.rewritten.append(
+                            f"{f.name}: rpath -> Frameworks for {shown}")
                     else:
                         rep.unresolved.append(
                             (str(f.relative_to(bundle)),
-                             f"{dep} (present as Frameworks/{name}, but no "
+                             f"{dep} (present as Frameworks/{shown}, but no "
                              f"LC_RPATH here reaches it)"))
                     continue
                 # A PLUGIN whose dependency is nowhere cannot load, so it is
@@ -333,10 +376,13 @@ def walk(bundle: Path, fix: bool) -> Report:
                 fw.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(resolved, target)
                 target.chmod(target.stat().st_mode | 0o200)
+                strip_signature(target)
                 run(["install_name_tool", "-id", f"@rpath/{name}", str(target)])
                 rep.copied.append(name)
                 queue.append(target)
 
+            ensure_writable(f)
+            strip_signature(f)
             run(["install_name_tool", "-change", dep, f"@rpath/{name}", str(f)])
             add_rpath(f, rpath_to_frameworks(f, bundle))
             rep.rewritten.append(f"{f.name}: {dep} -> @rpath/{name}")
@@ -347,14 +393,38 @@ def walk(bundle: Path, fix: bool) -> Report:
 def add_rpath(f: Path, rpath: str) -> None:
     if rpath in rpaths_of(f):
         return
-    subprocess.run(["install_name_tool", "-add_rpath", rpath, str(f)],
-                   capture_output=True, text=True)
+    ensure_writable(f)
+    strip_signature(f)
+    p = subprocess.run(["install_name_tool", "-add_rpath", rpath, str(f)],
+                       capture_output=True, text=True)
+    if p.returncode != 0:
+        err = (p.stderr or p.stdout or "").strip()
+        print(f"MAC-01: install_name_tool -add_rpath failed on {f}: {err}",
+              file=sys.stderr)
+
+
+def _inside_framework(p: Path) -> bool:
+    return any(part.endswith(".framework") for part in p.parts)
 
 
 def resign(bundle: Path) -> None:
-    """Ad-hoc signature, innermost first; the bundle itself last."""
-    files = macho_files(bundle)
-    # Deepest paths first so a container is signed after everything it holds.
+    """Ad-hoc signature, innermost first; the bundle itself last.
+
+    Sign each .framework as a bundle, not the Mach-O files inside it.
+    Signing Versions/A/QtQmlMeta (and the Versions/Current symlink target)
+    as loose binaries is what produced `bundle format is ambiguous (could
+    be app or framework)` on Homebrew Qt 6's QtQmlMeta.framework.
+    """
+    frameworks = sorted(
+        (p for p in bundle.rglob("*.framework") if p.is_dir()),
+        key=lambda p: len(p.parts),
+        reverse=True,
+    )
+    for fw in frameworks:
+        subprocess.run(["codesign", "--force", "--timestamp=none", "--sign", "-",
+                        str(fw)], capture_output=True, text=True)
+
+    files = [f for f in macho_files(bundle) if not _inside_framework(f)]
     for f in sorted(files, key=lambda p: len(p.parts), reverse=True):
         subprocess.run(["codesign", "--force", "--timestamp=none", "--sign", "-",
                         str(f)], capture_output=True, text=True)
@@ -432,6 +502,15 @@ Load command 21
     assert rpath_to_frameworks(holder, bundle) == "@loader_path/../../Frameworks"
     assert rpath_to_frameworks(bundle / "Contents" / "MacOS" / "retdec-gui",
                                bundle) == "@loader_path/../Frameworks"
+    fw_bin = (bundle / "Contents" / "Frameworks" / "QtDBus.framework" /
+              "Versions" / "A" / "QtDBus")
+    assert rpath_to_frameworks(fw_bin, bundle) == "@loader_path/../../.."
+
+    fw = bundle / "Contents" / "Frameworks"
+    cands = bundled_dep_candidates(
+        "@rpath/QtCore.framework/Versions/A/QtCore", fw, fw / "QtCore")
+    assert cands[0] == (fw / "QtCore.framework" / "Versions" / "A" / "QtCore"), cands
+    assert (fw / "QtCore") in cands
     # The verify-only pass must not call an unreachable dependency clean.
     # Driven through the real walk() would need otool; this pins the branch
     # logic instead, which is where the hole was.

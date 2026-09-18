@@ -1,7 +1,7 @@
 # Quick start (ten minutes)
 
 Plan.md `REL-07`. Prebuilt binaries are on the
-[v2.0.21 GitHub Release](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.0.21).
+[v2.0.22 GitHub Release](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.0.22).
 `docker pull imortek/retdec` is still unpublished (`REL-02`).
 
 Buildable C (`.h`, `_stubs.c`, `.buildable.c`) is **on by default**.
@@ -10,64 +10,79 @@ Pass `--no-buildable` to skip sidecars.
 ## Linux tarball (GitHub Release)
 
 ```bash
-curl -fL -O https://github.com/odin-loki/RetDec-Decompiler/releases/download/v2.0.21/retdec-2.0.21-linux-x64.tar.gz
-tar xzf retdec-2.0.21-linux-x64.tar.gz
-cd retdec-2.0.21-linux-x64
+curl -fL -O https://github.com/odin-loki/RetDec-Decompiler/releases/download/v2.0.22/retdec-2.0.22-linux-x64.tar.gz
+tar xzf retdec-2.0.22-linux-x64.tar.gz
+cd retdec-2.0.22-linux-x64
 chmod +x install.sh uninstall.sh
 ./install.sh --user --add-path
-curl -fL -O https://github.com/odin-loki/RetDec-Decompiler/releases/download/v2.0.21/fib_smoke
+curl -fL -O https://github.com/odin-loki/RetDec-Decompiler/releases/download/v2.0.22/fib_smoke
 retdec-decompiler fib_smoke -o fib.c
 ```
 
 `fib_smoke` is gcc -O1 of `tests/test_binaries/fib.c` (same flags as
 `retdec-decompiler-fixture-fib`). Read `fib.c` and `fib.buildable.c`.
 Run without installing: `export PATH="$(pwd)/bin:$PATH"`. The same Release has
-`retdec-2.0.21-linux-x64.tar.gz.sigstore.json` and `fib_smoke.sigstore.json`.
+`retdec-2.0.22-linux-x64.tar.gz.sigstore.json` and `fib_smoke.sigstore.json`.
 
 ## Linux AppImage
 
 ```bash
-curl -fL -O https://github.com/odin-loki/RetDec-Decompiler/releases/download/v2.0.21/retdec-2.0.21-x86_64.AppImage
-chmod +x retdec-2.0.21-x86_64.AppImage
-APPIMAGE_EXTRACT_AND_RUN=1 ./retdec-2.0.21-x86_64.AppImage --help
+curl -fL -O https://github.com/odin-loki/RetDec-Decompiler/releases/download/v2.0.22/retdec-2.0.22-x86_64.AppImage
+chmod +x retdec-2.0.22-x86_64.AppImage
+APPIMAGE_EXTRACT_AND_RUN=1 ./retdec-2.0.22-x86_64.AppImage --help
 ```
 
 The AppImage launches `retdec-gui`. `APPIMAGE_EXTRACT_AND_RUN=1` avoids FUSE.
-A keyless bundle `retdec-2.0.21-x86_64.AppImage.sigstore.json` is on the Release.
+A keyless bundle `retdec-2.0.22-x86_64.AppImage.sigstore.json` is on the Release.
 
 ## Windows (NSIS and zip)
 
 From the same Release:
 
-- `retdec-2.0.21-windows-x64-setup.exe` — NSIS installer
-- `retdec-2.0.21-windows-x64-portable.zip` — portable tree
+- `retdec-2.0.22-windows-x64-setup.exe` — NSIS installer
+- `retdec-2.0.22-windows-x64-portable.zip` — portable tree
 
 After NSIS or unzipping the portable tree and putting `bin` on `PATH`:
 
 ```powershell
-curl.exe -fL -O https://github.com/odin-loki/RetDec-Decompiler/releases/download/v2.0.21/fib_smoke.exe
+curl.exe -fL -O https://github.com/odin-loki/RetDec-Decompiler/releases/download/v2.0.22/fib_smoke.exe
 retdec-decompiler fib_smoke.exe -o fib.c
 ```
 
 `fib_smoke.exe` is the MSVC fixture (same flags as
 `retdec-decompiler-fixture-fib`). Keyless Sigstore bundles
-`retdec-2.0.21-windows-x64-portable.zip.sigstore.json`,
-`retdec-2.0.21-windows-x64-setup.exe.sigstore.json`, and
+`retdec-2.0.22-windows-x64-portable.zip.sigstore.json`,
+`retdec-2.0.22-windows-x64-setup.exe.sigstore.json`, and
 `fib_smoke.exe.sigstore.json` are on the Release. Authenticode is not applied.
+
+## macOS tarball
+
+```bash
+curl -fL -O https://github.com/odin-loki/RetDec-Decompiler/releases/download/v2.0.22/retdec-2.0.22-macos-arm64.tar.gz
+tar xzf retdec-2.0.22-macos-arm64.tar.gz
+cd retdec-2.0.22-macos-arm64
+chmod +x install.sh uninstall.sh
+./install.sh --user --add-path
+```
+
+The archive also contains `RetDec.app`. The package is ad-hoc signed, not
+notarised; `install.sh` strips `com.apple.quarantine` from a browser download
+and says so. Intel Macs use the `macos-x86_64` tarball when CI produces one;
+`macos-latest` currently builds arm64.
 
 ## Docker (when the image is public)
 
 The GHCR image packs the Linux tarball and `/opt/retdec/share/fib_smoke`.
 CI smoked `analyse` on that sample ([run 32835822135](https://github.com/odin-loki/RetDec-Decompiler/actions/runs/32835822135)).
-Anonymous `docker pull ghcr.io/odin-loki/retdec:v2.0.21` still returns 401
+Anonymous `docker pull ghcr.io/odin-loki/retdec:v2.0.22` still returns 401
 until the package is set public in GitHub Packages. Docker Hub
 `imortek/retdec` is unpublished.
 
 When the GHCR package is public:
 
 ```bash
-docker pull ghcr.io/odin-loki/retdec:v2.0.21
-docker run --rm -v "$PWD":/work ghcr.io/odin-loki/retdec:v2.0.21 \
+docker pull ghcr.io/odin-loki/retdec:v2.0.22
+docker run --rm -v "$PWD":/work ghcr.io/odin-loki/retdec:v2.0.22 \
   analyse /opt/retdec/share/fib_smoke -o /work/fib.c
 ```
 
