@@ -92,8 +92,8 @@ _detect_version() {
 		if [[ -n "$_tag" ]]; then echo "$_tag"; return; fi
 	fi
 	if command -v git >/dev/null 2>&1 && \
-	   git -C "${RETDEC_ROOT}" describe --tags >/dev/null 2>&1; then
-		git -C "${RETDEC_ROOT}" describe --tags
+	   git -C "${RETDEC_ROOT}" describe --tags --always >/dev/null 2>&1; then
+		git -C "${RETDEC_ROOT}" describe --tags --always
 		return
 	fi
 	# The project's own version, which is what CMakeLists.txt falls back to
@@ -396,8 +396,16 @@ if [[ "$WANT_BUNDLE" -eq 1 && -d "${BUNDLE_SRC}" ]]; then
 	_run python3 "${SCRIPT_DIR}/ci/check_macos_bundle.py" --fix "${STAGE_DIR}/RetDec.app"
 	GUI_LINE="RetDec.app      The GUI. Open it, or copy it to /Applications"
 elif [[ "$WANT_BUNDLE" -eq 1 ]]; then
-	echo ""
-	echo "NOTE: ${BUNDLE_SRC} is not there; packaging the CLI only."
+	# Not a note. Without this the release job builds a CLI-only tarball,
+	# prints a warning nobody reads, goes green, and publishes it AS the macOS
+	# release -- with the only durable record being the line
+	# "(no GUI in this package)" in the README inside the tarball. A package
+	# that is silently missing half of what it says it has is worse than no
+	# package. Pass --no-bundle to ask for CLI-only on purpose.
+	echo "ERROR: ${BUNDLE_SRC} is not there." >&2
+	echo "       cmake --install did not produce the GUI bundle. Pass --no-bundle" >&2
+	echo "       to package the CLI on purpose." >&2
+	exit 1
 fi
 
 _write_install_scripts "${STAGE_DIR}" "${VERSION_SAFE}"
@@ -437,6 +445,40 @@ _publish_release_artifacts() {
 	mkdir -p "${_rel}"
 	cp "${_stage}/install.sh" "${_stage}/uninstall.sh" "${_rel}/"
 	chmod +x "${_rel}/install.sh" "${_rel}/uninstall.sh"
+
+	# releases/README.md says "See VERSION for the active package version and
+	# script paths", and VERSION had only the Linux ones. MERGE rather than
+	# rewrite, because build-linux-installer.sh writes the same file and the
+	# committed copy is meant to carry both platforms' keys -- which only happens
+	# if running one script does not delete the other's. (Not a CI race: the two
+	# installer jobs are separate runners with separate checkouts and neither
+	# commits this file back, so neither ever sees the other's write. The file
+	# in git is updated by whoever runs the scripts locally.) The UTF-8 BOM is
+	# why this is not a shell redirect.
+	python3 - "${RETDEC_ROOT}/releases/VERSION" "${_ver}" <<'PYVER'
+import sys, datetime, pathlib
+path, ver = pathlib.Path(sys.argv[1]), sys.argv[2]
+text = path.read_text(encoding="utf-8-sig") if path.is_file() else ""
+keys = {}
+order = []
+for line in text.splitlines():
+    if "=" not in line:
+        continue
+    k, v = line.split("=", 1)
+    if k not in keys:
+        order.append(k)
+    keys[k] = v
+for k, v in (("version", ver),
+             ("macos_install", "releases/macos/install.sh"),
+             ("macos_uninstall", "releases/macos/uninstall.sh"),
+             ("updated", datetime.datetime.now(datetime.timezone.utc)
+                          .strftime("%Y-%m-%dT%H:%M:%SZ"))):
+    if k not in keys:
+        order.append(k)
+    keys[k] = v
+path.write_text("\ufeff" + "".join(f"{k}={keys[k]}\n" for k in order),
+                encoding="utf-8")
+PYVER
 }
 
 _publish_release_artifacts "${VERSION_SAFE}" "${STAGE_DIR}"

@@ -546,6 +546,115 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   which names it. It does **not** check that mirrors serve the same bytes: the
   `URL_HASH` beside them is what does that, and is why adding a mirror is safe.
 
+- **The macOS release job would have overwritten the Linux install script.**
+  A GitHub release asset is named after the **basename** of the path, not the
+  path. `linux-installer` uploads `releases/linux/install.sh`, which lands as
+  `install.sh` — the published v2.0.21 release carries exactly that, 3,033
+  bytes, with `uninstall.sh` beside it. The new macOS job uploaded
+  `releases/macos/install.sh`, and since both jobs only `needs: release` they
+  run in parallel: whichever finished second would silently replace the other's
+  script with a same-named, differently-behaving one. A macOS user who got the
+  Linux `install.sh` would install to the wrong prefix, edit the wrong rc file,
+  and never get the `com.apple.quarantine` strip that is the entire reason the
+  macOS script exists.
+
+  The macOS pair uploads as `install-macos.sh` / `uninstall-macos.sh` now.
+  Renaming the Linux pair instead would have broken the v2.0.21 download URLs,
+  so the new side takes the distinct name. Found by reviewing the job before it
+  ever ran, and confirmed against the live v2.0.21 asset list.
+
+  Five more in the same pass, all in code that had never executed:
+
+  - `--target install` on macOS runs `support/install-share.py`, and Python
+    3.14 — Homebrew's, which is what CMake picked — changed `extractall`'s
+    default filter (PEP 706) to one that refuses absolute and escaping member
+    paths. The caller is a `FATAL_ERROR`. The job pins 3.12, as
+    `ctest-windows` and now `ctest-macos` do.
+  - `brew install … || true` made a failed dependency install look like a
+    successful one; `brew --prefix qt@6` prints a path and exits 0 either way,
+    so the real error surfaced hundreds of lines later as a Qt `find_package`
+    failure.
+  - A missing GUI bundle printed a note and shipped a CLI-only tarball **as**
+    the macOS release. It is fatal now, in the packaging script and again in
+    the workflow; `--no-bundle` is how to ask for CLI-only on purpose.
+  - Nothing checked that `share/retdec` was installed. `--version` does not
+    need it and both packaging scripts skip a missing directory in silence, so
+    a tarball whose support tree failed to install would have passed every
+    check. The verify step requires `share/retdec/BUILD-ID`.
+  - `MAC-01` in verify-only mode returned OK for a dependency that resolves to
+    nothing, as long as a same-named file happened to sit in
+    `Contents/Frameworks`. That is the last gate before the tarball is signed
+    and uploaded. It records the miss now, and the self-test pins the branch.
+
+  Also: both installer jobs set up ccache and never passed
+  `CMAKE_*_COMPILER_LAUNCHER`, so the cache was restored and saved empty on
+  every release; `sign-release-sbom.yml` gained the macOS backstop that Linux
+  and Windows already had; and `releases/VERSION` is merged rather than
+  overwritten by each packaging script, so it can carry both platforms' keys.
+
+- **The full ctest set ran for the first time: 1,523 tests, 1,520 pass.**
+  Three failed on macOS, all three of them macOS-only, none of them a defect in
+  the decompiler:
+
+  - `decompiler_corpus_regression` — `PyYAML required for YAML manifests`. The
+    manifest is YAML and the macOS runner had no parser. `ctest-linux` installs
+    `python3-yaml` and `ctest-windows` pip-installs `pyyaml`; this job
+    installed neither. It takes an `actions/setup-python` interpreter now
+    rather than Homebrew's, which is PEP-668 externally-managed and refuses
+    `pip install` — pinned to 3.12 for the same reason `ctest-windows` pins it,
+    because the pyc opcode tables cover 3.8–3.12 and `hello.pyc` is a fixture
+    here too.
+
+  - `gui_headless_decompile_fib` — `dyld: Library not loaded:
+    @executable_path/../Frameworks/QtWidgets.framework/…`. On macOS
+    `retdec-gui` is a `MACOSX_BUNDLE`, so `$<TARGET_FILE_DIR:retdec-gui>` is
+    `retdec-gui.app/Contents/MacOS` — and the staging step copied *that*
+    somewhere else, leaving `Contents/Frameworks` behind, so
+    `@executable_path/..` became a directory with no Qt in it. The bundle is
+    the unit: the whole `.app` is copied now, and the two things the GUI
+    resolves relative to its own executable — `retdec-decompiler` beside it,
+    and `../share/retdec` — move inside with it.
+
+  - `ThreadPoolTest.AConstructorThatCannotStartItsThreadsReturnsControl` —
+    `could not lower RLIMIT_AS, so nothing was exercised`. Darwin aliases
+    `RLIMIT_AS` onto `RLIMIT_RSS` and does not enforce it, so the child cannot
+    provoke the allocation failure the test is about. That is a fact about the
+    host, not about `ThreadPool`, whose constructor already has the `try` /
+    `shutdown()` / rethrow the test guards. It skips on Apple with that
+    sentence and still fails anywhere the limit does work —
+    `managed_decompiler_test.cpp` does the same for `/dev/full`.
+
+  This suite is the one `ctest -L unit` never selected. Of the three failures
+  only the last is from it; the other two are labelled `integration` and have
+  been running on Linux all along. **The other ~1,500 newly-executed
+  assertions passed on their first run.**
+
+- **A crash report that printed everything except the cause.** `ctest-windows`
+  reached the integration tests and six of eight failed, all of them one bug
+  and its blast radius: `retdec-decompiler.exe` dies after ~52 s on every
+  native PE fixture, deep inside `llvmir2hll`'s `OrderedAllVisitor` recursion.
+  The harnesses reported
+
+  ```
+  Decompiler failed (exit 2147483651)
+  ```
+
+  and then stack frames #253–#255 — because they printed `stderr[-2000:]`, and
+  a crash says what went wrong at the **top** of its output and drags the trace
+  along underneath. LLVM's `Exception Code:` line, the one that turns
+  2147483651 into `0x80000003` (`STATUS_BREAKPOINT`), and whatever assertion
+  produced it, had been cut off the front.
+
+  `decompilation_smoke_test.py`, `corpus_regression_test.py` and
+  `parity_ctest.ps1` now print the head *and* the tail, write the complete text
+  to a file beside the output, and render the exit code in hex beside the
+  decimal. `install_smoke.ps1`'s GUI step is bounded at 240 s with its output
+  captured: `retdec-gui` is built `WIN32`, a Windows GUI-subsystem binary with
+  no console, so `2>&1 | Out-Null` discarded the only thing it could have said
+  while nothing stopped it waiting out the entire 600-second ctest budget.
+
+  The crash itself is not fixed here. This is the instrument that will name it.
+
 - **The Linux installer told users they had RetDec 5.0.** When `git describe`
   finds no tag — which is what `actions/checkout` gives by default —
   `build-linux-installer.sh` fell back to a literal `"5.0"`. That is upstream

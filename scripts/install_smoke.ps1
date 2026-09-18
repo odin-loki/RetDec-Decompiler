@@ -110,9 +110,32 @@ try {
         ([System.IO.Path]::GetFileNameWithoutExtension($absBinary))
     Remove-Item "${base}.gui-decompiled.c", "${base}.gui-decompiled.config.json" -Force -ErrorAction SilentlyContinue
 
-    & $gui --headless --headless-decompile $absBinary 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw "GUI headless decompile failed (exit $LASTEXITCODE)"
+    # Bounded, and its output kept. retdec-gui is built WIN32 -- a Windows
+    # GUI-subsystem binary with no console -- so `2>&1 | Out-Null` discarded
+    # the only thing it could have said, and nothing bounded it: the first
+    # ctest-windows run to reach this test sat here for the full 600-second
+    # ctest budget and reported nothing at all. A step that can wait forever
+    # and say nothing is not a test.
+    $guiOut1 = Join-Path $workDir "gui-headless.out"
+    $guiErr1 = Join-Path $workDir "gui-headless.err"
+    $p = Start-Process -FilePath $gui `
+        -ArgumentList @("--headless", "--headless-decompile", $absBinary) `
+        -PassThru -NoNewWindow `
+        -RedirectStandardOutput $guiOut1 -RedirectStandardError $guiErr1
+    $finished = $p.WaitForExit(240 * 1000)
+    if ($finished) { $p.WaitForExit() }
+    foreach ($f in @($guiOut1, $guiErr1)) {
+        if ((Test-Path $f) -and (Get-Item $f).Length -gt 0) {
+            Write-Host "--- $(Split-Path -Leaf $f) ---"
+            Get-Content $f | ForEach-Object { Write-Host $_ }
+        }
+    }
+    if (-not $finished) {
+        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+        throw "GUI headless decompile did not finish in 240 s"
+    }
+    if ($p.ExitCode -ne 0) {
+        throw "GUI headless decompile failed (exit $($p.ExitCode))"
     }
 
     $guiOut = "${base}.gui-decompiled.c"

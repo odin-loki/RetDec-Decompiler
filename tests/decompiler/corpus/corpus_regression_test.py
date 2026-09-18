@@ -107,6 +107,59 @@ def _resolve_binary(
     return None
 
 
+# A crashing child says what went wrong at the TOP of its output and drags the
+# stack trace along underneath. Printing only the tail is therefore printing
+# everything except the cause: on Windows the first ctest-windows run to reach
+# these tests reported
+#
+#     Decompiler failed (exit 2147483651)
+#
+# followed by stack frames #253 to #255, and LLVM's "Exception Code:" line --
+# the one that turns 2147483651 into 0x80000003, STATUS_BREAKPOINT -- had been
+# cut off the front along with whatever assertion produced it.
+#
+# So: head and tail, both labelled, and the whole thing written beside the
+# output where a CI artefact upload can still find it.
+_HEAD_LINES = 60
+_TAIL_LINES = 40
+
+
+def _report_child_output(label, text, dump_path=None):
+    if not text:
+        print(f"{label}: (empty)")
+        return
+    if dump_path is not None:
+        try:
+            with open(dump_path, "w", encoding="utf-8", errors="replace") as fh:
+                fh.write(text)
+            print(f"{label}: full text in {dump_path}")
+        except OSError as exc:
+            print(f"{label}: could not write {dump_path}: {exc}")
+    lines = text.splitlines()
+    if len(lines) <= _HEAD_LINES + _TAIL_LINES:
+        print(f"{label}:")
+        for ln in lines:
+            print("  " + ln)
+        return
+    print(f"{label} (first {_HEAD_LINES} lines -- the cause is here):")
+    for ln in lines[:_HEAD_LINES]:
+        print("  " + ln)
+    print(f"{label} ... {len(lines) - _HEAD_LINES - _TAIL_LINES} lines elided ...")
+    print(f"{label} (last {_TAIL_LINES} lines):")
+    for ln in lines[-_TAIL_LINES:]:
+        print("  " + ln)
+
+
+def _describe_exit(code):
+    """Windows exception codes come back as a large unsigned int; say so."""
+    if code is None:
+        return "none"
+    unsigned = code & 0xFFFFFFFF
+    if unsigned >= 0x80000000:
+        return f"{code} (0x{unsigned:08X})"
+    return str(code)
+
+
 def _exe_suffix() -> str:
     return ".exe" if os.name == "nt" else ""
 
@@ -190,9 +243,11 @@ def main() -> int:
             continue
 
         if proc.returncode != 0:
-            print(f"  FAIL: exit {proc.returncode}", file=sys.stderr)
-            if proc.stderr:
-                print(proc.stderr[-1500:], file=sys.stderr)
+            print(f"  FAIL: exit {_describe_exit(proc.returncode)}", file=sys.stderr)
+            _report_child_output(f"  [{fx_id}] stdout", proc.stdout,
+                                 str(out_primary) + ".stdout.log")
+            _report_child_output(f"  [{fx_id}] stderr", proc.stderr,
+                                 str(out_primary) + ".stderr.log")
             failures += 1
             continue
 

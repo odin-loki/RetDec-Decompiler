@@ -333,18 +333,58 @@ endif()
 
 set(_GUI_STAGING "${CMAKE_CURRENT_BINARY_DIR}/gui_staging")
 set(_GUI_STAGING_STAMP "${_GUI_STAGING}/.staged")
-set(_GUI_STAGED "${_GUI_STAGING}/retdec-gui${CMAKE_EXECUTABLE_SUFFIX}")
+
+# On macOS retdec-gui is a MACOSX_BUNDLE, so $<TARGET_FILE_DIR:retdec-gui> is
+# retdec-gui.app/Contents/MacOS -- NOT the directory the application needs.
+# macdeployqt puts Qt in Contents/Frameworks and rewrites the executable's load
+# commands to @executable_path/../Frameworks/..., so copying only Contents/MacOS
+# somewhere else makes @executable_path/.. a directory with no Frameworks in it:
+#
+#     dyld: Library not loaded: @executable_path/../Frameworks/QtWidgets.framework/...
+#       tried: '.../build/linux/tests/decompiler/Frameworks/QtWidgets.framework/...'
+#
+# which is what gui_headless_decompile_fib aborted with on the first macOS run.
+# The bundle is the unit: copy the whole thing and run the executable inside it.
+#
+# Two things then have to move inside the bundle with it, because both are
+# resolved RELATIVE TO THE EXECUTABLE (src/gui/cli_tool_paths.cpp):
+# retdec-decompiler, which resolveCliTool() looks for side by side; and the
+# support tree, which resolveBundledDecompilerConfigPath() looks for at
+# <bin>/../share/retdec -- Contents/share once <bin> is Contents/MacOS.
+set(_GUI_STAGE_EXTRA_COMMANDS)
+if(APPLE)
+    set(_GUI_STAGE_SRC "$<TARGET_BUNDLE_DIR:retdec-gui>")
+    set(_GUI_STAGE_DST "${_GUI_STAGING}/retdec-gui.app")
+    set(_GUI_SIBLING_DIR "${_GUI_STAGING}/retdec-gui.app/Contents/MacOS")
+    set(_GUI_STAGED "${_GUI_SIBLING_DIR}/retdec-gui")
+    set(_GUI_BUNDLE_SHARE "${_GUI_STAGING}/retdec-gui.app/Contents/share/retdec")
+    list(APPEND _GUI_STAGE_EXTRA_COMMANDS
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${_GUI_BUNDLE_SHARE}/profiles"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/src/retdec-decompiler/decompiler-config.json"
+            "${_GUI_BUNDLE_SHARE}/decompiler-config.json"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_SOURCE_DIR}/src/retdec-decompiler/profiles"
+            "${_GUI_BUNDLE_SHARE}/profiles"
+    )
+else()
+    set(_GUI_STAGE_SRC "$<TARGET_FILE_DIR:retdec-gui>")
+    set(_GUI_STAGE_DST "${_GUI_STAGING}")
+    set(_GUI_SIBLING_DIR "${_GUI_STAGING}")
+    set(_GUI_STAGED "${_GUI_STAGING}/retdec-gui${CMAKE_EXECUTABLE_SUFFIX}")
+endif()
 
 add_custom_command(
     OUTPUT "${_GUI_STAGING_STAMP}"
     COMMAND ${CMAKE_COMMAND} -E rm -rf "${_GUI_STAGING}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${_GUI_STAGING}"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "$<TARGET_FILE_DIR:retdec-gui>"
-        "${_GUI_STAGING}"
+        "${_GUI_STAGE_SRC}"
+        "${_GUI_STAGE_DST}"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:retdec-decompiler>"
-        "${_GUI_STAGING}/$<TARGET_FILE_NAME:retdec-decompiler>"
+        "${_GUI_SIBLING_DIR}/$<TARGET_FILE_NAME:retdec-decompiler>"
+    ${_GUI_STAGE_EXTRA_COMMANDS}
     COMMAND ${CMAKE_COMMAND} -E make_directory
         "${CMAKE_CURRENT_BINARY_DIR}/share/retdec/profiles"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

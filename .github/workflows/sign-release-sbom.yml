@@ -112,6 +112,62 @@ jobs:
           gh release upload "${TAG}" "/tmp/rel/${bundle}"
           echo "uploaded ${bundle} to ${TAG}"
 
+  # The macOS tarball is cosign-signed inline by release-installers.yml, the
+  # same as the Linux one. This is the same backstop the Linux and Windows
+  # artefacts already have: if that inline step did not run, or the release was
+  # assembled some other way, the bundle gets added here rather than the
+  # artefact staying unsigned. Without this job macOS would be the one platform
+  # with no retry.
+  sign-macos-tarball:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign published macOS tarball if unsigned
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_TAG: ${{ github.event.inputs.tag || '' }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch || '' }}
+        run: |
+          set -euo pipefail
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" && -n "${DISPATCH_TAG}" ]]; then
+            TAG="${DISPATCH_TAG}"
+          elif [[ "${EVENT_NAME}" == "workflow_run" ]]; then
+            TAG="${RUN_BRANCH}"
+            if [[ "${TAG}" != v* ]]; then
+              echo "release-installers did not run on a v* tag (${TAG}); skip"
+              exit 0
+            fi
+          else
+            TAG="v2.0.21"
+          fi
+          mkdir -p /tmp/rel-macos
+          # Not an error when there is none: releases before this one have no
+          # macOS artefact at all.
+          gh release download "${TAG}" --pattern 'retdec-*-macos-*.tar.gz' \
+            --dir /tmp/rel-macos || true
+          tb="$(find /tmp/rel-macos -name 'retdec-*-macos-*.tar.gz' | head -n1)"
+          if [ -z "${tb}" ]; then
+            echo "no macOS tarball on ${TAG}; nothing to sign"
+            exit 0
+          fi
+          base="$(basename "${tb}")"
+          bundle="${base}.sigstore.json"
+          if gh release view "${TAG}" --json assets --jq '.assets[].name' | grep -qx "${bundle}"; then
+            echo "already signed: ${bundle}"
+            exit 0
+          fi
+          cosign sign-blob --yes --bundle "/tmp/rel-macos/${bundle}" "${tb}"
+          gh release upload "${TAG}" "/tmp/rel-macos/${bundle}"
+          echo "uploaded ${bundle} to ${TAG}"
+
   sign-windows-installers:
     if: >-
       github.event_name != 'workflow_run' ||

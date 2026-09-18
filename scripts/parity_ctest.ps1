@@ -63,9 +63,19 @@ if ($Fast) {
                    "--llvm-passes-json", $FastJson)
 }
 $swCli = [System.Diagnostics.Stopwatch]::StartNew()
-& $Decompiler @cliArgs 2>&1 | Out-Null
+# Kept, not discarded. `2>&1 | Out-Null` threw away the crash trace and left
+# only "CLI decompile failed (exit -2147483645)" -- a number whose meaning
+# (0x80000003, STATUS_BREAKPOINT) was in the output that had just been dropped.
+$cliLog = Join-Path $WorkDir "parity-cli.log"
+& $Decompiler @cliArgs 2>&1 | Tee-Object -FilePath $cliLog | Out-Null
 $swCli.Stop()
-if ($LASTEXITCODE -ne 0) { throw "CLI decompile failed (exit $LASTEXITCODE)" }
+if ($LASTEXITCODE -ne 0) {
+    $code = $LASTEXITCODE
+    $hex = "0x{0:X8}" -f ($code -band 0xFFFFFFFF)
+    Write-Host "--- retdec-decompiler output ($cliLog) ---"
+    if (Test-Path -LiteralPath $cliLog) { Get-Content $cliLog | ForEach-Object { Write-Host $_ } }
+    throw "CLI decompile failed (exit $code / $hex)"
+}
 if (-not (Test-Path -LiteralPath $outCli)) { throw "CLI output missing: $outCli" }
 
 # (2) GUI headless (run from GUI directory so retdec-decompiler is found beside retdec-gui)

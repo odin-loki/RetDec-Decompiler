@@ -456,13 +456,36 @@ _publish_release_artifacts() {
 	mkdir -p "${_rel}"
 	cp "${_stage}/install.sh" "${_stage}/uninstall.sh" "${_rel}/"
 	chmod +x "${_rel}/install.sh" "${_rel}/uninstall.sh"
-	local _version_file="${RETDEC_ROOT}/releases/VERSION"
-	{
-		echo "version=${_ver}"
-		echo "linux_install=releases/linux/install.sh"
-		echo "linux_uninstall=releases/linux/uninstall.sh"
-		echo "updated=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
-	} > "${_version_file}"
+	# MERGE, not rewrite, because build-macos-installer.sh writes the same file
+	# and the committed copy is meant to carry both platforms' keys. (Not a CI
+	# race: the two installer jobs are separate runners with separate checkouts
+	# and neither commits this file back. The file in git is updated by whoever
+	# runs the scripts locally.) The UTF-8 BOM is why this is not a shell
+	# redirect -- and python3 is now a requirement of this step, which the
+	# linux-installer job apt-installs and a bare local run may not have.
+	python3 - "${RETDEC_ROOT}/releases/VERSION" "${_ver}" <<'PYVER'
+import sys, datetime, pathlib
+path, ver = pathlib.Path(sys.argv[1]), sys.argv[2]
+text = path.read_text(encoding="utf-8-sig") if path.is_file() else ""
+keys, order = {}, []
+for line in text.splitlines():
+    if "=" not in line:
+        continue
+    k, v = line.split("=", 1)
+    if k not in keys:
+        order.append(k)
+    keys[k] = v
+for k, v in (("version", ver),
+             ("linux_install", "releases/linux/install.sh"),
+             ("linux_uninstall", "releases/linux/uninstall.sh"),
+             ("updated", datetime.datetime.now(datetime.timezone.utc)
+                          .strftime("%Y-%m-%dT%H:%M:%SZ"))):
+    if k not in keys:
+        order.append(k)
+    keys[k] = v
+path.write_text("\ufeff" + "".join(f"{k}={keys[k]}\n" for k in order),
+                encoding="utf-8")
+PYVER
 	echo "  releases: ${_rel}"
 }
 

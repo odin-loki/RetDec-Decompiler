@@ -123,8 +123,28 @@ TEST(ThreadPoolTest, AConstructorThatCannotStartItsThreadsReturnsControl)
 								   << (WIFSIGNALED(status) ? WTERMSIG(status) : -1) << " (SIGALRM " << SIGALRM
 								   << " is the hang, SIGABRT " << SIGABRT << " is std::terminate)";
 
+	// The child could not establish the scenario. That is a fact about the
+	// host, not about ThreadPool: Darwin aliases RLIMIT_AS onto RLIMIT_RSS and
+	// does not enforce it the way Linux does, so setrlimit() returns non-zero
+	// and there is nothing to observe. Skipping says so; failing would report
+	// a defect in code that was never run.
+	//
+	// managed_decompiler_test.cpp does the same thing for /dev/full, and for
+	// the same reason: say what the test needs, and skip where it is not there
+	// rather than passing quietly -- or, as here, failing loudly about the
+	// wrong thing. Everywhere the limit DOES work, a failure to set it is
+	// still a failure.
+	if (WEXITSTATUS(status) == kSetrlimitFailed)
+	{
+#if defined(__APPLE__)
+		GTEST_SKIP() << "Darwin does not enforce RLIMIT_AS, so the allocation "
+						"failure this test needs cannot be provoked here";
+#else
+		FAIL() << "could not lower RLIMIT_AS, so nothing was exercised";
+#endif
+	}
+
 	// Either outcome is fine; only a hang or an abort is not.
-	EXPECT_NE(kSetrlimitFailed, WEXITSTATUS(status)) << "could not lower RLIMIT_AS, so nothing was exercised";
 }
 
 #endif // _WIN32

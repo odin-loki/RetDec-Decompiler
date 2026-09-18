@@ -273,11 +273,25 @@ def walk(bundle: Path, fix: bool) -> Report:
 
             if resolved is None:
                 if target.exists():
-                    # It is already here; the referring file just cannot see
-                    # it. Give it an rpath that can.
+                    # A file of that name is in Contents/Frameworks, but this
+                    # referrer has no rpath that reaches it. --fix gives it one.
+                    #
+                    # Without --fix there is nothing to do AND nothing to be
+                    # pleased about: the load command still resolves to
+                    # nothing, so the bundle still will not load. An earlier
+                    # version of this `continue`d silently here, which meant
+                    # the verify-only pass -- the LAST gate before a release
+                    # uploads the tarball -- reported OK for a bundle that
+                    # cannot start, as long as a same-named file happened to be
+                    # sitting in Frameworks.
                     if fix:
                         add_rpath(f, rpath_to_frameworks(f, bundle))
                         rep.rewritten.append(f"{f.name}: rpath -> Frameworks for {name}")
+                    else:
+                        rep.unresolved.append(
+                            (str(f.relative_to(bundle)),
+                             f"{dep} (present as Frameworks/{name}, but no "
+                             f"LC_RPATH here reaches it)"))
                     continue
                 # A PLUGIN whose dependency is nowhere cannot load, so it is
                 # not providing anything -- it is a file macdeployqt copied in
@@ -418,6 +432,15 @@ Load command 21
     assert rpath_to_frameworks(holder, bundle) == "@loader_path/../../Frameworks"
     assert rpath_to_frameworks(bundle / "Contents" / "MacOS" / "retdec-gui",
                                bundle) == "@loader_path/../Frameworks"
+    # The verify-only pass must not call an unreachable dependency clean.
+    # Driven through the real walk() would need otool; this pins the branch
+    # logic instead, which is where the hole was.
+    import inspect
+    src = inspect.getsource(walk)
+    assert "rep.unresolved.append(" in src.split("if resolved is None:", 1)[1] \
+        .split("# Resolved, but outside", 1)[0], \
+        "the not-fix branch no longer records an unreachable dependency"
+
     print("MAC-01: self-test OK")
 
 
