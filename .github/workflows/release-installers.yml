@@ -101,8 +101,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # Ubuntu runners have sat queued for an hour while windows-latest is free.
+  # Version/tag are local (CMakeLists / dispatch input / git tag); do not wait
+  # on the ubuntu `release` job or the Windows zip never ships.
   windows-installer:
-    needs: release
     runs-on: windows-latest
     timeout-minutes: 360
     env:
@@ -110,11 +112,31 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      - name: Resolve release metadata
+        id: meta
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq "push" -and $env:GITHUB_REF_NAME -like "v*") {
+            $tag = $env:GITHUB_REF_NAME
+            $ver = $tag.Substring(1)
+          } elseif ("${{ github.event.inputs.version }}" -ne "") {
+            $ver = "${{ github.event.inputs.version }}"
+            $tag = "v$ver"
+          } else {
+            $line = Select-String -Path CMakeLists.txt -Pattern '^\s*VERSION\s+' | Select-Object -First 1
+            if (-not $line) { throw "VERSION not found in CMakeLists.txt" }
+            $ver = [regex]::Match($line.Line, 'VERSION\s+([0-9.]+)').Groups[1].Value
+            $tag = "v$ver"
+          }
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$ver"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "tag=$tag"
+          Write-Host "Release: $tag ($ver)"
+
       - name: Detect prebuilt Windows artifacts
         id: prebuilt
         shell: pwsh
         run: |
-          $ver = "${{ needs.release.outputs.version }}"
+          $ver = "${{ steps.meta.outputs.version }}"
           $setup = "dist/retdec-$ver-windows-x64-setup.exe"
           $zip = "dist/retdec-$ver-windows-x64-portable.zip"
           if ((Test-Path $setup) -and (Test-Path $zip)) {
@@ -126,7 +148,7 @@ jobs:
         if: steps.prebuilt.outputs.has == 'true' || (github.event_name == 'workflow_dispatch' && inputs.skip_build)
         shell: pwsh
         run: |
-          $ver = "${{ needs.release.outputs.version }}"
+          $ver = "${{ steps.meta.outputs.version }}"
           foreach ($f in @(
             "dist/retdec-$ver-windows-x64-setup.exe",
             "dist/retdec-$ver-windows-x64-portable.zip"
@@ -228,7 +250,7 @@ jobs:
           if (Test-Path "build/windows/deps/install/llvm/lib/LLVMPasses.lib") {
             Get-ChildItem -Path "build/windows/llvm-project-prefix" -Recurse -Filter *.obj -ErrorAction SilentlyContinue | Remove-Item -Force
           }
-          .\scripts\build-windows-installer.ps1 -Version "${{ needs.release.outputs.version }}"
+          .\scripts\build-windows-installer.ps1 -Version "${{ steps.meta.outputs.version }}"
 
       - name: Annotate Windows build failure
         if: failure() && steps.win_pkg.outcome == 'failure'
@@ -275,7 +297,7 @@ jobs:
       - name: Sign Windows artefacts
         shell: pwsh
         run: |
-          $ver = "${{ needs.release.outputs.version }}"
+          $ver = "${{ steps.meta.outputs.version }}"
           cosign sign-blob --yes --bundle "dist/retdec-$ver-windows-x64-setup.exe.sigstore.json" "dist/retdec-$ver-windows-x64-setup.exe"
           if ($LASTEXITCODE -ne 0) { throw "cosign setup.exe failed" }
           cosign sign-blob --yes --bundle "dist/retdec-$ver-windows-x64-portable.zip.sigstore.json" "dist/retdec-$ver-windows-x64-portable.zip"
@@ -284,12 +306,12 @@ jobs:
       - name: Upload Windows release assets
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          tag_name: ${{ needs.release.outputs.tag }}
+          tag_name: ${{ steps.meta.outputs.tag }}
           files: |
-            dist/retdec-${{ needs.release.outputs.version }}-windows-x64-setup.exe
-            dist/retdec-${{ needs.release.outputs.version }}-windows-x64-setup.exe.sigstore.json
-            dist/retdec-${{ needs.release.outputs.version }}-windows-x64-portable.zip
-            dist/retdec-${{ needs.release.outputs.version }}-windows-x64-portable.zip.sigstore.json
+            dist/retdec-${{ steps.meta.outputs.version }}-windows-x64-setup.exe
+            dist/retdec-${{ steps.meta.outputs.version }}-windows-x64-setup.exe.sigstore.json
+            dist/retdec-${{ steps.meta.outputs.version }}-windows-x64-portable.zip
+            dist/retdec-${{ steps.meta.outputs.version }}-windows-x64-portable.zip.sigstore.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -698,8 +720,10 @@ jobs:
       # A release asset is named after the BASENAME of the path, not the path.
       # linux-installer uploads releases/linux/install.sh, which lands as
       # `install.sh` -- the published v2.0.21 release carries exactly that, and
-      # `uninstall.sh` beside it. Both installer jobs only `needs: release`, so
-      # they run in parallel and the second one to finish would overwrite the
+      # `uninstall.sh` beside it. linux-installer and macos-installer still
+      # `needs: release`; windows-installer resolves the tag locally so a
+      # queued Ubuntu runner cannot block the Windows zip. The two Unix jobs
+      # run in parallel and the second one to finish would overwrite the
       # first's script with a same-named, differently-behaving one. A macOS
       # user getting the Linux install.sh would install to the wrong prefix,
       # edit the wrong rc file, and never get the quarantine strip that is the
