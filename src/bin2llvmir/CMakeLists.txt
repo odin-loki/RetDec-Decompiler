@@ -141,6 +141,7 @@ target_include_directories(bin2llvmir
 		$<INSTALL_INTERFACE:${RETDEC_INSTALL_INCLUDE_DIR}>
 	PRIVATE
 		$<BUILD_INTERFACE:${RETDEC_DEPS_DIR}/eigen>
+		$<BUILD_INTERFACE:${RETDEC_SOURCE_DIR}>
 )
 
 target_link_libraries(bin2llvmir

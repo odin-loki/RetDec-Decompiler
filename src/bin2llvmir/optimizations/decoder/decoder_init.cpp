@@ -20,6 +20,7 @@
 #include "retdec/fileformat/types/sec_seg/pe_coff_section.h"
 #include "retdec/loader/loader/elf/elf_image.h"
 #include "retdec/pelib/PeLibAux.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 #include <llvm/DebugInfo/DWARF/DWARFDataExtractor.h>
 #include <llvm/DebugInfo/DWARF/DWARFDebugFrame.h>

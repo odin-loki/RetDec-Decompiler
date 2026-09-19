@@ -18,6 +18,7 @@
 #include "retdec/bin2llvmir/utils/llvm.h"
 #include "retdec/profiling/profiling.h"
 #include "retdec/utils/conversion.h"
+#include "capstone2llvmir/capstone6_compat.h"
 #include "retdec/utils/io/log.h"
 #include "retdec/utils/string.h"
 

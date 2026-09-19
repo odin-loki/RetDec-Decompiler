@@ -19,7 +19,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   VSCEF/VFEE. AES/SHA stay unmapped on every ISA including x86. SASS is still
   not Production — NVIDIA has not printed FMUL/FFMA/ISETP/SHL/SHR/LOP3.
 - Decoder uses Capstone 6 `CS_MODE_RISCV_C` so Linux/Windows installer
-  builds compile `decoder_init.cpp`. llama.cpp ExternalProject disables
+  builds compile `decoder_init.cpp`. ABI/decoder TUs include the private
+  Capstone 6 compat aliases so Clang on macOS can see `ARM_INS_NOP`,
+  `MIPS_REG_0`, and AArch64 PAC/BTI ids. llama.cpp ExternalProject disables
   Metal/BLAS on CPU-only packages and links Accelerate on macOS so
   `retdec-gui` can resolve ggml backend symbols.
 

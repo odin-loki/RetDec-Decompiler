@@ -6,6 +6,7 @@
  */
 
 #include "retdec/bin2llvmir/providers/abi/pic32.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 
