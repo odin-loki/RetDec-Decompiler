@@ -822,6 +822,62 @@ TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_CLZ)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_IN)
+{
+	setRegisters({
+		{XCORE_REG_R0, 0x1234},
+	});
+
+	emulate_bin("48 b7");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R10, ANY},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("xcore.chan.in"), {0x1234}},
+	});
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_in"));
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_OUT)
+{
+	setRegisters({
+		{XCORE_REG_R9, 0x20},
+		{XCORE_REG_R10, 0xab},
+	});
+
+	emulate_bin("a9 af");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R9, XCORE_REG_R10});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("xcore.chan.out"), {0x20, 0xab}},
+	});
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_out"));
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_PEEK)
+{
+	setRegisters({
+		{XCORE_REG_R5, 0x40},
+	});
+
+	emulate_bin("81 bf");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R5});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R0, ANY},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("xcore.chan.peek"), {0x40}},
+	});
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_peek"));
+}
+
 TEST_F(Capstone2LlvmIrTranslatorXcoreTests, translatorIs32Bit)
 {
 	EXPECT_EQ(4u, _translator->getArchByteSize());

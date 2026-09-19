@@ -7,6 +7,8 @@
 #ifndef CAPSTONE2LLVMIR_RISCV_RISCV_IMPL_H
 #define CAPSTONE2LLVMIR_RISCV_RISCV_IMPL_H
 
+#include <llvm/IR/Intrinsics.h>
+
 #include "retdec/capstone2llvmir/riscv/riscv.h"
 #include "capstone2llvmir/capstone2llvmir_impl.h"
 
@@ -105,6 +107,15 @@ class Capstone2LlvmIrTranslatorRiscv_impl :
 				llvm::Type* intTy,
 				bool isSigned,
 				llvm::IRBuilder<>& irb);
+		llvm::Value* fpIntrinsic(
+				llvm::IRBuilder<>& irb,
+				llvm::Intrinsic::ID id,
+				llvm::ArrayRef<llvm::Value*> args);
+		llvm::Type* fpTypeOfInsn(unsigned id, llvm::IRBuilder<>& irb) const;
+		llvm::Value* asFp(
+				llvm::Value* v,
+				llvm::Type* ty,
+				llvm::IRBuilder<>& irb);
 		uint32_t csrOperandReg(uint16_t encoding) const;
 		llvm::Value* loadCsr(uint16_t encoding, llvm::IRBuilder<>& irb);
 		void storeCsr(uint16_t encoding, llvm::Value* val, llvm::IRBuilder<>& irb);
@@ -156,10 +167,29 @@ class Capstone2LlvmIrTranslatorRiscv_impl :
 		void translateFpStore(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateFcvt(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateFcmp(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateFpFma(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateFsqrt(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateFsgnj(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateFminMax(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateFclass(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateFmv(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateAmo(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateLr(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateSc(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateCsr(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateAndn(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateBitCount(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateMinMax(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateRotate(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateShadd(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateZbs(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateSlliUw(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateCzero(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateOrcB(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateRev8(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateBrev8(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateSextZext(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translatePack(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 };
 
 } // namespace capstone2llvmir

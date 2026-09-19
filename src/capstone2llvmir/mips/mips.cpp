@@ -7,6 +7,10 @@
 
 #include <cmath>
 #include <iomanip>
+#include <vector>
+
+#include <llvm/IR/DerivedTypes.h>
+#include <llvm/IR/Instructions.h>
 
 #include "capstone2llvmir/mips/mips_impl.h"
 
@@ -106,6 +110,10 @@ std::size_t Capstone2LlvmIrTranslatorMips_impl::getDelaySlot(uint32_t id) const
 			MIPS_INS_BLTZ, MIPS_INS_BLTZL, MIPS_INS_BGEZ, MIPS_INS_BGEZL,
 			MIPS_INS_BEQZ, MIPS_INS_BNEZ,
 			MIPS_INS_ALIAS_BEQZ, MIPS_INS_ALIAS_BNEZ,
+			// microMIPS 16-bit branches/jumps still have a delay slot.
+			MIPS_INS_B16, MIPS_INS_BEQZ16, MIPS_INS_BNEZ16,
+			MIPS_INS_JR16, MIPS_INS_JALRS16, MIPS_INS_JALRS,
+			MIPS_INS_JRADDIUSP,
 			// call
 			MIPS_INS_BGEZAL, MIPS_INS_BGEZALL, MIPS_INS_BLTZAL,
 			MIPS_INS_BLTZALL, MIPS_INS_JAL, MIPS_INS_JALR,
@@ -114,6 +122,8 @@ std::size_t Capstone2LlvmIrTranslatorMips_impl::getDelaySlot(uint32_t id) const
 			MIPS_INS_J, MIPS_INS_JR,
 			MIPS_INS_B, MIPS_INS_ALIAS_B, MIPS_INS_ALIAS_JR,
 	};
+	// Compact R6 (BC, BALC, BEQC, BEQZC, JIC, JRC, JALRC, …) is intentionally
+	// absent: those encodings have no delay slot.
 	return set.count(id);
 }
 
@@ -162,9 +172,13 @@ uint32_t Capstone2LlvmIrTranslatorMips_impl::getCarryRegister()
 }
 
 /**
- * True when any operand names an MSA vector register. Bitwise V ops
- * (`AND_V`/`OR_V`/`XOR_V`/`NOR_V`) are modelled as i128; every other MSA
- * id still goes to a pseudo-assembly call.
+ * True when any operand names an MSA vector register. Modelled MSA
+ * (AND_V/OR_V/XOR_V/NOR_V, ADDV/SUBV/MULV lanes, ILVEV/ILVOD/ILVL/ILVR,
+ * PCKEV/PCKOD, SHF, SPLAT/SPLATI, ANDI_B/ORI_B/XORI_B/NORI_B, BSEL_V/BSELI,
+ * CEQ/CEQI/CLE_S/CLT_S, MAX_S/MIN_S, SLL/SRL lanes, COPY_S/COPY_U,
+ * INSERT/FILL/LDI, ADDS_S/U / SUBS_S/U, SAT_S/U, SLD/SLDI,
+ * FADD_W/FSUB_W/FMUL_W/FDIV_W/FMAX_W/FMIN_W, LD/ST of the whole vector) is
+ * i128; every other MSA id still goes to a pseudo-assembly call.
  */
 bool Capstone2LlvmIrTranslatorMips_impl::hasMsaOperand(cs_mips* mi) const
 {
@@ -202,11 +216,15 @@ void Capstone2LlvmIrTranslatorMips_impl::translateInstruction(
 		}
 	}
 
-	// Capstone 6 gives MSA its own ids (`AND_V`, `LD_B`, `ORI_B`, …). A few
-	// of those (128-bit bitwise) are modelled; everything else with a W
-	// register still goes to a pseudo-assembly call rather than the scalar
+	// Capstone 6 gives MSA its own ids (`AND_V`, `LD_B`, `ORI_B`, …). The
+	// modelled subset (128-bit bitwise, ADDV/SUBV/MULV lanes, ILV*/PCK*,
+	// SHF/SPLAT/SPLATI/MAX_S, ANDI_B/ORI_B/XORI_B/NORI_B, BSEL_V/BSELI,
+	// CEQ/CEQI/CLE_S/CLT_S, COPY_S/U, INSERT/FILL/LDI, ADDS_S/U / SUBS_S/U,
+	// SAT_S/U, SLD/SLDI, FADD_W/FSUB_W/FMUL_W/FDIV_W/FMAX_W/FMIN_W,
+	// LD_*/ST_* whole vector) is handled below; everything else with a W
+	// register still goes to a pseudo-assembly call rather than a scalar
 	// translator.
-	if (hasMsaOperand(mi) && !isMsaBitwiseId(static_cast<uint32_t>(id)))
+	if (hasMsaOperand(mi) && !isMsaModelledId(static_cast<uint32_t>(id)))
 	{
 		translatePseudoAsmGeneric(i, mi, irb);
 		return;
@@ -597,6 +615,171 @@ bool Capstone2LlvmIrTranslatorMips_impl::isMsaBitwiseId(uint32_t id) const
 	}
 }
 
+bool Capstone2LlvmIrTranslatorMips_impl::isMsaModelledId(uint32_t id) const
+{
+	if (isMsaBitwiseId(id))
+	{
+		return true;
+	}
+
+	switch (id)
+	{
+		case MIPS_INS_ADDV_B:
+		case MIPS_INS_ADDV_H:
+		case MIPS_INS_ADDV_W:
+		case MIPS_INS_ADDV_D:
+		case MIPS_INS_ADDS_S_B:
+		case MIPS_INS_ADDS_S_H:
+		case MIPS_INS_ADDS_S_W:
+		case MIPS_INS_ADDS_S_D:
+		case MIPS_INS_ADDS_U_B:
+		case MIPS_INS_ADDS_U_H:
+		case MIPS_INS_ADDS_U_W:
+		case MIPS_INS_ADDS_U_D:
+		case MIPS_INS_SUBV_B:
+		case MIPS_INS_SUBV_H:
+		case MIPS_INS_SUBV_W:
+		case MIPS_INS_SUBV_D:
+		case MIPS_INS_SUBS_S_B:
+		case MIPS_INS_SUBS_S_H:
+		case MIPS_INS_SUBS_S_W:
+		case MIPS_INS_SUBS_S_D:
+		case MIPS_INS_SUBS_U_B:
+		case MIPS_INS_SUBS_U_H:
+		case MIPS_INS_SUBS_U_W:
+		case MIPS_INS_SUBS_U_D:
+		case MIPS_INS_MULV_B:
+		case MIPS_INS_MULV_H:
+		case MIPS_INS_MULV_W:
+		case MIPS_INS_MULV_D:
+		case MIPS_INS_ILVEV_B:
+		case MIPS_INS_ILVEV_H:
+		case MIPS_INS_ILVEV_W:
+		case MIPS_INS_ILVEV_D:
+		case MIPS_INS_ILVOD_B:
+		case MIPS_INS_ILVOD_H:
+		case MIPS_INS_ILVOD_W:
+		case MIPS_INS_ILVOD_D:
+		case MIPS_INS_ILVL_B:
+		case MIPS_INS_ILVL_H:
+		case MIPS_INS_ILVL_W:
+		case MIPS_INS_ILVL_D:
+		case MIPS_INS_ILVR_B:
+		case MIPS_INS_ILVR_H:
+		case MIPS_INS_ILVR_W:
+		case MIPS_INS_ILVR_D:
+		case MIPS_INS_PCKEV_B:
+		case MIPS_INS_PCKEV_H:
+		case MIPS_INS_PCKEV_W:
+		case MIPS_INS_PCKEV_D:
+		case MIPS_INS_PCKOD_B:
+		case MIPS_INS_PCKOD_H:
+		case MIPS_INS_PCKOD_W:
+		case MIPS_INS_PCKOD_D:
+		case MIPS_INS_ANDI_B:
+		case MIPS_INS_ORI_B:
+		case MIPS_INS_XORI_B:
+		case MIPS_INS_NORI_B:
+		case MIPS_INS_BSEL_V:
+		case MIPS_INS_BSELI_B:
+		case MIPS_INS_COPY_S_B:
+		case MIPS_INS_COPY_S_H:
+		case MIPS_INS_COPY_S_W:
+		case MIPS_INS_COPY_S_D:
+		case MIPS_INS_COPY_U_B:
+		case MIPS_INS_COPY_U_H:
+		case MIPS_INS_COPY_U_W:
+		case MIPS_INS_INSERT_B:
+		case MIPS_INS_INSERT_H:
+		case MIPS_INS_INSERT_W:
+		case MIPS_INS_INSERT_D:
+		case MIPS_INS_FILL_B:
+		case MIPS_INS_FILL_H:
+		case MIPS_INS_FILL_W:
+		case MIPS_INS_FILL_D:
+		case MIPS_INS_LDI_B:
+		case MIPS_INS_LDI_H:
+		case MIPS_INS_LDI_W:
+		case MIPS_INS_LDI_D:
+		case MIPS_INS_CEQ_B:
+		case MIPS_INS_CEQ_H:
+		case MIPS_INS_CEQ_W:
+		case MIPS_INS_CEQ_D:
+		case MIPS_INS_CEQI_B:
+		case MIPS_INS_CEQI_H:
+		case MIPS_INS_CEQI_W:
+		case MIPS_INS_CEQI_D:
+		case MIPS_INS_CLE_S_B:
+		case MIPS_INS_CLE_S_H:
+		case MIPS_INS_CLE_S_W:
+		case MIPS_INS_CLE_S_D:
+		case MIPS_INS_CLT_S_B:
+		case MIPS_INS_CLT_S_H:
+		case MIPS_INS_CLT_S_W:
+		case MIPS_INS_CLT_S_D:
+		case MIPS_INS_FADD_W:
+		case MIPS_INS_FSUB_W:
+		case MIPS_INS_FMUL_W:
+		case MIPS_INS_FDIV_W:
+		case MIPS_INS_FMAX_W:
+		case MIPS_INS_FMIN_W:
+		case MIPS_INS_SHF_B:
+		case MIPS_INS_SHF_H:
+		case MIPS_INS_SHF_W:
+		case MIPS_INS_SPLAT_B:
+		case MIPS_INS_SPLAT_H:
+		case MIPS_INS_SPLAT_W:
+		case MIPS_INS_SPLAT_D:
+		case MIPS_INS_SPLATI_B:
+		case MIPS_INS_SPLATI_H:
+		case MIPS_INS_SPLATI_W:
+		case MIPS_INS_SPLATI_D:
+		case MIPS_INS_MAX_S_B:
+		case MIPS_INS_MAX_S_H:
+		case MIPS_INS_MAX_S_W:
+		case MIPS_INS_MAX_S_D:
+		case MIPS_INS_MIN_S_B:
+		case MIPS_INS_MIN_S_H:
+		case MIPS_INS_MIN_S_W:
+		case MIPS_INS_MIN_S_D:
+		case MIPS_INS_SLL_B:
+		case MIPS_INS_SLL_H:
+		case MIPS_INS_SLL_W:
+		case MIPS_INS_SLL_D:
+		case MIPS_INS_SRL_B:
+		case MIPS_INS_SRL_H:
+		case MIPS_INS_SRL_W:
+		case MIPS_INS_SRL_D:
+		case MIPS_INS_SAT_S_B:
+		case MIPS_INS_SAT_S_H:
+		case MIPS_INS_SAT_S_W:
+		case MIPS_INS_SAT_S_D:
+		case MIPS_INS_SAT_U_B:
+		case MIPS_INS_SAT_U_H:
+		case MIPS_INS_SAT_U_W:
+		case MIPS_INS_SAT_U_D:
+		case MIPS_INS_SLD_B:
+		case MIPS_INS_SLD_H:
+		case MIPS_INS_SLD_W:
+		case MIPS_INS_SLD_D:
+		case MIPS_INS_SLDI_B:
+		case MIPS_INS_SLDI_H:
+		case MIPS_INS_SLDI_W:
+		case MIPS_INS_SLDI_D:
+		case MIPS_INS_LD_B:
+		case MIPS_INS_LD_H:
+		case MIPS_INS_LD_W:
+		case MIPS_INS_LD_D:
+		case MIPS_INS_ST_B:
+		case MIPS_INS_ST_H:
+		case MIPS_INS_ST_W:
+		case MIPS_INS_ST_D:
+			return true;
+		default:
+			return false;
+	}
+}
+
 bool Capstone2LlvmIrTranslatorMips_impl::isOperandRegister(cs_mips_op& op)
 {
 	return op.type == MIPS_OP_REG;
@@ -624,6 +807,27 @@ bool Capstone2LlvmIrTranslatorMips_impl::isGeneralPurposeRegister(uint32_t r)
 	}
 }
 
+// Compact R6 (and compact microMIPS R6) control: link is the next instruction,
+// not the instruction after a delay slot.
+static bool isCompactLinkId(uint32_t id)
+{
+	switch (id)
+	{
+		case MIPS_INS_BALC:
+		case MIPS_INS_JALRC:
+		case MIPS_INS_JIALC:
+		case MIPS_INS_BEQZALC:
+		case MIPS_INS_BNEZALC:
+		case MIPS_INS_BGEZALC:
+		case MIPS_INS_BLTZALC:
+		case MIPS_INS_BGTZALC:
+		case MIPS_INS_BLEZALC:
+			return true;
+		default:
+			return false;
+	}
+}
+
 //
 //==============================================================================
 // MIPS instruction translation methods.
@@ -631,7 +835,8 @@ bool Capstone2LlvmIrTranslatorMips_impl::isGeneralPurposeRegister(uint32_t r)
 //
 
 /**
- * MIPS_INS_ADDI, MIPS_INS_ADDIU, MIPS_INS_ADD, MIPS_INS_ADDU
+ * MIPS_INS_ADDI, MIPS_INS_ADDIU, MIPS_INS_ADD, MIPS_INS_ADDU,
+ * MIPS_INS_ADDU16
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateAdd(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
@@ -668,7 +873,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateAbs(cs_insn* i, cs_mips* mi, l
 }
 
 /**
- * MIPS_INS_AND, MIPS_INS_ANDI, MIPS_INS_AND_V
+ * MIPS_INS_AND, MIPS_INS_ANDI, MIPS_INS_AND_V, MIPS_INS_AND16, MIPS_INS_ANDI16
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateAnd(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
@@ -731,6 +936,8 @@ void Capstone2LlvmIrTranslatorMips_impl::translateBc1t(cs_insn* i, cs_mips* mi, 
  *
  * The same for:
  * MIPS_INS_BLTZAL, MIPS_INS_BLTZALL
+ * Compact R6 *ALC forms (BEQZALC, BGEZALC, …): same compare, but the link
+ * is the next instruction — they have no delay slot.
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateBcondal(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
@@ -743,11 +950,25 @@ void Capstone2LlvmIrTranslatorMips_impl::translateBcondal(cs_insn* i, cs_mips* m
 	{
 		case MIPS_INS_BGEZAL:
 		case MIPS_INS_BGEZALL:
+		case MIPS_INS_BGEZALC:
 			cond = irb.CreateICmpSGE(op0, zero);
 			break;
 		case MIPS_INS_BLTZAL:
 		case MIPS_INS_BLTZALL:
+		case MIPS_INS_BLTZALC:
 			cond = irb.CreateICmpSLT(op0, zero);
+			break;
+		case MIPS_INS_BGTZALC:
+			cond = irb.CreateICmpSGT(op0, zero);
+			break;
+		case MIPS_INS_BLEZALC:
+			cond = irb.CreateICmpSLE(op0, zero);
+			break;
+		case MIPS_INS_BEQZALC:
+			cond = irb.CreateICmpEQ(op0, zero);
+			break;
+		case MIPS_INS_BNEZALC:
+			cond = irb.CreateICmpNE(op0, zero);
 			break;
 		default:
 			throw GenericError("Unhandled insn ID in translateBcondal().");
@@ -755,7 +976,8 @@ void Capstone2LlvmIrTranslatorMips_impl::translateBcondal(cs_insn* i, cs_mips* m
 
 	llvm::IRBuilder<> bodyIrb(generateIfThen(cond, irb));
 
-	storeRegister(MIPS_REG_RA, getNextNextInsnAddress(i), bodyIrb);
+	llvm::Value* ra = isCompactLinkId(i->id) ? getNextInsnAddress(i) : getNextNextInsnAddress(i);
+	storeRegister(MIPS_REG_RA, ra, bodyIrb);
 	generateCallFunctionCall(bodyIrb, op1);
 }
 
@@ -1139,6 +1361,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateCvt(cs_insn* i, cs_mips* mi, l
 /**
  * MIPS_INS_BEQ, MIPS_INS_BEQL (likely)
  * MIPS_INS_BNE, MIPS_INS_BNEL (likely)
+ * Compact R6 (no delay slot): BEQC, BNEC, BGEC, BLTC, BGEUC, BLTUC
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateCondBranchTernary(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
@@ -1152,14 +1375,28 @@ void Capstone2LlvmIrTranslatorMips_impl::translateCondBranchTernary(cs_insn* i, 
 	{
 		case MIPS_INS_BEQ:
 		case MIPS_INS_BEQL:
+		case MIPS_INS_BEQC:
 			cond = irb.CreateICmpEQ(op0, op1);
 			break;
 		case MIPS_INS_BNE:
 		case MIPS_INS_BNEL:
+		case MIPS_INS_BNEC:
 			cond = irb.CreateICmpNE(op0, op1);
 			break;
+		case MIPS_INS_BGEC:
+			cond = irb.CreateICmpSGE(op0, op1);
+			break;
+		case MIPS_INS_BLTC:
+			cond = irb.CreateICmpSLT(op0, op1);
+			break;
+		case MIPS_INS_BGEUC:
+			cond = irb.CreateICmpUGE(op0, op1);
+			break;
+		case MIPS_INS_BLTUC:
+			cond = irb.CreateICmpULT(op0, op1);
+			break;
 		default:
-			throw GenericError("Unhandled insn ID in translateCondBranchBinary().");
+			throw GenericError("Unhandled insn ID in translateCondBranchTernary().");
 	}
 
 	generateCondBranchFunctionCall(irb, cond, op2);
@@ -1172,6 +1409,8 @@ void Capstone2LlvmIrTranslatorMips_impl::translateCondBranchTernary(cs_insn* i, 
  * MIPS_INS_BGEZ, MIPS_INS_BGEZL (likely)
  * MIPS_INS_BEQZ
  * MIPS_INS_BNEZ
+ * microMIPS 16-bit: BEQZ16, BNEZ16
+ * Compact R6 (no delay slot): BEQZC, BNEZC, BGTZC, BLEZC, BGEZC, BLTZC
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateCondBranchBinary(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
@@ -1202,34 +1441,48 @@ void Capstone2LlvmIrTranslatorMips_impl::translateCondBranchBinary(cs_insn* i, c
 	{
 		case MIPS_INS_BLEZ:
 		case MIPS_INS_BLEZL:
+		case MIPS_INS_BLEZC:
 			cond = irb.CreateICmpSLE(op0, zero);
 			break;
 		case MIPS_INS_BGTZ:
 		case MIPS_INS_BGTZL:
+		case MIPS_INS_BGTZC:
 			cond = irb.CreateICmpSGT(op0, zero);
 			break;
 		case MIPS_INS_BLTZ:
 		case MIPS_INS_BLTZL:
+		case MIPS_INS_BLTZC:
 			cond = irb.CreateICmpSLT(op0, zero);
 			break;
 		case MIPS_INS_BGEZ:
 		case MIPS_INS_BGEZL:
+		case MIPS_INS_BGEZC:
 			cond = irb.CreateICmpSGE(op0, zero);
 			break;
 		case MIPS_INS_BEQZ:
+		case MIPS_INS_BEQZ16:
+		case MIPS_INS_BEQZC:
+#ifdef MIPS_INS_BEQZC16
+		case MIPS_INS_BEQZC16:
+#endif
 #ifdef MIPS_INS_ALIAS_BEQZ
 		case MIPS_INS_ALIAS_BEQZ:
 #endif
 			cond = irb.CreateICmpEQ(op0, zero);
 			break;
 		case MIPS_INS_BNEZ:
+		case MIPS_INS_BNEZ16:
+		case MIPS_INS_BNEZC:
+#ifdef MIPS_INS_BNEZC16
+		case MIPS_INS_BNEZC16:
+#endif
 #ifdef MIPS_INS_ALIAS_BNEZ
 		case MIPS_INS_ALIAS_BNEZ:
 #endif
 			cond = irb.CreateICmpNE(op0, zero);
 			break;
 		default:
-			throw GenericError("Unhandled insn ID in translateCondBranchUnary().");
+			throw GenericError("Unhandled insn ID in translateCondBranchBinary().");
 	}
 
 	generateCondBranchFunctionCall(irb, cond, op1);
@@ -1686,7 +1939,8 @@ void Capstone2LlvmIrTranslatorMips_impl::translateFence(cs_insn* i, cs_mips* mi,
 
 /**
  * MIPS_INS_J, MIPS_INS_JR,
- * MIPS_INS_B,
+ * MIPS_INS_B, MIPS_INS_B16, MIPS_INS_JR16,
+ * Compact R6 (no delay slot): MIPS_INS_BC, MIPS_INS_JRC
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateJ(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
@@ -1698,12 +1952,14 @@ void Capstone2LlvmIrTranslatorMips_impl::translateJ(cs_insn* i, cs_mips* mi, llv
 
 /**
  * MIPS_INS_JAL, MIPS_INS_JALR,
- * MIPS_INS_BAL
+ * MIPS_INS_BAL, MIPS_INS_JALRS, MIPS_INS_JALRS16
+ * Compact R6 (no delay slot): MIPS_INS_BALC, MIPS_INS_JALRC
  *
  * `jal` / `bal` / `jalr rs` link into `$ra`. `jalr rd, rs` links into `rd`.
  * The target is loaded before the link register is written so `jalr $ra`
  * (uncommon, architecturally UNPREDICTABLE when rs == rd) still reads the
  * old value rather than the return address just stored.
+ * Compact forms link to the next instruction (`PC + size`), not `PC + 2*size`.
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateJal(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
@@ -1723,16 +1979,1489 @@ void Capstone2LlvmIrTranslatorMips_impl::translateJal(cs_insn* i, cs_mips* mi, l
 		op0 = loadOpUnary(mi, irb);
 	}
 
-	storeRegister(link, getNextNextInsnAddress(i), irb);
+	llvm::Value* ra = isCompactLinkId(i->id) ? getNextInsnAddress(i) : getNextNextInsnAddress(i);
+	storeRegister(link, ra, irb);
 	generateCallFunctionCall(irb, op0);
 }
 
 /**
- * MIPS_INS_LB, MIPS_INS_LBU,
- * MIPS_INS_LH, MIPS_INS_LHU,
- * MIPS_INS_LW, MIPS_INS_LWU,
+ * MIPS_INS_JIC — PC = GPR[rt] + offset, no delay slot.
+ * MIPS_INS_JIALC — same target, plus $ra = next instruction.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateJic(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, mi, irb);
+
+	std::tie(op0, op1) = loadOpBinary(mi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+	auto* tgt = irb.CreateAdd(op0, op1);
+	if (i->id == MIPS_INS_JIALC)
+	{
+		storeRegister(MIPS_REG_RA, getNextInsnAddress(i), irb);
+		generateCallFunctionCall(irb, tgt);
+		return;
+	}
+	generateBranchFunctionCall(irb, tgt);
+}
+
+/**
+ * MIPS_INS_LI16 — rd = imm. Not an ADD: Capstone reports two operands, so
+ * translateAdd would do rd += imm.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateLi(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, mi, irb);
+
+	op1 = loadOpBinaryOp1(mi, irb);
+	storeOp(mi->operands[0], op1, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_ADDIUPC — rt = PC + offset (byte offset; PC is this instruction).
+ * MIPS_INS_AUIPC — rt = PC + (imm << 16)
+ * MIPS_INS_ALUIPC — rt = (PC + (imm << 16)) & ~0xFFFF
+ *
+ * Capstone reports the unshifted 16-bit field for AUIPC/ALUIPC and the
+ * already-scaled byte offset for ADDIUPC. It does not convert those to
+ * absolute addresses (unlike compact branches).
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateAddiupc(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, mi, irb);
+
+	op1 = loadOp(mi->operands[1], irb);
+	auto* pc = getThisInsnAddress(i);
+	if (pc->getType() != op1->getType())
+	{
+		pc = irb.CreateZExtOrTrunc(pc, op1->getType());
+	}
+	if (i->id == MIPS_INS_AUIPC || i->id == MIPS_INS_ALUIPC)
+	{
+		op1 = irb.CreateShl(op1, llvm::ConstantInt::get(op1->getType(), 16));
+	}
+	auto* sum = irb.CreateAdd(pc, op1);
+	if (i->id == MIPS_INS_ALUIPC)
+	{
+		sum = irb.CreateAnd(sum, llvm::ConstantInt::get(sum->getType(), ~uint64_t(0xFFFF)));
+	}
+	storeOp(mi->operands[0], sum, irb);
+}
+
+/**
+ * MIPS_INS_AUI — rt = rs + (imm << 16)
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateAui(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
+
+	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+	op1 = narrowToWord(i, irb, op1);
+	op2 = narrowToWord(i, irb, op2);
+	op2 = irb.CreateShl(op2, llvm::ConstantInt::get(op2->getType(), 16));
+	storeOp(mi->operands[0], irb.CreateAdd(op1, op2), irb);
+}
+
+/**
+ * MIPS_INS_ADDIUSP — SP += imm (Capstone reports the decoded immediate).
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateAddiusp(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_UNARY(i, mi, irb);
+
+	op0 = loadOpUnary(mi, irb);
+	auto* sp = loadRegister(MIPS_REG_SP, irb);
+	op0 = irb.CreateSExtOrTrunc(op0, sp->getType());
+	storeRegister(MIPS_REG_SP, irb.CreateAdd(sp, op0), irb);
+}
+
+/**
+ * MIPS_INS_JRADDIUSP — jump to $ra and SP += imm. Has a delay slot.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateJraddiusp(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_UNARY(i, mi, irb);
+
+	op0 = loadOpUnary(mi, irb);
+	auto* ra = loadRegister(MIPS_REG_RA, irb);
+	auto* sp = loadRegister(MIPS_REG_SP, irb);
+	op0 = irb.CreateSExtOrTrunc(op0, sp->getType());
+	storeRegister(MIPS_REG_SP, irb.CreateAdd(sp, op0), irb);
+	generateBranchFunctionCall(irb, ra);
+}
+
+/**
+ * MIPS_INS_BITSWAP — reverse the bits of each byte of a 32-bit GPR.
+ * Full i32 bitreverse followed by bswap is the per-byte reverse.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateBitswap(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, mi, irb);
+
+	op1 = loadOpBinaryOp1(mi, irb);
+	auto* i32 = irb.getInt32Ty();
+	op1 = irb.CreateZExtOrTrunc(op1, i32);
+	op1 = irb.CreateUnaryIntrinsic(llvm::Intrinsic::bitreverse, op1);
+	op1 = irb.CreateUnaryIntrinsic(llvm::Intrinsic::bswap, op1);
+	storeOp(mi->operands[0], op1, irb);
+}
+
+/**
+ * MIPS_INS_ALIGN rd, rs, rt, bp — concatenate rs||rt and extract a word
+ * at byte offset bp (0..3): rd = (rs << 8*bp) | (rt >> 8*(4-bp)).
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateAlign(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_QUATERNARY(i, mi, irb);
+
+	std::tie(op1, op2, op3) = loadOpQuaternaryOp1Op2Op3(mi, irb);
+	auto* ty = llvm::dyn_cast<llvm::IntegerType>(op1->getType());
+	if (ty == nullptr || !llvm::isa<llvm::ConstantInt>(op3))
+	{
+		translatePseudoAsmOp0FncOp1Op2Op3(i, mi, irb);
+		return;
+	}
+	uint64_t bp = llvm::cast<llvm::ConstantInt>(op3)->getZExtValue();
+	if (bp > 3)
+	{
+		translatePseudoAsmOp0FncOp1Op2Op3(i, mi, irb);
+		return;
+	}
+	auto* i32 = irb.getInt32Ty();
+	op1 = irb.CreateZExtOrTrunc(op1, i32);
+	op2 = irb.CreateZExtOrTrunc(op2, i32);
+	llvm::Value* res = nullptr;
+	if (bp == 0)
+	{
+		res = op2;
+	}
+	else
+	{
+		unsigned sh = static_cast<unsigned>(bp * 8);
+		res = irb.CreateOr(
+				irb.CreateShl(op1, llvm::ConstantInt::get(i32, sh)),
+				irb.CreateLShr(op2, llvm::ConstantInt::get(i32, 32 - sh)));
+	}
+	storeOp(mi->operands[0], res, irb);
+}
+
+/**
+ * MIPS_INS_LWPC — load word from PC + offset (byte offset, this instruction).
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateLwpc(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, mi, irb);
+
+	op1 = loadOp(mi->operands[1], irb);
+	auto* pc = getThisInsnAddress(i);
+	if (pc->getType() != op1->getType())
+	{
+		pc = irb.CreateZExtOrTrunc(pc, op1->getType());
+	}
+	auto* addr = irb.CreateAdd(pc, op1);
+	auto* val = loadIntPtr(irb, addr, irb.getInt32Ty());
+	storeOp(mi->operands[0], val, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_LWP — load rt and rt2 from mem and mem+4. Capstone lists both
+ * destination registers plus a folded memory operand.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateLoadPair(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	if (mi->op_count != 3
+			|| mi->operands[0].type != MIPS_OP_REG
+			|| mi->operands[1].type != MIPS_OP_REG
+			|| mi->operands[2].type != MIPS_OP_MEM)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+
+	auto* addr = loadOp(mi->operands[2], irb, nullptr, /*lea=*/true);
+	auto* i32 = irb.getInt32Ty();
+	storeOp(mi->operands[0], loadIntPtr(irb, addr, i32), irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+	auto* addr2 = irb.CreateAdd(addr, llvm::ConstantInt::get(addr->getType(), 4));
+	storeOp(mi->operands[1], loadIntPtr(irb, addr2, i32), irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_SWP — store rt and rt2 to mem and mem+4.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateStorePair(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	if (mi->op_count != 3
+			|| mi->operands[0].type != MIPS_OP_REG
+			|| mi->operands[1].type != MIPS_OP_REG
+			|| mi->operands[2].type != MIPS_OP_MEM)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+
+	auto* addr = loadOp(mi->operands[2], irb, nullptr, /*lea=*/true);
+	auto* i32 = irb.getInt32Ty();
+	op0 = irb.CreateZExtOrTrunc(loadOp(mi->operands[0], irb), i32);
+	op1 = irb.CreateZExtOrTrunc(loadOp(mi->operands[1], irb), i32);
+	storeIntPtr(irb, op0, addr, i32);
+	auto* addr2 = irb.CreateAdd(addr, llvm::ConstantInt::get(addr->getType(), 4));
+	storeIntPtr(irb, op1, addr2, i32);
+}
+
+namespace {
+
+bool collectMipsRegListAndMem(cs_mips* mi, std::vector<uint32_t>& regs, unsigned& memIdx)
+{
+	memIdx = ~0u;
+	bool sawImm = false;
+	for (unsigned k = 0; k < mi->op_count; ++k)
+	{
+		auto& op = mi->operands[k];
+		if (op.type == MIPS_OP_REG)
+		{
+			regs.push_back(op.reg);
+		}
+		else if (op.type == MIPS_OP_MEM)
+		{
+			memIdx = k;
+		}
+		else if (op.type == MIPS_OP_IMM)
+		{
+			sawImm = true;
+		}
+	}
+	return !sawImm && memIdx != ~0u && !regs.empty();
+}
+
+// 16-bit LWM16/SWM16: Capstone 6 expands rlist to REGs but folds SP+offset
+// into MEM with base=INVALID and disp=24 (the SP enum), not the scaled
+// displacement. Printer and the microMIPS spec use a 4-bit signed offset
+// in bits 3:0, scale 4, base SP (non-R6).
+bool mips16ReglistSpOffset(cs_insn* i, int64_t& off)
+{
+	if (i->size != 2)
+	{
+		return false;
+	}
+	unsigned bits = static_cast<unsigned>(i->bytes[0])
+			| (static_cast<unsigned>(i->bytes[1]) << 8);
+	int off4 = static_cast<int>(bits & 0xf);
+	if (off4 & 8)
+	{
+		off4 -= 16;
+	}
+	off = static_cast<int64_t>(off4) << 2;
+	return true;
+}
+
+llvm::Value* msaToI128(llvm::Value* v, llvm::IRBuilder<>& irb)
+{
+	auto* i128 = irb.getIntNTy(128);
+	if (v->getType() == i128)
+	{
+		return v;
+	}
+	if (v->getType()->isFloatingPointTy())
+	{
+		v = irb.CreateBitCast(v, irb.getIntNTy(v->getType()->getPrimitiveSizeInBits()));
+	}
+	if (v->getType()->getPrimitiveSizeInBits() < 128)
+	{
+		return irb.CreateZExt(v, i128);
+	}
+	return irb.CreateTrunc(v, i128);
+}
+
+llvm::Value* msaPackedBinOp(
+		llvm::Value* a,
+		llvm::Value* b,
+		unsigned elemBits,
+		llvm::Instruction::BinaryOps opc,
+		llvm::IRBuilder<>& irb)
+{
+	unsigned n = 128 / elemBits;
+	auto* vecTy = llvm::FixedVectorType::get(irb.getIntNTy(elemBits), n);
+	auto* v0 = irb.CreateBitCast(msaToI128(a, irb), vecTy);
+	auto* v1 = irb.CreateBitCast(msaToI128(b, irb), vecTy);
+	return irb.CreateBitCast(irb.CreateBinOp(opc, v0, v1), irb.getIntNTy(128));
+}
+
+llvm::Value* msaPackedSatArith(
+		llvm::Value* a,
+		llvm::Value* b,
+		unsigned elemBits,
+		bool isSigned,
+		bool isSub,
+		llvm::IRBuilder<>& irb)
+{
+	unsigned n = 128 / elemBits;
+	auto* laneTy = irb.getIntNTy(elemBits);
+	auto* wideTy = irb.getIntNTy(elemBits * 2);
+	auto* vecTy = llvm::FixedVectorType::get(laneTy, n);
+	auto* wideVec = llvm::FixedVectorType::get(wideTy, n);
+	unsigned wideBits = elemBits * 2;
+	llvm::APInt loA = isSigned ? llvm::APInt::getSignedMinValue(elemBits).sext(wideBits)
+							   : llvm::APInt::getZero(wideBits);
+	llvm::APInt hiA = isSigned ? llvm::APInt::getSignedMaxValue(elemBits).sext(wideBits)
+							   : llvm::APInt::getMaxValue(elemBits).zext(wideBits);
+	auto* loC = llvm::ConstantVector::getSplat(
+			llvm::ElementCount::getFixed(n), llvm::ConstantInt::get(wideTy, loA));
+	auto* hiC = llvm::ConstantVector::getSplat(
+			llvm::ElementCount::getFixed(n), llvm::ConstantInt::get(wideTy, hiA));
+
+	auto* v0 = irb.CreateBitCast(msaToI128(a, irb), vecTy);
+	auto* v1 = irb.CreateBitCast(msaToI128(b, irb), vecTy);
+	auto* aw = isSigned ? irb.CreateSExt(v0, wideVec) : irb.CreateZExt(v0, wideVec);
+	auto* bw = isSigned ? irb.CreateSExt(v1, wideVec) : irb.CreateZExt(v1, wideVec);
+	auto* wide = isSub ? irb.CreateSub(aw, bw) : irb.CreateAdd(aw, bw);
+	auto* c = irb.CreateSelect(irb.CreateICmpSLT(wide, loC), loC, wide);
+	c = irb.CreateSelect(irb.CreateICmpSGT(c, hiC), hiC, c);
+	return irb.CreateBitCast(irb.CreateTrunc(c, vecTy), irb.getIntNTy(128));
+}
+
+llvm::Value* msaPackedSatN(
+		llvm::Value* a,
+		unsigned elemBits,
+		unsigned satBits,
+		bool isSigned,
+		llvm::IRBuilder<>& irb)
+{
+	if (satBits == 0)
+	{
+		satBits = 1;
+	}
+	if (satBits > elemBits)
+	{
+		satBits = elemBits;
+	}
+
+	unsigned n = 128 / elemBits;
+	auto* laneTy = irb.getIntNTy(elemBits);
+	auto* vecTy = llvm::FixedVectorType::get(laneTy, n);
+	auto* v = irb.CreateBitCast(msaToI128(a, irb), vecTy);
+	llvm::APInt loA;
+	llvm::APInt hiA;
+	if (satBits == elemBits)
+	{
+		loA = isSigned ? llvm::APInt::getSignedMinValue(elemBits) : llvm::APInt::getZero(elemBits);
+		hiA = isSigned ? llvm::APInt::getSignedMaxValue(elemBits) : llvm::APInt::getMaxValue(elemBits);
+	}
+	else
+	{
+		loA = isSigned ? llvm::APInt::getSignedMinValue(satBits).sext(elemBits)
+					   : llvm::APInt::getZero(elemBits);
+		hiA = isSigned ? llvm::APInt::getSignedMaxValue(satBits).sext(elemBits)
+					   : llvm::APInt::getMaxValue(satBits).zext(elemBits);
+	}
+	auto* loC = llvm::ConstantVector::getSplat(
+			llvm::ElementCount::getFixed(n), llvm::ConstantInt::get(laneTy, loA));
+	auto* hiC = llvm::ConstantVector::getSplat(
+			llvm::ElementCount::getFixed(n), llvm::ConstantInt::get(laneTy, hiA));
+	if (isSigned)
+	{
+		auto* c = irb.CreateSelect(irb.CreateICmpSLT(v, loC), loC, v);
+		c = irb.CreateSelect(irb.CreateICmpSGT(c, hiC), hiC, c);
+		return irb.CreateBitCast(c, irb.getIntNTy(128));
+	}
+	auto* c = irb.CreateSelect(irb.CreateICmpUGT(v, hiC), hiC, v);
+	return irb.CreateBitCast(c, irb.getIntNTy(128));
+}
+
+llvm::Value* msaSlide(
+		llvm::Value* wd,
+		llvm::Value* ws,
+		llvm::Value* slide,
+		unsigned elemBits,
+		llvm::IRBuilder<>& irb)
+{
+	unsigned n = 128 / elemBits;
+	auto* i128 = irb.getIntNTy(128);
+	auto* wdV = msaToI128(wd, irb);
+	auto* wsV = msaToI128(ws, irb);
+	if (!slide->getType()->isIntegerTy())
+	{
+		return wdV;
+	}
+	if (slide->getType()->getIntegerBitWidth() != 32)
+	{
+		slide = irb.CreateZExtOrTrunc(slide, irb.getInt32Ty());
+	}
+	auto* mod = irb.CreateURem(slide, llvm::ConstantInt::get(slide->getType(), n));
+	auto* modBits32 = irb.CreateMul(mod, llvm::ConstantInt::get(mod->getType(), elemBits));
+	auto* modBits = irb.CreateZExt(modBits32, i128);
+	auto* isZero = irb.CreateICmpEQ(modBits, llvm::ConstantInt::get(i128, 0));
+	auto* fromWd = irb.CreateLShr(wdV, modBits);
+	auto* shWs = irb.CreateSub(llvm::ConstantInt::get(i128, 128), modBits);
+	auto* shWsSafe = irb.CreateSelect(isZero, llvm::ConstantInt::get(i128, 0), shWs);
+	auto* fromWs = irb.CreateShl(wsV, shWsSafe);
+	auto* mixed = irb.CreateOr(fromWd, fromWs);
+	return irb.CreateSelect(isZero, wdV, mixed);
+}
+
+unsigned msaLaneBits(uint32_t id)
+{
+	switch (id)
+	{
+		case MIPS_INS_ADDV_B:
+		case MIPS_INS_SUBV_B:
+		case MIPS_INS_MULV_B:
+		case MIPS_INS_ILVEV_B:
+		case MIPS_INS_ILVOD_B:
+		case MIPS_INS_ILVL_B:
+		case MIPS_INS_ILVR_B:
+		case MIPS_INS_PCKEV_B:
+		case MIPS_INS_PCKOD_B:
+		case MIPS_INS_SHF_B:
+		case MIPS_INS_SPLAT_B:
+		case MIPS_INS_SPLATI_B:
+		case MIPS_INS_CEQ_B:
+		case MIPS_INS_CLE_S_B:
+		case MIPS_INS_CLT_S_B:
+		case MIPS_INS_MAX_S_B:
+		case MIPS_INS_MIN_S_B:
+		case MIPS_INS_SLL_B:
+		case MIPS_INS_SRL_B:
+		case MIPS_INS_COPY_S_B:
+		case MIPS_INS_COPY_U_B:
+		case MIPS_INS_INSERT_B:
+		case MIPS_INS_FILL_B:
+		case MIPS_INS_LDI_B:
+		case MIPS_INS_ADDS_S_B:
+		case MIPS_INS_ADDS_U_B:
+		case MIPS_INS_SUBS_S_B:
+		case MIPS_INS_SUBS_U_B:
+		case MIPS_INS_CEQI_B:
+		case MIPS_INS_SAT_S_B:
+		case MIPS_INS_SAT_U_B:
+		case MIPS_INS_SLD_B:
+		case MIPS_INS_SLDI_B:
+			return 8;
+		case MIPS_INS_ADDV_H:
+		case MIPS_INS_SUBV_H:
+		case MIPS_INS_MULV_H:
+		case MIPS_INS_ILVEV_H:
+		case MIPS_INS_ILVOD_H:
+		case MIPS_INS_ILVL_H:
+		case MIPS_INS_ILVR_H:
+		case MIPS_INS_PCKEV_H:
+		case MIPS_INS_PCKOD_H:
+		case MIPS_INS_SHF_H:
+		case MIPS_INS_SPLAT_H:
+		case MIPS_INS_SPLATI_H:
+		case MIPS_INS_CEQ_H:
+		case MIPS_INS_CLE_S_H:
+		case MIPS_INS_CLT_S_H:
+		case MIPS_INS_MAX_S_H:
+		case MIPS_INS_MIN_S_H:
+		case MIPS_INS_SLL_H:
+		case MIPS_INS_SRL_H:
+		case MIPS_INS_COPY_S_H:
+		case MIPS_INS_COPY_U_H:
+		case MIPS_INS_INSERT_H:
+		case MIPS_INS_FILL_H:
+		case MIPS_INS_LDI_H:
+		case MIPS_INS_ADDS_S_H:
+		case MIPS_INS_ADDS_U_H:
+		case MIPS_INS_SUBS_S_H:
+		case MIPS_INS_SUBS_U_H:
+		case MIPS_INS_CEQI_H:
+		case MIPS_INS_SAT_S_H:
+		case MIPS_INS_SAT_U_H:
+		case MIPS_INS_SLD_H:
+		case MIPS_INS_SLDI_H:
+			return 16;
+		case MIPS_INS_ADDV_D:
+		case MIPS_INS_SUBV_D:
+		case MIPS_INS_MULV_D:
+		case MIPS_INS_ILVEV_D:
+		case MIPS_INS_ILVOD_D:
+		case MIPS_INS_ILVL_D:
+		case MIPS_INS_ILVR_D:
+		case MIPS_INS_PCKEV_D:
+		case MIPS_INS_PCKOD_D:
+		case MIPS_INS_SPLAT_D:
+		case MIPS_INS_SPLATI_D:
+		case MIPS_INS_CEQ_D:
+		case MIPS_INS_CLE_S_D:
+		case MIPS_INS_CLT_S_D:
+		case MIPS_INS_MAX_S_D:
+		case MIPS_INS_MIN_S_D:
+		case MIPS_INS_SLL_D:
+		case MIPS_INS_SRL_D:
+		case MIPS_INS_COPY_S_D:
+		case MIPS_INS_INSERT_D:
+		case MIPS_INS_FILL_D:
+		case MIPS_INS_LDI_D:
+		case MIPS_INS_ADDS_S_D:
+		case MIPS_INS_ADDS_U_D:
+		case MIPS_INS_SUBS_S_D:
+		case MIPS_INS_SUBS_U_D:
+		case MIPS_INS_CEQI_D:
+		case MIPS_INS_SAT_S_D:
+		case MIPS_INS_SAT_U_D:
+		case MIPS_INS_SLD_D:
+		case MIPS_INS_SLDI_D:
+			return 64;
+		default:
+			return 32;
+	}
+}
+
+llvm::Value* msaPackedSminMax(
+		llvm::Value* a,
+		llvm::Value* b,
+		unsigned elemBits,
+		bool isMax,
+		llvm::IRBuilder<>& irb)
+{
+	unsigned n = 128 / elemBits;
+	auto* vecTy = llvm::FixedVectorType::get(irb.getIntNTy(elemBits), n);
+	auto* v0 = irb.CreateBitCast(msaToI128(a, irb), vecTy);
+	auto* v1 = irb.CreateBitCast(msaToI128(b, irb), vecTy);
+	auto* cmp = isMax ? irb.CreateICmpSGT(v0, v1) : irb.CreateICmpSLT(v0, v1);
+	return irb.CreateBitCast(irb.CreateSelect(cmp, v0, v1), irb.getIntNTy(128));
+}
+
+llvm::Value* msaIlvEvenOdd(
+		llvm::Value* ws,
+		llvm::Value* wt,
+		unsigned elemBits,
+		bool odd,
+		llvm::IRBuilder<>& irb)
+{
+	unsigned n = 128 / elemBits;
+	auto* vecTy = llvm::FixedVectorType::get(irb.getIntNTy(elemBits), n);
+	auto* v0 = irb.CreateBitCast(msaToI128(ws, irb), vecTy);
+	auto* v1 = irb.CreateBitCast(msaToI128(wt, irb), vecTy);
+	std::vector<int> mask;
+	mask.reserve(n);
+	unsigned off = odd ? 1u : 0u;
+	for (unsigned i = 0; i < n / 2; ++i)
+	{
+		mask.push_back(static_cast<int>(n + 2 * i + off));
+		mask.push_back(static_cast<int>(2 * i + off));
+	}
+	return irb.CreateBitCast(irb.CreateShuffleVector(v0, v1, mask), irb.getIntNTy(128));
+}
+
+llvm::Value* msaIlvLeftRight(
+		llvm::Value* ws,
+		llvm::Value* wt,
+		unsigned elemBits,
+		bool left,
+		llvm::IRBuilder<>& irb)
+{
+	unsigned n = 128 / elemBits;
+	auto* vecTy = llvm::FixedVectorType::get(irb.getIntNTy(elemBits), n);
+	auto* v0 = irb.CreateBitCast(msaToI128(ws, irb), vecTy);
+	auto* v1 = irb.CreateBitCast(msaToI128(wt, irb), vecTy);
+	std::vector<int> mask;
+	mask.reserve(n);
+	unsigned off = left ? n / 2 : 0u;
+	for (unsigned i = 0; i < n / 2; ++i)
+	{
+		mask.push_back(static_cast<int>(n + off + i));
+		mask.push_back(static_cast<int>(off + i));
+	}
+	return irb.CreateBitCast(irb.CreateShuffleVector(v0, v1, mask), irb.getIntNTy(128));
+}
+
+llvm::Value* msaPckEvenOdd(
+		llvm::Value* ws,
+		llvm::Value* wt,
+		unsigned elemBits,
+		bool odd,
+		llvm::IRBuilder<>& irb)
+{
+	unsigned n = 128 / elemBits;
+	auto* vecTy = llvm::FixedVectorType::get(irb.getIntNTy(elemBits), n);
+	auto* v0 = irb.CreateBitCast(msaToI128(ws, irb), vecTy);
+	auto* v1 = irb.CreateBitCast(msaToI128(wt, irb), vecTy);
+	std::vector<int> mask;
+	mask.reserve(n);
+	unsigned off = odd ? 1u : 0u;
+	for (unsigned i = 0; i < n / 2; ++i)
+	{
+		mask.push_back(static_cast<int>(n + 2 * i + off));
+	}
+	for (unsigned i = 0; i < n / 2; ++i)
+	{
+		mask.push_back(static_cast<int>(2 * i + off));
+	}
+	return irb.CreateBitCast(irb.CreateShuffleVector(v0, v1, mask), irb.getIntNTy(128));
+}
+
+enum class MsaCmpPred
+{
+	Eq,
+	Sle,
+	Slt
+};
+
+llvm::Value* msaPackedCmp(
+		llvm::Value* a,
+		llvm::Value* b,
+		unsigned elemBits,
+		MsaCmpPred pred,
+		llvm::IRBuilder<>& irb)
+{
+	unsigned n = 128 / elemBits;
+	auto* vecTy = llvm::FixedVectorType::get(irb.getIntNTy(elemBits), n);
+	auto* v0 = irb.CreateBitCast(msaToI128(a, irb), vecTy);
+	auto* v1 = irb.CreateBitCast(msaToI128(b, irb), vecTy);
+	llvm::Value* cmp = nullptr;
+	switch (pred)
+	{
+		case MsaCmpPred::Eq:
+			cmp = irb.CreateICmpEQ(v0, v1);
+			break;
+		case MsaCmpPred::Sle:
+			cmp = irb.CreateICmpSLE(v0, v1);
+			break;
+		case MsaCmpPred::Slt:
+			cmp = irb.CreateICmpSLT(v0, v1);
+			break;
+	}
+	return irb.CreateBitCast(irb.CreateSExt(cmp, vecTy), irb.getIntNTy(128));
+}
+
+llvm::Value* msaPackedFbinW(
+		llvm::Value* a,
+		llvm::Value* b,
+		llvm::Instruction::BinaryOps opc,
+		llvm::IRBuilder<>& irb)
+{
+	auto* vecTy = llvm::FixedVectorType::get(irb.getFloatTy(), 4);
+	auto* v0 = irb.CreateBitCast(msaToI128(a, irb), vecTy);
+	auto* v1 = irb.CreateBitCast(msaToI128(b, irb), vecTy);
+	return irb.CreateBitCast(irb.CreateBinOp(opc, v0, v1), irb.getIntNTy(128));
+}
+
+llvm::Value* msaPackedFminmaxW(
+		llvm::Value* a,
+		llvm::Value* b,
+		bool isMax,
+		llvm::IRBuilder<>& irb)
+{
+	auto* vecTy = llvm::FixedVectorType::get(irb.getFloatTy(), 4);
+	auto* v0 = irb.CreateBitCast(msaToI128(a, irb), vecTy);
+	auto* v1 = irb.CreateBitCast(msaToI128(b, irb), vecTy);
+	auto* cmp = isMax ? irb.CreateFCmpOGT(v0, v1) : irb.CreateFCmpOLT(v0, v1);
+	return irb.CreateBitCast(irb.CreateSelect(cmp, v0, v1), irb.getIntNTy(128));
+}
+
+llvm::Value* msaPackedShift(
+		llvm::Value* a,
+		llvm::Value* b,
+		unsigned elemBits,
+		llvm::Instruction::BinaryOps opc,
+		llvm::IRBuilder<>& irb)
+{
+	unsigned n = 128 / elemBits;
+	auto* elemTy = irb.getIntNTy(elemBits);
+	auto* vecTy = llvm::FixedVectorType::get(elemTy, n);
+	auto* v0 = irb.CreateBitCast(msaToI128(a, irb), vecTy);
+	auto* v1 = irb.CreateBitCast(msaToI128(b, irb), vecTy);
+	auto* amt = irb.CreateAnd(
+			v1,
+			llvm::ConstantVector::getSplat(
+					llvm::ElementCount::getFixed(n),
+					llvm::ConstantInt::get(elemTy, elemBits - 1)));
+	return irb.CreateBitCast(irb.CreateBinOp(opc, v0, amt), irb.getIntNTy(128));
+}
+
+} // namespace
+
+/**
+ * MIPS_INS_LWM16, MIPS_INS_LWM32 — Capstone 6 expands the microMIPS rlist
+ * field into REG operands with is_reglist plus a folded MEM. Consecutive
+ * words, first register at the effective address.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateLoadMultiple(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	std::vector<uint32_t> regs;
+	unsigned memIdx = ~0u;
+	if (!collectMipsRegListAndMem(mi, regs, memIdx))
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+
+	int64_t off16 = 0;
+	llvm::Value* addr = nullptr;
+	if (mips16ReglistSpOffset(i, off16))
+	{
+		auto* sp = loadRegister(MIPS_REG_SP, irb);
+		addr = irb.CreateAdd(sp, llvm::ConstantInt::getSigned(sp->getType(), off16));
+	}
+	else
+	{
+		addr = loadOp(mi->operands[memIdx], irb, nullptr, /*lea=*/true);
+	}
+	auto* i32 = irb.getInt32Ty();
+	auto* four = llvm::ConstantInt::get(addr->getType(), 4);
+	for (uint32_t r : regs)
+	{
+		storeRegister(r, loadIntPtr(irb, addr, i32), irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+		addr = irb.CreateAdd(addr, four);
+	}
+}
+
+/**
+ * MIPS_INS_SWM16, MIPS_INS_SWM32
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateStoreMultiple(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	std::vector<uint32_t> regs;
+	unsigned memIdx = ~0u;
+	if (!collectMipsRegListAndMem(mi, regs, memIdx))
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+
+	int64_t off16 = 0;
+	llvm::Value* addr = nullptr;
+	if (mips16ReglistSpOffset(i, off16))
+	{
+		auto* sp = loadRegister(MIPS_REG_SP, irb);
+		addr = irb.CreateAdd(sp, llvm::ConstantInt::getSigned(sp->getType(), off16));
+	}
+	else
+	{
+		addr = loadOp(mi->operands[memIdx], irb, nullptr, /*lea=*/true);
+	}
+	auto* i32 = irb.getInt32Ty();
+	auto* four = llvm::ConstantInt::get(addr->getType(), 4);
+	for (uint32_t r : regs)
+	{
+		llvm::Value* v = loadRegister(r, irb);
+		storeIntPtr(irb, irb.CreateZExtOrTrunc(v, i32), addr, i32);
+		addr = irb.CreateAdd(addr, four);
+	}
+}
+
+/**
+ * MIPS_INS_ADDV_B/H/W/D — lane-wise add of the 128-bit MSA register,
+ * matching x86 PADDB/PADDW/PADDD/PADDQ. Not a 128-bit integer add.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaAddv(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
+
+	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	storeOp(
+			mi->operands[0],
+			msaPackedBinOp(op1, op2, msaLaneBits(i->id), llvm::Instruction::Add, irb),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_SUBV_B/H/W/D
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaSubv(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
+
+	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	storeOp(
+			mi->operands[0],
+			msaPackedBinOp(op1, op2, msaLaneBits(i->id), llvm::Instruction::Sub, irb),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_ADDS_S_B/H/W/D, MIPS_INS_ADDS_U_* — saturating lane add
+ * (x86 PADDSB/PADDUSB). MIPS_INS_SUBS_S_* / SUBS_U_* — saturating sub
+ * (PSUBSB/PSUBUSB). Same select clamp ARM64 SQADD uses, not llvm.sadd.sat.
+ * Capstone 6 reports suffixed ids; unsuffixed ADDS_S is a compat macro onto
+ * ADDS_S_W.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaSatArith(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
+
+	bool isSigned = i->id == MIPS_INS_ADDS_S_B
+			|| i->id == MIPS_INS_ADDS_S_H
+			|| i->id == MIPS_INS_ADDS_S_W
+			|| i->id == MIPS_INS_ADDS_S_D
+			|| i->id == MIPS_INS_SUBS_S_B
+			|| i->id == MIPS_INS_SUBS_S_H
+			|| i->id == MIPS_INS_SUBS_S_W
+			|| i->id == MIPS_INS_SUBS_S_D;
+	bool isSub = i->id == MIPS_INS_SUBS_S_B
+			|| i->id == MIPS_INS_SUBS_S_H
+			|| i->id == MIPS_INS_SUBS_S_W
+			|| i->id == MIPS_INS_SUBS_S_D
+			|| i->id == MIPS_INS_SUBS_U_B
+			|| i->id == MIPS_INS_SUBS_U_H
+			|| i->id == MIPS_INS_SUBS_U_W
+			|| i->id == MIPS_INS_SUBS_U_D;
+	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	storeOp(
+			mi->operands[0],
+			msaPackedSatArith(op1, op2, msaLaneBits(i->id), isSigned, isSub, irb),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_MULV_B/H/W/D — lane-wise multiply, wrapping like x86 PMULLW/PMULLD.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaMulv(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
+
+	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	storeOp(
+			mi->operands[0],
+			msaPackedBinOp(op1, op2, msaLaneBits(i->id), llvm::Instruction::Mul, irb),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_ILVEV_B/H/W/D — interleave even lanes (x86 PUNPCKL analog).
+ * MIPS_INS_ILVOD_* — interleave odd lanes (x86 PUNPCKH analog).
+ * MIPS_INS_ILVL_* — interleave the high (left) half of each source.
+ * MIPS_INS_ILVR_* — interleave the low (right) half of each source.
+ *
+ * ILVEV/ILVOD: wd[2*i] = wt[2*i+off], wd[2*i+1] = ws[2*i+off]
+ * with off = 0 (even) or 1 (odd).
+ * ILVL/ILVR:   wd[2*i] = wt[i+off],   wd[2*i+1] = ws[i+off]
+ * with off = n/2 (left) or 0 (right).
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaIlv(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
+
+	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	bool odd = i->id == MIPS_INS_ILVOD_B
+			|| i->id == MIPS_INS_ILVOD_H
+			|| i->id == MIPS_INS_ILVOD_W
+			|| i->id == MIPS_INS_ILVOD_D;
+	bool left = i->id == MIPS_INS_ILVL_B
+			|| i->id == MIPS_INS_ILVL_H
+			|| i->id == MIPS_INS_ILVL_W
+			|| i->id == MIPS_INS_ILVL_D;
+	bool right = i->id == MIPS_INS_ILVR_B
+			|| i->id == MIPS_INS_ILVR_H
+			|| i->id == MIPS_INS_ILVR_W
+			|| i->id == MIPS_INS_ILVR_D;
+	llvm::Value* res = (left || right)
+			? msaIlvLeftRight(op1, op2, msaLaneBits(i->id), left, irb)
+			: msaIlvEvenOdd(op1, op2, msaLaneBits(i->id), odd, irb);
+	storeOp(mi->operands[0], res, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_SHF_B/H/W — 4-element group shuffle by an 8-bit immediate,
+ * matching x86 PSHUFD / PSHUFB-class. Each 2-bit field of the imm selects
+ * a source lane inside the group: dst[4*g+j] = src[4*g + ((imm >> 2*j) & 3)].
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaShf(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, mi, irb);
+
+	if (mi->operands[2].type != MIPS_OP_IMM)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+
+	unsigned elemBits = msaLaneBits(i->id);
+	unsigned n = 128 / elemBits;
+	if (n % 4 != 0)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+
+	op1 = loadOp(mi->operands[1], irb);
+	uint8_t imm = static_cast<uint8_t>(mi->operands[2].imm);
+	auto* vecTy = llvm::FixedVectorType::get(irb.getIntNTy(elemBits), n);
+	auto* v = irb.CreateBitCast(msaToI128(op1, irb), vecTy);
+	std::vector<int> mask;
+	mask.reserve(n);
+	unsigned groups = n / 4;
+	for (unsigned g = 0; g < groups; ++g)
+	{
+		for (unsigned j = 0; j < 4; ++j)
+		{
+			mask.push_back(static_cast<int>(g * 4 + ((imm >> (2 * j)) & 3)));
+		}
+	}
+	storeOp(
+			mi->operands[0],
+			irb.CreateBitCast(irb.CreateShuffleVector(v, v, mask), irb.getIntNTy(128)),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_SPLAT_B/H/W/D — replicate lane ws[rt] (rt modulo lane count)
+ * across wd. MIPS_INS_SPLATI_* is the same with an immediate index.
+ * x86 analog: PSHUFLW / MOVDDUP of a selected lane.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaSplat(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, mi, irb);
+
+	unsigned elemBits = msaLaneBits(i->id);
+	unsigned n = 128 / elemBits;
+	op1 = loadOp(mi->operands[1], irb);
+	op2 = loadOp(mi->operands[2], irb);
+	if (!op2->getType()->isIntegerTy())
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+	if (op2->getType()->getIntegerBitWidth() != 32)
+	{
+		op2 = irb.CreateZExtOrTrunc(op2, irb.getInt32Ty());
+	}
+	auto* vecTy = llvm::FixedVectorType::get(irb.getIntNTy(elemBits), n);
+	auto* v = irb.CreateBitCast(msaToI128(op1, irb), vecTy);
+	auto* idx = irb.CreateURem(op2, llvm::ConstantInt::get(op2->getType(), n));
+	auto* elem = irb.CreateExtractElement(v, idx);
+	storeOp(
+			mi->operands[0],
+			irb.CreateBitCast(irb.CreateVectorSplat(n, elem), irb.getIntNTy(128)),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_MAX_S_B/H/W/D — signed per-lane max (x86 PMAXSD family).
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaMaxs(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
+
+	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	storeOp(
+			mi->operands[0],
+			msaPackedSminMax(op1, op2, msaLaneBits(i->id), true, irb),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_MIN_S_B/H/W/D — signed per-lane min.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaMins(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
+
+	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	storeOp(
+			mi->operands[0],
+			msaPackedSminMax(op1, op2, msaLaneBits(i->id), false, irb),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_SLL_B/H/W/D — per-lane left shift (x86 PSLLW analog, but
+ * MSA takes a per-element count modulo the lane width).
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaSll(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
+
+	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	storeOp(
+			mi->operands[0],
+			msaPackedShift(op1, op2, msaLaneBits(i->id), llvm::Instruction::Shl, irb),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_SRL_B/H/W/D — per-lane logical right shift.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaSrl(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
+
+	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	storeOp(
+			mi->operands[0],
+			msaPackedShift(op1, op2, msaLaneBits(i->id), llvm::Instruction::LShr, irb),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_ANDI_B / ORI_B / XORI_B / NORI_B — byte logic of ws with a splat
+ * immediate (x86 PAND/POR/PXOR + splat). Distinct from scalar ANDI/ORI/XORI:
+ * every lane sees the same 8-bit immediate. NORI_B is NOT(ws OR splat).
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaLogiB(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, mi, irb);
+
+	if (mi->operands[2].type != MIPS_OP_IMM)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+
+	op1 = loadOp(mi->operands[1], irb);
+	op2 = loadOp(mi->operands[2], irb);
+	if (!op2->getType()->isIntegerTy())
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+
+	auto* elemTy = irb.getInt8Ty();
+	auto* vecTy = llvm::FixedVectorType::get(elemTy, 16);
+	auto* v = irb.CreateBitCast(msaToI128(op1, irb), vecTy);
+	auto* imm8 = irb.CreateVectorSplat(16, irb.CreateZExtOrTrunc(op2, elemTy));
+	llvm::Value* res = nullptr;
+	switch (i->id)
+	{
+		case MIPS_INS_ANDI_B:
+			res = irb.CreateAnd(v, imm8);
+			break;
+		case MIPS_INS_XORI_B:
+			res = irb.CreateXor(v, imm8);
+			break;
+		case MIPS_INS_NORI_B:
+			res = irb.CreateNot(irb.CreateOr(v, imm8));
+			break;
+		default:
+			res = irb.CreateOr(v, imm8);
+			break;
+	}
+	storeOp(
+			mi->operands[0],
+			irb.CreateBitCast(res, irb.getIntNTy(128)),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_PCKEV_B/H/W/D — pack even lanes of wt then ws (PACKUSWB-class layout,
+ * without saturation). MIPS_INS_PCKOD_* packs the odd lanes.
+ *
+ * wd[i]     = wt[2*i+off]
+ * wd[i+n/2] = ws[2*i+off]
+ * with off = 0 (even) or 1 (odd).
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaPck(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
+
+	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	bool odd = i->id == MIPS_INS_PCKOD_B
+			|| i->id == MIPS_INS_PCKOD_H
+			|| i->id == MIPS_INS_PCKOD_W
+			|| i->id == MIPS_INS_PCKOD_D;
+	storeOp(
+			mi->operands[0],
+			msaPckEvenOdd(op1, op2, msaLaneBits(i->id), odd, irb),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_BSEL_V — bitwise select (PPC VSEL analog; x86 PBLENDVB is the
+ * byte-MSB cousin). wd is the mask:
+ *   wd = (ws AND wd) OR (wt AND NOT wd)
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaBsel(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, mi, irb);
+
+	std::tie(op0, op1, op2) = loadOpTernary(mi, irb);
+	auto* mask = msaToI128(op0, irb);
+	auto* ws = msaToI128(op1, irb);
+	auto* wt = msaToI128(op2, irb);
+	auto* res = irb.CreateOr(irb.CreateAnd(ws, mask), irb.CreateAnd(wt, irb.CreateNot(mask)));
+	storeOp(mi->operands[0], res, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_CEQ_B/H/W/D — lane compare equal, all-1s mask (x86 PCMPEQB).
+ * MIPS_INS_CEQI_B/H/W/D — same against a splat of the signed 5-bit immediate.
+ * MIPS_INS_CLE_S_* / CLT_S_* — signed <= / <, same mask layout.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaCmp(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
+
+	unsigned elemBits = msaLaneBits(i->id);
+	bool ceqi = i->id == MIPS_INS_CEQI_B
+			|| i->id == MIPS_INS_CEQI_H
+			|| i->id == MIPS_INS_CEQI_W
+			|| i->id == MIPS_INS_CEQI_D;
+	if (ceqi)
+	{
+		if (mi->op_count != 3 || mi->operands[2].type != MIPS_OP_IMM)
+		{
+			translatePseudoAsmGeneric(i, mi, irb);
+			return;
+		}
+		op1 = loadOp(mi->operands[1], irb);
+		unsigned n = 128 / elemBits;
+		llvm::APInt simm(5, static_cast<uint64_t>(mi->operands[2].imm), true);
+		auto* lane = llvm::ConstantInt::get(irb.getIntNTy(elemBits), simm.sext(elemBits));
+		op2 = irb.CreateBitCast(irb.CreateVectorSplat(n, lane), irb.getIntNTy(128));
+	}
+	else
+	{
+		std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	}
+
+	MsaCmpPred pred = MsaCmpPred::Eq;
+	switch (i->id)
+	{
+		case MIPS_INS_CLE_S_B:
+		case MIPS_INS_CLE_S_H:
+		case MIPS_INS_CLE_S_W:
+		case MIPS_INS_CLE_S_D:
+			pred = MsaCmpPred::Sle;
+			break;
+		case MIPS_INS_CLT_S_B:
+		case MIPS_INS_CLT_S_H:
+		case MIPS_INS_CLT_S_W:
+		case MIPS_INS_CLT_S_D:
+			pred = MsaCmpPred::Slt;
+			break;
+		default:
+			pred = MsaCmpPred::Eq;
+			break;
+	}
+	storeOp(
+			mi->operands[0],
+			msaPackedCmp(op1, op2, elemBits, pred, irb),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_SAT_S_B/H/W/D — saturate each signed lane to n+1 bits
+ * (PACKSS-class clamp). MIPS_INS_SAT_U_* saturates unsigned to [0, 2^(n+1)-1].
+ * Capstone reports `wd, ws, n` as W, W, IMM.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaSat(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, mi, irb);
+
+	if (mi->operands[2].type != MIPS_OP_IMM)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+
+	bool isSigned = i->id == MIPS_INS_SAT_S_B
+			|| i->id == MIPS_INS_SAT_S_H
+			|| i->id == MIPS_INS_SAT_S_W
+			|| i->id == MIPS_INS_SAT_S_D;
+	unsigned satBits = static_cast<unsigned>(mi->operands[2].imm) + 1u;
+	op1 = loadOp(mi->operands[1], irb);
+	storeOp(
+			mi->operands[0],
+			msaPackedSatN(op1, msaLaneBits(i->id), satBits, isSigned, irb),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_SLD_B/H/W/D — slide wd||ws left by GPR rt lanes (x86 PALIGNR /
+ * PSLLDQ-class). Syntax `sld.b $wd, $ws[$rt]`; Capstone operands are
+ * W dest, W ws, GPR rt. wd is also the low source. SLDI_* takes an
+ * immediate count instead of a GPR.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaSld(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, mi, irb);
+
+	op0 = loadOp(mi->operands[0], irb);
+	op1 = loadOp(mi->operands[1], irb);
+	op2 = loadOp(mi->operands[2], irb);
+	if (!op2->getType()->isIntegerTy())
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+	storeOp(
+			mi->operands[0],
+			msaSlide(op0, op1, op2, msaLaneBits(i->id), irb),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_FADD_W / FSUB_W / FMUL_W / FDIV_W — MSA packed single
+ * (x86 ADDPS/SUBPS/MULPS/DIVPS). FMAX_W / FMIN_W are MAXPS/MINPS: ordered
+ * compare plus select, not llvm.maxnum. W registers are i128; bitcast to
+ * <4 x float> is the whole conversion.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaFbin(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
+
+	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	if (i->id == MIPS_INS_FMAX_W || i->id == MIPS_INS_FMIN_W)
+	{
+		storeOp(
+				mi->operands[0],
+				msaPackedFminmaxW(op1, op2, i->id == MIPS_INS_FMAX_W, irb),
+				irb,
+				eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		return;
+	}
+
+	llvm::Instruction::BinaryOps opc = llvm::Instruction::FAdd;
+	switch (i->id)
+	{
+		case MIPS_INS_FSUB_W:
+			opc = llvm::Instruction::FSub;
+			break;
+		case MIPS_INS_FMUL_W:
+			opc = llvm::Instruction::FMul;
+			break;
+		case MIPS_INS_FDIV_W:
+			opc = llvm::Instruction::FDiv;
+			break;
+		default:
+			opc = llvm::Instruction::FAdd;
+			break;
+	}
+	storeOp(
+			mi->operands[0],
+			msaPackedFbinW(op1, op2, opc, irb),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_BSELI_B — immediate-mask select (byte splat of i8):
+ *   wd = (ws AND splat) OR (wd AND NOT splat)
+ * Capstone 6's unsuffixed BSELI is a compat macro onto BSELI_B.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaBseli(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, mi, irb);
+
+	if (mi->operands[2].type != MIPS_OP_IMM)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+
+	op0 = loadOp(mi->operands[0], irb);
+	op1 = loadOp(mi->operands[1], irb);
+	op2 = loadOp(mi->operands[2], irb);
+	if (!op2->getType()->isIntegerTy())
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+
+	auto* elemTy = irb.getInt8Ty();
+	auto* vecTy = llvm::FixedVectorType::get(elemTy, 16);
+	auto* wd = irb.CreateBitCast(msaToI128(op0, irb), vecTy);
+	auto* ws = irb.CreateBitCast(msaToI128(op1, irb), vecTy);
+	auto* mask = irb.CreateVectorSplat(16, irb.CreateZExtOrTrunc(op2, elemTy));
+	auto* res = irb.CreateOr(irb.CreateAnd(ws, mask), irb.CreateAnd(wd, irb.CreateNot(mask)));
+	storeOp(mi->operands[0], irb.CreateBitCast(res, irb.getIntNTy(128)), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_COPY_S_B/H/W/D — extract one lane to a GPR with sign-extend
+ * (x86 PEXTR + MOVSX). COPY_U_* zero-extends (PEXTR + MOVZX).
+ * Capstone reports the lane as a following IMM, not a vector_index field.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaCopy(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, mi, irb);
+
+	if (mi->operands[2].type != MIPS_OP_IMM)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+
+	unsigned elemBits = msaLaneBits(i->id);
+	unsigned n = 128 / elemBits;
+	op1 = loadOp(mi->operands[1], irb);
+	op2 = loadOp(mi->operands[2], irb);
+	if (!op2->getType()->isIntegerTy())
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+	if (op2->getType()->getIntegerBitWidth() != 32)
+	{
+		op2 = irb.CreateZExtOrTrunc(op2, irb.getInt32Ty());
+	}
+	auto* vecTy = llvm::FixedVectorType::get(irb.getIntNTy(elemBits), n);
+	auto* v = irb.CreateBitCast(msaToI128(op1, irb), vecTy);
+	auto* idx = irb.CreateURem(op2, llvm::ConstantInt::get(op2->getType(), n));
+	auto* elem = irb.CreateExtractElement(v, idx);
+	bool sign = i->id == MIPS_INS_COPY_S_B
+			|| i->id == MIPS_INS_COPY_S_H
+			|| i->id == MIPS_INS_COPY_S_W
+			|| i->id == MIPS_INS_COPY_S_D;
+	storeOp(
+			mi->operands[0],
+			elem,
+			irb,
+			sign ? eOpConv::SEXT_TRUNC_OR_BITCAST : eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_INSERT_B/H/W/D — insert the low bits of a GPR into one MSA lane
+ * (x86 PINSR; ARM64 INS). Capstone reports `wd[n], rs` as W, IMM, GPR.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaInsert(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, mi, irb);
+
+	if (mi->operands[1].type != MIPS_OP_IMM)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+
+	unsigned elemBits = msaLaneBits(i->id);
+	unsigned n = 128 / elemBits;
+	op0 = loadOp(mi->operands[0], irb);
+	op2 = loadOp(mi->operands[2], irb);
+	if (!op2->getType()->isIntegerTy())
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+	unsigned laneIdx = static_cast<unsigned>(mi->operands[1].imm) % n;
+	auto* laneTy = irb.getIntNTy(elemBits);
+	auto* vecTy = llvm::FixedVectorType::get(laneTy, n);
+	auto* v = irb.CreateBitCast(msaToI128(op0, irb), vecTy);
+	auto* lane = irb.CreateZExtOrTrunc(op2, laneTy);
+	storeOp(
+			mi->operands[0],
+			irb.CreateBitCast(
+					irb.CreateInsertElement(v, lane, static_cast<uint64_t>(laneIdx)),
+					irb.getIntNTy(128)),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_FILL_B/H/W/D — splat the low bits of a GPR across wd
+ * (x86 VPBROADCAST). FILL.D sign-extends a 32-bit GPR into each 64-bit lane.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaFill(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, mi, irb);
+
+	unsigned elemBits = msaLaneBits(i->id);
+	unsigned n = 128 / elemBits;
+	op1 = loadOp(mi->operands[1], irb);
+	if (!op1->getType()->isIntegerTy())
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+	auto* lane = irb.CreateSExtOrTrunc(op1, irb.getIntNTy(elemBits));
+	storeOp(
+			mi->operands[0],
+			irb.CreateBitCast(irb.CreateVectorSplat(n, lane), irb.getIntNTy(128)),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_LDI_B/H/W/D — splat a signed 10-bit immediate across wd.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMsaLdi(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, mi, irb);
+
+	if (mi->operands[1].type != MIPS_OP_IMM)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+
+	unsigned elemBits = msaLaneBits(i->id);
+	unsigned n = 128 / elemBits;
+	op1 = loadOp(mi->operands[1], irb);
+	if (!op1->getType()->isIntegerTy())
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+	auto* lane = irb.CreateSExtOrTrunc(op1, irb.getIntNTy(elemBits));
+	storeOp(
+			mi->operands[0],
+			irb.CreateBitCast(irb.CreateVectorSplat(n, lane), irb.getIntNTy(128)),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * MIPS_INS_SELEQZ — rd = (rt == 0) ? rs : 0
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateSeleqz(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, mi, irb);
+
+	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	auto* zero = llvm::ConstantInt::get(op1->getType(), 0);
+	if (op2->getType() != op1->getType())
+	{
+		op2 = irb.CreateZExtOrTrunc(op2, op1->getType());
+	}
+	auto* val = irb.CreateSelect(irb.CreateICmpEQ(op2, llvm::ConstantInt::get(op2->getType(), 0)), op1, zero);
+	storeOp(mi->operands[0], val, irb);
+}
+
+/**
+ * MIPS_INS_SELNEZ — rd = (rt != 0) ? rs : 0
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateSelnez(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, mi, irb);
+
+	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	auto* zero = llvm::ConstantInt::get(op1->getType(), 0);
+	if (op2->getType() != op1->getType())
+	{
+		op2 = irb.CreateZExtOrTrunc(op2, op1->getType());
+	}
+	auto* val = irb.CreateSelect(irb.CreateICmpNE(op2, llvm::ConstantInt::get(op2->getType(), 0)), op1, zero);
+	storeOp(mi->operands[0], val, irb);
+}
+
+/**
+ * MIPS_INS_SEL_S, MIPS_INS_SEL_D — fd = (lsb(ft) == 1) ? fs : fd
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateSel(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, mi, irb);
+
+	std::tie(op0, op1, op2) = loadOpTernary(mi, irb);
+	llvm::Value* bits = op2;
+	if (bits->getType()->isFloatingPointTy())
+	{
+		bits = irb.CreateBitCast(bits, irb.getIntNTy(bits->getType()->getPrimitiveSizeInBits()));
+	}
+	auto* lsb = irb.CreateTrunc(bits, irb.getInt1Ty());
+	storeOp(mi->operands[0], irb.CreateSelect(lsb, op1, op0), irb);
+}
+
+/**
+ * MIPS_INS_LB, MIPS_INS_LBU, MIPS_INS_LBU16,
+ * MIPS_INS_LH, MIPS_INS_LHU, MIPS_INS_LHU16,
+ * MIPS_INS_LW, MIPS_INS_LW16, MIPS_INS_LWU,
  * MIPS_INS_LD, MIPS_INS_LDC3,
- * MIPS_INS_LWC1, MIPS_INS_LDC1
+ * MIPS_INS_LWC1, MIPS_INS_LDC1,
+ * MIPS_INS_LD_B, MIPS_INS_LD_H, MIPS_INS_LD_W, MIPS_INS_LD_D
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateLoadMemory(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
@@ -1744,10 +3473,13 @@ void Capstone2LlvmIrTranslatorMips_impl::translateLoadMemory(cs_insn* i, cs_mips
 	switch (i->id)
 	{
 		case MIPS_INS_LB: ty = irb.getInt8Ty(); ct = eOpConv::SEXT_TRUNC_OR_BITCAST; break;
-		case MIPS_INS_LBU: ty = irb.getInt8Ty(); ct = eOpConv::ZEXT_TRUNC_OR_BITCAST; break;
+		case MIPS_INS_LBU:
+		case MIPS_INS_LBU16: ty = irb.getInt8Ty(); ct = eOpConv::ZEXT_TRUNC_OR_BITCAST; break;
 		case MIPS_INS_LH: ty = irb.getInt16Ty(); ct = eOpConv::SEXT_TRUNC_OR_BITCAST; break;
-		case MIPS_INS_LHU: ty = irb.getInt16Ty(); ct = eOpConv::ZEXT_TRUNC_OR_BITCAST; break;
+		case MIPS_INS_LHU:
+		case MIPS_INS_LHU16: ty = irb.getInt16Ty(); ct = eOpConv::ZEXT_TRUNC_OR_BITCAST; break;
 		case MIPS_INS_LW:
+		case MIPS_INS_LW16:
 		case MIPS_INS_LL: ty = irb.getInt32Ty(); ct = eOpConv::SEXT_TRUNC_OR_BITCAST; break;
 		case MIPS_INS_LWU: ty = irb.getInt32Ty(); ct = eOpConv::ZEXT_TRUNC_OR_BITCAST; break;
 		case MIPS_INS_LD:
@@ -1755,6 +3487,13 @@ void Capstone2LlvmIrTranslatorMips_impl::translateLoadMemory(cs_insn* i, cs_mips
 		case MIPS_INS_LDC3: ty = irb.getInt64Ty(); ct = eOpConv::SEXT_TRUNC_OR_BITCAST; break;
 		case MIPS_INS_LWC1: ty = irb.getFloatTy(); ct = eOpConv::FPCAST_OR_BITCAST; break;
 		case MIPS_INS_LDC1: ty = irb.getDoubleTy(); ct = eOpConv::FPCAST_OR_BITCAST; break;
+		case MIPS_INS_LD_B:
+		case MIPS_INS_LD_H:
+		case MIPS_INS_LD_W:
+		case MIPS_INS_LD_D:
+			ty = irb.getIntNTy(128);
+			ct = eOpConv::ZEXT_TRUNC_OR_BITCAST;
+			break;
 		default:
 			throw GenericError("Unhandled insn ID in translateLoadMemory().");
 	}
@@ -1771,8 +3510,10 @@ void Capstone2LlvmIrTranslatorMips_impl::translateLoadMemory(cs_insn* i, cs_mips
 }
 
 /**
- * MIPS_INS_SB, MIPS_INS_SH, MIPS_INS_SW, MIPS_INS_SD, MIPS_INS_SDC3,
- * MIPS_INS_SWC1, MIPS_INS_SDC1
+ * MIPS_INS_SB, MIPS_INS_SB16, MIPS_INS_SH, MIPS_INS_SH16,
+ * MIPS_INS_SW, MIPS_INS_SW16, MIPS_INS_SD, MIPS_INS_SDC3,
+ * MIPS_INS_SWC1, MIPS_INS_SDC1,
+ * MIPS_INS_ST_B, MIPS_INS_ST_H, MIPS_INS_ST_W, MIPS_INS_ST_D
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateStoreMemory(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
@@ -1781,15 +3522,24 @@ void Capstone2LlvmIrTranslatorMips_impl::translateStoreMemory(cs_insn* i, cs_mip
 	llvm::Type* ty = nullptr;
 	switch (i->id)
 	{
-		case MIPS_INS_SB: ty = irb.getInt8Ty(); break;
-		case MIPS_INS_SH: ty = irb.getInt16Ty(); break;
+		case MIPS_INS_SB:
+		case MIPS_INS_SB16: ty = irb.getInt8Ty(); break;
+		case MIPS_INS_SH:
+		case MIPS_INS_SH16: ty = irb.getInt16Ty(); break;
 		case MIPS_INS_SW:
+		case MIPS_INS_SW16:
 		case MIPS_INS_SC: ty = irb.getInt32Ty(); break;
 		case MIPS_INS_SD:
 		case MIPS_INS_SCD: ty = irb.getInt64Ty(); break;
 		case MIPS_INS_SDC3: ty = irb.getInt64Ty(); break;
 		case MIPS_INS_SWC1: ty = irb.getFloatTy(); break;
 		case MIPS_INS_SDC1: ty = irb.getDoubleTy(); break;
+		case MIPS_INS_ST_B:
+		case MIPS_INS_ST_H:
+		case MIPS_INS_ST_W:
+		case MIPS_INS_ST_D:
+			ty = irb.getIntNTy(128);
+			break;
 		default:
 			throw GenericError("Unhandled insn ID in translateStoreMemory().");
 	}
@@ -2220,18 +3970,25 @@ bool Capstone2LlvmIrTranslatorMips_impl::isWordOperation(cs_insn* i)
 	case MIPS_INS_ADDI:
 	case MIPS_INS_ADDIU:
 	case MIPS_INS_ADDU:
+	case MIPS_INS_ADDU16:
 	case MIPS_INS_SUB:
 	case MIPS_INS_SUBU:
+	case MIPS_INS_SUBU16:
 	case MIPS_INS_NEG:
 	case MIPS_INS_NEGU:
 	case MIPS_INS_SLL:
+	case MIPS_INS_SLL16:
 	case MIPS_INS_SLLV:
 	case MIPS_INS_SRL:
+	case MIPS_INS_SRL16:
 	case MIPS_INS_SRLV:
 	case MIPS_INS_SRA:
 	case MIPS_INS_SRAV:
 	case MIPS_INS_ROTR:
 	case MIPS_INS_ROTRV:
+	case MIPS_INS_AUI:
+	case MIPS_INS_ALIGN:
+	case MIPS_INS_BITSWAP:
 	case MIPS_INS_MUL:
 	case MIPS_INS_MULU:
 	case MIPS_INS_MUH:
@@ -2958,7 +4715,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateNor(cs_insn* i, cs_mips* mi, l
 }
 
 /**
- * MIPS_INS_NOT
+ * MIPS_INS_NOT, MIPS_INS_NOT16
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateNot(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
@@ -2970,7 +4727,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateNot(cs_insn* i, cs_mips* mi, l
 }
 
 /**
- * MIPS_INS_OR, MIPS_INS_ORI
+ * MIPS_INS_OR, MIPS_INS_ORI, MIPS_INS_OR16
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateOr(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
@@ -3027,7 +4784,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateSeh(cs_insn* i, cs_mips* mi, l
 }
 
 /**
- * MIPS_INS_SLL, MIPS_INS_SLLI, MIPS_INS_SLLV
+ * MIPS_INS_SLL, MIPS_INS_SLLI, MIPS_INS_SLLV, MIPS_INS_SLL16
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateSll(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
@@ -3083,7 +4840,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateSra(cs_insn* i, cs_mips* mi, l
 }
 
 /**
- * MIPS_INS_SRL, MIPS_INS_SRLI, MIPS_INS_SRLV
+ * MIPS_INS_SRL, MIPS_INS_SRLI, MIPS_INS_SRLV, MIPS_INS_SRL16
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateSrl(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
@@ -3098,7 +4855,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateSrl(cs_insn* i, cs_mips* mi, l
 }
 
 /**
- * MIPS_INS_SUB, MIPS_INS_SUBU
+ * MIPS_INS_SUB, MIPS_INS_SUBU, MIPS_INS_SUBU16
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateSub(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
@@ -3140,7 +4897,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateSyscall(cs_insn* i, cs_mips* m
 }
 
 /**
- * MIPS_INS_XOR, MIPS_INS_XORI
+ * MIPS_INS_XOR, MIPS_INS_XORI, MIPS_INS_XOR16
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateXor(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {

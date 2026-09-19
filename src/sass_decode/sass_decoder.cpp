@@ -22,8 +22,13 @@
  *   S2UR  0xc3   /* 0x00000000000679c3  CUDA Binary Utilities 13.3 *\/
  *   LDCU  0xac   /* 0x00006b00ff0477ac  CUDA Binary Utilities 13.3 *\/
  *
- * Not claimed (mnemonics in the ISA tables, no printed encoding word):
- *   FMUL, FFMA, ISETP, SHL, SHR, LOP3. Do not invent bytes.
+ * Not claimed (ISA-table mnemonics, no printed encoding word in any
+ * CUDA Binary Utilities -hex listing consulted — do not invent bytes):
+ *   FMUL, FFMA, ISETP, SHL, SHR, LOP3, FSETP, MUFU, LEA.
+ * Search (HTML + PDF, 2026-09-19): 8.0, 9.1, 10.2, 12.1, 12.4, 12.6,
+ * 12.8.0/12.8.2, 13.0, 13.1.2, 13.3 current. Those docs print FMUL/FFMA/
+ * ISETP/MUFU/FSETP as *mnemonics* in a non-hex control-flow listing, and
+ * name SHL/SHR/LOP3/LEA only in ISA tables. Details: docs/internal/wire-sass.md.
  *
  * Register fields in those same listings: dest [16:23], src0 [24:31],
  * src1 [32:39], pred [12:15] (7 = PT). IADD3/IMAD src2 is word1[7:0].

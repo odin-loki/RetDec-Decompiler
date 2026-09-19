@@ -6,6 +6,19 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ## [Unreleased]
 
+## [2.0.26] — 2026-09-19
+
+### Changed
+
+- Native CPU translators now match the x86-64 **compiler** production bar
+  (gcc/clang `-O0`/`-O1`/`-O2`, default march), including AVX integer twins of
+  already-lifted SSE: VINSERTI128/VPERM2I128, VPSLLW/VPMULLD, VUNPCK, VMOVDDUP;
+  ARM64 SABD/SRHADD/SHSUB/UMLSL/SQSHRUN; ARM32 VSHRN/VMOVL/VMLSL/VQABS;
+  MIPS MSA ADDS.S/CEQI/SAT.S/SLD; PowerPC XVMAXDP/XVCPSGN/XVRDPI/VRLW;
+  RISC-V Zbkb PACK/PACKH/PACKW; SPARC UMULXHI and TA/T; SystemZ VGBM/VLEI/
+  VSCEF/VFEE. AES/SHA stay unmapped on every ISA including x86. SASS is still
+  not Production — NVIDIA has not printed FMUL/FFMA/ISETP/SHL/SHR/LOP3.
+
 ## [2.0.25] — 2026-09-19
 
 ### Changed

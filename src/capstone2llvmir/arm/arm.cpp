@@ -7,8 +7,11 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <iomanip>
 
+#include <llvm/ADT/APInt.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Intrinsics.h>
@@ -52,6 +55,66 @@ void armDropPredOperands(cs_arm* ai)
 		++w;
 	}
 	ai->op_count = w;
+}
+
+llvm::Value* armCvtRoundFp(llvm::Value* v, unsigned id, llvm::IRBuilder<>& irb)
+{
+	llvm::Intrinsic::ID iid;
+	switch (id)
+	{
+	case ARM_INS_VCVTA: iid = llvm::Intrinsic::round; break;
+	case ARM_INS_VCVTM: iid = llvm::Intrinsic::floor; break;
+	case ARM_INS_VCVTN:
+	case ARM_INS_VCVTR: iid = llvm::Intrinsic::roundeven; break;
+	case ARM_INS_VCVTP: iid = llvm::Intrinsic::ceil; break;
+	default: return v;
+	}
+	return irb.CreateCall(
+		llvm::Intrinsic::getOrInsertDeclaration(irb.GetInsertBlock()->getModule(), iid, v->getType()), {v});
+}
+
+// Integer IEEE f16 <-> f32 so the unit-test interpreter does not have to
+// execute the half type. 1.0 and other gcc -O1 constants are exact.
+llvm::Value* armF16BitsToF32(llvm::Value* h16, llvm::IRBuilder<>& irb)
+{
+	auto* i32 = irb.getInt32Ty();
+	auto* h = irb.CreateZExt(h16, i32);
+	auto* sign = irb.CreateShl(irb.CreateAnd(h, llvm::ConstantInt::get(i32, 0x8000)), 16);
+	auto* exp = irb.CreateAnd(irb.CreateLShr(h, 10), llvm::ConstantInt::get(i32, 0x1f));
+	auto* frac = irb.CreateAnd(h, llvm::ConstantInt::get(i32, 0x3ff));
+	auto* mag = irb.CreateAnd(h, llvm::ConstantInt::get(i32, 0x7fff));
+	auto* isZero = irb.CreateICmpEQ(mag, llvm::ConstantInt::get(i32, 0));
+	auto* isInfNan = irb.CreateICmpEQ(exp, llvm::ConstantInt::get(i32, 31));
+	auto* norm = irb.CreateOr(
+		sign,
+		irb.CreateOr(
+			irb.CreateShl(irb.CreateAdd(exp, llvm::ConstantInt::get(i32, 112)), 23),
+			irb.CreateShl(frac, 13)));
+	auto* infnan = irb.CreateOr(
+		sign,
+		irb.CreateOr(llvm::ConstantInt::get(i32, 0x7f800000u), irb.CreateShl(frac, 13)));
+	return irb.CreateBitCast(irb.CreateSelect(isZero, sign, irb.CreateSelect(isInfNan, infnan, norm)), irb.getFloatTy());
+}
+
+llvm::Value* armF32ToF16Bits(llvm::Value* f, llvm::IRBuilder<>& irb)
+{
+	auto* i32 = irb.getInt32Ty();
+	auto* bits = irb.CreateBitCast(f, i32);
+	auto* sign = irb.CreateLShr(irb.CreateAnd(bits, llvm::ConstantInt::get(i32, 0x80000000u)), 16);
+	auto* exp = irb.CreateAnd(irb.CreateLShr(bits, 23), llvm::ConstantInt::get(i32, 0xff));
+	auto* frac = irb.CreateAnd(bits, llvm::ConstantInt::get(i32, 0x7fffff));
+	auto* tooSmall = irb.CreateICmpULT(exp, llvm::ConstantInt::get(i32, 113));
+	auto* tooBig = irb.CreateICmpUGT(exp, llvm::ConstantInt::get(i32, 142));
+	auto* isNan = irb.CreateAnd(
+		irb.CreateICmpEQ(exp, llvm::ConstantInt::get(i32, 255)),
+		irb.CreateICmpNE(frac, llvm::ConstantInt::get(i32, 0)));
+	auto* exp16 = irb.CreateSub(exp, llvm::ConstantInt::get(i32, 112));
+	auto* norm = irb.CreateOr(sign, irb.CreateOr(irb.CreateShl(exp16, 10), irb.CreateLShr(frac, 13)));
+	auto* inf = irb.CreateOr(sign, llvm::ConstantInt::get(i32, 0x7c00));
+	auto* nan = irb.CreateOr(inf, llvm::ConstantInt::get(i32, 0x200));
+	auto* bits16 = irb.CreateSelect(
+		isNan, nan, irb.CreateSelect(tooBig, inf, irb.CreateSelect(tooSmall, sign, norm)));
+	return irb.CreateTrunc(bits16, irb.getInt16Ty());
 }
 
 } // namespace
@@ -979,8 +1042,15 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadNeonBits(uint32_t r, llvm::I
 {
 	if (isQuadView(r))
 	{
+		// Assemble i128 from the two D halves. Going through fp128 (loadQuadView)
+		// is a bitcast the interpreter does not keep bitwise-faithful, and it
+		// zeros bits [79:64] — i16 lane 4 of a Q register.
+		uint32_t lo = quadViewLoD(r);
+		auto* i64 = irb.getInt64Ty();
 		auto* i128 = irb.getIntNTy(128);
-		return generateTypeConversion(irb, loadQuadView(r, irb), i128, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		auto* loB = irb.CreateZExt(irb.CreateBitCast(loadRegister(lo, irb), i64), i128);
+		auto* hiB = irb.CreateZExt(irb.CreateBitCast(loadRegister(lo + 1, irb), i64), i128);
+		return irb.CreateOr(loB, irb.CreateShl(hiB, llvm::ConstantInt::get(i128, 64)));
 	}
 	auto* w = irb.getIntNTy(neonBitWidth(r));
 	return generateTypeConversion(irb, loadRegister(r, irb), w, eOpConv::ZEXT_TRUNC_OR_BITCAST);
@@ -1083,7 +1153,8 @@ void Capstone2LlvmIrTranslatorArm_impl::translateVfpLoadStore(cs_insn* i, cs_arm
 }
 
 /**
- * ARM_INS_VADD, ARM_INS_VSUB, ARM_INS_VMUL, ARM_INS_VDIV, ARM_INS_VNMUL
+ * ARM_INS_VADD, ARM_INS_VSUB, ARM_INS_VMUL, ARM_INS_VDIV, ARM_INS_VNMUL,
+ * ARM_INS_VMAXNM, ARM_INS_VMINNM (scalar VFP; NEON falls through)
  */
 void Capstone2LlvmIrTranslatorArm_impl::translateVfpArithm(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
 {
@@ -1103,6 +1174,14 @@ void Capstone2LlvmIrTranslatorArm_impl::translateVfpArithm(cs_insn* i, cs_arm* a
 		case ARM_INS_VMUL: val = irb.CreateFMul(op1, op2); break;
 		case ARM_INS_VDIV: val = irb.CreateFDiv(op1, op2); break;
 		case ARM_INS_VNMUL: val = irb.CreateFNeg(irb.CreateFMul(op1, op2)); break;
+		case ARM_INS_VMAXNM:
+			val = irb.CreateCall(
+				llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::maxnum, ty), {op1, op2});
+			break;
+		case ARM_INS_VMINNM:
+			val = irb.CreateCall(
+				llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::minnum, ty), {op1, op2});
+			break;
 		default: return;
 		}
 		storeOp(ai->operands[0], val, irb, eOpConv::FPCAST_OR_BITCAST);
@@ -1182,6 +1261,57 @@ void Capstone2LlvmIrTranslatorArm_impl::translateVfpUnary(cs_insn* i, cs_arm* ai
 		res = irb.CreateInsertElement(res, o, k);
 	}
 	storeNeonVector(ai->operands[0].reg, res, irb);
+}
+
+/**
+ * ARM_INS_VRINTA / VRINTM / VRINTN / VRINTP / VRINTZ
+ *
+ * Same mapping ARM64 translateFRint uses: A→llvm.round, M→llvm.floor,
+ * N→llvm.nearbyint, P→llvm.ceil, Z→llvm.trunc. Scalar VFP only; NEON
+ * vector forms stay pseudo, as ARM64's vector FRINT does.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateVrint(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, ai, irb);
+
+	if (!isScalarVfp(ai) || ai->operands[0].type != ARM_OP_REG || !isFpRegister(ai->operands[0].reg))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	llvm::Intrinsic::ID iid;
+	if (armIsId(i, ARM_INS_VRINTA))
+	{
+		iid = llvm::Intrinsic::round;
+	}
+	else if (armIsId(i, ARM_INS_VRINTM))
+	{
+		iid = llvm::Intrinsic::floor;
+	}
+	else if (armIsId(i, ARM_INS_VRINTN))
+	{
+		iid = llvm::Intrinsic::nearbyint;
+	}
+	else if (armIsId(i, ARM_INS_VRINTP))
+	{
+		iid = llvm::Intrinsic::ceil;
+	}
+	else if (armIsId(i, ARM_INS_VRINTZ))
+	{
+		iid = llvm::Intrinsic::trunc;
+	}
+	else
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* ty = vfpTypeOfReg(ai->operands[0].reg, irb);
+	op1 = loadVfpOp(ai->operands[1], irb, ty);
+	llvm::Value* val = irb.CreateCall(
+		llvm::Intrinsic::getOrInsertDeclaration(_module, iid, ty), {op1});
+	storeOp(ai->operands[0], val, irb, eOpConv::FPCAST_OR_BITCAST);
 }
 
 /**
@@ -1327,18 +1457,24 @@ void Capstone2LlvmIrTranslatorArm_impl::translateVmrs(cs_insn* i, cs_arm* ai, ll
 }
 
 /**
- * ARM_INS_VCVT, ARM_INS_VCVTR
+ * ARM_INS_VCVT, ARM_INS_VCVTR, ARM_INS_VCVTA/M/N/P, ARM_INS_VCVTB/T
  *
  * cs_arm::vector_data names both ends of the conversion -- F64S32 is "to f64
  * from s32" -- which is the only thing that says whether the S register on
  * either side holds a number or an integer bit pattern.
+ *
+ * VCVTB/VCVTT are the half-precision bottom/top forms gcc emits for __fp16.
+ * VCVTA/M/N/P are the ARMv8 directed-rounding converts gcc emits for
+ * round/floor/nearbyint/ceil then store to int. NEON `vcvt.s32.f32` on a D
+ * or Q is the same id as the scalar S-register form; the register width is
+ * what distinguishes two f32 lanes from one scalar.
  */
 void Capstone2LlvmIrTranslatorArm_impl::translateVfpCvt(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY(i, ai, irb);
 
-	if (ai->operands[0].type != ARM_OP_REG || ai->operands[1].type != ARM_OP_REG || !isFpRegister(ai->operands[0].reg)
-		|| !isFpRegister(ai->operands[1].reg))
+	if (ai->operands[0].type != ARM_OP_REG || ai->operands[1].type != ARM_OP_REG
+		|| !isNeonRegister(ai->operands[0].reg) || !isNeonRegister(ai->operands[1].reg))
 	{
 		translatePseudoAsmGeneric(i, ai, irb);
 		return;
@@ -1346,7 +1482,89 @@ void Capstone2LlvmIrTranslatorArm_impl::translateVfpCvt(cs_insn* i, cs_arm* ai, 
 
 	auto* f32 = irb.getFloatTy();
 	auto* f64 = irb.getDoubleTy();
+	auto* i16 = irb.getInt16Ty();
 	auto* i32 = irb.getInt32Ty();
+	const uint32_t dstR = ai->operands[0].reg;
+	const uint32_t srcR = ai->operands[1].reg;
+	const bool topHalf = i->id == ARM_INS_VCVTT;
+
+	if (i->id == ARM_INS_VCVTB || i->id == ARM_INS_VCVTT)
+	{
+		auto extractF16 = [&](llvm::Value* bits32) -> llvm::Value* {
+			if (topHalf)
+			{
+				bits32 = irb.CreateLShr(bits32, llvm::ConstantInt::get(i32, 16));
+			}
+			return irb.CreateTrunc(bits32, i16);
+		};
+		auto mergeF16 = [&](llvm::Value* old32, llvm::Value* h16) -> llvm::Value* {
+			auto* z = irb.CreateZExt(h16, i32);
+			if (topHalf)
+			{
+				z = irb.CreateShl(z, llvm::ConstantInt::get(i32, 16));
+				return irb.CreateOr(irb.CreateAnd(old32, llvm::ConstantInt::get(i32, 0x0000ffffu)), z);
+			}
+			return irb.CreateOr(irb.CreateAnd(old32, llvm::ConstantInt::get(i32, 0xffff0000u)), z);
+		};
+		auto toHalf = [&](llvm::Value* fp) { return armF32ToF16Bits(fp, irb); };
+		auto fromHalf = [&](llvm::Value* h16, llvm::Type* toTy) {
+			auto* f = armF16BitsToF32(h16, irb);
+			return toTy == f32 ? f : irb.CreateFPExt(f, toTy);
+		};
+
+		switch (ai->vector_data)
+		{
+		case ARM_VECTORDATA_F32F16:
+		{
+			if (!isSingleView(srcR) || !isSingleView(dstR))
+			{
+				translatePseudoAsmGeneric(i, ai, irb);
+				return;
+			}
+			auto* bits = irb.CreateBitCast(loadSingleView(srcR, irb), i32);
+			storeSingleView(dstR, fromHalf(extractF16(bits), f32), irb);
+			return;
+		}
+		case ARM_VECTORDATA_F16F32:
+		{
+			if (!isSingleView(srcR) || !isSingleView(dstR))
+			{
+				translatePseudoAsmGeneric(i, ai, irb);
+				return;
+			}
+			auto* old = irb.CreateBitCast(loadSingleView(dstR, irb), i32);
+			auto* h = toHalf(loadVfpOp(ai->operands[1], irb, f32));
+			storeSingleView(dstR, irb.CreateBitCast(mergeF16(old, h), f32), irb);
+			return;
+		}
+		case ARM_VECTORDATA_F64F16:
+		{
+			if (!isSingleView(srcR) || isSingleView(dstR) || isQuadView(dstR))
+			{
+				translatePseudoAsmGeneric(i, ai, irb);
+				return;
+			}
+			auto* bits = irb.CreateBitCast(loadSingleView(srcR, irb), i32);
+			storeOp(ai->operands[0], fromHalf(extractF16(bits), f64), irb, eOpConv::FPCAST_OR_BITCAST);
+			return;
+		}
+		case ARM_VECTORDATA_F16F64:
+		{
+			if (!isSingleView(dstR) || isSingleView(srcR) || isQuadView(srcR))
+			{
+				translatePseudoAsmGeneric(i, ai, irb);
+				return;
+			}
+			auto* old = irb.CreateBitCast(loadSingleView(dstR, irb), i32);
+			auto* h = toHalf(loadVfpOp(ai->operands[1], irb, f64));
+			storeSingleView(dstR, irb.CreateBitCast(mergeF16(old, h), f32), irb);
+			return;
+		}
+		default:
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+	}
 
 	llvm::Type* dstTy = nullptr; // what lands in the destination register
 	llvm::Type* srcTy = nullptr; // how the source register is read
@@ -1406,9 +1624,96 @@ void Capstone2LlvmIrTranslatorArm_impl::translateVfpCvt(cs_insn* i, cs_arm* ai, 
 		toInt = true;
 		isSigned = false;
 		break;
-	default:
-		// The half-precision pairs and everything NEON.
+	case ARM_VECTORDATA_INVALID:
+		// Capstone 6 leaves VCVTA/M/N/P as INVALID even when the mnemonic is
+		// vcvta.s32.f32. gcc -O1 emits those as S-register f32→s32, or
+		// S dest + D src for f64→s32. Do not guess for plain VCVT.
+		if (i->id == ARM_INS_VCVTA || i->id == ARM_INS_VCVTM || i->id == ARM_INS_VCVTN
+			|| i->id == ARM_INS_VCVTP)
+		{
+			const bool u32 = i->mnemonic && std::strstr(i->mnemonic, ".u32") != nullptr;
+			if (isSingleView(dstR) && isSingleView(srcR))
+			{
+				srcTy = f32;
+				dstTy = i32;
+				toInt = true;
+				isSigned = !u32;
+				break;
+			}
+			if (isSingleView(dstR) && !isSingleView(srcR) && !isQuadView(srcR))
+			{
+				srcTy = f64;
+				dstTy = i32;
+				toInt = true;
+				isSigned = !u32;
+				break;
+			}
+		}
 		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	case ARM_VECTORDATA_F32:
+	case ARM_VECTORDATA_S32:
+		if (i->id == ARM_INS_VCVTA || i->id == ARM_INS_VCVTM || i->id == ARM_INS_VCVTN
+			|| i->id == ARM_INS_VCVTP || i->id == ARM_INS_VCVTR || i->id == ARM_INS_VCVT)
+		{
+			srcTy = f32;
+			dstTy = i32;
+			toInt = true;
+			if (i->mnemonic && std::strstr(i->mnemonic, ".u32") != nullptr)
+			{
+				isSigned = false;
+			}
+			break;
+		}
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	default:
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	const bool directed = i->id == ARM_INS_VCVTA || i->id == ARM_INS_VCVTM || i->id == ARM_INS_VCVTN
+					   || i->id == ARM_INS_VCVTP;
+	if (fromInt && (directed || i->id == ARM_INS_VCVTR))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	const bool neon32 = !isSingleView(dstR) && !isSingleView(srcR) && neonBitWidth(dstR) == neonBitWidth(srcR)
+					 && srcTy != f64 && dstTy != f64;
+	if (neon32)
+	{
+		unsigned bits = neonBitWidth(dstR);
+		if (bits % 32 != 0)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		llvm::Value* srcV = loadNeonVector(srcR, 32, !fromInt, irb);
+		auto* inTy = llvm::cast<llvm::FixedVectorType>(srcV->getType());
+		unsigned lanes = inTy->getNumElements();
+		auto* outTy = llvm::FixedVectorType::get(dstTy, lanes);
+		llvm::Value* res = llvm::PoisonValue::get(outTy);
+		for (uint64_t k = 0; k < lanes; ++k)
+		{
+			llvm::Value* e = irb.CreateExtractElement(srcV, k);
+			llvm::Value* o = nullptr;
+			if (fromInt)
+			{
+				o = isSigned ? irb.CreateSIToFP(e, dstTy) : irb.CreateUIToFP(e, dstTy);
+			}
+			else if (toInt)
+			{
+				o = generateFpToIntSaturating(armCvtRoundFp(e, i->id, irb), dstTy, isSigned, irb);
+			}
+			else
+			{
+				o = irb.CreateFPCast(e, dstTy);
+			}
+			res = irb.CreateInsertElement(res, o, k);
+		}
+		storeNeonVector(dstR, res, irb);
 		return;
 	}
 
@@ -1427,12 +1732,9 @@ void Capstone2LlvmIrTranslatorArm_impl::translateVfpCvt(cs_insn* i, cs_arm* ai, 
 	else if (toInt)
 	{
 		// VCVT truncates toward zero; VCVTR follows FPSCR[RN], whose reset
-		// value and ABI setting is round-to-nearest-even.
-		if (i->id == ARM_INS_VCVTR)
-		{
-			src = irb.CreateCall(
-				llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::roundeven, src->getType()), {src});
-		}
+		// value and ABI setting is round-to-nearest-even. VCVTA/M/N/P are the
+		// directed modes gcc emits on ARMv8.
+		src = armCvtRoundFp(src, i->id, irb);
 		// A32 uses the same FPToFixed() as A64: a NaN converts to zero and an
 		// out-of-range magnitude SATURATES to the destination's minimum or
 		// maximum. LLVM calls all three poison. See the ARM64 translator's
@@ -4435,6 +4737,8 @@ void Capstone2LlvmIrTranslatorArm_impl::translateNeonArith(cs_insn* i, cs_arm* a
 
 	llvm::Value* a = loadNeonVector(ai->operands[1].reg, laneBits, isFp, irb);
 	llvm::Value* b = loadNeonVector(ai->operands[2].reg, laneBits, isFp, irb);
+	llvm::Value* acc =
+		(i->id == ARM_INS_VABA) ? loadNeonVector(ai->operands[0].reg, laneBits, isFp, irb) : nullptr;
 	auto* vecTy = llvm::cast<llvm::FixedVectorType>(a->getType());
 	unsigned lanes = vecTy->getNumElements();
 	llvm::Value* res = llvm::PoisonValue::get(vecTy);
@@ -4456,6 +4760,68 @@ void Capstone2LlvmIrTranslatorArm_impl::translateNeonArith(cs_insn* i, cs_arm* a
 			o = isFp ? irb.CreateSelect(irb.CreateFCmpOLT(ea, eb), ea, eb)
 					 : irb.CreateSelect(isSigned ? irb.CreateICmpSLT(ea, eb) : irb.CreateICmpULT(ea, eb), ea, eb);
 			break;
+		case ARM_INS_VMAXNM:
+			if (!isFp)
+			{
+				translatePseudoAsmGeneric(i, ai, irb);
+				return;
+			}
+			o = irb.CreateCall(
+				llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::maxnum, ea->getType()), {ea, eb});
+			break;
+		case ARM_INS_VMINNM:
+			if (!isFp)
+			{
+				translatePseudoAsmGeneric(i, ai, irb);
+				return;
+			}
+			o = irb.CreateCall(
+				llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::minnum, ea->getType()), {ea, eb});
+			break;
+		case ARM_INS_VABD:
+		case ARM_INS_VABA:
+			if (isFp)
+			{
+				o = irb.CreateCall(
+					llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::fabs, ea->getType()),
+					{irb.CreateFSub(ea, eb)});
+			}
+			else
+			{
+				auto* wt = irb.getIntNTy(laneBits * 2);
+				llvm::Value* aw = isSigned ? irb.CreateSExt(ea, wt) : irb.CreateZExt(ea, wt);
+				llvm::Value* bw = isSigned ? irb.CreateSExt(eb, wt) : irb.CreateZExt(eb, wt);
+				llvm::Value* d = irb.CreateSub(aw, bw);
+				llvm::Value* abs =
+					irb.CreateSelect(irb.CreateICmpSLT(d, llvm::ConstantInt::get(wt, 0)), irb.CreateNeg(d), d);
+				o = irb.CreateTrunc(abs, ea->getType());
+			}
+			if (acc)
+			{
+				o = irb.CreateAdd(irb.CreateExtractElement(acc, k), o);
+			}
+			break;
+		case ARM_INS_VHADD:
+		case ARM_INS_VHSUB:
+		case ARM_INS_VRHADD:
+		{
+			if (isFp)
+			{
+				translatePseudoAsmGeneric(i, ai, irb);
+				return;
+			}
+			auto* wt = irb.getIntNTy(laneBits * 2);
+			llvm::Value* aw = isSigned ? irb.CreateSExt(ea, wt) : irb.CreateZExt(ea, wt);
+			llvm::Value* bw = isSigned ? irb.CreateSExt(eb, wt) : irb.CreateZExt(eb, wt);
+			llvm::Value* s = (i->id == ARM_INS_VHSUB) ? irb.CreateSub(aw, bw) : irb.CreateAdd(aw, bw);
+			if (i->id == ARM_INS_VRHADD)
+			{
+				s = irb.CreateAdd(s, llvm::ConstantInt::get(wt, 1));
+			}
+			llvm::Value* h = isSigned ? irb.CreateAShr(s, 1) : irb.CreateLShr(s, 1);
+			o = irb.CreateTrunc(h, ea->getType());
+			break;
+		}
 		default: translatePseudoAsmGeneric(i, ai, irb); return;
 		}
 		res = irb.CreateInsertElement(res, o, k);
@@ -4579,6 +4945,221 @@ void Capstone2LlvmIrTranslatorArm_impl::translateNeonShift(cs_insn* i, cs_arm* a
 	unsigned bits = 0;
 	bool isFp = false, isSigned = false;
 	unsigned laneBits = vectorDataLaneBits(ai->vector_data, isFp, isSigned);
+
+	// VQSHL / VQSHLU: saturating left shift, the same select-clamp VQADD uses.
+	// Immediate only; a register shift amount stays pseudo.
+	if (i->id == ARM_INS_VQSHL || i->id == ARM_INS_VQSHLU)
+	{
+		if (isFp || laneBits == 0 || ai->op_count != 3 || ai->operands[2].type != ARM_OP_IMM
+			|| !neonBinaryRegs(ai, 2, bits) || bits % laneBits != 0)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		if (i->id == ARM_INS_VQSHLU && !isSigned)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+
+		uint64_t amount = static_cast<uint64_t>(ai->operands[2].imm);
+		llvm::Value* a = loadNeonVector(ai->operands[1].reg, laneBits, false, irb);
+		auto* vecTy = llvm::cast<llvm::FixedVectorType>(a->getType());
+		unsigned lanes = vecTy->getNumElements();
+		auto* laneTy = irb.getIntNTy(laneBits);
+		auto* wideTy = irb.getIntNTy(laneBits * 2);
+		unsigned wideBits = laneBits * 2;
+		bool dstUnsigned = (i->id == ARM_INS_VQSHLU) || !isSigned;
+		llvm::APInt loA = dstUnsigned ? llvm::APInt(wideBits, 0)
+									  : llvm::APInt::getSignedMinValue(laneBits).sext(wideBits);
+		llvm::APInt hiA = dstUnsigned ? llvm::APInt::getMaxValue(laneBits).zext(wideBits)
+									  : llvm::APInt::getSignedMaxValue(laneBits).sext(wideBits);
+		auto* loC = llvm::ConstantInt::get(wideTy, loA);
+		auto* hiC = llvm::ConstantInt::get(wideTy, hiA);
+		llvm::Value* res = llvm::PoisonValue::get(vecTy);
+		bool srcSigned = isSigned || i->id == ARM_INS_VQSHLU;
+		for (uint64_t k = 0; k < lanes; ++k)
+		{
+			llvm::Value* e = irb.CreateExtractElement(a, k);
+			llvm::Value* aw = srcSigned ? irb.CreateSExt(e, wideTy) : irb.CreateZExt(e, wideTy);
+			llvm::Value* wide = nullptr;
+			if (amount >= laneBits)
+			{
+				llvm::Value* zeroSrc = irb.CreateICmpEQ(e, llvm::ConstantInt::get(laneTy, 0));
+				llvm::Value* negSrc = irb.CreateICmpSLT(aw, llvm::ConstantInt::get(wideTy, 0));
+				llvm::Value* sat = irb.CreateSelect(negSrc, loC, hiC);
+				wide = irb.CreateSelect(zeroSrc, llvm::ConstantInt::get(wideTy, 0), sat);
+			}
+			else if (amount == 0)
+			{
+				wide = aw;
+			}
+			else
+			{
+				wide = irb.CreateShl(aw, amount);
+			}
+			llvm::Value* c = irb.CreateSelect(irb.CreateICmpSLT(wide, loC), loC, wide);
+			c = irb.CreateSelect(irb.CreateICmpSGT(c, hiC), hiC, c);
+			res = irb.CreateInsertElement(res, irb.CreateTrunc(c, laneTy), k);
+		}
+		storeNeonVector(ai->operands[0].reg, res, irb);
+		return;
+	}
+
+	// VSHRN / VRSHRN / VQSHRN / VQSHRUN: shift-right narrow (ARM64 SHRN /
+	// RSHRN / SQSHRN / SQSHRUN). Shift the wide source, then optionally
+	// the same select-clamp VQADD uses into the half-width dest. VRSHRN
+	// adds 1<<(imm-1) first; VQSHRUN is signed-to-unsigned sat (PACKUSWB).
+	if (i->id == ARM_INS_VQSHRN || i->id == ARM_INS_VQSHRUN
+		|| i->id == ARM_INS_VSHRN || i->id == ARM_INS_VRSHRN)
+	{
+		if (isFp || laneBits < 16 || (laneBits % 2) != 0 || ai->op_count != 3
+			|| ai->operands[2].type != ARM_OP_IMM)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		if (ai->operands[0].type != ARM_OP_REG || ai->operands[1].type != ARM_OP_REG
+			|| !isNeonRegister(ai->operands[0].reg) || !isNeonRegister(ai->operands[1].reg)
+			|| operandLane(ai->operands[0]) >= 0 || operandLane(ai->operands[1]) >= 0)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		unsigned dstW = neonBitWidth(ai->operands[0].reg);
+		unsigned srcW = neonBitWidth(ai->operands[1].reg);
+		unsigned dstLaneBits = laneBits / 2;
+		if (srcW != dstW * 2 || srcW % laneBits != 0 || dstW % dstLaneBits != 0)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		unsigned lanes = srcW / laneBits;
+		if (lanes == 0 || dstW / dstLaneBits != lanes)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+
+		uint64_t amount = static_cast<uint64_t>(ai->operands[2].imm);
+		bool round = i->id == ARM_INS_VRSHRN;
+		bool sat = i->id == ARM_INS_VQSHRN || i->id == ARM_INS_VQSHRUN;
+		bool srcSigned = (i->id == ARM_INS_VQSHRUN) || isSigned;
+		bool dstUnsigned = (i->id == ARM_INS_VQSHRUN) || !isSigned;
+		llvm::Value* v = loadNeonVector(ai->operands[1].reg, laneBits, false, irb);
+		auto* dstTy = llvm::FixedVectorType::get(irb.getIntNTy(dstLaneBits), lanes);
+		auto* dstLaneTy = irb.getIntNTy(dstLaneBits);
+		auto* srcLaneTy = irb.getIntNTy(laneBits);
+		auto* wideTy = irb.getIntNTy(laneBits * 2);
+		unsigned wideBits = laneBits * 2;
+		llvm::APInt loA = dstUnsigned ? llvm::APInt(wideBits, 0)
+									  : llvm::APInt::getSignedMinValue(dstLaneBits).sext(wideBits);
+		llvm::APInt hiA = dstUnsigned ? llvm::APInt::getMaxValue(dstLaneBits).zext(wideBits)
+									  : llvm::APInt::getSignedMaxValue(dstLaneBits).sext(wideBits);
+		auto* loC = llvm::ConstantInt::get(wideTy, loA);
+		auto* hiC = llvm::ConstantInt::get(wideTy, hiA);
+		llvm::Value* res = llvm::PoisonValue::get(dstTy);
+		for (uint64_t k = 0; k < lanes; ++k)
+		{
+			llvm::Value* e = irb.CreateExtractElement(v, k);
+			if (round && amount > 0)
+			{
+				e = irb.CreateAdd(e, llvm::ConstantInt::get(srcLaneTy, 1ull << (amount - 1)));
+			}
+			llvm::Value* sh = nullptr;
+			if (amount >= laneBits)
+			{
+				sh = srcSigned ? irb.CreateAShr(e, laneBits - 1) : llvm::ConstantInt::get(srcLaneTy, 0);
+			}
+			else if (amount == 0)
+			{
+				sh = e;
+			}
+			else
+			{
+				sh = srcSigned ? irb.CreateAShr(e, amount) : irb.CreateLShr(e, amount);
+			}
+			if (!sat)
+			{
+				res = irb.CreateInsertElement(res, irb.CreateTrunc(sh, dstLaneTy), k);
+				continue;
+			}
+			llvm::Value* aw = srcSigned ? irb.CreateSExt(sh, wideTy) : irb.CreateZExt(sh, wideTy);
+			llvm::Value* c = irb.CreateSelect(irb.CreateICmpSLT(aw, loC), loC, aw);
+			c = irb.CreateSelect(irb.CreateICmpSGT(c, hiC), hiC, c);
+			res = irb.CreateInsertElement(res, irb.CreateTrunc(c, dstLaneTy), k);
+		}
+		storeNeonVector(ai->operands[0].reg, res, irb);
+		return;
+	}
+
+	// VSHLL / VMOVL: each source D-lane is extended to double width in Q
+	// (PMOVSX/PMOVZX). VSHLL then shifts left by the immediate; VMOVL is
+	// the zero-shift form (ARM64 SSHLL/USHLL #0).
+	if (i->id == ARM_INS_VSHLL || i->id == ARM_INS_VMOVL)
+	{
+		bool movl = i->id == ARM_INS_VMOVL;
+		if (isFp || laneBits == 0 || laneBits > 32)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		if (movl ? (ai->op_count != 2)
+				 : (ai->op_count != 3 || ai->operands[2].type != ARM_OP_IMM))
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		if (ai->operands[0].type != ARM_OP_REG || ai->operands[1].type != ARM_OP_REG
+			|| !isNeonRegister(ai->operands[0].reg) || !isNeonRegister(ai->operands[1].reg)
+			|| operandLane(ai->operands[0]) >= 0 || operandLane(ai->operands[1]) >= 0)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		unsigned dstW = neonBitWidth(ai->operands[0].reg);
+		unsigned srcW = neonBitWidth(ai->operands[1].reg);
+		unsigned dstLaneBits = laneBits * 2;
+		if (dstW != srcW * 2 || srcW % laneBits != 0 || dstW % dstLaneBits != 0)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		unsigned lanes = srcW / laneBits;
+		if (lanes == 0 || dstW / dstLaneBits != lanes)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+
+		uint64_t amount = movl ? 0 : static_cast<uint64_t>(ai->operands[2].imm);
+		llvm::Value* v = loadNeonVector(ai->operands[1].reg, laneBits, false, irb);
+		auto* dstTy = llvm::FixedVectorType::get(irb.getIntNTy(dstLaneBits), lanes);
+		auto* wide = irb.getIntNTy(dstLaneBits);
+		llvm::Value* res = llvm::PoisonValue::get(dstTy);
+		for (uint64_t k = 0; k < lanes; ++k)
+		{
+			llvm::Value* e = irb.CreateExtractElement(v, k);
+			e = isSigned ? irb.CreateSExt(e, wide) : irb.CreateZExt(e, wide);
+			llvm::Value* sh = nullptr;
+			if (amount >= dstLaneBits)
+			{
+				sh = llvm::ConstantInt::get(wide, 0);
+			}
+			else if (amount == 0)
+			{
+				sh = e;
+			}
+			else
+			{
+				sh = irb.CreateShl(e, amount);
+			}
+			res = irb.CreateInsertElement(res, sh, k);
+		}
+		storeNeonVector(ai->operands[0].reg, res, irb);
+		return;
+	}
+
 	if (isFp || ai->op_count != 3 || ai->operands[2].type != ARM_OP_IMM || !neonBinaryRegs(ai, 2, bits)
 		|| laneBits == 0 || bits % laneBits != 0)
 	{
@@ -4715,6 +5296,127 @@ void Capstone2LlvmIrTranslatorArm_impl::translateNeonSwp(cs_insn* i, cs_arm* ai,
 	(void)i;
 }
 
+void Capstone2LlvmIrTranslatorArm_impl::translateNeonPermute(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	unsigned bits = 0;
+	bool isFp = false, isSigned = false;
+	unsigned laneBits = vectorDataLaneBits(ai->vector_data, isFp, isSigned);
+	if (laneBits == 0 && ai->vector_size > 0)
+	{
+		laneBits = static_cast<unsigned>(ai->vector_size);
+	}
+	if (ai->op_count != 2 || !neonBinaryRegs(ai, 2, bits) || laneBits == 0 || bits % laneBits != 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	unsigned lanes = bits / laneBits;
+	if (lanes < 2)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	llvm::Value* a = loadNeonVector(ai->operands[0].reg, laneBits, false, irb);
+	llvm::Value* b = loadNeonVector(ai->operands[1].reg, laneBits, false, irb);
+	unsigned half = lanes / 2;
+	llvm::SmallVector<int, 16> m1;
+	llvm::SmallVector<int, 16> m2;
+	m1.reserve(lanes);
+	m2.reserve(lanes);
+	for (unsigned k = 0; k < lanes; ++k)
+	{
+		switch (i->id)
+		{
+		case ARM_INS_VZIP:
+			m1.push_back((k % 2) ? int(lanes + k / 2) : int(k / 2));
+			m2.push_back((k % 2) ? int(lanes + half + k / 2) : int(half + k / 2));
+			break;
+		case ARM_INS_VUZP:
+			m1.push_back(int(2 * k));
+			m2.push_back(int(2 * k + 1));
+			break;
+		case ARM_INS_VTRN:
+			m1.push_back((k % 2) ? int(lanes + k - 1) : int(k));
+			m2.push_back((k % 2) ? int(lanes + k) : int(k + 1));
+			break;
+		default:
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+	}
+
+	storeNeonVector(ai->operands[0].reg, irb.CreateShuffleVector(a, b, m1), irb);
+	storeNeonVector(ai->operands[1].reg, irb.CreateShuffleVector(a, b, m2), irb);
+}
+
+void Capstone2LlvmIrTranslatorArm_impl::translateNeonTbl(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	if (ai->op_count < 3)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	unsigned nTable = ai->op_count - 2;
+	if (nTable < 1 || nTable > 4 || ai->operands[0].type != ARM_OP_REG || neonBitWidth(ai->operands[0].reg) != 64)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	unsigned last = ai->op_count - 1;
+	if (ai->operands[last].type != ARM_OP_REG || neonBitWidth(ai->operands[last].reg) != 64)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	for (unsigned j = 1; j <= nTable; ++j)
+	{
+		if (ai->operands[j].type != ARM_OP_REG || neonBitWidth(ai->operands[j].reg) != 64
+			|| operandLane(ai->operands[j]) >= 0)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+	}
+
+	unsigned nBytes = nTable * 8;
+	auto* i8 = irb.getInt8Ty();
+	auto* tblTy = llvm::FixedVectorType::get(i8, nBytes);
+	llvm::Value* tbl = llvm::PoisonValue::get(tblTy);
+	unsigned pos = 0;
+	for (unsigned j = 1; j <= nTable; ++j)
+	{
+		llvm::Value* v = loadNeonVector(ai->operands[j].reg, 8, false, irb);
+		for (uint64_t b = 0; b < 8; ++b)
+		{
+			tbl = irb.CreateInsertElement(tbl, irb.CreateExtractElement(v, b), pos++);
+		}
+	}
+
+	llvm::Value* idxV = loadNeonVector(ai->operands[last].reg, 8, false, irb);
+	llvm::Value* orig = (i->id == ARM_INS_VTBX) ? loadNeonVector(ai->operands[0].reg, 8, false, irb) : nullptr;
+	auto* outTy = llvm::cast<llvm::FixedVectorType>(idxV->getType());
+	llvm::Value* res = llvm::PoisonValue::get(outTy);
+	auto* i32 = irb.getInt32Ty();
+	auto* limit = llvm::ConstantInt::get(i32, nBytes);
+	auto* zeroIdx = llvm::ConstantInt::get(i32, 0);
+	auto* zeroByte = llvm::ConstantInt::get(i8, 0);
+	for (uint64_t k = 0; k < 8; ++k)
+	{
+		llvm::Value* e = irb.CreateZExt(irb.CreateExtractElement(idxV, k), i32);
+		llvm::Value* inRange = irb.CreateICmpULT(e, limit);
+		llvm::Value* safe = irb.CreateSelect(inRange, e, zeroIdx);
+		llvm::Value* looked = irb.CreateExtractElement(tbl, safe);
+		llvm::Value* fallback = orig ? irb.CreateExtractElement(orig, k) : zeroByte;
+		res = irb.CreateInsertElement(res, irb.CreateSelect(inRange, looked, fallback), k);
+	}
+	storeNeonVector(ai->operands[0].reg, res, irb);
+}
+
 void Capstone2LlvmIrTranslatorArm_impl::translateNeonLdSt1(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
 {
 	if (ai->op_count < 2)
@@ -4824,6 +5526,602 @@ void Capstone2LlvmIrTranslatorArm_impl::translateNeonRev(cs_insn* i, cs_arm* ai,
 		res = irb.CreateInsertElement(res, irb.CreateExtractElement(v, src), k);
 	}
 	storeNeonVector(ai->operands[0].reg, res, irb);
+}
+
+/**
+ * ARM_INS_VADDL, ARM_INS_VSUBL, ARM_INS_VADDW, ARM_INS_VSUBW, ARM_INS_VMULL,
+ * ARM_INS_VMLAL, ARM_INS_VMLSL, ARM_INS_VABDL, ARM_INS_VABAL, ARM_INS_VADDHN,
+ * ARM_INS_VRADDHN, ARM_INS_VSUBHN, ARM_INS_VRSUBHN
+ *
+ * L/W/MULL widen: each narrow lane is extended to double width, then added,
+ * subtracted, or multiplied into a Q destination (PMULLD's long product,
+ * ARM64 SADDW for the W forms). VMLAL is that product accumulated (ARM64
+ * SMLAL); VMLSL subtracts the product (ARM64 SMLSL). VABDL/VABAL are the
+ * widening/accumulating abs-diff (VABD then extend). VADDHN is the inverse:
+ * add at the wide width and keep the high half (ARM64 ADDHN); VRADDHN rounds
+ * first, VSUBHN subtracts, VRSUBHN is the rounding subtract.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateNeonWiden(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	bool isFp = false;
+	bool isSigned = false;
+	unsigned srcLaneBits = vectorDataLaneBits(ai->vector_data, isFp, isSigned);
+	if (isFp || srcLaneBits == 0 || ai->op_count != 3)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	for (unsigned j = 0; j < 3; ++j)
+	{
+		if (ai->operands[j].type != ARM_OP_REG || !isNeonRegister(ai->operands[j].reg)
+			|| operandLane(ai->operands[j]) >= 0)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+	}
+
+	unsigned dstW = neonBitWidth(ai->operands[0].reg);
+	unsigned aW = neonBitWidth(ai->operands[1].reg);
+	unsigned bW = neonBitWidth(ai->operands[2].reg);
+
+	if (i->id == ARM_INS_VADDHN || i->id == ARM_INS_VRADDHN || i->id == ARM_INS_VSUBHN
+		|| i->id == ARM_INS_VRSUBHN)
+	{
+		unsigned dstLaneBits = srcLaneBits / 2;
+		if (dstLaneBits == 0 || aW != bW || aW != dstW * 2 || aW % srcLaneBits != 0
+			|| dstW % dstLaneBits != 0)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		unsigned lanes = aW / srcLaneBits;
+		if (lanes == 0 || dstW / dstLaneBits != lanes)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+
+		llvm::Value* a = loadNeonVector(ai->operands[1].reg, srcLaneBits, false, irb);
+		llvm::Value* b = loadNeonVector(ai->operands[2].reg, srcLaneBits, false, irb);
+		auto* dstTy = llvm::FixedVectorType::get(irb.getIntNTy(dstLaneBits), lanes);
+		auto* narrow = irb.getIntNTy(dstLaneBits);
+		llvm::Value* res = llvm::PoisonValue::get(dstTy);
+		bool isSub = i->id == ARM_INS_VSUBHN || i->id == ARM_INS_VRSUBHN;
+		bool round = i->id == ARM_INS_VRADDHN || i->id == ARM_INS_VRSUBHN;
+		for (uint64_t k = 0; k < lanes; ++k)
+		{
+			llvm::Value* ea = irb.CreateExtractElement(a, k);
+			llvm::Value* eb = irb.CreateExtractElement(b, k);
+			llvm::Value* sum = isSub ? irb.CreateSub(ea, eb) : irb.CreateAdd(ea, eb);
+			if (round)
+			{
+				sum = irb.CreateAdd(sum, llvm::ConstantInt::get(sum->getType(), 1ull << (dstLaneBits - 1)));
+			}
+			res = irb.CreateInsertElement(res, irb.CreateTrunc(irb.CreateLShr(sum, dstLaneBits), narrow), k);
+		}
+		storeNeonVector(ai->operands[0].reg, res, irb);
+		return;
+	}
+
+	if (srcLaneBits > 32
+		|| (i->id != ARM_INS_VADDL && i->id != ARM_INS_VSUBL && i->id != ARM_INS_VADDW
+			&& i->id != ARM_INS_VSUBW && i->id != ARM_INS_VMULL && i->id != ARM_INS_VMLAL
+			&& i->id != ARM_INS_VMLSL && i->id != ARM_INS_VABDL && i->id != ARM_INS_VABAL))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	bool wideFirst = i->id == ARM_INS_VADDW || i->id == ARM_INS_VSUBW;
+	unsigned dstLaneBits = srcLaneBits * 2;
+	unsigned lanes = 0;
+	if (wideFirst)
+	{
+		if (dstW != aW || bW * 2 != aW || aW % dstLaneBits != 0 || bW % srcLaneBits != 0)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		lanes = bW / srcLaneBits;
+		if (lanes == 0 || dstW / dstLaneBits != lanes)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+	}
+	else if (aW != bW || dstW != aW * 2 || aW % srcLaneBits != 0 || dstW % dstLaneBits != 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	else
+	{
+		lanes = aW / srcLaneBits;
+		if (lanes == 0 || dstW / dstLaneBits != lanes)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+	}
+
+	llvm::Value* a = loadNeonVector(ai->operands[1].reg, wideFirst ? dstLaneBits : srcLaneBits, false, irb);
+	llvm::Value* b = loadNeonVector(ai->operands[2].reg, srcLaneBits, false, irb);
+	auto* dstTy = llvm::FixedVectorType::get(irb.getIntNTy(dstLaneBits), lanes);
+	auto* wide = irb.getIntNTy(dstLaneBits);
+	llvm::Value* res = llvm::PoisonValue::get(dstTy);
+	bool isSub = i->id == ARM_INS_VSUBL || i->id == ARM_INS_VSUBW;
+	bool isMul = i->id == ARM_INS_VMULL || i->id == ARM_INS_VMLAL || i->id == ARM_INS_VMLSL;
+	bool isAbd = i->id == ARM_INS_VABDL || i->id == ARM_INS_VABAL;
+	bool accSub = i->id == ARM_INS_VMLSL;
+	llvm::Value* acc = (i->id == ARM_INS_VMLAL || i->id == ARM_INS_VABAL || i->id == ARM_INS_VMLSL)
+						   ? loadNeonVector(ai->operands[0].reg, dstLaneBits, false, irb)
+						   : nullptr;
+	for (uint64_t k = 0; k < lanes; ++k)
+	{
+		llvm::Value* ea = irb.CreateExtractElement(a, k);
+		llvm::Value* eb = irb.CreateExtractElement(b, k);
+		if (!wideFirst)
+		{
+			ea = isSigned ? irb.CreateSExt(ea, wide) : irb.CreateZExt(ea, wide);
+		}
+		eb = isSigned ? irb.CreateSExt(eb, wide) : irb.CreateZExt(eb, wide);
+		llvm::Value* o = nullptr;
+		if (isAbd)
+		{
+			llvm::Value* d = irb.CreateSub(ea, eb);
+			o = irb.CreateSelect(irb.CreateICmpSLT(d, llvm::ConstantInt::get(wide, 0)), irb.CreateNeg(d), d);
+		}
+		else
+		{
+			o = isMul ? irb.CreateMul(ea, eb) : (isSub ? irb.CreateSub(ea, eb) : irb.CreateAdd(ea, eb));
+		}
+		if (acc)
+		{
+			llvm::Value* a0 = irb.CreateExtractElement(acc, k);
+			o = accSub ? irb.CreateSub(a0, o) : irb.CreateAdd(a0, o);
+		}
+		res = irb.CreateInsertElement(res, o, k);
+	}
+	storeNeonVector(ai->operands[0].reg, res, irb);
+}
+
+/**
+ * ARM_INS_VPADD, ARM_INS_VPADDL, ARM_INS_VPMAX, ARM_INS_VPMIN
+ *
+ * Pairwise add/max/min of adjacent lanes, the NEON form of HADDPS / pairwise
+ * min/max. VPADD/VPMAX/VPMIN keep the lane width and concatenate the pairs of
+ * Dn then Dm; VPADDL widens each pair of a single source into a double-width
+ * lane.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateNeonPairwise(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	bool isFp = false;
+	bool isSigned = false;
+	unsigned laneBits = vectorDataLaneBits(ai->vector_data, isFp, isSigned);
+	if (laneBits == 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	if (i->id == ARM_INS_VPADD || i->id == ARM_INS_VPMAX || i->id == ARM_INS_VPMIN)
+	{
+		unsigned bits = 0;
+		if (ai->op_count != 3 || !neonBinaryRegs(ai, 3, bits) || bits % laneBits != 0)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		unsigned lanes = bits / laneBits;
+		if (lanes < 2 || (lanes % 2) != 0)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+
+		llvm::Value* a = loadNeonVector(ai->operands[1].reg, laneBits, isFp, irb);
+		llvm::Value* b = loadNeonVector(ai->operands[2].reg, laneBits, isFp, irb);
+		auto* vecTy = llvm::cast<llvm::FixedVectorType>(a->getType());
+		llvm::Value* res = llvm::PoisonValue::get(vecTy);
+		unsigned half = lanes / 2;
+		for (uint64_t k = 0; k < lanes; ++k)
+		{
+			llvm::Value* src = k < half ? a : b;
+			uint64_t pair = k % half;
+			llvm::Value* e0 = irb.CreateExtractElement(src, 2 * pair);
+			llvm::Value* e1 = irb.CreateExtractElement(src, 2 * pair + 1);
+			llvm::Value* o = nullptr;
+			if (i->id == ARM_INS_VPMAX)
+			{
+				o = isFp ? irb.CreateSelect(irb.CreateFCmpOGT(e0, e1), e0, e1)
+						 : irb.CreateSelect(isSigned ? irb.CreateICmpSGT(e0, e1) : irb.CreateICmpUGT(e0, e1), e0, e1);
+			}
+			else if (i->id == ARM_INS_VPMIN)
+			{
+				o = isFp ? irb.CreateSelect(irb.CreateFCmpOLT(e0, e1), e0, e1)
+						 : irb.CreateSelect(isSigned ? irb.CreateICmpSLT(e0, e1) : irb.CreateICmpULT(e0, e1), e0, e1);
+			}
+			else
+			{
+				o = isFp ? irb.CreateFAdd(e0, e1) : irb.CreateAdd(e0, e1);
+			}
+			res = irb.CreateInsertElement(res, o, k);
+		}
+		storeNeonVector(ai->operands[0].reg, res, irb);
+		return;
+	}
+
+	unsigned bits = 0;
+	if (ai->op_count != 2 || isFp || !neonBinaryRegs(ai, 2, bits) || bits % laneBits != 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	unsigned srcLanes = bits / laneBits;
+	if (srcLanes < 2 || (srcLanes % 2) != 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	unsigned dstLaneBits = laneBits * 2;
+	unsigned dstLanes = srcLanes / 2;
+	if (bits % dstLaneBits != 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	llvm::Value* v = loadNeonVector(ai->operands[1].reg, laneBits, false, irb);
+	auto* dstTy = llvm::FixedVectorType::get(irb.getIntNTy(dstLaneBits), dstLanes);
+	auto* wide = irb.getIntNTy(dstLaneBits);
+	llvm::Value* res = llvm::PoisonValue::get(dstTy);
+	for (uint64_t k = 0; k < dstLanes; ++k)
+	{
+		llvm::Value* e0 = irb.CreateExtractElement(v, 2 * k);
+		llvm::Value* e1 = irb.CreateExtractElement(v, 2 * k + 1);
+		e0 = isSigned ? irb.CreateSExt(e0, wide) : irb.CreateZExt(e0, wide);
+		e1 = isSigned ? irb.CreateSExt(e1, wide) : irb.CreateZExt(e1, wide);
+		res = irb.CreateInsertElement(res, irb.CreateAdd(e0, e1), k);
+	}
+	storeNeonVector(ai->operands[0].reg, res, irb);
+}
+
+/**
+ * ARM_INS_VQADD, ARM_INS_VQSUB, ARM_INS_VQMOVN, ARM_INS_VQMOVUN, ARM_INS_VMOVN,
+ * ARM_INS_VQABS, ARM_INS_VQNEG
+ *
+ * Saturating lane add/sub, the NEON counterpart of PADDSB/PADDUSB/PSUBSB,
+ * and saturating narrow (PACKSSWB / ARM64 SQXTN). VQMOVUN is signed-to-unsigned
+ * sat narrow (PACKUSWB): -1 becomes 0, not 255. VMOVN is the truncating
+ * narrow (ARM64 XTN). VQABS/VQNEG are saturating abs/neg (ARM64 SQABS/SQNEG):
+ * abs of -128 is 127, not -128. A wrapping add of 127 and 1 is -128; this
+ * stops at 127. The same select clamp VQADD uses, not llvm.ssub.sat.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateNeonSatArith(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	unsigned bits = 0;
+	bool isFp = false;
+	bool isSigned = false;
+	unsigned laneBits = vectorDataLaneBits(ai->vector_data, isFp, isSigned);
+	if (isFp || laneBits == 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	if (i->id == ARM_INS_VQMOVN || i->id == ARM_INS_VQMOVUN || i->id == ARM_INS_VMOVN)
+	{
+		if (ai->op_count != 2 || laneBits < 16 || (laneBits % 2) != 0)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		if (ai->operands[0].type != ARM_OP_REG || ai->operands[1].type != ARM_OP_REG
+			|| !isNeonRegister(ai->operands[0].reg) || !isNeonRegister(ai->operands[1].reg)
+			|| operandLane(ai->operands[0]) >= 0 || operandLane(ai->operands[1]) >= 0)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		unsigned dstW = neonBitWidth(ai->operands[0].reg);
+		unsigned srcW = neonBitWidth(ai->operands[1].reg);
+		unsigned dstLaneBits = laneBits / 2;
+		if (srcW != dstW * 2 || srcW % laneBits != 0 || dstW % dstLaneBits != 0)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		unsigned lanes = srcW / laneBits;
+		if (lanes == 0 || dstW / dstLaneBits != lanes)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+
+		llvm::Value* v = loadNeonVector(ai->operands[1].reg, laneBits, false, irb);
+		auto* dstTy = llvm::FixedVectorType::get(irb.getIntNTy(dstLaneBits), lanes);
+		auto* dstLaneTy = irb.getIntNTy(dstLaneBits);
+		llvm::Value* res = llvm::PoisonValue::get(dstTy);
+		bool srcSigned = (i->id == ARM_INS_VQMOVUN) || isSigned;
+		bool dstUnsigned = (i->id == ARM_INS_VQMOVUN) || !isSigned;
+		auto* wideTy = irb.getIntNTy(laneBits * 2);
+		unsigned wideBits = laneBits * 2;
+		llvm::APInt loA = dstUnsigned ? llvm::APInt(wideBits, 0)
+									  : llvm::APInt::getSignedMinValue(dstLaneBits).sext(wideBits);
+		llvm::APInt hiA = dstUnsigned ? llvm::APInt::getMaxValue(dstLaneBits).zext(wideBits)
+									  : llvm::APInt::getSignedMaxValue(dstLaneBits).sext(wideBits);
+		auto* loC = llvm::ConstantInt::get(wideTy, loA);
+		auto* hiC = llvm::ConstantInt::get(wideTy, hiA);
+		for (uint64_t k = 0; k < lanes; ++k)
+		{
+			llvm::Value* e = irb.CreateExtractElement(v, k);
+			if (i->id == ARM_INS_VMOVN)
+			{
+				res = irb.CreateInsertElement(res, irb.CreateTrunc(e, dstLaneTy), k);
+				continue;
+			}
+			llvm::Value* aw = srcSigned ? irb.CreateSExt(e, wideTy) : irb.CreateZExt(e, wideTy);
+			llvm::Value* c = irb.CreateSelect(irb.CreateICmpSLT(aw, loC), loC, aw);
+			c = irb.CreateSelect(irb.CreateICmpSGT(c, hiC), hiC, c);
+			res = irb.CreateInsertElement(res, irb.CreateTrunc(c, dstLaneTy), k);
+		}
+		storeNeonVector(ai->operands[0].reg, res, irb);
+		return;
+	}
+
+	if (i->id == ARM_INS_VQABS || i->id == ARM_INS_VQNEG)
+	{
+		if (ai->op_count != 2 || !neonBinaryRegs(ai, 2, bits) || bits % laneBits != 0)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+
+		llvm::Value* a = loadNeonVector(ai->operands[1].reg, laneBits, false, irb);
+		auto* vecTy = llvm::cast<llvm::FixedVectorType>(a->getType());
+		unsigned lanes = vecTy->getNumElements();
+		auto* laneTy = irb.getIntNTy(laneBits);
+		auto* wideTy = irb.getIntNTy(laneBits * 2);
+		unsigned wideBits = laneBits * 2;
+		llvm::APInt loA = llvm::APInt::getSignedMinValue(laneBits).sext(wideBits);
+		llvm::APInt hiA = llvm::APInt::getSignedMaxValue(laneBits).sext(wideBits);
+		auto* loC = llvm::ConstantInt::get(wideTy, loA);
+		auto* hiC = llvm::ConstantInt::get(wideTy, hiA);
+		auto* zeroW = llvm::ConstantInt::get(wideTy, 0);
+		llvm::Value* res = llvm::PoisonValue::get(vecTy);
+		for (uint64_t k = 0; k < lanes; ++k)
+		{
+			llvm::Value* e = irb.CreateExtractElement(a, k);
+			llvm::Value* aw = irb.CreateSExt(e, wideTy);
+			llvm::Value* neg = irb.CreateSub(zeroW, aw);
+			llvm::Value* wide = (i->id == ARM_INS_VQABS)
+									? irb.CreateSelect(irb.CreateICmpSLT(aw, zeroW), neg, aw)
+									: neg;
+			llvm::Value* c = irb.CreateSelect(irb.CreateICmpSLT(wide, loC), loC, wide);
+			c = irb.CreateSelect(irb.CreateICmpSGT(c, hiC), hiC, c);
+			res = irb.CreateInsertElement(res, irb.CreateTrunc(c, laneTy), k);
+		}
+		storeNeonVector(ai->operands[0].reg, res, irb);
+		return;
+	}
+
+	if ((i->id != ARM_INS_VQADD && i->id != ARM_INS_VQSUB) || ai->op_count != 3
+		|| !neonBinaryRegs(ai, 3, bits) || bits % laneBits != 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	llvm::Value* a = loadNeonVector(ai->operands[1].reg, laneBits, false, irb);
+	llvm::Value* b = loadNeonVector(ai->operands[2].reg, laneBits, false, irb);
+	auto* vecTy = llvm::cast<llvm::FixedVectorType>(a->getType());
+	unsigned lanes = vecTy->getNumElements();
+	auto* laneTy = irb.getIntNTy(laneBits);
+	auto* wideTy = irb.getIntNTy(laneBits * 2);
+	unsigned wideBits = laneBits * 2;
+	llvm::APInt loA = isSigned ? llvm::APInt::getSignedMinValue(laneBits).sext(wideBits) : llvm::APInt(wideBits, 0);
+	llvm::APInt hiA = isSigned ? llvm::APInt::getSignedMaxValue(laneBits).sext(wideBits)
+							   : llvm::APInt::getMaxValue(laneBits).zext(wideBits);
+	auto* loC = llvm::ConstantInt::get(wideTy, loA);
+	auto* hiC = llvm::ConstantInt::get(wideTy, hiA);
+	llvm::Value* res = llvm::PoisonValue::get(vecTy);
+	bool isSub = i->id == ARM_INS_VQSUB;
+	for (uint64_t k = 0; k < lanes; ++k)
+	{
+		llvm::Value* ea = irb.CreateExtractElement(a, k);
+		llvm::Value* eb = irb.CreateExtractElement(b, k);
+		llvm::Value* aw = isSigned ? irb.CreateSExt(ea, wideTy) : irb.CreateZExt(ea, wideTy);
+		llvm::Value* bw = isSigned ? irb.CreateSExt(eb, wideTy) : irb.CreateZExt(eb, wideTy);
+		llvm::Value* wide = isSub ? irb.CreateSub(aw, bw) : irb.CreateAdd(aw, bw);
+		llvm::Value* c = irb.CreateSelect(irb.CreateICmpSLT(wide, loC), loC, wide);
+		c = irb.CreateSelect(irb.CreateICmpSGT(c, hiC), hiC, c);
+		res = irb.CreateInsertElement(res, irb.CreateTrunc(c, laneTy), k);
+	}
+	storeNeonVector(ai->operands[0].reg, res, irb);
+}
+
+/**
+ * ARM_INS_VLD2/3/4, ARM_INS_VST2/3/4
+ *
+ * Multi-structure load/store: consecutive memory elements are de-interleaved
+ * into N registers (or interleaved on store), the reverse of VZIP / PUNPCK.
+ * Two-register VLD2 and three-/four-register VLD3/VLD4 use the same layout;
+ * four-register VLD2 is two concatenated 2-way chunks. A common lane index
+ * is the single-structure (lane) form.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateNeonLdStN(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	unsigned nStruct = 0;
+	bool load = false;
+	switch (i->id)
+	{
+	case ARM_INS_VLD2:
+		nStruct = 2;
+		load = true;
+		break;
+	case ARM_INS_VST2: nStruct = 2; break;
+	case ARM_INS_VLD3:
+		nStruct = 3;
+		load = true;
+		break;
+	case ARM_INS_VST3: nStruct = 3; break;
+	case ARM_INS_VLD4:
+		nStruct = 4;
+		load = true;
+		break;
+	case ARM_INS_VST4: nStruct = 4; break;
+	default: translatePseudoAsmGeneric(i, ai, irb); return;
+	}
+
+	if (ai->op_count < nStruct + 1)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	unsigned memIdx = ai->op_count - 1;
+	if (ai->operands[memIdx].type != ARM_OP_MEM)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	unsigned nRegs = memIdx;
+	if (nRegs < nStruct || nRegs % nStruct != 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	if ((nStruct == 2 && nRegs != 2 && nRegs != 4) || (nStruct == 3 && nRegs != 3) || (nStruct == 4 && nRegs != 4))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	bool isFp = false;
+	bool isSigned = false;
+	unsigned laneBits = vectorDataLaneBits(ai->vector_data, isFp, isSigned);
+	if (laneBits == 0 && ai->vector_size > 0)
+	{
+		laneBits = static_cast<unsigned>(ai->vector_size);
+	}
+	if (laneBits == 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	int commonLane = operandLane(ai->operands[0]);
+	unsigned width0 = 0;
+	for (unsigned j = 0; j < nRegs; ++j)
+	{
+		if (ai->operands[j].type != ARM_OP_REG || !isNeonRegister(ai->operands[j].reg)
+			|| operandLane(ai->operands[j]) != commonLane)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		unsigned w = neonBitWidth(ai->operands[j].reg);
+		if (width0 == 0)
+		{
+			width0 = w;
+		}
+		else if (w != width0)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+	}
+	if (width0 == 0 || width0 % laneBits != 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	unsigned lanes = width0 / laneBits;
+	if (commonLane >= 0 && static_cast<unsigned>(commonLane) >= lanes)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* addr = loadOp(ai->operands[memIdx], irb, nullptr, true);
+	auto* elemTy = irb.getIntNTy(laneBits);
+	uint64_t elemBytes = laneBits / 8;
+	auto* addrTy = addr->getType();
+
+	if (commonLane >= 0)
+	{
+		if (nRegs != nStruct)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		for (unsigned s = 0; s < nStruct; ++s)
+		{
+			auto* at = irb.CreateAdd(addr, llvm::ConstantInt::get(addrTy, s * elemBytes));
+			if (load)
+			{
+				llvm::Value* v = loadNeonVector(ai->operands[s].reg, laneBits, false, irb);
+				auto* e = loadIntPtr(irb, at, elemTy);
+				storeNeonVector(
+					ai->operands[s].reg, irb.CreateInsertElement(v, e, static_cast<uint64_t>(commonLane)), irb);
+			}
+			else
+			{
+				llvm::Value* v = loadNeonVector(ai->operands[s].reg, laneBits, false, irb);
+				storeIntPtr(irb, irb.CreateExtractElement(v, static_cast<uint64_t>(commonLane)), at, elemTy);
+			}
+		}
+		if (insnWriteback())
+		{
+			uint32_t base = ai->operands[memIdx].mem.base;
+			if (base != ARM_REG_INVALID)
+			{
+				storeRegister(
+					base,
+					irb.CreateAdd(loadRegister(base, irb), llvm::ConstantInt::get(getDefaultType(), nStruct * elemBytes)),
+					irb);
+			}
+		}
+		return;
+	}
+
+	auto* vecTy = llvm::FixedVectorType::get(elemTy, lanes);
+	for (unsigned r = 0; r < nRegs; ++r)
+	{
+		unsigned structBase = (r / nStruct) * lanes;
+		unsigned elem = r % nStruct;
+		llvm::Value* v = load ? static_cast<llvm::Value*>(llvm::PoisonValue::get(vecTy))
+							  : loadNeonVector(ai->operands[r].reg, laneBits, false, irb);
+		for (unsigned lane = 0; lane < lanes; ++lane)
+		{
+			uint64_t memElem = static_cast<uint64_t>(structBase + lane) * nStruct + elem;
+			auto* at = irb.CreateAdd(addr, llvm::ConstantInt::get(addrTy, memElem * elemBytes));
+			if (load)
+			{
+				v = irb.CreateInsertElement(v, loadIntPtr(irb, at, elemTy), static_cast<uint64_t>(lane));
+			}
+			else
+			{
+				storeIntPtr(irb, irb.CreateExtractElement(v, static_cast<uint64_t>(lane)), at, elemTy);
+			}
+		}
+		if (load)
+		{
+			storeNeonVector(ai->operands[r].reg, v, irb);
+		}
+	}
+
+	if (insnWriteback())
+	{
+		uint32_t base = ai->operands[memIdx].mem.base;
+		if (base != ARM_REG_INVALID)
+		{
+			uint64_t total = static_cast<uint64_t>(nRegs) * (width0 / 8);
+			storeRegister(
+				base, irb.CreateAdd(loadRegister(base, irb), llvm::ConstantInt::get(getDefaultType(), total)), irb);
+		}
+	}
 }
 
 void Capstone2LlvmIrTranslatorArm_impl::translateVfpLdmStm(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)

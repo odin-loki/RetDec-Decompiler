@@ -104,6 +104,15 @@ class Capstone2LlvmIrTranslatorXcore_impl :
 				llvm::IRBuilder<>& irb,
 				bool isSigned,
 				bool remainder);
+		llvm::Value* loadChanResource(
+				cs_insn* i,
+				cs_xcore* xi,
+				llvm::IRBuilder<>& irb);
+		llvm::Function* getXcoreHelper(
+				cs_insn* i,
+				llvm::Type* retTy,
+				llvm::ArrayRef<llvm::Type*> params,
+				const char* name);
 
 //
 //==============================================================================
@@ -185,6 +194,13 @@ class Capstone2LlvmIrTranslatorXcore_impl :
 		void translateSetsr(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
 		void translateClrsr(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
 		void translateNop(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateChanIn(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateChanOut(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateGetR(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateSetV(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateResUnary(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateEventWait(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateEventCond(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
 };
 
 } // namespace capstone2llvmir

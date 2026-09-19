@@ -867,7 +867,8 @@ llvm::AtomicOrdering Capstone2LlvmIrTranslatorArm64_impl::lseOrdering(unsigned i
 	case ARM64_INS_SWPAH:
 	case ARM64_INS_CASA:
 	case ARM64_INS_CASAB:
-	case ARM64_INS_CASAH: return llvm::AtomicOrdering::Acquire;
+	case ARM64_INS_CASAH:
+	case ARM64_INS_CASPA: return llvm::AtomicOrdering::Acquire;
 	// Release.
 	case ARM64_INS_LDADDL:
 	case ARM64_INS_LDADDLB:
@@ -898,7 +899,8 @@ llvm::AtomicOrdering Capstone2LlvmIrTranslatorArm64_impl::lseOrdering(unsigned i
 	case ARM64_INS_SWPLH:
 	case ARM64_INS_CASL:
 	case ARM64_INS_CASLB:
-	case ARM64_INS_CASLH: return llvm::AtomicOrdering::Release;
+	case ARM64_INS_CASLH:
+	case ARM64_INS_CASPL: return llvm::AtomicOrdering::Release;
 	// Acquire-release.
 	case ARM64_INS_LDADDAL:
 	case ARM64_INS_LDADDALB:
@@ -929,7 +931,8 @@ llvm::AtomicOrdering Capstone2LlvmIrTranslatorArm64_impl::lseOrdering(unsigned i
 	case ARM64_INS_SWPALH:
 	case ARM64_INS_CASAL:
 	case ARM64_INS_CASALB:
-	case ARM64_INS_CASALH: return llvm::AtomicOrdering::AcquireRelease;
+	case ARM64_INS_CASALH:
+	case ARM64_INS_CASPAL: return llvm::AtomicOrdering::AcquireRelease;
 	default: return llvm::AtomicOrdering::Monotonic;
 	}
 }
@@ -1191,8 +1194,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLse(cs_insn* i, cs_arm64* ai,
  * and writes the ORIGINAL memory value back to Rs. The destination is the
  * first operand, not the second -- the opposite of every instruction above.
  *
- * CASP, the 128-bit register-pair form, is not here: it needs a pair of
- * registers on each side and LLVM's cmpxchg does not take one.
+ * The 128-bit pair form is translateCasp().
  */
 void Capstone2LlvmIrTranslatorArm64_impl::translateCas(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {
@@ -1224,6 +1226,66 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateCas(cs_insn* i, cs_arm64* ai,
 	attachPointeeType(cx, elem);
 
 	storeOp(ai->operands[0], irb.CreateExtractValue(cx, 0), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * ARM64_INS_CASP, CASPA, CASPL, CASPAL
+ *
+ * Capstone 6 reports `casp x0, x1, x2, x3, [x4]` as five operands: the
+ * compared pair, the store pair, then memory. Memory is two consecutive
+ * 64-bit words (or 32-bit for Ws), little-endian, so the first register of
+ * each pair is the low half of an i128 (or i64) cmpxchg -- the same IR
+ * x86 CMPXCHG16B uses. The original memory value is written back to the
+ * compared pair, matching single-register CAS.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateCasp(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_EXPR(i, ai, irb, (ai->op_count == 5));
+
+	if (ai->operands[0].type != ARM64_OP_REG || ai->operands[1].type != ARM64_OP_REG
+		|| ai->operands[2].type != ARM64_OP_REG || ai->operands[3].type != ARM64_OP_REG
+		|| ai->operands[4].type != ARM64_OP_MEM)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	unsigned halfBits = getRegisterBitSize(ai->operands[0].reg);
+	if (halfBits != 32 && halfBits != 64)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* halfTy = irb.getIntNTy(halfBits);
+	auto* wide = irb.getIntNTy(halfBits * 2);
+	auto pack = [&](uint32_t lo, uint32_t hi) {
+		llvm::Value* a = generateTypeConversion(irb, loadRegister(lo, irb), halfTy, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		llvm::Value* b = generateTypeConversion(irb, loadRegister(hi, irb), halfTy, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		return irb.CreateOr(
+			irb.CreateZExt(a, wide), irb.CreateShl(irb.CreateZExt(b, wide), llvm::ConstantInt::get(wide, halfBits)));
+	};
+
+	auto* expected = pack(ai->operands[0].reg, ai->operands[1].reg);
+	auto* desired = pack(ai->operands[2].reg, ai->operands[3].reg);
+	auto* addr = generateGetOperandMemAddr(ai->operands[4], irb);
+	auto* ptr = intToPtr(irb, addr, wide);
+
+	auto ord = lseOrdering(i->id);
+	auto failOrd = (ord == llvm::AtomicOrdering::Release || ord == llvm::AtomicOrdering::AcquireRelease)
+					 ? llvm::AtomicOrdering::Monotonic
+					 : ord;
+
+	auto* cx = irb.CreateAtomicCmpXchg(ptr, expected, desired, llvm::MaybeAlign(), ord, failOrd);
+	attachPointeeType(cx, wide);
+
+	llvm::Value* old = irb.CreateExtractValue(cx, 0);
+	storeRegister(ai->operands[0].reg, irb.CreateTrunc(old, halfTy), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	storeRegister(
+		ai->operands[1].reg,
+		irb.CreateTrunc(irb.CreateLShr(old, llvm::ConstantInt::get(wide, halfBits)), halfTy),
+		irb,
+		eOpConv::ZEXT_TRUNC_OR_BITCAST);
 }
 
 /**
@@ -1319,6 +1381,19 @@ static std::pair<unsigned, unsigned> vasLanes(arm64_vas vas)
 	case ARM64_VAS_1D: return {64, 1};
 	default: return {0, 0};
 	}
+}
+
+/**
+ * Lane width for a NEON operand, including the single-lane arrangements
+ * Capstone reports for indexed forms (`ARM64_VAS_1S` for `.s[1]`).
+ */
+static unsigned vasElemBits(arm64_vas vas)
+{
+	// Capstone 6 encodes arrangement as (lanes << 8) | elemBits, and the
+	// indexed INS/UMOV forms often report the bare .b/.h/.s/.d (elemBits
+	// only). The low byte is the lane width in both cases.
+	unsigned elem = static_cast<unsigned>(vas) & 0xff;
+	return (elem == 8 || elem == 16 || elem == 32 || elem == 64) ? elem : 0;
 }
 
 /**
@@ -1490,6 +1565,160 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonCmp(cs_insn* i, cs_arm64*
 }
 
 /**
+ * ARM64_INS_FCMEQ, FCMGE, FCMGT, FCMLE, FCMLT
+ *
+ * Lane-wise FP compare, the NEON counterpart of SSE CMPPS: each lane is all
+ * 1s or all 0s from a sext of an fcmp. NaN answers false (ordered compares),
+ * which is the architecture's default. Register form is Vd, Vn, Vm; the #0.0
+ * form (the only encoding of FCMLE/FCMLT) is reported by Capstone 6 as a
+ * non-register third operand (EXACTFPIMM / IMPLICIT_IMM_0), not ARM64_OP_IMM.
+ *
+ * Half-precision arrangements stay pseudo, matching the other FP lane ops.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateNeonFpCmp(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, ai, irb);
+
+	bool vsZero = ai->operands[2].type != ARM64_OP_REG;
+	unsigned bytes = 0;
+	if (!neonSameWidthRegs(ai, vsZero ? 2 : 3, bytes))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	auto [laneBits, lanes] = vasLanes(ai->operands[0].vas);
+	if (laneBits != 32 && laneBits != 64)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* w = irb.getIntNTy(bytes * 8);
+	llvm::Type* elemTy = laneBits == 32
+						 ? static_cast<llvm::Type*>(irb.getFloatTy())
+						 : static_cast<llvm::Type*>(irb.getDoubleTy());
+	auto* vecTy = llvm::FixedVectorType::get(elemTy, lanes);
+	auto* iVec = llvm::FixedVectorType::get(irb.getIntNTy(laneBits), lanes);
+
+	llvm::Value* a = irb.CreateBitCast(
+		irb.CreateZExtOrTrunc(loadRegister(getParentRegister(ai->operands[1].reg), irb), w), vecTy);
+	llvm::Value* b = vsZero
+					   ? llvm::Constant::getNullValue(vecTy)
+					   : irb.CreateBitCast(
+							 irb.CreateZExtOrTrunc(loadRegister(getParentRegister(ai->operands[2].reg), irb), w), vecTy);
+
+	if (i->id == ARM64_INS_FACGE || i->id == ARM64_INS_FACGT)
+	{
+		// Clear the sign bit: ARM FABS, and what FACGE/FACGT compare.
+		auto* mag = llvm::ConstantVector::getSplat(
+			llvm::ElementCount::getFixed(lanes),
+			llvm::ConstantInt::get(irb.getIntNTy(laneBits), laneBits == 32 ? 0x7fffffffULL : 0x7fffffffffffffffULL));
+		a = irb.CreateBitCast(irb.CreateAnd(irb.CreateBitCast(a, iVec), mag), vecTy);
+		b = irb.CreateBitCast(irb.CreateAnd(irb.CreateBitCast(b, iVec), mag), vecTy);
+	}
+
+	llvm::Value* cmp = nullptr;
+	switch (i->id)
+	{
+	case ARM64_INS_FCMEQ: cmp = irb.CreateFCmpOEQ(a, b); break;
+	case ARM64_INS_FCMGE:
+	case ARM64_INS_FACGE: cmp = irb.CreateFCmpOGE(a, b); break;
+	case ARM64_INS_FCMGT:
+	case ARM64_INS_FACGT: cmp = irb.CreateFCmpOGT(a, b); break;
+	case ARM64_INS_FCMLE: cmp = irb.CreateFCmpOLE(a, b); break;
+	case ARM64_INS_FCMLT: cmp = irb.CreateFCmpOLT(a, b); break;
+	default: throw GenericError("translateNeonFpCmp(): unhandled instruction id");
+	}
+
+	storeRegister(
+		ai->operands[0].reg, irb.CreateBitCast(irb.CreateSExt(cmp, iVec), w), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * ARM64_INS_TBL, ARM64_INS_TBX
+ *
+ * Byte table lookup from the concatenation of 1–4 16-byte table registers,
+ * indexed by Vm. Out of range: TBL writes zero, TBX keeps the destination
+ * byte -- ARM32 translateNeonTbl, and the same extractelement pattern as
+ * x86 PSHUFB (which zeros on the control's top bit instead).
+ *
+ * Table registers are always 16B, even when the destination is .8b (Capstone
+ * reports Dn for that dest). Dest/index share the arrangement width.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateNeonTbl(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	if (ai->op_count < 3)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	unsigned nTable = ai->op_count - 2;
+	if (nTable < 1 || nTable > 4)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto [dstBits, dstLanes] = vasLanes(ai->operands[0].vas);
+	unsigned last = ai->op_count - 1;
+	auto [idxBits, idxLanes] = vasLanes(ai->operands[last].vas);
+	if (dstBits != 8 || idxBits != 8 || dstLanes == 0 || dstLanes != idxLanes
+		|| ai->operands[0].type != ARM64_OP_REG || ai->operands[last].type != ARM64_OP_REG
+		|| ai->operands[0].vector_index >= 0 || ai->operands[last].vector_index >= 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	for (unsigned j = 1; j <= nTable; ++j)
+	{
+		unsigned tb = vasByteWidth(ai->operands[j].vas);
+		if (ai->operands[j].type != ARM64_OP_REG || ai->operands[j].vector_index >= 0 || (tb != 16 && tb != 0))
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+	}
+
+	unsigned nBytes = nTable * 16;
+	auto* i8 = irb.getInt8Ty();
+	auto* tblTy = llvm::FixedVectorType::get(i8, nBytes);
+	llvm::Value* tbl = llvm::PoisonValue::get(tblTy);
+	unsigned pos = 0;
+	for (unsigned j = 1; j <= nTable; ++j)
+	{
+		llvm::Value* v = loadNeonVector(getParentRegister(ai->operands[j].reg), 8, 16, irb);
+		for (uint64_t b = 0; b < 16; ++b)
+		{
+			tbl = irb.CreateInsertElement(tbl, irb.CreateExtractElement(v, b), pos++);
+		}
+	}
+
+	llvm::Value* idxV = loadNeonVector(getParentRegister(ai->operands[last].reg), 8, dstLanes, irb);
+	llvm::Value* orig =
+		(i->id == ARM64_INS_TBX) ? loadNeonVector(getParentRegister(ai->operands[0].reg), 8, dstLanes, irb) : nullptr;
+	auto* outTy = llvm::FixedVectorType::get(i8, dstLanes);
+	llvm::Value* res = llvm::PoisonValue::get(outTy);
+	auto* i32 = irb.getInt32Ty();
+	auto* limit = llvm::ConstantInt::get(i32, nBytes);
+	auto* zeroIdx = llvm::ConstantInt::get(i32, 0);
+	auto* zeroByte = llvm::ConstantInt::get(i8, 0);
+	for (uint64_t k = 0; k < dstLanes; ++k)
+	{
+		llvm::Value* e = irb.CreateZExt(irb.CreateExtractElement(idxV, k), i32);
+		llvm::Value* inRange = irb.CreateICmpULT(e, limit);
+		llvm::Value* safe = irb.CreateSelect(inRange, e, zeroIdx);
+		llvm::Value* looked = irb.CreateExtractElement(tbl, safe);
+		llvm::Value* fallback = orig ? irb.CreateExtractElement(orig, k) : zeroByte;
+		res = irb.CreateInsertElement(res, irb.CreateSelect(inRange, looked, fallback), k);
+	}
+
+	auto* w = irb.getIntNTy(dstLanes * 8);
+	storeRegister(ai->operands[0].reg, irb.CreateBitCast(res, w), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
  * True if any operand of this instruction is a NEON SIMD register (Qn, or
  * Dn with an arrangement).
  *
@@ -1528,7 +1757,9 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::loadNeonVector(
  * ARM64_INS_ADDP, ARM64_INS_UMAXP, ARM64_INS_UMINP,
  * ARM64_INS_SMAXP, ARM64_INS_SMINP,
  * ARM64_INS_UZP1, ARM64_INS_UZP2, ARM64_INS_ZIP1, ARM64_INS_ZIP2,
- * ARM64_INS_TRN1, ARM64_INS_TRN2
+ * ARM64_INS_TRN1, ARM64_INS_TRN2,
+ * ARM64_INS_SHADD, ARM64_INS_UHADD, ARM64_INS_URHADD, ARM64_INS_SRHADD,
+ * ARM64_INS_SHSUB, ARM64_INS_UHSUB, ARM64_INS_SABD, ARM64_INS_UABD
  *
  * The NEON integer operations whose operands are all the same width, which is
  * the set that needs a vector type and nothing else.
@@ -1655,6 +1886,51 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonLaneBinary(cs_insn* i, cs
 	case ARM64_INS_SMAXP: res = irb.CreateSelect(irb.CreateICmpSGT(a, b), a, b); break;
 	case ARM64_INS_SMIN:
 	case ARM64_INS_SMINP: res = irb.CreateSelect(irb.CreateICmpSLT(a, b), a, b); break;
+	case ARM64_INS_SHADD:
+	case ARM64_INS_UHADD:
+	case ARM64_INS_URHADD:
+	case ARM64_INS_SRHADD:
+	case ARM64_INS_SHSUB:
+	case ARM64_INS_UHSUB: {
+		// Halving add/sub, the NEON counterpart of PAVGB / ARM32 VHADD/VHSUB.
+		// Signed SHADD is (a+b)>>1; unsigned UHADD the same with a logical
+		// shift; URHADD/SRHADD are the rounding (a+b+1)>>1 forms. SHSUB/UHSUB
+		// subtract. The add/sub is one bit wider than the lane so 0xff+0x01
+		// is 0x80, not a wrapping 0x00.
+		bool isSigned = i->id == ARM64_INS_SHADD || i->id == ARM64_INS_SRHADD || i->id == ARM64_INS_SHSUB;
+		bool isSub = i->id == ARM64_INS_SHSUB || i->id == ARM64_INS_UHSUB;
+		auto* wideVec = llvm::FixedVectorType::get(irb.getIntNTy(laneBits * 2), lanes);
+		llvm::Value* aw = isSigned ? irb.CreateSExt(a, wideVec) : irb.CreateZExt(a, wideVec);
+		llvm::Value* bw = isSigned ? irb.CreateSExt(b, wideVec) : irb.CreateZExt(b, wideVec);
+		llvm::Value* s = isSub ? irb.CreateSub(aw, bw) : irb.CreateAdd(aw, bw);
+		if (i->id == ARM64_INS_URHADD || i->id == ARM64_INS_SRHADD)
+		{
+			s = irb.CreateAdd(
+				s,
+				llvm::ConstantVector::getSplat(
+					llvm::ElementCount::getFixed(lanes), llvm::ConstantInt::get(irb.getIntNTy(laneBits * 2), 1)));
+		}
+		auto* one = llvm::ConstantVector::getSplat(
+			llvm::ElementCount::getFixed(lanes), llvm::ConstantInt::get(irb.getIntNTy(laneBits * 2), 1));
+		llvm::Value* h = isSigned ? irb.CreateAShr(s, one) : irb.CreateLShr(s, one);
+		res = irb.CreateTrunc(h, a->getType());
+		break;
+	}
+	case ARM64_INS_SABD:
+	case ARM64_INS_UABD: {
+		// Absolute difference, ARM32 VABD: |a-b| at one extra bit so
+		// signed 0-(-1) is 1 and unsigned 0-0xff is 0xff.
+		bool isSigned = i->id == ARM64_INS_SABD;
+		auto* wideVec = llvm::FixedVectorType::get(irb.getIntNTy(laneBits * 2), lanes);
+		llvm::Value* aw = isSigned ? irb.CreateSExt(a, wideVec) : irb.CreateZExt(a, wideVec);
+		llvm::Value* bw = isSigned ? irb.CreateSExt(b, wideVec) : irb.CreateZExt(b, wideVec);
+		llvm::Value* d = irb.CreateSub(aw, bw);
+		auto* zero = llvm::ConstantVector::getSplat(
+			llvm::ElementCount::getFixed(lanes), llvm::ConstantInt::get(irb.getIntNTy(laneBits * 2), 0));
+		res = irb.CreateTrunc(
+			irb.CreateSelect(irb.CreateICmpSLT(d, zero), irb.CreateNeg(d), d), a->getType());
+		break;
+	}
 	default: translatePseudoAsmGeneric(i, ai, irb); return;
 	}
 
@@ -1713,7 +1989,40 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonFpLaneBinary(cs_insn* i, 
 }
 
 /**
- * ARM64_INS_SHL, ARM64_INS_USHR, ARM64_INS_SSHR
+ * ARM64_INS_MLA, ARM64_INS_MLS
+ *
+ * Integer vector dest ± a*b, the NEON counterpart of x86 PMULLD plus an add.
+ * By-element `vm.s[n]` has a vector_index and stays pseudo, matching FMLA.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateNeonMla(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	unsigned bytes = 0;
+	if (ai->op_count != 3 || !neonSameWidthRegs(ai, 3, bytes))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto [laneBits, lanes] = vasLanes(ai->operands[0].vas);
+	if (laneBits == 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* w = irb.getIntNTy(bytes * 8);
+	llvm::Value* acc = loadNeonVector(getParentRegister(ai->operands[0].reg), laneBits, lanes, irb);
+	llvm::Value* a = loadNeonVector(ai->operands[1].reg, laneBits, lanes, irb);
+	llvm::Value* b = loadNeonVector(ai->operands[2].reg, laneBits, lanes, irb);
+	llvm::Value* prod = irb.CreateMul(a, b);
+	llvm::Value* res = (i->id == ARM64_INS_MLS) ? irb.CreateSub(acc, prod) : irb.CreateAdd(acc, prod);
+
+	storeRegister(ai->operands[0].reg, irb.CreateBitCast(res, w), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * ARM64_INS_SHL, ARM64_INS_USHR, ARM64_INS_SSHR,
+ * ARM64_INS_SQSHL, ARM64_INS_UQSHL, ARM64_INS_SQSHLU
  *
  * The lane shifts by an immediate. `shl v0.4s, v1.4s, #3` shifts each of the
  * four words, not the 128-bit register.
@@ -1724,6 +2033,10 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonFpLaneBinary(cs_insn* i, 
  * operand's width is poison in LLVM, so both are case-split here: the logical
  * one answers zero and the arithmetic one shifts by laneBits - 1, which is the
  * same value the architecture defines.
+ *
+ * SQSHL / UQSHL / SQSHLU are the saturating left shifts ARM32 VQSHL maps,
+ * immediate form only. A register shift amount stays on the pseudo-asm path
+ * because operand 2 is not an immediate.
  */
 void Capstone2LlvmIrTranslatorArm64_impl::translateNeonLaneShift(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {
@@ -1736,6 +2049,61 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonLaneShift(cs_insn* i, cs_
 
 	auto [laneBits, lanes] = vasLanes(ai->operands[0].vas);
 	uint64_t amount = static_cast<uint64_t>(ai->operands[2].imm);
+	if (i->id == ARM64_INS_SQSHL || i->id == ARM64_INS_UQSHL || i->id == ARM64_INS_SQSHLU)
+	{
+		if (laneBits == 0)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+
+		bool dstUnsigned = i->id == ARM64_INS_SQSHLU || i->id == ARM64_INS_UQSHL;
+		bool srcSigned = i->id != ARM64_INS_UQSHL;
+		auto* laneTy = irb.getIntNTy(laneBits);
+		auto* wideTy = irb.getIntNTy(laneBits * 2);
+		auto* vecTy = llvm::FixedVectorType::get(laneTy, lanes);
+		auto* wideVec = llvm::FixedVectorType::get(wideTy, lanes);
+		unsigned wideBits = laneBits * 2;
+		llvm::APInt loA = dstUnsigned ? llvm::APInt(wideBits, 0)
+									  : llvm::APInt::getSignedMinValue(laneBits).sext(wideBits);
+		llvm::APInt hiA = dstUnsigned ? llvm::APInt::getMaxValue(laneBits).zext(wideBits)
+									  : llvm::APInt::getSignedMaxValue(laneBits).sext(wideBits);
+		auto* loC = llvm::ConstantVector::getSplat(
+			llvm::ElementCount::getFixed(lanes), llvm::ConstantInt::get(wideTy, loA));
+		auto* hiC = llvm::ConstantVector::getSplat(
+			llvm::ElementCount::getFixed(lanes), llvm::ConstantInt::get(wideTy, hiA));
+
+		llvm::Value* src = loadNeonVector(ai->operands[1].reg, laneBits, lanes, irb);
+		llvm::Value* aw = srcSigned ? irb.CreateSExt(src, wideVec) : irb.CreateZExt(src, wideVec);
+		llvm::Value* wide = nullptr;
+		if (amount >= wideBits)
+		{
+			llvm::Value* zeroSrc = irb.CreateICmpEQ(aw, llvm::Constant::getNullValue(wideVec));
+			llvm::Value* negSrc = irb.CreateICmpSLT(aw, llvm::Constant::getNullValue(wideVec));
+			wide = irb.CreateSelect(negSrc, loC, hiC);
+			wide = irb.CreateSelect(zeroSrc, llvm::Constant::getNullValue(wideVec), wide);
+		}
+		else if (amount == 0)
+		{
+			wide = aw;
+		}
+		else
+		{
+			wide = irb.CreateShl(
+				aw,
+				llvm::ConstantVector::getSplat(
+					llvm::ElementCount::getFixed(lanes), llvm::ConstantInt::get(wideTy, amount)));
+		}
+		llvm::Value* c = irb.CreateSelect(irb.CreateICmpSLT(wide, loC), loC, wide);
+		c = irb.CreateSelect(irb.CreateICmpSGT(c, hiC), hiC, c);
+		storeRegister(
+			ai->operands[0].reg,
+			irb.CreateBitCast(irb.CreateTrunc(c, vecTy), irb.getIntNTy(bytes * 8)),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		return;
+	}
+
 	if (laneBits == 0 || amount > laneBits || (i->id == ARM64_INS_SHL && amount >= laneBits))
 	{
 		translatePseudoAsmGeneric(i, ai, irb);
@@ -1831,6 +2199,65 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonLaneMove(cs_insn* i, cs_a
 }
 
 /**
+ * ARM64_INS_INS -- insert a GPR or a NEON lane into a NEON lane.
+ *
+ * Inverse of translateNeonLaneMove (UMOV/SMOV). Dest is always the 128-bit Q
+ * parent: `ins v0.s[1], w1` replaces one word and keeps the other three, the
+ * way x86 PINSR* merges into XMM. The lane form `ins v0.b[3], v1.b[7]` is the
+ * same insert with the source taken from another register's lane.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateNeonIns(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, ai, irb);
+
+	auto& dst = ai->operands[0];
+	auto& src = ai->operands[1];
+	unsigned laneBits = vasElemBits(dst.vas);
+	if (!isVectorRegister(dst) || dst.vector_index < 0 || laneBits == 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	unsigned lanes = 128 / laneBits;
+	if (static_cast<unsigned>(dst.vector_index) >= lanes)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* laneTy = irb.getIntNTy(laneBits);
+	uint32_t dstParent = getParentRegister(dst.reg);
+	llvm::Value* v = loadNeonVector(dstParent, laneBits, lanes, irb);
+	llvm::Value* lane = nullptr;
+	if (isVectorRegister(src) && src.vector_index >= 0)
+	{
+		unsigned srcBits = vasElemBits(src.vas);
+		unsigned srcLanes = srcBits ? 128 / srcBits : 0;
+		if (srcBits != laneBits || static_cast<unsigned>(src.vector_index) >= srcLanes)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		lane = irb.CreateExtractElement(
+			loadNeonVector(getParentRegister(src.reg), laneBits, srcLanes, irb),
+			llvm::ConstantInt::get(irb.getInt32Ty(), src.vector_index));
+	}
+	else if (src.type == ARM64_OP_REG && !isVectorRegister(src))
+	{
+		lane = irb.CreateZExtOrTrunc(loadRegister(src.reg, irb), laneTy);
+	}
+	else
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	v = irb.CreateInsertElement(v, lane, llvm::ConstantInt::get(irb.getInt32Ty(), dst.vector_index));
+	storeRegister(dstParent, irb.CreateBitCast(v, irb.getIntNTy(128)), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
  * The (laneBits, lanes) of a NEON operand, for the operations whose source and
  * destination arrangements differ in width.
  *
@@ -1850,7 +2277,8 @@ bool Capstone2LlvmIrTranslatorArm64_impl::neonArrangement(cs_arm64_op& op, unsig
 
 /**
  * ARM64_INS_NEG, ARM64_INS_ABS, ARM64_INS_NOT, ARM64_INS_CNT,
- * ARM64_INS_REV16, ARM64_INS_REV32, ARM64_INS_REV64
+ * ARM64_INS_REV16, ARM64_INS_REV32, ARM64_INS_REV64,
+ * ARM64_INS_SQABS, ARM64_INS_SQNEG
  *
  * The unary lane operations. Two of these were not missing translations --
  * they were wrong ones.
@@ -1943,6 +2371,30 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonLaneUnary(cs_insn* i, cs_
 		// select needs no special case for it.
 		llvm::Value* negated = irb.CreateSub(llvm::Constant::getNullValue(vecTy), a);
 		res = irb.CreateSelect(irb.CreateICmpSLT(a, llvm::Constant::getNullValue(vecTy)), negated, a);
+		break;
+	}
+	case ARM64_INS_SQABS:
+	case ARM64_INS_SQNEG: {
+		// Saturating abs/neg: PABSB plus a clamp at signed min. ABS of
+		// -128 is still -128; SQABS of -128 is 127.
+		auto* wideTy = irb.getIntNTy(laneBits * 2);
+		auto* wideVec = llvm::FixedVectorType::get(wideTy, lanes);
+		unsigned wideBits = laneBits * 2;
+		llvm::Value* aw = irb.CreateSExt(a, wideVec);
+		llvm::Value* wide = irb.CreateSub(llvm::Constant::getNullValue(wideVec), aw);
+		if (i->id == ARM64_INS_SQABS)
+		{
+			wide = irb.CreateSelect(irb.CreateICmpSLT(aw, llvm::Constant::getNullValue(wideVec)), wide, aw);
+		}
+		auto* loC = llvm::ConstantVector::getSplat(
+			llvm::ElementCount::getFixed(lanes),
+			llvm::ConstantInt::get(wideTy, llvm::APInt::getSignedMinValue(laneBits).sext(wideBits)));
+		auto* hiC = llvm::ConstantVector::getSplat(
+			llvm::ElementCount::getFixed(lanes),
+			llvm::ConstantInt::get(wideTy, llvm::APInt::getSignedMaxValue(laneBits).sext(wideBits)));
+		wide = irb.CreateSelect(irb.CreateICmpSLT(wide, loC), loC, wide);
+		wide = irb.CreateSelect(irb.CreateICmpSGT(wide, hiC), hiC, wide);
+		res = irb.CreateTrunc(wide, vecTy);
 		break;
 	}
 	case ARM64_INS_CNT: {
@@ -2043,11 +2495,31 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonDup(cs_insn* i, cs_arm64*
  * leaves the bottom alone. A compiler emits the pair back to back to narrow
  * two full registers into one, so translating `xtn2` as `xtn` destroys the
  * half the previous instruction just produced.
+ *
+ * SQXTN/UQXTN/SQXTUN are the saturating forms, x86 PACKSSWB/PACKUSWB: SQXTN
+ * clamps a signed source into a signed narrow lane, UQXTN an unsigned source
+ * into an unsigned one, SQXTUN a signed source into an unsigned one. Truncating
+ * is XTN, and it is the wrong answer for 256 → 8-bit (XTN yields 0, SQXTN
+ * yields 127, SQXTUN yields 255). SQSHRN is saturating shift-right then
+ * signed narrow; SQSHRUN is the same shift then unsigned narrow (PACKUSWB);
+ * RSHRN is rounding shift-right then truncating narrow.
  */
 void Capstone2LlvmIrTranslatorArm64_impl::translateNeonNarrow(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {
-	bool shift = i->id == ARM64_INS_SHRN || i->id == ARM64_INS_SHRN2;
-	bool upper = i->id == ARM64_INS_XTN2 || i->id == ARM64_INS_SHRN2;
+	bool shift = i->id == ARM64_INS_SHRN || i->id == ARM64_INS_SHRN2 || i->id == ARM64_INS_SQSHRN
+		|| i->id == ARM64_INS_SQSHRN2 || i->id == ARM64_INS_RSHRN || i->id == ARM64_INS_RSHRN2
+		|| i->id == ARM64_INS_SQSHRUN || i->id == ARM64_INS_SQSHRUN2;
+	bool round = i->id == ARM64_INS_RSHRN || i->id == ARM64_INS_RSHRN2;
+	bool arithShift = i->id == ARM64_INS_SQSHRN || i->id == ARM64_INS_SQSHRN2 || i->id == ARM64_INS_SQSHRUN
+		|| i->id == ARM64_INS_SQSHRUN2;
+	bool satSigned = i->id == ARM64_INS_SQXTN || i->id == ARM64_INS_SQXTN2 || i->id == ARM64_INS_SQSHRN
+		|| i->id == ARM64_INS_SQSHRN2;
+	bool satUnsigned = i->id == ARM64_INS_UQXTN || i->id == ARM64_INS_UQXTN2;
+	bool satSignedToUnsigned = i->id == ARM64_INS_SQXTUN || i->id == ARM64_INS_SQXTUN2
+		|| i->id == ARM64_INS_SQSHRUN || i->id == ARM64_INS_SQSHRUN2;
+	bool upper = i->id == ARM64_INS_XTN2 || i->id == ARM64_INS_SHRN2 || i->id == ARM64_INS_SQXTN2
+		|| i->id == ARM64_INS_UQXTN2 || i->id == ARM64_INS_SQXTUN2 || i->id == ARM64_INS_SQSHRN2
+		|| i->id == ARM64_INS_RSHRN2 || i->id == ARM64_INS_SQSHRUN2;
 
 	unsigned dstBits = 0, dstLanes = 0, srcBits = 0, srcLanes = 0;
 	if (ai->op_count != (shift ? 3u : 2u) || (shift && ai->operands[2].type != ARM64_OP_IMM)
@@ -2078,10 +2550,51 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonNarrow(cs_insn* i, cs_arm
 	llvm::Value* a = loadNeonVector(ai->operands[1].reg, srcBits, srcLanes, irb);
 	if (shift && amount != 0)
 	{
-		a = irb.CreateLShr(
-			a,
-			llvm::ConstantVector::getSplat(
-				llvm::ElementCount::getFixed(srcLanes), llvm::ConstantInt::get(srcTy, amount)));
+		auto splatAmt = llvm::ConstantVector::getSplat(
+			llvm::ElementCount::getFixed(srcLanes), llvm::ConstantInt::get(srcTy, amount));
+		if (round)
+		{
+			a = irb.CreateAdd(
+				a,
+				llvm::ConstantVector::getSplat(
+					llvm::ElementCount::getFixed(srcLanes), llvm::ConstantInt::get(srcTy, 1ull << (amount - 1))));
+		}
+		a = arithShift ? irb.CreateAShr(a, splatAmt) : irb.CreateLShr(a, splatAmt);
+	}
+
+	if (satSigned || satUnsigned || satSignedToUnsigned)
+	{
+		// Clamp at the source width. UQXTN must use an unsigned compare:
+		// 0xffff as a signed halfword is -1, and a signed clamp against 0
+		// would turn 65535 into 0 instead of 255. SQXTUN is the opposite
+		// (PACKUSWB): the source is signed, so -1 saturates to 0.
+		auto splat = [&](llvm::APInt v) {
+			return llvm::ConstantVector::getSplat(
+				llvm::ElementCount::getFixed(srcLanes), llvm::ConstantInt::get(srcTy, v));
+		};
+		if (satSignedToUnsigned)
+		{
+			auto* loC = splat(llvm::APInt(srcBits, 0));
+			auto* hiC = splat(llvm::APInt::getMaxValue(dstBits).zext(srcBits));
+			a = irb.CreateSelect(irb.CreateICmpSLT(a, loC), loC, a);
+			a = irb.CreateSelect(irb.CreateICmpSGT(a, hiC), hiC, a);
+		}
+		else
+		{
+			llvm::APInt hiA = satSigned ? llvm::APInt::getSignedMaxValue(dstBits).sext(srcBits)
+										: llvm::APInt::getMaxValue(dstBits).zext(srcBits);
+			auto* hiC = splat(hiA);
+			if (satSigned)
+			{
+				auto* loC = splat(llvm::APInt::getSignedMinValue(dstBits).sext(srcBits));
+				a = irb.CreateSelect(irb.CreateICmpSLT(a, loC), loC, a);
+				a = irb.CreateSelect(irb.CreateICmpSGT(a, hiC), hiC, a);
+			}
+			else
+			{
+				a = irb.CreateSelect(irb.CreateICmpUGT(a, hiC), hiC, a);
+			}
+		}
 	}
 
 	llvm::Value* narrow = irb.CreateTrunc(a, llvm::FixedVectorType::get(irb.getIntNTy(dstBits), srcLanes));
@@ -2102,8 +2615,117 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonNarrow(cs_insn* i, cs_arm
 }
 
 /**
+ * ARM64_INS_SQADD, ARM64_INS_UQADD, ARM64_INS_SQSUB, ARM64_INS_UQSUB
+ *
+ * Saturating lane add/sub, the NEON counterpart of PADDSB/PADDUSB/PSUBSB and
+ * of ARM32 VQADD/VQSUB. A wrapping add of 127 and 1 is -128; this stops at
+ * 127. The same select clamp VQADD uses, not llvm.sadd.sat.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateNeonSatArith(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	unsigned bytes = 0;
+	bool isSigned = i->id == ARM64_INS_SQADD || i->id == ARM64_INS_SQSUB;
+	bool isSub = i->id == ARM64_INS_SQSUB || i->id == ARM64_INS_UQSUB;
+	if ((i->id != ARM64_INS_SQADD && i->id != ARM64_INS_UQADD && i->id != ARM64_INS_SQSUB && i->id != ARM64_INS_UQSUB)
+		|| ai->op_count != 3 || !neonSameWidthRegs(ai, 3, bytes))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto [laneBits, lanes] = vasLanes(ai->operands[0].vas);
+	if (laneBits == 0 || (bytes * 8) % laneBits != 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* laneTy = irb.getIntNTy(laneBits);
+	auto* wideTy = irb.getIntNTy(laneBits * 2);
+	auto* vecTy = llvm::FixedVectorType::get(laneTy, lanes);
+	auto* wideVec = llvm::FixedVectorType::get(wideTy, lanes);
+	unsigned wideBits = laneBits * 2;
+	llvm::APInt loA = isSigned ? llvm::APInt::getSignedMinValue(laneBits).sext(wideBits) : llvm::APInt(wideBits, 0);
+	llvm::APInt hiA = isSigned ? llvm::APInt::getSignedMaxValue(laneBits).sext(wideBits)
+							   : llvm::APInt::getMaxValue(laneBits).zext(wideBits);
+	auto* loC = llvm::ConstantVector::getSplat(llvm::ElementCount::getFixed(lanes), llvm::ConstantInt::get(wideTy, loA));
+	auto* hiC = llvm::ConstantVector::getSplat(llvm::ElementCount::getFixed(lanes), llvm::ConstantInt::get(wideTy, hiA));
+
+	llvm::Value* a = loadNeonVector(ai->operands[1].reg, laneBits, lanes, irb);
+	llvm::Value* b = loadNeonVector(ai->operands[2].reg, laneBits, lanes, irb);
+	llvm::Value* aw = isSigned ? irb.CreateSExt(a, wideVec) : irb.CreateZExt(a, wideVec);
+	llvm::Value* bw = isSigned ? irb.CreateSExt(b, wideVec) : irb.CreateZExt(b, wideVec);
+	llvm::Value* wide = isSub ? irb.CreateSub(aw, bw) : irb.CreateAdd(aw, bw);
+	llvm::Value* c = irb.CreateSelect(irb.CreateICmpSLT(wide, loC), loC, wide);
+	c = irb.CreateSelect(irb.CreateICmpSGT(c, hiC), hiC, c);
+	llvm::Value* res = irb.CreateTrunc(c, vecTy);
+
+	storeRegister(
+		ai->operands[0].reg, irb.CreateBitCast(res, irb.getIntNTy(bytes * 8)), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * ARM64_INS_ADDHN, ARM64_INS_ADDHN2, ARM64_INS_RADDHN, ARM64_INS_RADDHN2
+ *
+ * Add two wide vectors and keep the HIGH half of each sum as a narrow lane.
+ * Truncating the sum is the low half (XTN of an add); ADDHN of 0x0100 + 0 is
+ * 0x01, not 0x00. The `2` form writes the top 64 bits of the destination.
+ * RADDHN adds 1<<(dstBits-1) before taking the high half.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateNeonAddhn(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	bool upper = i->id == ARM64_INS_ADDHN2 || i->id == ARM64_INS_RADDHN2;
+	bool round = i->id == ARM64_INS_RADDHN || i->id == ARM64_INS_RADDHN2;
+
+	unsigned dstBits = 0, dstLanes = 0, srcBits = 0, srcLanes = 0, bBits = 0, bLanes = 0;
+	if (ai->op_count != 3 || !neonArrangement(ai->operands[0], dstBits, dstLanes)
+		|| !neonArrangement(ai->operands[1], srcBits, srcLanes) || !neonArrangement(ai->operands[2], bBits, bLanes)
+		|| srcBits != dstBits * 2 || srcBits != bBits || srcLanes != bLanes || srcLanes * srcBits != 128)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	if (dstLanes != (upper ? srcLanes * 2 : srcLanes))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* srcTy = irb.getIntNTy(srcBits);
+	auto splat = [&](uint64_t v) {
+		return llvm::ConstantVector::getSplat(
+			llvm::ElementCount::getFixed(srcLanes), llvm::ConstantInt::get(srcTy, v));
+	};
+
+	llvm::Value* a = loadNeonVector(ai->operands[1].reg, srcBits, srcLanes, irb);
+	llvm::Value* b = loadNeonVector(ai->operands[2].reg, bBits, bLanes, irb);
+	llvm::Value* sum = irb.CreateAdd(a, b);
+	if (round)
+	{
+		sum = irb.CreateAdd(sum, splat(1ull << (dstBits - 1)));
+	}
+	llvm::Value* high = irb.CreateLShr(sum, splat(dstBits));
+	llvm::Value* narrow = irb.CreateTrunc(high, llvm::FixedVectorType::get(irb.getIntNTy(dstBits), srcLanes));
+	llvm::Value* half = irb.CreateBitCast(narrow, irb.getInt64Ty());
+
+	if (upper)
+	{
+		auto* i128 = irb.getIntNTy(128);
+		llvm::Value* dst = irb.CreateZExtOrTrunc(loadRegister(ai->operands[0].reg, irb), i128);
+		dst = irb.CreateAnd(dst, llvm::ConstantInt::get(i128, 0xffffffffffffffffULL));
+		llvm::Value* top = irb.CreateShl(irb.CreateZExt(half, i128), llvm::ConstantInt::get(i128, 64));
+		storeRegister(ai->operands[0].reg, irb.CreateOr(dst, top), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	}
+	else
+	{
+		storeRegister(ai->operands[0].reg, half, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	}
+}
+
+/**
  * ARM64_INS_UADDL, ARM64_INS_SADDL, ARM64_INS_USUBL, ARM64_INS_SSUBL,
- * ARM64_INS_UADDW, ARM64_INS_SADDW, ARM64_INS_USUBW, ARM64_INS_SSUBW
+ * ARM64_INS_UADDW, ARM64_INS_SADDW, ARM64_INS_USUBW, ARM64_INS_SSUBW,
+ * ARM64_INS_SABDL, ARM64_INS_UABDL
  *
  * The widening adds and subtracts: the result lanes are twice the width of the
  * narrow source's, so the sum of two full-range lanes cannot overflow. That is
@@ -2112,7 +2734,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonNarrow(cs_insn* i, cs_arm
  *
  * The L forms take two narrow sources; the W forms take one already-wide
  * source and one narrow one. The signedness is the extension of the narrow
- * operands, and it is the letter the two mnemonics differ in.
+ * operands, and it is the letter the two mnemonics differ in. SABDL/UABDL
+ * are the widening abs-diff (ARM32 VABDL): extend, subtract, take abs.
  */
 void Capstone2LlvmIrTranslatorArm64_impl::translateNeonWiden(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {
@@ -2120,8 +2743,9 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonWiden(cs_insn* i, cs_arm6
 		i->id == ARM64_INS_UADDW || i->id == ARM64_INS_SADDW || i->id == ARM64_INS_USUBW || i->id == ARM64_INS_SSUBW;
 	bool isSub =
 		i->id == ARM64_INS_USUBL || i->id == ARM64_INS_SSUBL || i->id == ARM64_INS_USUBW || i->id == ARM64_INS_SSUBW;
-	bool isSigned =
-		i->id == ARM64_INS_SADDL || i->id == ARM64_INS_SSUBL || i->id == ARM64_INS_SADDW || i->id == ARM64_INS_SSUBW;
+	bool isSigned = i->id == ARM64_INS_SADDL || i->id == ARM64_INS_SSUBL || i->id == ARM64_INS_SADDW
+		|| i->id == ARM64_INS_SSUBW || i->id == ARM64_INS_SABDL;
+	bool isAbd = i->id == ARM64_INS_SABDL || i->id == ARM64_INS_UABDL;
 
 	unsigned dstBits = 0, dstLanes = 0;
 	unsigned aBits = 0, aLanes = 0, bBits = 0, bLanes = 0;
@@ -2145,7 +2769,18 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonWiden(cs_insn* i, cs_arm6
 	}
 	b = extend(b);
 
-	llvm::Value* res = isSub ? irb.CreateSub(a, b) : irb.CreateAdd(a, b);
+	llvm::Value* res = nullptr;
+	if (isAbd)
+	{
+		llvm::Value* d = irb.CreateSub(a, b);
+		auto* zero = llvm::ConstantVector::getSplat(
+			llvm::ElementCount::getFixed(dstLanes), llvm::ConstantInt::get(irb.getIntNTy(dstBits), 0));
+		res = irb.CreateSelect(irb.CreateICmpSLT(d, zero), irb.CreateNeg(d), d);
+	}
+	else
+	{
+		res = isSub ? irb.CreateSub(a, b) : irb.CreateAdd(a, b);
+	}
 
 	storeRegister(
 		ai->operands[0].reg,
@@ -2155,23 +2790,55 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonWiden(cs_insn* i, cs_arm6
 }
 
 /**
- * ARM64_INS_LD1, ARM64_INS_ST1
+ * ARM64_INS_SADDLP, ARM64_INS_UADDLP
  *
- * The straight-copy form of the NEON list load and store, and the last thing
- * COV-01 found untranslated on ARM64 in the parity corpus. `ld1 {v0.16b},
- * [x0]` is a plain 128-bit load; `ld1 {v0.8b}, [x1]` a 64-bit one that zeroes
- * the top half of the register, which is what every D-form write does. A list
- * moves consecutive registers to or from consecutive addresses.
+ * Pairwise widen-add: adjacent source lanes are sign- or zero-extended to
+ * double width and added, the NEON counterpart of a PHADD that widens.
+ * `saddlp v0.4s, v1.8h` writes four words, each the sum of a neighbouring
+ * pair of halfwords.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateNeonAddlp(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	unsigned dstBits = 0, dstLanes = 0, srcBits = 0, srcLanes = 0;
+	if (ai->op_count != 2 || !neonArrangement(ai->operands[0], dstBits, dstLanes)
+		|| !neonArrangement(ai->operands[1], srcBits, srcLanes) || dstBits != srcBits * 2
+		|| dstLanes * 2 != srcLanes || dstLanes == 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	bool isSigned = i->id == ARM64_INS_SADDLP;
+	auto* wideVec = llvm::FixedVectorType::get(irb.getIntNTy(dstBits), dstLanes);
+	llvm::Value* src = loadNeonVector(ai->operands[1].reg, srcBits, srcLanes, irb);
+
+	llvm::SmallVector<int, 16> evens;
+	llvm::SmallVector<int, 16> odds;
+	for (unsigned k = 0; k < dstLanes; ++k)
+	{
+		evens.push_back(static_cast<int>(2 * k));
+		odds.push_back(static_cast<int>(2 * k + 1));
+	}
+	llvm::Value* a = irb.CreateShuffleVector(src, src, evens);
+	llvm::Value* b = irb.CreateShuffleVector(src, src, odds);
+	a = isSigned ? irb.CreateSExt(a, wideVec) : irb.CreateZExt(a, wideVec);
+	b = isSigned ? irb.CreateSExt(b, wideVec) : irb.CreateZExt(b, wideVec);
+
+	storeRegister(
+		ai->operands[0].reg,
+		irb.CreateBitCast(irb.CreateAdd(a, b), irb.getIntNTy(dstBits * dstLanes)),
+		irb,
+		eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * ARM64_INS_LD1, ST1, LD2, ST2, LD3, ST3, LD4, ST4
  *
- * None of that needs a lane model, which is why these two can be translated
- * while the rest of NEON stays on the pseudo-asm path: V registers are i128
- * globals here and the only thing the arrangement decides is the total width.
- * `ld1 {v0.4s}, [x0]` and `ld1 {v0.16b}, [x0]` move the same 128 bits.
- *
- * What is deliberately left: writeback forms (`[x0], #16` has to update the
- * base register), lane forms (`ld1 {v0.s}[2], [x0]`, which vasByteWidth
- * rejects), and LD2/LD3/LD4 and their stores, which de-interleave rather than
- * copy.
+ * LD1/ST1 copy consecutive register-width blocks. LD2–LD4 and their stores
+ * de-interleave N-element structures: memory element k*N+j goes to register
+ * j, lane k. Capstone 6 lists the N vector registers then the mem operand,
+ * the same layout as a multi-register LD1 list, so all four widths are
+ * modelled. Writeback and lane-indexed forms still go to pseudo.
  */
 void Capstone2LlvmIrTranslatorArm64_impl::translateNeonLoadStore(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {
@@ -2180,6 +2847,28 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonLoadStore(cs_insn* i, cs_
 	auto& memOp = ai->operands[ai->op_count - 1];
 	unsigned regs = ai->op_count - 1;
 	if (memOp.type != ARM64_OP_MEM || (i->detail && i->detail->writeback))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	unsigned expectRegs = 0;
+	bool structured = false;
+	bool load = false;
+	switch (i->id)
+	{
+	case ARM64_INS_LD1: load = true; break;
+	case ARM64_INS_ST1: break;
+	case ARM64_INS_LD2: load = true; structured = true; expectRegs = 2; break;
+	case ARM64_INS_ST2: structured = true; expectRegs = 2; break;
+	case ARM64_INS_LD3: load = true; structured = true; expectRegs = 3; break;
+	case ARM64_INS_ST3: structured = true; expectRegs = 3; break;
+	case ARM64_INS_LD4: load = true; structured = true; expectRegs = 4; break;
+	case ARM64_INS_ST4: structured = true; expectRegs = 4; break;
+	default: translatePseudoAsmGeneric(i, ai, irb); return;
+	}
+
+	if (structured && regs != expectRegs)
 	{
 		translatePseudoAsmGeneric(i, ai, irb);
 		return;
@@ -2198,29 +2887,167 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonLoadStore(cs_insn* i, cs_
 		bytes = b;
 	}
 
-	bool load = i->id == ARM64_INS_LD1;
-	auto* accessTy = irb.getIntNTy(bytes * 8);
 	auto* base = generateGetOperandMemAddr(memOp, irb);
 
-	for (unsigned j = 0; j < regs; ++j)
+	if (!structured)
+	{
+		auto* accessTy = irb.getIntNTy(bytes * 8);
+		for (unsigned j = 0; j < regs; ++j)
+		{
+			llvm::Value* at = base;
+			if (j)
+			{
+				at = irb.CreateAdd(base, llvm::ConstantInt::get(base->getType(), bytes * j));
+			}
+
+			if (load)
+			{
+				storeRegister(ai->operands[j].reg, loadIntPtr(irb, at, accessTy), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+			}
+			else
+			{
+				auto* val = loadRegister(getParentRegister(ai->operands[j].reg), irb);
+				storeIntPtr(irb, irb.CreateZExtOrTrunc(val, accessTy), at, accessTy);
+			}
+		}
+		return;
+	}
+
+	auto [laneBits, lanes] = vasLanes(ai->operands[0].vas);
+	unsigned totalBytes = bytes * regs;
+	if (laneBits == 0 || lanes == 0 || (laneBits % 8) != 0 || totalBytes == 0 || (totalBytes % 8) != 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* i8 = irb.getInt8Ty();
+	auto* i64 = irb.getInt64Ty();
+	auto* byteVecTy = llvm::FixedVectorType::get(i8, totalBytes);
+	auto* packedTy = llvm::FixedVectorType::get(irb.getIntNTy(laneBits), lanes * regs);
+	auto* qVecTy = llvm::FixedVectorType::get(i8, 8);
+	auto* w = irb.getIntNTy(bytes * 8);
+	auto* destTy = llvm::FixedVectorType::get(irb.getIntNTy(laneBits), lanes);
+	unsigned nQwords = totalBytes / 8;
+
+	if (load)
+	{
+		llvm::Value* concat = llvm::PoisonValue::get(byteVecTy);
+		unsigned pos = 0;
+		for (unsigned t = 0; t < nQwords; ++t)
+		{
+			llvm::Value* at = base;
+			if (t)
+			{
+				at = irb.CreateAdd(base, llvm::ConstantInt::get(base->getType(), 8ull * t));
+			}
+			llvm::Value* q = irb.CreateBitCast(loadIntPtr(irb, at, i64), qVecTy);
+			for (unsigned b = 0; b < 8; ++b)
+			{
+				concat = irb.CreateInsertElement(concat, irb.CreateExtractElement(q, b), pos++);
+			}
+		}
+
+		llvm::Value* packed = irb.CreateBitCast(concat, packedTy);
+		for (unsigned j = 0; j < regs; ++j)
+		{
+			llvm::Value* vec = llvm::PoisonValue::get(destTy);
+			for (unsigned k = 0; k < lanes; ++k)
+			{
+				vec = irb.CreateInsertElement(vec, irb.CreateExtractElement(packed, k * regs + j), k);
+			}
+			storeRegister(ai->operands[j].reg, irb.CreateBitCast(vec, w), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		}
+	}
+	else
+	{
+		llvm::Value* packed = llvm::PoisonValue::get(packedTy);
+		for (unsigned j = 0; j < regs; ++j)
+		{
+			llvm::Value* vec = loadNeonVector(getParentRegister(ai->operands[j].reg), laneBits, lanes, irb);
+			for (unsigned k = 0; k < lanes; ++k)
+			{
+				packed = irb.CreateInsertElement(packed, irb.CreateExtractElement(vec, k), k * regs + j);
+			}
+		}
+
+		llvm::Value* concat = irb.CreateBitCast(packed, byteVecTy);
+		for (unsigned t = 0; t < nQwords; ++t)
+		{
+			llvm::Value* q = llvm::PoisonValue::get(qVecTy);
+			for (unsigned b = 0; b < 8; ++b)
+			{
+				q = irb.CreateInsertElement(q, irb.CreateExtractElement(concat, t * 8 + b), b);
+			}
+			llvm::Value* at = base;
+			if (t)
+			{
+				at = irb.CreateAdd(base, llvm::ConstantInt::get(base->getType(), 8ull * t));
+			}
+			storeIntPtr(irb, irb.CreateBitCast(q, i64), at, i64);
+		}
+	}
+}
+
+/**
+ * ARM64_INS_LD1R, LD2R, LD3R, LD4R
+ *
+ * Load one element per register and replicate it across every lane -- x86
+ * MOVDDUP / VBROADCAST. Whole-register D/Q only; writeback and any operand
+ * that names a lane stay pseudo, matching LD1.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateNeonLdR(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_EXPR(i, ai, irb, (ai->op_count >= 2));
+
+	unsigned nRegs = 0;
+	switch (i->id)
+	{
+	case ARM64_INS_LD1R: nRegs = 1; break;
+	case ARM64_INS_LD2R: nRegs = 2; break;
+	case ARM64_INS_LD3R: nRegs = 3; break;
+	case ARM64_INS_LD4R: nRegs = 4; break;
+	default: translatePseudoAsmGeneric(i, ai, irb); return;
+	}
+
+	auto& memOp = ai->operands[ai->op_count - 1];
+	if (ai->op_count != nRegs + 1 || memOp.type != ARM64_OP_MEM || (i->detail && i->detail->writeback))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	unsigned laneBits = 0, lanes = 0;
+	for (unsigned j = 0; j < nRegs; ++j)
+	{
+		unsigned b = 0, n = 0;
+		if (!neonArrangement(ai->operands[j], b, n) || (laneBits != 0 && (b != laneBits || n != lanes)))
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		laneBits = b;
+		lanes = n;
+	}
+
+	auto* laneTy = irb.getIntNTy(laneBits);
+	auto* vecTy = llvm::FixedVectorType::get(laneTy, lanes);
+	auto* w = irb.getIntNTy(laneBits * lanes);
+	auto* base = generateGetOperandMemAddr(memOp, irb);
+	unsigned elemBytes = laneBits / 8;
+
+	for (unsigned j = 0; j < nRegs; ++j)
 	{
 		llvm::Value* at = base;
 		if (j)
 		{
-			at = irb.CreateAdd(base, llvm::ConstantInt::get(base->getType(), bytes * j));
+			at = irb.CreateAdd(base, llvm::ConstantInt::get(base->getType(), elemBytes * j));
 		}
-
-		if (load)
-		{
-			// ZEXT into the i128 register is the upper-half zeroing that a
-			// 64-bit arrangement does.
-			storeRegister(ai->operands[j].reg, loadIntPtr(irb, at, accessTy), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
-		}
-		else
-		{
-			auto* val = loadRegister(ai->operands[j].reg, irb);
-			storeIntPtr(irb, irb.CreateZExtOrTrunc(val, accessTy), at, accessTy);
-		}
+		llvm::Value* elem = loadIntPtr(irb, at, laneTy);
+		llvm::Value* v = irb.CreateInsertElement(
+			llvm::Constant::getNullValue(vecTy), elem, llvm::ConstantInt::get(irb.getInt32Ty(), 0));
+		v = irb.CreateShuffleVector(v, llvm::Constant::getNullValue(vecTy), llvm::SmallVector<int, 16>(lanes, 0));
+		storeRegister(ai->operands[j].reg, irb.CreateBitCast(v, w), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 	}
 }
 
@@ -4192,27 +5019,75 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateMulh(cs_insn* i, cs_arm64* ai
 }
 
 /**
- * ARM64_INS_UMULL, ARM64_INS_SMULL
+ * ARM64_INS_UMULL, ARM64_INS_SMULL, ARM64_INS_UMULL2, ARM64_INS_SMULL2,
+ * ARM64_INS_SMLAL, ARM64_INS_UMLAL, ARM64_INS_SMLSL, ARM64_INS_UMLSL,
+ * ARM64_INS_SMLAL2, ARM64_INS_UMLAL2, ARM64_INS_SMLSL2, ARM64_INS_UMLSL2
+ *
+ * Scalar SMULL/UMULL is 32×32 → 64. The vector form widens: each pair of
+ * narrow lanes is extended and multiplied into a double-width result. The
+ * MLA/MLS variants add or subtract that product into the already-wide
+ * destination (PMADDWD-class accumulate). The `2` forms read the UPPER half
+ * of their 128-bit sources, the same difference SADDL2 has from SADDL.
  */
 void Capstone2LlvmIrTranslatorArm64_impl::translateMull(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_TERNARY(i, ai, irb);
+
+	bool upper = i->id == ARM64_INS_SMULL2 || i->id == ARM64_INS_UMULL2 || i->id == ARM64_INS_SMLAL2
+		|| i->id == ARM64_INS_UMLAL2 || i->id == ARM64_INS_SMLSL2 || i->id == ARM64_INS_UMLSL2;
+	bool sext = i->id == ARM64_INS_SMULL || i->id == ARM64_INS_SMULL2 || i->id == ARM64_INS_SMLAL
+		|| i->id == ARM64_INS_SMLAL2 || i->id == ARM64_INS_SMLSL || i->id == ARM64_INS_SMLSL2;
+	bool accAdd = i->id == ARM64_INS_SMLAL || i->id == ARM64_INS_SMLAL2 || i->id == ARM64_INS_UMLAL
+		|| i->id == ARM64_INS_UMLAL2;
+	bool accSub = i->id == ARM64_INS_SMLSL || i->id == ARM64_INS_SMLSL2 || i->id == ARM64_INS_UMLSL
+		|| i->id == ARM64_INS_UMLSL2;
+
+	unsigned dstBits = 0, dstLanes = 0, aBits = 0, aLanes = 0, bBits = 0, bLanes = 0;
+	if (neonArrangement(ai->operands[0], dstBits, dstLanes) && neonArrangement(ai->operands[1], aBits, aLanes)
+		&& neonArrangement(ai->operands[2], bBits, bLanes) && aBits == bBits && aLanes == bLanes
+		&& aBits * 2 == dstBits && aLanes == (upper ? dstLanes * 2 : dstLanes))
+	{
+		auto* wideTy = llvm::FixedVectorType::get(irb.getIntNTy(dstBits), dstLanes);
+		llvm::Value* a = loadNeonVector(ai->operands[1].reg, aBits, aLanes, irb);
+		llvm::Value* b = loadNeonVector(ai->operands[2].reg, bBits, bLanes, irb);
+		if (upper)
+		{
+			llvm::SmallVector<int, 8> hi;
+			for (unsigned k = 0; k < dstLanes; ++k)
+			{
+				hi.push_back(static_cast<int>(dstLanes + k));
+			}
+			a = irb.CreateShuffleVector(a, a, hi);
+			b = irb.CreateShuffleVector(b, b, hi);
+		}
+		a = sext ? irb.CreateSExt(a, wideTy) : irb.CreateZExt(a, wideTy);
+		b = sext ? irb.CreateSExt(b, wideTy) : irb.CreateZExt(b, wideTy);
+		llvm::Value* prod = irb.CreateMul(a, b);
+		if (accAdd || accSub)
+		{
+			llvm::Value* acc = loadNeonVector(ai->operands[0].reg, dstBits, dstLanes, irb);
+			prod = accSub ? irb.CreateSub(acc, prod) : irb.CreateAdd(acc, prod);
+		}
+		storeRegister(
+			ai->operands[0].reg,
+			irb.CreateBitCast(prod, irb.getIntNTy(dstBits * dstLanes)),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		return;
+	}
+
+	if (upper || accAdd || accSub)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
 
 	if (ifVectorGeneratePseudo(i, ai, irb))
 	{
 	    return;
 	}
 
-	bool sext = true;
-	if (i->id == ARM64_INS_UMULL)
-	{
-		sext = false;
-	}
-	else if (i->id == ARM64_INS_SMULL)
-	{
-		sext = true;
-	}
-	else
+	if (i->id != ARM64_INS_UMULL && i->id != ARM64_INS_SMULL)
 	{
 		throw GenericError("Mull: Unhandled instruction ID");
 	}
@@ -4750,6 +5625,85 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFMadd(cs_insn* i, cs_arm64* a
 }
 
 /**
+ * ARM64_INS_FMLA, ARM64_INS_FMLS
+ *
+ * Three-operand fused multiply-add/sub: dest = dest ± (src1 * src2).
+ * gcc -O1 emits scalar FMLA for `acc += a * b`. The four-operand FMADD
+ * family is translateFMadd(); this is the accumulating form.
+ *
+ * Scalar Sn/Dn uses llvm.fma, the same intrinsic ARM32 translateVfpMla()
+ * uses for VFMA/VMLA. FMLS negates the product. Vector .2s/.4s/.2d is the
+ * same intrinsic on a packed type, matching NEON FADD/FMUL coverage.
+ * Half-precision arrangements and the by-element `vm.s[n]` form stay
+ * pseudo. FMLAL/FMLSL (widening half→single) are not mapped: they are
+ * not a same-width FMA.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateFMla(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, ai, irb);
+
+	const bool negProduct = (i->id == ARM64_INS_FMLS);
+
+	if (hasVectorOperand(ai))
+	{
+		unsigned bytes = 0;
+		if (!neonSameWidthRegs(ai, 3, bytes))
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+
+		auto [laneBits, lanes] = vasLanes(ai->operands[0].vas);
+		if (laneBits != 32 && laneBits != 64)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+
+		auto* w = irb.getIntNTy(bytes * 8);
+		llvm::Type* elemTy = laneBits == 32
+							 ? static_cast<llvm::Type*>(irb.getFloatTy())
+							 : static_cast<llvm::Type*>(irb.getDoubleTy());
+		auto* vecTy = llvm::FixedVectorType::get(elemTy, lanes);
+
+		llvm::Value* acc = irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(ai->operands[0].reg, irb), w), vecTy);
+		llvm::Value* a = irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(ai->operands[1].reg, irb), w), vecTy);
+		llvm::Value* b = irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(ai->operands[2].reg, irb), w), vecTy);
+		if (negProduct)
+		{
+			a = irb.CreateFNeg(a);
+		}
+
+		auto* fma = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::fma, vecTy);
+		llvm::Value* val = irb.CreateCall(fma, {a, b, acc});
+		storeRegister(ai->operands[0].reg, irb.CreateBitCast(val, w), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		return;
+	}
+
+	// Same fmul+fadd as translateFMadd: llvmir-emul does not honour the
+	// addend of scalar llvm.fma on an ARM64 Sn/Dn view of Qn (product-only
+	// result). Vector llvm.fma above is fine.
+	llvm::Value* acc = loadOp(ai->operands[0], irb);
+	op1 = loadOp(ai->operands[1], irb);
+	op2 = loadOp(ai->operands[2], irb);
+	if (op1->getType() != acc->getType() && acc->getType()->isFloatingPointTy())
+	{
+		op1 = irb.CreateFPCast(op1, acc->getType());
+	}
+	if (op2->getType() != acc->getType() && acc->getType()->isFloatingPointTy())
+	{
+		op2 = irb.CreateFPCast(op2, acc->getType());
+	}
+
+	llvm::Value* prod = irb.CreateFMul(op1, op2);
+	if (negProduct)
+	{
+		prod = irb.CreateFNeg(prod);
+	}
+	storeOp(ai->operands[0], irb.CreateFAdd(acc, prod), irb);
+}
+
+/**
  * ARM64_INS_FMAX, ARM64_INS_FMIN
  */
 void Capstone2LlvmIrTranslatorArm64_impl::translateFMinMax(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
@@ -5126,19 +6080,21 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFMovLane(cs_insn* i, cs_arm64
 }
 
 /**
- * The "2" widening instructions: SADDL2, UADDL2, SSUBL2, USUBL2, SABDL2,
- * SMLAL2, and the rest.
+ * The "2" widening instructions: SADDL2, UADDL2, SSUBL2, USUBL2,
+ * SADDW2, UADDW2, USUBW2, SSUBW2, SABDL2, UABDL2.
  *
  * They are the same operation as the form without the 2 except that they read
  * the UPPER half of their source registers. That is the whole difference, and
- * it is invisible unless the two halves differ.
+ * it is invisible unless the two halves differ. The L2 forms take two narrow
+ * sources; the W2 forms take one already-wide source and the upper half of a
+ * narrow one. SABDL2/UABDL2 are the upper-half abs-diff longs.
  */
 void Capstone2LlvmIrTranslatorArm64_impl::translateNeonWidenUpper(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {
-	unsigned dstBits = 0, dstLanes = 0, srcBits = 0, srcLanes = 0;
+	unsigned dstBits = 0, dstLanes = 0;
+	unsigned aBits = 0, aLanes = 0, bBits = 0, bLanes = 0;
 	if (ai->op_count != 3 || !neonArrangement(ai->operands[0], dstBits, dstLanes)
-		|| !neonArrangement(ai->operands[1], srcBits, srcLanes) || !neonArrangement(ai->operands[2], srcBits, srcLanes)
-		|| srcBits * 2 != dstBits || srcLanes != dstLanes * 2)
+		|| !neonArrangement(ai->operands[1], aBits, aLanes) || !neonArrangement(ai->operands[2], bBits, bLanes))
 	{
 		translatePseudoAsmGeneric(i, ai, irb);
 		return;
@@ -5146,6 +6102,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonWidenUpper(cs_insn* i, cs
 
 	bool isSigned = false;
 	bool subtract = false;
+	bool wideFirst = false;
+	bool isAbd = false;
 	switch (i->id)
 	{
 	case ARM64_INS_SADDL2: isSigned = true; break;
@@ -5155,27 +6113,65 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonWidenUpper(cs_insn* i, cs
 		subtract = true;
 		break;
 	case ARM64_INS_USUBL2: subtract = true; break;
+	case ARM64_INS_SADDW2:
+		isSigned = true;
+		wideFirst = true;
+		break;
+	case ARM64_INS_UADDW2: wideFirst = true; break;
+	case ARM64_INS_USUBW2:
+		subtract = true;
+		wideFirst = true;
+		break;
+	case ARM64_INS_SSUBW2:
+		isSigned = true;
+		subtract = true;
+		wideFirst = true;
+		break;
+	case ARM64_INS_SABDL2:
+		isSigned = true;
+		isAbd = true;
+		break;
+	case ARM64_INS_UABDL2: isAbd = true; break;
 	default: translatePseudoAsmGeneric(i, ai, irb); return;
+	}
+
+	if (bBits * 2 != dstBits || bLanes != dstLanes * 2 || aLanes != (wideFirst ? dstLanes : dstLanes * 2)
+		|| aBits != (wideFirst ? dstBits : bBits))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
 	}
 
 	auto* wideTy = llvm::FixedVectorType::get(irb.getIntNTy(dstBits), dstLanes);
 
-	// The upper half: lanes dstLanes .. srcLanes-1 of each source.
+	// The upper half: lanes dstLanes .. srcLanes-1 of each narrow source.
 	llvm::SmallVector<int, 8> upper;
 	for (unsigned k = 0; k < dstLanes; ++k)
 	{
 		upper.push_back(static_cast<int>(dstLanes + k));
 	}
 
-	auto half = [&](cs_arm64_op& op) {
-		llvm::Value* v = loadNeonVector(op.reg, srcBits, srcLanes, irb);
+	auto half = [&](cs_arm64_op& op, unsigned bits, unsigned lanes) {
+		llvm::Value* v = loadNeonVector(op.reg, bits, lanes, irb);
 		llvm::Value* h = irb.CreateShuffleVector(v, v, upper);
 		return isSigned ? irb.CreateSExt(h, wideTy) : irb.CreateZExt(h, wideTy);
 	};
 
-	llvm::Value* a = half(ai->operands[1]);
-	llvm::Value* b = half(ai->operands[2]);
-	llvm::Value* res = subtract ? irb.CreateSub(a, b) : irb.CreateAdd(a, b);
+	llvm::Value* a = wideFirst ? loadNeonVector(ai->operands[1].reg, aBits, aLanes, irb)
+							   : half(ai->operands[1], aBits, aLanes);
+	llvm::Value* b = half(ai->operands[2], bBits, bLanes);
+	llvm::Value* res = nullptr;
+	if (isAbd)
+	{
+		llvm::Value* d = irb.CreateSub(a, b);
+		auto* zero = llvm::ConstantVector::getSplat(
+			llvm::ElementCount::getFixed(dstLanes), llvm::ConstantInt::get(irb.getIntNTy(dstBits), 0));
+		res = irb.CreateSelect(irb.CreateICmpSLT(d, zero), irb.CreateNeg(d), d);
+	}
+	else
+	{
+		res = subtract ? irb.CreateSub(a, b) : irb.CreateAdd(a, b);
+	}
 
 	storeRegister(
 		ai->operands[0].reg,
@@ -5185,10 +6181,15 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonWidenUpper(cs_insn* i, cs
 }
 
 /**
- * The across-lane reductions: ADDV, SMAXV, SMINV, UMAXV, UMINV.
+ * The across-lane reductions: ADDV, SMAXV, SMINV, UMAXV, UMINV,
+ * FMAXV, FMINV, SADDLV, UADDLV.
  *
  * The destination is a SCALAR of the lane width, not a vector, so the usual
- * arrangement check has to be applied to the source only.
+ * arrangement check has to be applied to the source only. FMAXV/FMINV are
+ * the FP form into Sn/Dn; half-precision arrangements stay pseudo.
+ * SADDLV/UADDLV widen into a scalar of twice the lane width, which is the
+ * whole reason they exist: eight 0xff bytes sum to 0x07f8 unsigned and to
+ * -8 signed, and ADDV of the same lanes wraps to 0xf8 / 0xf8.
  */
 void Capstone2LlvmIrTranslatorArm64_impl::translateNeonAcross(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {
@@ -5200,6 +6201,35 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonAcross(cs_insn* i, cs_arm
 	}
 
 	llvm::Value* v = loadNeonVector(ai->operands[1].reg, laneBits, lanes, irb);
+	if (i->id == ARM64_INS_SADDLV || i->id == ARM64_INS_UADDLV)
+	{
+		unsigned accBits = laneBits * 2;
+		auto* accTy = irb.getIntNTy(accBits);
+		bool isSigned = i->id == ARM64_INS_SADDLV;
+		llvm::Value* acc = llvm::ConstantInt::get(accTy, 0);
+		for (unsigned k = 0; k < lanes; ++k)
+		{
+			llvm::Value* e = irb.CreateExtractElement(v, irb.getInt32(k));
+			e = isSigned ? irb.CreateSExt(e, accTy) : irb.CreateZExt(e, accTy);
+			acc = irb.CreateAdd(acc, e);
+		}
+		storeRegister(ai->operands[0].reg, acc, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		return;
+	}
+
+	if (i->id == ARM64_INS_FMAXV || i->id == ARM64_INS_FMINV)
+	{
+		if (laneBits != 32 && laneBits != 64)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		llvm::Type* elemTy = laneBits == 32
+							 ? static_cast<llvm::Type*>(irb.getFloatTy())
+							 : static_cast<llvm::Type*>(irb.getDoubleTy());
+		v = irb.CreateBitCast(v, llvm::FixedVectorType::get(elemTy, lanes));
+	}
+
 	llvm::Value* acc = irb.CreateExtractElement(v, irb.getInt32(0));
 	for (unsigned k = 1; k < lanes; ++k)
 	{
@@ -5211,6 +6241,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonAcross(cs_insn* i, cs_arm
 		case ARM64_INS_SMINV: acc = irb.CreateSelect(irb.CreateICmpSLT(acc, e), acc, e); break;
 		case ARM64_INS_UMAXV: acc = irb.CreateSelect(irb.CreateICmpUGT(acc, e), acc, e); break;
 		case ARM64_INS_UMINV: acc = irb.CreateSelect(irb.CreateICmpULT(acc, e), acc, e); break;
+		case ARM64_INS_FMAXV: acc = irb.CreateSelect(irb.CreateFCmpUGE(acc, e), acc, e); break;
+		case ARM64_INS_FMINV: acc = irb.CreateSelect(irb.CreateFCmpULE(acc, e), acc, e); break;
 		default: translatePseudoAsmGeneric(i, ai, irb); return;
 		}
 	}

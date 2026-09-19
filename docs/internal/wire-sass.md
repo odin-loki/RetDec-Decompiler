@@ -23,6 +23,8 @@ Already lifted: EXIT, NOP, BRA, IMAD, MOV, LDG, STG, IADD3, FADD, S2R, LDC.
 **Still missing** for nvcc `-O1` kernels (ISA-table mnemonics, **no** printed
 encoding word — not invented): **FMUL, FFMA, ISETP, SHL, SHR, LOP3**, plus
 FSETP, MUFU, LEA, BRA displacement, S2R/S2UR SR selector. **Not Production.**
+A 2026-09-19 re-search of CUDA Binary Utilities 8.0–13.3 found **no** new
+16-byte words for those mnemonics (see § Citations / encoding search).
 
 32 vs 64 is **GPU pointer width** (`SassConfig::pointerBits` / ELF class),
 not a CPU `-a` token. Do **not** add `-a sass` / `-a sass32` unless a later
@@ -44,9 +46,56 @@ Capstone.
   PDF and 13.3 HTML (EXIT `…794d`, NOP `…7918`, IADD3 `…7210`, IMAD `…7624` /
   `…7c24`, IMAD.WIDE `…7825`, MOV `…7a02`, LDG `…7381`/`…7981`, STG `…7386`/
   `…7986`, FADD `…7221`, S2R `…7919`, LDC `…7b82`, SHFL `…f389`, S2UR `…79c3`,
-  LDCU `…77ac`, BRA `…7947`). FMUL/FFMA/ISETP/SHL/SHR/LOP3 have **no** printed
-  word in those listings.
+  LDCU `…77ac`, BRA `…7947`). FMUL/FFMA/ISETP/SHL/SHR/LOP3/FSETP/MUFU/LEA
+  have **no** printed word in those listings (reconfirmed 2026-09-19).
 - Pre-Volta 8-byte EXIT — CUDA Binary Utilities 9.1 (`0x8000000000001de7`).
+  The same Fermi `-hex` sample also prints MOV (`…5de4` / `…9de4` / …),
+  LDU.E (`…1c85` with high `0x8c…`), IADD (`…1c03`), ST.E (`…1c85` with
+  high `0x94…`). Those are **8-byte Fermi** encodings, not Volta+ 16-byte
+  words; LDU and ST share the low 16 bits, so they are **not** claimed on
+  the SM_70 decoder. Not FMUL/FFMA/ISETP/SHL/SHR/LOP3/FSETP/MUFU/LEA.
+
+### Encoding search (2026-09-19) — no new 16-byte words
+
+Consulted NVIDIA CUDA Binary Utilities (HTML and, where fetched, PDF).
+`nvdisasm` was **not** run. Third-party assemblers were **not** used.
+
+| Document | URL | Printed `/* 0x… */` next to a mnemonic? | FMUL/FFMA/ISETP/SHL/SHR/LOP3/FSETP/MUFU/LEA encoding word? |
+|----------|-----|------------------------------------------|-----------------------------------------------------------|
+| 13.3 current | https://docs.nvidia.com/cuda/cuda-binary-utilities/index.html | Yes — LDC/S2R/S2UR/LDCU/IMAD/IMAD.WIDE/LDG/FADD/STG/EXIT/BRA/NOP | **No.** ISA tables name them. A second sample lists FMUL.FTZ / FFMA.FTZ / FSETP / MUFU.SQRT / ISETP **without** hex words (not `-hex`). |
+| 13.1.2 | https://docs.nvidia.com/cuda/archive/13.1.2/cuda-binary-utilities/index.html | Same 13.x `-hex` kernel as 13.3 | **No** |
+| 13.0.0 | https://docs.nvidia.com/cuda/archive/13.0.0/cuda-binary-utilities/index.html | Same 13.x `-hex` kernel | **No** |
+| 12.8.0 HTML | https://docs.nvidia.com/cuda/archive/12.8.0/cuda-binary-utilities/index.html | Yes — IMAD.MOV / SHFL / MOV / LDG / IADD3 / STG / EXIT / BRA / NOP | **No.** Same non-hex FMUL/FFMA/FSETP/MUFU/ISETP control-flow sample. |
+| 12.8.2 PDF | https://docs.nvidia.com/cuda/archive/12.8.2/pdf/CUDA_Binary_Utilities.pdf | Same 12.8 `-hex` kernel | **No** |
+| 12.6.0 | https://docs.nvidia.com/cuda/archive/12.6.0/cuda-binary-utilities/index.html | Same 12.x `-hex` kernel | **No** |
+| 12.4.0 / 12.4.1 PDF | https://docs.nvidia.com/cuda/archive/12.4.0/cuda-binary-utilities/index.html , https://docs.nvidia.com/cuda/archive/12.4.1/pdf/CUDA_Binary_Utilities.pdf | Same 12.x `-hex` kernel | **No.** FMUL/FFMA appear as mnemonics only. |
+| 12.1.0 | https://docs.nvidia.com/cuda/archive/12.1.0/cuda-binary-utilities/index.html | Same 12.x `-hex` kernel | **No** |
+| 10.2 | https://docs.nvidia.com/cuda/archive/10.2/cuda-binary-utilities/index.html | Fermi 8-byte MOV/LDU/IADD/ST/EXIT only | **No** 16-byte FMUL/… |
+| 9.1 | https://docs.nvidia.com/cuda/archive/9.1/cuda-binary-utilities/index.html | Same Fermi 8-byte sample (`EXIT` `0x8000000000001de7`) | **No** |
+| 8.0 | https://docs.nvidia.com/cuda/archive/8.0/cuda-binary-utilities/index.html | Same Fermi 8-byte sample | **No** |
+
+Volta+ 16-byte words NVIDIA **did** print (already decoded; low 8 bits):
+
+| Mnemonic | word0 (NVIDIA print) | op | Document |
+|----------|----------------------|----|----------|
+| EXIT | `0x000000000000794d` | `0x4d` | 12.8.2 / 13.3 |
+| NOP | `0x0000000000007918` | `0x18` | 12.8.2 / 13.3 |
+| BRA | `0xfffffff000007947` / `0xfffffffc00fc7947` | `0x47` | 12.8.2 / 13.3 |
+| IMAD / IMAD.MOV.U32 | `0x00000a00ff017624` / `0x0000000600097c24` | `0x24` | 12.8.2 / 13.3 |
+| IMAD.WIDE | `0x0000000409027825` | `0x25` | 13.3 |
+| MOV | `0x0000590000037a02` | `0x02` | 12.8.2 |
+| LDG | `0x0000000002027381` / `0x0000000402027981` | `0x81` | 12.8.2 / 13.3 |
+| STG | `0x0000000906007386` / `0x0000000906007986` | `0x86` | 12.8.2 / 13.3 |
+| IADD3 | `0x0000000502097210` | `0x10` | 12.8.2 |
+| FADD | `0x0000000502097221` | `0x21` | 13.3 |
+| S2R | `0x0000000000097919` | `0x19` | 13.3 |
+| LDC / LDC.64 | `0x0000df00ff017b82` / `0x0000e000ff027b82` | `0x82` | 13.3 |
+| SHFL.IDX | `0x000000fffffff389` | `0x89` | 12.8.2 |
+| S2UR | `0x00000000000679c3` | `0xc3` | 13.3 |
+| LDCU.64 | `0x00006b00ff0477ac` | `0xac` | 13.3 |
+
+**Missing (not invented):** FMUL, FFMA, ISETP, SHL, SHR, LOP3, FSETP, MUFU, LEA.
+Until NVIDIA prints a 16-byte example for those, SASS stays **not Production**.
 
 `fileinfo` already pretty-prints `EM_CUDA` in
 `src/fileinfo/file_detector/elf_detector.cpp`. `ElfFormat::getTargetArchitecture()`

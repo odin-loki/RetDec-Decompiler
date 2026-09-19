@@ -10,7 +10,7 @@ on:
       tag:
         description: Release tag whose artefacts should be signed
         required: false
-        default: v2.0.25
+        default: v2.0.26
   push:
     branches: [main]
     paths:
@@ -52,7 +52,7 @@ jobs:
               exit 0
             fi
           else
-            TAG="v2.0.25"
+            TAG="v2.0.26"
           fi
           mkdir -p /tmp/rel
           gh release download "${TAG}" --pattern 'retdec-*.cdx.json' --dir /tmp/rel
@@ -96,7 +96,7 @@ jobs:
               exit 0
             fi
           else
-            TAG="v2.0.25"
+            TAG="v2.0.26"
           fi
           mkdir -p /tmp/rel
           gh release download "${TAG}" --pattern 'retdec-*-linux-x64.tar.gz' --dir /tmp/rel
@@ -146,7 +146,7 @@ jobs:
               exit 0
             fi
           else
-            TAG="v2.0.25"
+            TAG="v2.0.26"
           fi
           mkdir -p /tmp/rel-macos
           # Not an error when there is none: releases before this one have no
@@ -196,7 +196,7 @@ jobs:
               exit 0
             fi
           else
-            TAG="v2.0.25"
+            TAG="v2.0.26"
           fi
           mkdir -p /tmp/rel
           signed=0

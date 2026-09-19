@@ -21,8 +21,14 @@ CMake already lists the translator, tests, and ABI sources.
 ## Production integer / control-flow map
 
 `_i2fm` lists every Capstone 6.0.0-Alpha10 `XCORE_INS_*` (from the installed
-`capstone/xcore.h`). Mapped IDs emit real LLVM IR. Hardware I/O stays
-`nullptr` → pseudo-asm.
+`capstone/xcore.h`). Mapped IDs emit real LLVM IR.
+
+Channel I/O is modeled like x86 `translateIns`/`translateOuts`: named module
+helpers created with `getPseudoAsmFunction`, returning SSA values that are
+stored to the dest register. Names are `xcore.chan.*` / `xcore.res.*` /
+`xcore.event.*` / `xcore.thread.*`, not opaque `__asm_in` barriers. The
+channel/resource operand is a register (Capstone `MEM` `res[rN]`, or parsed
+from `op_str` when the printer overwrites that MEM).
 
 ### Mapped (LLVM IR)
 
@@ -34,17 +40,18 @@ CMake already lists the translator, tests, and ABI sources.
 | Address / stack | `LDC`, `LDAW`, `LDA16`, `LDAP`, `LDW`, `LD16S`, `LD8U`, `STW`, `ST16`, `ST8`, `ENTSP`, `EXTSP`, `EXTDP`, `RETSP`, `KENTSP`, `KRESTSP`, `DENTSP`, `DRESTSP` |
 | Control flow | `BU`, `BAU`, `BRU`, `BF`, `BT`, `BL`, `BLA`, `BLAT`, `DCALL`, `DRET`, `KCALL`, `KRET`, `ECALLF`, `ECALLT` |
 | Thread status / GPRs | `GET` (reg←reg), `SET` (reg←reg), `GETSR`, `SETSR`, `CLRSR`, `SSYNC` (nop) |
+| Channel I/O | `IN`, `OUT`, `INPW`, `OUTPW`, `INSHR`, `OUTSHR`, `INCT`, `OUTCT`, `INT`, `OUTT`, `PEEK`, `ENDIN`, `TESTCT`, `TESTWCT` |
+| Resource | `SETD`, `SETC`, `SETCLK`, `SETPT`, `SETTW`, `SETV`, `SETEV`, `GETD`, `GETTS`, `GETR`, `GETN`, `FREER` |
+| Events | `EEU`, `EDU`, `EEF`, `EET`, `WAITEU`, `WAITEF`, `WAITET`, `CLRE` |
+| Threads / sync | `START`, `MSYNC`, `MJOIN`, `SYNCR` |
 
 ### Remaining gaps (`nullptr`)
 
-Channel, event, thread, and resource ops have no sequential integer model:
+True hardware-only ops with no sequential model (generic `__asm_*` pseudo):
 
-`CHKCT`, `CLRE`, `CLRPT`, `DGETREG`, `EDU`, `EEF`, `EET`, `EEU`, `ENDIN`,
-`FREER`, `FREET`, `GETD`, `GETN`, `GETR`, `GETST`, `GETTS`, `INCT`, `INIT`,
-`INPW`, `INSHR`, `INT`, `IN`, `MJOIN`, `MSYNC`, `OUTCT`, `OUTPW`, `OUTSHR`,
-`OUTT`, `OUT`, `PEEK`, `SETCLK`, `SETC`, `SETD`, `SETEV`, `SETN`, `SETPSC`,
-`SETPT`, `SETRDY`, `SETTW`, `SETV`, `SYNCR`, `TESTCT`, `TESTLCL`, `TESTWCT`,
-`TSETMR`, `START`, `WAITEF`, `WAITET`, `WAITEU`.
+`CHKCT` (control-token check that raises a hardware exception), `FREET`
+(kill current thread), `CLRPT`, `DGETREG`, `INIT`, `GETST`, `SETN`,
+`SETPSC`, `SETRDY`, `TESTLCL`, `TSETMR`.
 
 `GET`/`SET` of `ps[reg]` (processor state memory) also fall back to
 pseudo-asm; only register-to-register forms are lifted.

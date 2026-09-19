@@ -79,6 +79,38 @@ class Capstone2LlvmIrTranslatorMipsTests :
 												: v;
 		}
 
+		void setW(uint32_t reg, uint64_t hi, uint64_t lo)
+		{
+			auto* gv = getRegister(reg);
+			assert(gv);
+			llvm::GenericValue v = _emulator->getGlobalVariableValue(gv);
+			const uint64_t words[2] = {lo, hi};
+			v.IntVal = llvm::APInt(128, llvm::ArrayRef<uint64_t>(words, 2));
+			_emulator->setGlobalVariableValue(gv, v);
+		}
+
+		uint64_t wLow(uint32_t reg)
+		{
+			auto* gv = getRegister(reg);
+			assert(gv);
+			return _emulator->getGlobalVariableValue(gv).IntVal.trunc(64).getZExtValue();
+		}
+
+		uint64_t wHigh(uint32_t reg)
+		{
+			auto* gv = getRegister(reg);
+			assert(gv);
+			return _emulator->getGlobalVariableValue(gv).IntVal.lshr(64).trunc(64).getZExtValue();
+		}
+
+		void setMemoryValue128(uint64_t addr, uint64_t hi, uint64_t lo)
+		{
+			llvm::GenericValue v;
+			const uint64_t words[2] = {lo, hi};
+			v.IntVal = llvm::APInt(128, llvm::ArrayRef<uint64_t>(words, 2));
+			_emulator->setMemoryValue(addr, v);
+		}
+
 		// An integer result of trunc/round/ceil/floor lives in an FP
 		// register as a bit pattern, and comparing it as a float is useless:
 		// `bitcast i32 3 to float` is 4.2e-45, which EXPECT_NEAR(0.001) cannot
@@ -6583,19 +6615,15 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, issue_633)
 {
 	ONLY_MODE_32;
 
-	setRegisters({
-		{MIPS_REG_W31, 3.14_f64},
-	});
+	setW(MIPS_REG_W31, 0, 0x0000000000000008ULL);
 
 	emulate_bin("c0 ff b7 79"); // ori.b $w31, $w31, 0xb7
 
 	// Capstone 6 gives MSA its own ids: this is MIPS_INS_ORI_B, not scalar
-	// ORI. Byte-immediate MSA is not modelled, so the honest answer is the
-	// pseudo-assembly call every other unmodelled instruction gets.
-	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_W31});
-	EXPECT_NO_REGISTERS_STORED();
-	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_NE(nullptr, _module.getFunction("__asm_ori.b"));
+	// ORI. The immediate is splat across all 16 bytes, then ORed.
+	EXPECT_EQ(0xb7b7b7b7b7b7b7bfULL, wLow(MIPS_REG_W31));
+	EXPECT_EQ(0xb7b7b7b7b7b7b7b7ULL, wHigh(MIPS_REG_W31));
+	EXPECT_NO_VALUE_CALLED();
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MSA_registers_are_a_hundred_and_twenty_eight_bits)
@@ -6611,6 +6639,723 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MSA_registers_are_a_hundred_and_twent
 	EXPECT_EQ(128u, getRegister(MIPS_REG_W31)->getValueType()->getPrimitiveSizeInBits());
 	ASSERT_NE(nullptr, getRegister(MIPS_REG_DSPCARRY));
 	EXPECT_EQ(1u, getRegister(MIPS_REG_DSPCARRY)->getValueType()->getPrimitiveSizeInBits());
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ADDV_W_lane_wrap_not_i128_add)
+{
+	ONLY_MODE_32;
+
+	// 0xffffffff + 1 wraps in a 32-bit lane; a 128-bit add would carry into
+	// the next word. Encoding is Capstone MC `addv.w $w19, $w11, $w14`.
+	setW(MIPS_REG_W11, 0, 0x00000000ffffffffULL);
+	setW(MIPS_REG_W14, 0, 0x0000000000000001ULL);
+
+	emulate_bin("ce 5c 4e 78");
+
+	EXPECT_EQ(0x0000000000000000ULL, wLow(MIPS_REG_W19));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W19));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SUBV_W)
+{
+	ONLY_MODE_32;
+
+	setW(MIPS_REG_W27, 0, 0x0000000500000004ULL);
+	setW(MIPS_REG_W11, 0, 0x0000000100000001ULL);
+
+	emulate_bin("ce de cb 78"); // subv.w $w27, $w27, $w11
+
+	EXPECT_EQ(0x0000000400000003ULL, wLow(MIPS_REG_W27));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W27));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LD_B_whole_vector)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_2, 0x1000},
+	});
+	setMemoryValue128(0x1000, 0x1122334455667788ULL, 0x99aabbccddeeff00ULL);
+
+	emulate_bin("60 10 00 78"); // ld.b $w1, 0($v0)
+
+	EXPECT_EQ(0x99aabbccddeeff00ULL, wLow(MIPS_REG_W1));
+	EXPECT_EQ(0x1122334455667788ULL, wHigh(MIPS_REG_W1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ST_B_whole_vector)
+{
+	ONLY_MODE_32;
+
+	setW(MIPS_REG_W1, 0x1122334455667788ULL, 0x99aabbccddeeff00ULL);
+	setRegisters({
+		{MIPS_REG_2, 0x1000},
+	});
+
+	emulate_bin("64 10 00 78"); // st.b $w1, 0($v0)
+
+	llvm::APInt bits = _emulator->getMemoryValue(0x1000).IntVal;
+	if (bits.getBitWidth() < 128)
+	{
+		bits = bits.zext(128);
+	}
+	EXPECT_EQ(0x99aabbccddeeff00ULL, bits.trunc(64).getZExtValue());
+	EXPECT_EQ(0x1122334455667788ULL, bits.lshr(64).trunc(64).getZExtValue());
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MULV_W_lane_wrap)
+{
+	ONLY_MODE_32;
+
+	// Capstone MC BE 78 43 ea 92 mulv.w $w10, $w29, $w3. Lane 0: 0xffffffff*3
+	// wraps; a 128-bit mul would not stay in the low word.
+	setW(MIPS_REG_W29, 0, 0x00000005ffffffffULL);
+	setW(MIPS_REG_W3, 0, 0x0000000200000003ULL);
+
+	emulate_bin("92 ea 43 78");
+
+	EXPECT_EQ(0x0000000afffffffdULL, wLow(MIPS_REG_W10));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W10));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ILVEV_W)
+{
+	ONLY_MODE_32;
+
+	// BE 7b 56 cb 14 ilvev.w $w12, $w25, $w22. Even lanes of wt then ws:
+	// [wt0, ws0, wt2, ws2].
+	setW(MIPS_REG_W25, 0xa3a3a3a3a2a2a2a2ULL, 0xa1a1a1a1a0a0a0a0ULL);
+	setW(MIPS_REG_W22, 0xb3b3b3b3b2b2b2b2ULL, 0xb1b1b1b1b0b0b0b0ULL);
+
+	emulate_bin("14 cb 56 7b");
+
+	EXPECT_EQ(0xa0a0a0a0b0b0b0b0ULL, wLow(MIPS_REG_W12));
+	EXPECT_EQ(0xa2a2a2a2b2b2b2b2ULL, wHigh(MIPS_REG_W12));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ILVOD_W)
+{
+	ONLY_MODE_32;
+
+	// BE 7b d8 87 54 ilvod.w $w29, $w16, $w24. Odd lanes: [wt1, ws1, wt3, ws3].
+	setW(MIPS_REG_W16, 0xa3a3a3a3a2a2a2a2ULL, 0xa1a1a1a1a0a0a0a0ULL);
+	setW(MIPS_REG_W24, 0xb3b3b3b3b2b2b2b2ULL, 0xb1b1b1b1b0b0b0b0ULL);
+
+	emulate_bin("54 87 d8 7b");
+
+	EXPECT_EQ(0xa1a1a1a1b1b1b1b1ULL, wLow(MIPS_REG_W29));
+	EXPECT_EQ(0xa3a3a3a3b3b3b3b3ULL, wHigh(MIPS_REG_W29));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SHF_W)
+{
+	ONLY_MODE_32;
+
+	// BE 7a 5d 1b 82 shf.w $w14, $w3, 93. Imm 0x5d selects lanes 1,3,1,1.
+	setW(MIPS_REG_W3, 0x0000004000000030ULL, 0x0000002000000010ULL);
+
+	emulate_bin("82 1b 5d 7a");
+
+	EXPECT_EQ(0x0000004000000020ULL, wLow(MIPS_REG_W14));
+	EXPECT_EQ(0x0000002000000020ULL, wHigh(MIPS_REG_W14));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SPLAT_W)
+{
+	ONLY_MODE_32;
+
+	// BE 78 cb 05 94 splat.w $w22, $w0[$11]. Lane 1 of w0 is 0x22222222.
+	setW(MIPS_REG_W0, 0x4444444433333333ULL, 0x2222222211111111ULL);
+	setRegisters({
+		{MIPS_REG_11, 1},
+	});
+
+	emulate_bin("94 05 cb 78");
+
+	EXPECT_EQ(0x2222222222222222ULL, wLow(MIPS_REG_W22));
+	EXPECT_EQ(0x2222222222222222ULL, wHigh(MIPS_REG_W22));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MAX_S_W)
+{
+	ONLY_MODE_32;
+
+	// BE 79 4e eb ce max_s.w $w15, $w29, $w14. Signed: max(-1, 2)=2, max(5, 3)=5.
+	setW(MIPS_REG_W29, 0, 0x00000005ffffffffULL);
+	setW(MIPS_REG_W14, 0, 0x0000000300000002ULL);
+
+	emulate_bin("ce eb 4e 79");
+
+	EXPECT_EQ(0x0000000500000002ULL, wLow(MIPS_REG_W15));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W15));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MIN_S_W)
+{
+	ONLY_MODE_32;
+
+	// BE 7a 5e 70 0e min_s.w $w0, $w14, $w30.
+	setW(MIPS_REG_W14, 0, 0x00000005ffffffffULL);
+	setW(MIPS_REG_W30, 0, 0x0000000300000002ULL);
+
+	emulate_bin("0e 70 5e 7a");
+
+	EXPECT_EQ(0x00000003ffffffffULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SLL_B)
+{
+	ONLY_MODE_32;
+
+	// BE 78 11 00 cd sll.b $w3, $w0, $w17. Byte 0: 1 << 3 = 8.
+	setW(MIPS_REG_W0, 0, 0x0000000000000001ULL);
+	setW(MIPS_REG_W17, 0, 0x0000000000000003ULL);
+
+	emulate_bin("cd 00 11 78");
+
+	EXPECT_EQ(0x0000000000000008ULL, wLow(MIPS_REG_W3));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W3));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SRL_W)
+{
+	ONLY_MODE_32;
+
+	// BE 79 4b dc 8d srl.w $w18, $w27, $w11. Word 0: 0x80000000 >> 1.
+	setW(MIPS_REG_W27, 0, 0x0000000080000000ULL);
+	setW(MIPS_REG_W11, 0, 0x0000000000000001ULL);
+
+	emulate_bin("8d dc 4b 79");
+
+	EXPECT_EQ(0x0000000040000000ULL, wLow(MIPS_REG_W18));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W18));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ORI_B)
+{
+	ONLY_MODE_32;
+
+	// LE c0 ff b7 79 ori.b $w31, $w31, 0xb7. Byte 0 is 0x08|0xb7 = 0xbf;
+	// every other lane is 0|0xb7.
+	setW(MIPS_REG_W31, 0, 0x0000000000000008ULL);
+
+	emulate_bin("c0 ff b7 79");
+
+	EXPECT_EQ(0xb7b7b7b7b7b7b7bfULL, wLow(MIPS_REG_W31));
+	EXPECT_EQ(0xb7b7b7b7b7b7b7b7ULL, wHigh(MIPS_REG_W31));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SPLATI_B)
+{
+	ONLY_MODE_32;
+
+	// LE 99 1b 41 78 splati.b $w14, $w3[1]. Byte 1 of w3 is 0x02.
+	setW(MIPS_REG_W3, 0, 0x0807060504030201ULL);
+
+	emulate_bin("99 1b 41 78");
+
+	EXPECT_EQ(0x0202020202020202ULL, wLow(MIPS_REG_W14));
+	EXPECT_EQ(0x0202020202020202ULL, wHigh(MIPS_REG_W14));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SPLATI_W)
+{
+	ONLY_MODE_32;
+
+	// LE 99 05 71 78 splati.w $w22, $w0[1]. Word 1 of w0 is 0x22222222.
+	setW(MIPS_REG_W0, 0x4444444433333333ULL, 0x2222222211111111ULL);
+
+	emulate_bin("99 05 71 78");
+
+	EXPECT_EQ(0x2222222222222222ULL, wLow(MIPS_REG_W22));
+	EXPECT_EQ(0x2222222222222222ULL, wHigh(MIPS_REG_W22));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ILVL_W)
+{
+	ONLY_MODE_32;
+
+	// LE 14 cb 56 7a ilvl.w $w12, $w25, $w22. High halves:
+	// [wt2, ws2, wt3, ws3].
+	setW(MIPS_REG_W25, 0xa3a3a3a3a2a2a2a2ULL, 0xa1a1a1a1a0a0a0a0ULL);
+	setW(MIPS_REG_W22, 0xb3b3b3b3b2b2b2b2ULL, 0xb1b1b1b1b0b0b0b0ULL);
+
+	emulate_bin("14 cb 56 7a");
+
+	EXPECT_EQ(0xa2a2a2a2b2b2b2b2ULL, wLow(MIPS_REG_W12));
+	EXPECT_EQ(0xa3a3a3a3b3b3b3b3ULL, wHigh(MIPS_REG_W12));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ILVR_W)
+{
+	ONLY_MODE_32;
+
+	// LE 14 cb d6 7a ilvr.w $w12, $w25, $w22. Low halves:
+	// [wt0, ws0, wt1, ws1].
+	setW(MIPS_REG_W25, 0xa3a3a3a3a2a2a2a2ULL, 0xa1a1a1a1a0a0a0a0ULL);
+	setW(MIPS_REG_W22, 0xb3b3b3b3b2b2b2b2ULL, 0xb1b1b1b1b0b0b0b0ULL);
+
+	emulate_bin("14 cb d6 7a");
+
+	EXPECT_EQ(0xa0a0a0a0b0b0b0b0ULL, wLow(MIPS_REG_W12));
+	EXPECT_EQ(0xa1a1a1a1b1b1b1b1ULL, wHigh(MIPS_REG_W12));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_PCKEV_W)
+{
+	ONLY_MODE_32;
+
+	// LE 14 cb 56 79 pckev.w $w12, $w25, $w22. Even lanes of wt then ws:
+	// [wt0, wt2, ws0, ws2].
+	setW(MIPS_REG_W25, 0xa3a3a3a3a2a2a2a2ULL, 0xa1a1a1a1a0a0a0a0ULL);
+	setW(MIPS_REG_W22, 0xb3b3b3b3b2b2b2b2ULL, 0xb1b1b1b1b0b0b0b0ULL);
+
+	emulate_bin("14 cb 56 79");
+
+	EXPECT_EQ(0xb2b2b2b2b0b0b0b0ULL, wLow(MIPS_REG_W12));
+	EXPECT_EQ(0xa2a2a2a2a0a0a0a0ULL, wHigh(MIPS_REG_W12));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_PCKOD_W)
+{
+	ONLY_MODE_32;
+
+	// LE 14 cb d6 79 pckod.w $w12, $w25, $w22. Odd lanes: [wt1, wt3, ws1, ws3].
+	setW(MIPS_REG_W25, 0xa3a3a3a3a2a2a2a2ULL, 0xa1a1a1a1a0a0a0a0ULL);
+	setW(MIPS_REG_W22, 0xb3b3b3b3b2b2b2b2ULL, 0xb1b1b1b1b0b0b0b0ULL);
+
+	emulate_bin("14 cb d6 79");
+
+	EXPECT_EQ(0xb3b3b3b3b1b1b1b1ULL, wLow(MIPS_REG_W12));
+	EXPECT_EQ(0xa3a3a3a3a1a1a1a1ULL, wHigh(MIPS_REG_W12));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_BSEL_V)
+{
+	ONLY_MODE_32;
+
+	// LE 1e 08 c2 78 bsel.v $w0, $w1, $w2. wd is the mask:
+	// (ws & wd) | (wt & ~wd).
+	setW(MIPS_REG_W0, 0x00ff00ff00ff00ffULL, 0x00ff00ff00ff00ffULL);
+	setW(MIPS_REG_W1, 0xaaaaaaaaaaaaaaaaULL, 0xaaaaaaaaaaaaaaaaULL);
+	setW(MIPS_REG_W2, 0x5555555555555555ULL, 0x5555555555555555ULL);
+
+	emulate_bin("1e 08 c2 78");
+
+	EXPECT_EQ(0x55aa55aa55aa55aaULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x55aa55aa55aa55aaULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CEQ_B)
+{
+	ONLY_MODE_32;
+
+	// LE 0f 08 02 78 ceq.b $w0, $w1, $w2. Only byte 0 matches (0x11).
+	setW(MIPS_REG_W1, 0xa5a5a5a5a5a5a5a5ULL, 0xa5a5a5a5a5a5a511ULL);
+	setW(MIPS_REG_W2, 0x5a5a5a5a5a5a5a5aULL, 0x5a5a5a5a5a5a5a11ULL);
+
+	emulate_bin("0f 08 02 78");
+
+	EXPECT_EQ(0x00000000000000ffULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CLE_S_W)
+{
+	ONLY_MODE_32;
+
+	// LE 0f 08 42 7a cle_s.w $w0, $w1, $w2. Signed: -1 <= 2, 5 <= 3 is false.
+	// High words are 1 <= 0, also false — 0<=0 would light those lanes.
+	setW(MIPS_REG_W1, 0x0000000100000001ULL, 0x00000005ffffffffULL);
+	setW(MIPS_REG_W2, 0, 0x0000000300000002ULL);
+
+	emulate_bin("0f 08 42 7a");
+
+	EXPECT_EQ(0x00000000ffffffffULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CLT_S_W)
+{
+	ONLY_MODE_32;
+
+	// LE 0f 08 42 79 clt_s.w $w0, $w1, $w2. Signed: -1 < 2, 5 < 3 is false.
+	setW(MIPS_REG_W1, 0, 0x00000005ffffffffULL);
+	setW(MIPS_REG_W2, 0, 0x0000000300000002ULL);
+
+	emulate_bin("0f 08 42 79");
+
+	EXPECT_EQ(0x00000000ffffffffULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FADD_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1b 08 02 78 fadd.w $w0, $w1, $w2. 1.0f+1.0f=2.0f, 2.0f+2.0f=4.0f.
+	setW(MIPS_REG_W1, 0, 0x400000003f800000ULL);
+	setW(MIPS_REG_W2, 0, 0x400000003f800000ULL);
+
+	emulate_bin("1b 08 02 78");
+
+	EXPECT_EQ(0x4080000040000000ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FSUB_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1b 08 42 78 fsub.w $w0, $w1, $w2. 4.0f-1.0f=3.0f.
+	setW(MIPS_REG_W1, 0, 0x3f80000040800000ULL);
+	setW(MIPS_REG_W2, 0, 0x000000003f800000ULL);
+
+	emulate_bin("1b 08 42 78");
+
+	EXPECT_EQ(0x3f80000040400000ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FMUL_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1b 08 82 78 fmul.w $w0, $w1, $w2. 2.0f*3.0f=6.0f in both low lanes.
+	setW(MIPS_REG_W1, 0, 0x4000000040000000ULL);
+	setW(MIPS_REG_W2, 0, 0x4040000040400000ULL);
+
+	emulate_bin("1b 08 82 78");
+
+	EXPECT_EQ(0x40c0000040c00000ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ANDI_B)
+{
+	ONLY_MODE_32;
+
+	// LE c0 ff b7 78 andi.b $w31, $w31, 0xb7. Byte 0 is 0x08&0xb7 = 0x00.
+	setW(MIPS_REG_W31, 0xffffffffffffffffULL, 0xffffffffffffff08ULL);
+
+	emulate_bin("c0 ff b7 78");
+
+	EXPECT_EQ(0xb7b7b7b7b7b7b700ULL, wLow(MIPS_REG_W31));
+	EXPECT_EQ(0xb7b7b7b7b7b7b7b7ULL, wHigh(MIPS_REG_W31));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_XORI_B)
+{
+	ONLY_MODE_32;
+
+	// LE c0 ff b7 7b xori.b $w31, $w31, 0xb7. Byte 0 is 0xff^0xb7 = 0x48.
+	setW(MIPS_REG_W31, 0, 0x00000000000000ffULL);
+
+	emulate_bin("c0 ff b7 7b");
+
+	EXPECT_EQ(0xb7b7b7b7b7b7b748ULL, wLow(MIPS_REG_W31));
+	EXPECT_EQ(0xb7b7b7b7b7b7b7b7ULL, wHigh(MIPS_REG_W31));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_NORI_B)
+{
+	ONLY_MODE_32;
+
+	// LE c0 ff b7 7a nori.b $w31, $w31, 0xb7. Byte 0 is ~(0x08|0xb7) = 0x40.
+	setW(MIPS_REG_W31, 0, 0x0000000000000008ULL);
+
+	emulate_bin("c0 ff b7 7a");
+
+	EXPECT_EQ(0x4848484848484840ULL, wLow(MIPS_REG_W31));
+	EXPECT_EQ(0x4848484848484848ULL, wHigh(MIPS_REG_W31));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_COPY_S_B)
+{
+	ONLY_MODE_32;
+
+	// LE 19 0a 82 78 copy_s.b $t0, $w1[2]. Byte 2 is 0x80 → sign-extend.
+	setW(MIPS_REG_W1, 0, 0x0807060504800201ULL);
+
+	emulate_bin("19 0a 82 78");
+
+	EXPECT_EQ(0xffffff80u, getRegisterValueUnsigned(MIPS_REG_T0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_COPY_U_B)
+{
+	ONLY_MODE_32;
+
+	// LE 19 0a c2 78 copy_u.b $t0, $w1[2]. Byte 2 is 0x80 → zero-extend.
+	setW(MIPS_REG_W1, 0, 0x0807060504800201ULL);
+
+	emulate_bin("19 0a c2 78");
+
+	EXPECT_EQ(0x80u, getRegisterValueUnsigned(MIPS_REG_T0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_INSERT_B)
+{
+	ONLY_MODE_32;
+
+	// LE 19 40 02 79 insert.b $w0[2], $t0. Replace byte 2 with 0xaa.
+	setW(MIPS_REG_W0, 0, 0x0807060504030201ULL);
+	setRegisters({
+		{MIPS_REG_T0, 0xaa},
+	});
+
+	emulate_bin("19 40 02 79");
+
+	EXPECT_EQ(0x0807060504aa0201ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FILL_B)
+{
+	ONLY_MODE_32;
+
+	// LE 1e 40 00 7b fill.b $w0, $t0. Splat 0x5a into every byte.
+	setRegisters({
+		{MIPS_REG_T0, 0x5a},
+	});
+
+	emulate_bin("1e 40 00 7b");
+
+	EXPECT_EQ(0x5a5a5a5a5a5a5a5aULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x5a5a5a5a5a5a5a5aULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LDI_B)
+{
+	ONLY_MODE_32;
+
+	// LE 07 08 00 7b ldi.b $w0, 1. Splat signed imm 1.
+	emulate_bin("07 08 00 7b");
+
+	EXPECT_EQ(0x0101010101010101ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0101010101010101ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FMAX_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1b 08 82 7b fmax.w $w0, $w1, $w2. max(1.0f,2.0f)=2.0f, max(4.0f,3.0f)=4.0f.
+	setW(MIPS_REG_W1, 0, 0x408000003f800000ULL);
+	setW(MIPS_REG_W2, 0, 0x4040000040000000ULL);
+
+	emulate_bin("1b 08 82 7b");
+
+	EXPECT_EQ(0x4080000040000000ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FMIN_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1b 08 02 7b fmin.w $w0, $w1, $w2. min(1.0f,2.0f)=1.0f, min(4.0f,3.0f)=3.0f.
+	setW(MIPS_REG_W1, 0, 0x408000003f800000ULL);
+	setW(MIPS_REG_W2, 0, 0x4040000040000000ULL);
+
+	emulate_bin("1b 08 02 7b");
+
+	EXPECT_EQ(0x404000003f800000ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FDIV_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1b 08 c2 78 fdiv.w $w0, $w1, $w2. 4.0f/2.0f=2.0f; other lanes 0/1.0f=0
+	// so unused 0/0 does not become NaN.
+	setW(MIPS_REG_W1, 0, 0x0000000040800000ULL);
+	setW(MIPS_REG_W2, 0x3f8000003f800000ULL, 0x3f80000040000000ULL);
+
+	emulate_bin("1b 08 c2 78");
+
+	EXPECT_EQ(0x0000000040000000ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_BSELI_B)
+{
+	ONLY_MODE_32;
+
+	// LE 01 08 b7 7a bseli.b $w0, $w1, 0xb7.
+	// (ws & 0xb7) | (wd & ~0xb7) → (0xaa&0xb7)|(0x55&0x48) = 0xa2|0x40 = 0xe2.
+	setW(MIPS_REG_W0, 0x5555555555555555ULL, 0x5555555555555555ULL);
+	setW(MIPS_REG_W1, 0xaaaaaaaaaaaaaaaaULL, 0xaaaaaaaaaaaaaaaaULL);
+
+	emulate_bin("01 08 b7 7a");
+
+	EXPECT_EQ(0xe2e2e2e2e2e2e2e2ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0xe2e2e2e2e2e2e2e2ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ADDS_S_B)
+{
+	ONLY_MODE_32;
+
+	// LE 10 08 02 79 adds_s.b $w0, $w1, $w2. 127+1 saturates to 127, 1+1 is 2.
+	setW(MIPS_REG_W1, 0, 0x000000000000017fULL);
+	setW(MIPS_REG_W2, 0, 0x0000000000000101ULL);
+
+	emulate_bin("10 08 02 79");
+
+	EXPECT_EQ(0x000000000000027fULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ADDS_U_B)
+{
+	ONLY_MODE_32;
+
+	// LE 10 08 82 79 adds_u.b $w0, $w1, $w2. 255+1 saturates to 255, 5+1 is 6.
+	setW(MIPS_REG_W1, 0, 0x00000000000005ffULL);
+	setW(MIPS_REG_W2, 0, 0x0000000000000101ULL);
+
+	emulate_bin("10 08 82 79");
+
+	EXPECT_EQ(0x00000000000006ffULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SUBS_S_B)
+{
+	ONLY_MODE_32;
+
+	// LE 11 08 02 78 subs_s.b $w0, $w1, $w2. -128-1 stays -128; 5-1 is 4.
+	setW(MIPS_REG_W1, 0, 0x0000000000000580ULL);
+	setW(MIPS_REG_W2, 0, 0x0000000000000101ULL);
+
+	emulate_bin("11 08 02 78");
+
+	EXPECT_EQ(0x0000000000000480ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CEQI_B)
+{
+	ONLY_MODE_32;
+
+	// LE 07 08 01 78 ceqi.b $w0, $w1, 1. Byte 0 is 1 → all-1s; others 0.
+	setW(MIPS_REG_W1, 0xa5a5a5a5a5a5a5a5ULL, 0xa5a5a5a5a5a5a501ULL);
+
+	emulate_bin("07 08 01 78");
+
+	EXPECT_EQ(0x00000000000000ffULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SAT_S_B)
+{
+	ONLY_MODE_32;
+
+	// LE 0a 08 73 78 sat_s.b $w0, $w1, 3. Clamp to 4-bit signed [-8, 7].
+	// 20 → 7, -20 → -8, 5 stays 5.
+	setW(MIPS_REG_W1, 0, 0x000000000005ec14ULL);
+
+	emulate_bin("0a 08 73 78");
+
+	EXPECT_EQ(0x000000000005f807ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SAT_U_B)
+{
+	ONLY_MODE_32;
+
+	// LE 0a 08 f3 78 sat_u.b $w0, $w1, 3. Clamp to 4-bit unsigned [0, 15].
+	// 0x20 → 0x0f, 0xff → 0x0f, 5 stays 5.
+	setW(MIPS_REG_W1, 0, 0x0000000000ff0520ULL);
+
+	emulate_bin("0a 08 f3 78");
+
+	EXPECT_EQ(0x00000000000f050fULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SLD_B)
+{
+	ONLY_MODE_32;
+
+	// LE 14 08 08 78 sld.b $w0, $w1[$t0]. Slide 1 byte: wd[i]=wd[i+1], last=ws[0].
+	// Capstone operands are W dest, W ws, GPR rt (not an immediate).
+	setW(MIPS_REG_W0, 0, 0x0807060504030201ULL);
+	setW(MIPS_REG_W1, 0, 0x00000000000000aaULL);
+	setRegisters({
+		{MIPS_REG_T0, 1},
+	});
+
+	emulate_bin("14 08 08 78");
+
+	EXPECT_EQ(0x0008070605040302ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0xaa00000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SLDI_B)
+{
+	ONLY_MODE_32;
+
+	// LE 19 08 01 78 sldi.b $w0, $w1[1]. Same slide as SLD with rt=1.
+	setW(MIPS_REG_W0, 0, 0x0807060504030201ULL);
+	setW(MIPS_REG_W1, 0, 0x00000000000000aaULL);
+
+	emulate_bin("19 08 01 78");
+
+	EXPECT_EQ(0x0008070605040302ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0xaa00000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, SyncEmitsFence)
@@ -8119,6 +8864,37 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SLTU_is_a_doubleword_operati
 }
 
 //
+// Compact R6 has no delay slot; classic branches and microMIPS 16-bit delayed
+// encodings still report a one-instruction slot.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, CompactR6BranchesHaveNoDelaySlot)
+{
+	ALL_MODES;
+
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_BC));
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_BALC));
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_BEQC));
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_BNEC));
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_BEQZC));
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_BNEZC));
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_JIC));
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_JIALC));
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_JRC));
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_JALRC));
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_BGEC));
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_BLTC));
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_BEQZALC));
+	EXPECT_EQ(1u, _translator->getDelaySlot(MIPS_INS_BEQ));
+	EXPECT_EQ(1u, _translator->getDelaySlot(MIPS_INS_JR));
+	EXPECT_EQ(1u, _translator->getDelaySlot(MIPS_INS_B16));
+	EXPECT_EQ(1u, _translator->getDelaySlot(MIPS_INS_JR16));
+	EXPECT_EQ(1u, _translator->getDelaySlot(MIPS_INS_BEQZ16));
+	EXPECT_FALSE(_translator->hasDelaySlot(MIPS_INS_BEQZC));
+	EXPECT_FALSE(_translator->hasDelaySlot(MIPS_INS_BC));
+}
+
+//
 // The big-endian fixture.
 //
 // lwl/lwr/swl/swr are the only instructions in this translator whose meaning
@@ -8283,6 +9059,323 @@ TEST_P(Capstone2LlvmIrTranslatorMipsBigEndianTests, unaligned_word_load_pair)
 	emulate("lwl $2, 0($3)\nlwr $2, 3($3)");
 
 	EXPECT_EQ(0x22334455, getRegisterValueUnsigned(MIPS_REG_2));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// microMIPS 16-bit encodings. Keystone 0.9.2 is not used: encodings are from
+// Capstone's DecoderTableMicroMips16 / a live Capstone 6 dump.
+//
+
+class Capstone2LlvmIrTranslatorMipsMicroTests : public Capstone2LlvmIrTranslatorTests,
+												public ::testing::WithParamInterface<cs_mode> {
+protected:
+	virtual void initKeystoneEngine() override
+	{
+		if (ks_open(KS_ARCH_MIPS, KS_MODE_MIPS32, &_assembler) != KS_ERR_OK)
+		{
+			throw std::runtime_error("ERROR: failed on ks_open().\n");
+		}
+	}
+
+	virtual void initCapstone2LlvmIrTranslator() override
+	{
+		_translator = Capstone2LlvmIrTranslator::createMips32(&_module, CS_MODE_MICRO);
+	}
+};
+
+INSTANTIATE_TEST_SUITE_P(
+	InstantiateMipsMicro,
+	Capstone2LlvmIrTranslatorMipsMicroTests,
+	::testing::Values(CS_MODE_MICRO),
+	PrintCapstoneModeToString_Mips());
+
+TEST_P(Capstone2LlvmIrTranslatorMipsMicroTests, MIPS_INS_AND16)
+{
+	// and16 $v0, $v1  — Capstone reports two GPRs: dest = dest AND src.
+	setRegisters({
+		{MIPS_REG_2, 0xff00},
+		{MIPS_REG_3, 0x0ff0},
+	});
+
+	emulate_bin("93 44");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x0f00},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsMicroTests, MIPS_INS_ADDU16)
+{
+	// addu16 $v0, $a0, $v1
+	setRegisters({
+		{MIPS_REG_4, 0x10},
+		{MIPS_REG_3, 0x20},
+	});
+
+	emulate_bin("38 05");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_4, MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x30},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsMicroTests, MIPS_INS_LW16)
+{
+	// lw16 $v0, 8($v1)
+	setRegisters({
+		{MIPS_REG_3, 0x1000},
+	});
+	setMemory({
+		{0x1008, 0x12345678_dw},
+	});
+
+	emulate_bin("32 69");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x12345678},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1008});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsMicroTests, MIPS_INS_LWM32_reglist)
+{
+	// Capstone 6 details yaml is BE 23 20 5c 6d. microMIPS 32-bit in LE
+	// stores each 16-bit halfword little-endian: 20 23 6d 5c. Live dump:
+	// REG s0..s7,fp,ra is_reglist plus MEM -0x393($zero).
+	setMemory({
+		{0xfffffc6d, 0x11111111_dw},
+		{0xfffffc71, 0x22222222_dw},
+		{0xfffffc75, 0x33333333_dw},
+		{0xfffffc79, 0x44444444_dw},
+		{0xfffffc7d, 0x55555555_dw},
+		{0xfffffc81, 0x66666666_dw},
+		{0xfffffc85, 0x77777777_dw},
+		{0xfffffc89, 0x88888888_dw},
+		{0xfffffc8d, 0x99999999_dw},
+		{0xfffffc91, 0xaaaaaaaa_dw},
+	});
+
+	emulate_bin("20 23 6d 5c");
+
+	EXPECT_EQ(0x11111111u, getRegisterValueUnsigned(MIPS_REG_S0));
+	EXPECT_EQ(0x22222222u, getRegisterValueUnsigned(MIPS_REG_S1));
+	EXPECT_EQ(0x33333333u, getRegisterValueUnsigned(MIPS_REG_S2));
+	EXPECT_EQ(0x44444444u, getRegisterValueUnsigned(MIPS_REG_S3));
+	EXPECT_EQ(0x55555555u, getRegisterValueUnsigned(MIPS_REG_S4));
+	EXPECT_EQ(0x66666666u, getRegisterValueUnsigned(MIPS_REG_S5));
+	EXPECT_EQ(0x77777777u, getRegisterValueUnsigned(MIPS_REG_S6));
+	EXPECT_EQ(0x88888888u, getRegisterValueUnsigned(MIPS_REG_S7));
+	EXPECT_EQ(0x99999999u, getRegisterValueUnsigned(MIPS_REG_FP));
+	EXPECT_EQ(0xaaaaaaaau, getRegisterValueUnsigned(MIPS_REG_RA));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsMicroTests, MIPS_INS_LWM16_reglist)
+{
+	// Non-R6 LWM16: bytes 00 45. Printer: lwm16 $s0, $ra, 0($sp).
+	// Details: REG s0, ra is_reglist; MEM base=INVALID disp=24 (SP enum).
+	// Translator uses spec SP + SignExtend4(bits 3:0)<<2.
+	setRegisters({
+		{MIPS_REG_SP, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x11111111_dw},
+		{0x1004, 0x22222222_dw},
+	});
+
+	emulate_bin("00 45");
+
+	EXPECT_EQ(0x11111111u, getRegisterValueUnsigned(MIPS_REG_S0));
+	EXPECT_EQ(0x22222222u, getRegisterValueUnsigned(MIPS_REG_RA));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsMicroTests, MIPS_INS_SWM16_reglist)
+{
+	setRegisters({
+		{MIPS_REG_SP, 0x1000},
+		{MIPS_REG_S0, 0x11111111},
+		{MIPS_REG_RA, 0x22222222},
+	});
+
+	emulate_bin("40 45"); // Capstone: swm16 $s0, $ra, 0($sp)
+
+	EXPECT_EQ(0x11111111u, getMemoryValueUnsigned(0x1000, 32));
+	EXPECT_EQ(0x22222222u, getMemoryValueUnsigned(0x1004, 32));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// MIPS32 Release 6 compact encodings. Keystone is unused (0.9.2 fails as a
+// basic R6 mode); encodings are from Capstone MC tests, little-endian.
+//
+
+class Capstone2LlvmIrTranslatorMipsR6Tests : public Capstone2LlvmIrTranslatorTests,
+											 public ::testing::WithParamInterface<cs_mode> {
+protected:
+	virtual void initKeystoneEngine() override
+	{
+		if (ks_open(KS_ARCH_MIPS, KS_MODE_MIPS32, &_assembler) != KS_ERR_OK)
+		{
+			throw std::runtime_error("ERROR: failed on ks_open().\n");
+		}
+	}
+
+	virtual void initCapstone2LlvmIrTranslator() override
+	{
+		_translator = Capstone2LlvmIrTranslator::createMips32R6(&_module);
+	}
+};
+
+INSTANTIATE_TEST_SUITE_P(
+	InstantiateMipsR6,
+	Capstone2LlvmIrTranslatorMipsR6Tests,
+	::testing::Values(CS_MODE_MIPS32R6),
+	PrintCapstoneModeToString_Mips());
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_BEQZC_branch_no_delay_slot)
+{
+	setRegisters({
+		{MIPS_REG_2, 0},
+	});
+
+	emulate_bin("fb ff 5f d8", 0x1000); // beqzc $v0, -16
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCondBranchFunction(), {true, 0xff0}},
+	});
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_BEQZC));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_BC_no_delay_slot)
+{
+	emulate_bin("b9 96 37 c8"); // bc 14572264
+
+	EXPECT_NO_REGISTERS_LOADED();
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getBranchFunction(), {14572264}},
+	});
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_BC));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_ADDIUPC)
+{
+	// lapc/addiupc $a0, 100 — Capstone reports the byte offset, not PC+offset.
+	emulate_bin("19 00 80 ec", 0x1000);
+
+	EXPECT_NO_REGISTERS_LOADED();
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_4, 0x1064},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_SELEQZ)
+{
+	setRegisters({
+		{MIPS_REG_2, 0x1111},
+		{MIPS_REG_3, 0xabcd},
+		{MIPS_REG_4, 0},
+	});
+
+	emulate_bin("35 10 64 00"); // seleqz $2, $3, $4
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3, MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0xabcd},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_SELEQZ));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_SELEQZ_zero)
+{
+	setRegisters({
+		{MIPS_REG_2, 0x1111},
+		{MIPS_REG_3, 0xabcd},
+		{MIPS_REG_4, 1},
+	});
+
+	emulate_bin("35 10 64 00"); // seleqz $2, $3, $4
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3, MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_SELNEZ)
+{
+	setRegisters({
+		{MIPS_REG_2, 0x1111},
+		{MIPS_REG_3, 0xabcd},
+		{MIPS_REG_4, 1},
+	});
+
+	emulate_bin("37 10 64 00"); // selnez $2, $3, $4
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3, MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0xabcd},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_SELNEZ));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_SEL_S_lsb_set)
+{
+	setRegisters({
+		{MIPS_REG_F0, 3.14_f32},
+		{MIPS_REG_F1, 2.71_f32},
+		{MIPS_REG_F2, 1.401298464e-45_f32}, // bits = 1
+	});
+
+	emulate_bin("10 08 02 46"); // sel.s $f0, $f1, $f2
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F0, MIPS_REG_F1, MIPS_REG_F2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_F0, 2.71_f32},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_SEL_S));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_SEL_S_lsb_clear)
+{
+	setRegisters({
+		{MIPS_REG_F0, 3.14_f32},
+		{MIPS_REG_F1, 2.71_f32},
+		{MIPS_REG_F2, 0.0_f32},
+	});
+
+	emulate_bin("10 08 02 46"); // sel.s $f0, $f1, $f2
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F0, MIPS_REG_F1, MIPS_REG_F2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_F0, 3.14_f32},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();
 }
 

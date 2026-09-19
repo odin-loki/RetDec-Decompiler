@@ -11705,6 +11705,1174 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_STXR_bin)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+//
+// ARM64_INS_FMLA / ARM64_INS_FMLS
+//
+// Three-operand fused multiply-add: dest = dest ± (src1 * src2). gcc -O1
+// emits scalar FMLA; auto-vectorized float arithmetic emits the .4s form.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FMLA_s_s_s_bin)
+{
+	// Scalar FMLA is the A64 alias of FMADD with Ra=Rd: dest += src1*src2.
+	// Keystone 0.9.2 rejects the three-operand `fmla s0, s1, s2` mnemonic.
+	setRegisters({
+		{ARM64_REG_S0, 1.0_f32},
+		{ARM64_REG_S1, 2.0_f32},
+		{ARM64_REG_S2, 3.0_f32},
+	});
+
+	emulate("fmadd s0, s1, s2, s0");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_S0, ARM64_REG_S1, ARM64_REG_S2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_S0, 7.0_f32},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FMLA_d_d_d_bin)
+{
+	setRegisters({
+		{ARM64_REG_D0, 1.0_f64},
+		{ARM64_REG_D1, 2.0_f64},
+		{ARM64_REG_D2, 3.0_f64},
+	});
+
+	emulate("fmadd d0, d1, d2, d0");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_D0, ARM64_REG_D1, ARM64_REG_D2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_D0, 7.0_f64},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FMLA_vector_4s_bin)
+{
+	// fmla v0.4s, v1.4s, v2.4s
+	// dest 1.0,1.0,1.0,1.0  +  (1.0,2.0,3.0,4.0)*(1.0,1.0,1.0,1.0)
+	// = 2.0, 3.0, 4.0, 5.0
+	setV(ARM64_REG_V0, 0x3f8000003f800000ULL, 0x3f8000003f800000ULL);
+	setV(ARM64_REG_V1, 0x4080000040400000ULL, 0x400000003f800000ULL);
+	setV(ARM64_REG_V2, 0x3f8000003f800000ULL, 0x3f8000003f800000ULL);
+
+	emulate_bin("20 cc 22 4e"); // fmla v0.4s, v1.4s, v2.4s
+
+	EXPECT_EQ(0x4040000040000000ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x40a0000040800000ULL, vHigh(ARM64_REG_V0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FMLS_s_s_s_bin)
+{
+	// Scalar FMLS is the A64 alias of FMSUB with Ra=Rd: dest -= src1*src2.
+	setRegisters({
+		{ARM64_REG_S0, 10.0_f32},
+		{ARM64_REG_S1, 2.0_f32},
+		{ARM64_REG_S2, 3.0_f32},
+	});
+
+	emulate("fmsub s0, s1, s2, s0");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_S0, ARM64_REG_S1, ARM64_REG_S2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_S0, 4.0_f32},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+//
+// ARM64_INS_CASP -- 128-bit pair CAS (x86 CMPXCHG16B)
+//
+// Capstone 6 lists Rs, Rs+1, Rt, Rt+1, [Xn]. Little-endian i128: X0 is the
+// low half at [Xn], X1 the high half at [Xn+8].
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CASP_swaps_when_the_pair_matches)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0x1111111111111111ULL},
+		{ARM64_REG_X1, 0x2222222222222222ULL},
+		{ARM64_REG_X2, 0xaaaaaaaaaaaaaaaaULL},
+		{ARM64_REG_X3, 0xbbbbbbbbbbbbbbbbULL},
+		{ARM64_REG_X4, 0x1000},
+	});
+	setMemoryValue128(0x1000, 0x2222222222222222ULL, 0x1111111111111111ULL);
+
+	emulate_bin("82 7c 20 48"); // casp x0, x1, x2, x3, [x4]
+
+	llvm::APInt bits = _emulator->getMemoryValue(0x1000).IntVal;
+	if (bits.getBitWidth() < 128)
+	{
+		bits = bits.zext(128);
+	}
+	EXPECT_EQ(0xaaaaaaaaaaaaaaaaULL, bits.trunc(64).getZExtValue());
+	EXPECT_EQ(0xbbbbbbbbbbbbbbbbULL, bits.lshr(64).trunc(64).getZExtValue());
+	EXPECT_EQ(0x1111111111111111ULL, getRegisterValueUnsigned(ARM64_REG_X0));
+	EXPECT_EQ(0x2222222222222222ULL, getRegisterValueUnsigned(ARM64_REG_X1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CASP_writes_memory_back_to_Rs_on_mismatch)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0x1111111111111111ULL},
+		{ARM64_REG_X1, 0x2222222222222222ULL},
+		{ARM64_REG_X2, 0xaaaaaaaaaaaaaaaaULL},
+		{ARM64_REG_X3, 0xbbbbbbbbbbbbbbbbULL},
+		{ARM64_REG_X4, 0x1000},
+	});
+	setMemoryValue128(0x1000, 0x4444444444444444ULL, 0x3333333333333333ULL);
+
+	emulate_bin("82 7c 20 48"); // casp x0, x1, x2, x3, [x4]
+
+	EXPECT_EQ(0x3333333333333333ULL, getRegisterValueUnsigned(ARM64_REG_X0));
+	EXPECT_EQ(0x4444444444444444ULL, getRegisterValueUnsigned(ARM64_REG_X1));
+	llvm::APInt bits = _emulator->getMemoryValue(0x1000).IntVal;
+	if (bits.getBitWidth() < 128)
+	{
+		bits = bits.zext(128);
+	}
+	EXPECT_EQ(0x3333333333333333ULL, bits.trunc(64).getZExtValue());
+	EXPECT_EQ(0x4444444444444444ULL, bits.lshr(64).trunc(64).getZExtValue());
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CASPL_is_not_a_pseudo_call)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0x1},
+		{ARM64_REG_X1, 0x2},
+		{ARM64_REG_X2, 0x3},
+		{ARM64_REG_X3, 0x4},
+		{ARM64_REG_X4, 0x1000},
+	});
+	setMemoryValue128(0x1000, 0x2, 0x1);
+
+	emulate_bin("82 fc 20 48"); // caspl x0, x1, x2, x3, [x4]
+
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ARM64_INS_FCMEQ / FCMGE / FCMGT / FCMLE / FCMLT
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCMEQ_4s)
+{
+	// lanes 1.0, -1.0, 3.0, 0.0  vs  1.0, 0.0, 2.0, 1.0  → T F F F
+	setV(ARM64_REG_V1, 0x0000000040400000ULL, 0xbf8000003f800000ULL);
+	setV(ARM64_REG_V2, 0x3f80000040000000ULL, 0x000000003f800000ULL);
+
+	emulate_bin("20 e4 22 4e"); // fcmeq v0.4s, v1.4s, v2.4s
+
+	EXPECT_EQ(0x00000000ffffffffULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCMGE_4s)
+{
+	// 1>=1 T, -1>=0 F, 3>=2 T, 0>=1 F
+	setV(ARM64_REG_V1, 0x0000000040400000ULL, 0xbf8000003f800000ULL);
+	setV(ARM64_REG_V2, 0x3f80000040000000ULL, 0x000000003f800000ULL);
+
+	emulate_bin("20 e4 22 6e"); // fcmge v0.4s, v1.4s, v2.4s
+
+	EXPECT_EQ(0x00000000ffffffffULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x00000000ffffffffULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCMGT_4s)
+{
+	// 1>1 F, -1>0 F, 3>2 T, 0>1 F
+	setV(ARM64_REG_V1, 0x0000000040400000ULL, 0xbf8000003f800000ULL);
+	setV(ARM64_REG_V2, 0x3f80000040000000ULL, 0x000000003f800000ULL);
+
+	emulate_bin("20 e4 a2 6e"); // fcmgt v0.4s, v1.4s, v2.4s
+
+	EXPECT_EQ(0ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x00000000ffffffffULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCMLE_4s_vs_zero)
+{
+	// 1, -1, 3, 0  vs 0 → F T F T
+	setV(ARM64_REG_V1, 0x0000000040400000ULL, 0xbf8000003f800000ULL);
+
+	emulate_bin("20 d8 a0 6e"); // fcmle v0.4s, v1.4s, #0.0
+
+	EXPECT_EQ(0xffffffff00000000ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0xffffffff00000000ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCMLT_4s_vs_zero)
+{
+	// 1<0 F, -1<0 T, 3<0 F, 0<0 F
+	setV(ARM64_REG_V1, 0x0000000040400000ULL, 0xbf8000003f800000ULL);
+
+	emulate_bin("20 e8 a0 4e"); // fcmlt v0.4s, v1.4s, #0.0
+
+	EXPECT_EQ(0xffffffff00000000ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCMEQ_4s_vs_zero)
+{
+	setV(ARM64_REG_V1, 0x0000000040400000ULL, 0xbf8000003f800000ULL);
+
+	emulate_bin("20 d8 a0 4e"); // fcmeq v0.4s, v1.4s, #0.0
+
+	EXPECT_EQ(0ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0xffffffff00000000ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ARM64_INS_TBL / ARM64_INS_TBX
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_TBL_16b)
+{
+	// Identity table. Indices 3,2,1,0, 16(OOB), 0x80(OOB), 5, 4 → 3,2,1,0, 0,0, 5,4
+	setV(ARM64_REG_V1, 0x0f0e0d0c0b0a0908ULL, 0x0706050403020100ULL);
+	setV(ARM64_REG_V2, 0, 0x0405801000010203ULL);
+
+	emulate_bin("20 00 02 4e"); // tbl v0.16b, {v1.16b}, v2.16b
+
+	EXPECT_EQ(0x0405000000010203ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_TBX_keeps_dest_on_oob)
+{
+	setV(ARM64_REG_V0, 0, 0xaaaaaaaaaaaaaaaaULL);
+	setV(ARM64_REG_V1, 0x0f0e0d0c0b0a0908ULL, 0x0706050403020100ULL);
+	setV(ARM64_REG_V2, 0, 0x0405801000010203ULL);
+
+	emulate_bin("20 10 02 4e"); // tbx v0.16b, {v1.16b}, v2.16b
+
+	EXPECT_EQ(0x0405aaaa00010203ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ARM64_INS_LD2 / ST2 / LD3 -- de-interleave structure load/store
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LD2_16b)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0x1000},
+	});
+	// 32 bytes of A,B,A,B,...
+	setMemory({
+		{0x1000, 0x0b0a0b0a0b0a0b0a_qw},
+		{0x1008, 0x0b0a0b0a0b0a0b0a_qw},
+		{0x1010, 0x0b0a0b0a0b0a0b0a_qw},
+		{0x1018, 0x0b0a0b0a0b0a0b0a_qw},
+	});
+
+	emulate_bin("00 80 40 4c"); // ld2 {v0.16b, v1.16b}, [x0]
+
+	EXPECT_EQ(0x0a0a0a0a0a0a0a0aULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0a0a0a0a0a0a0a0aULL, vHigh(ARM64_REG_V0));
+	EXPECT_EQ(0x0b0b0b0b0b0b0b0bULL, vLow(ARM64_REG_V1));
+	EXPECT_EQ(0x0b0b0b0b0b0b0b0bULL, vHigh(ARM64_REG_V1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LD2_8b_zeroes_the_upper_half)
+{
+	setV(ARM64_REG_V0, 0xdeadbeefdeadbeefULL, 0);
+	setV(ARM64_REG_V1, 0xdeadbeefdeadbeefULL, 0);
+	setRegisters({
+		{ARM64_REG_X0, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x0b0a0b0a0b0a0b0a_qw},
+		{0x1008, 0x0b0a0b0a0b0a0b0a_qw},
+	});
+
+	emulate_bin("00 80 40 0c"); // ld2 {v0.8b, v1.8b}, [x0]
+
+	EXPECT_EQ(0x0a0a0a0a0a0a0a0aULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_EQ(0x0b0b0b0b0b0b0b0bULL, vLow(ARM64_REG_V1));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ST2_16b)
+{
+	setV(ARM64_REG_V0, 0x0a0a0a0a0a0a0a0aULL, 0x0a0a0a0a0a0a0a0aULL);
+	setV(ARM64_REG_V1, 0x0b0b0b0b0b0b0b0bULL, 0x0b0b0b0b0b0b0b0bULL);
+	setRegisters({
+		{ARM64_REG_X0, 0x1000},
+	});
+
+	emulate_bin("00 80 00 4c"); // st2 {v0.16b, v1.16b}, [x0]
+
+	EXPECT_EQ(0x0b0a0b0a0b0a0b0aULL, getMemoryValueUnsigned(0x1000, 64));
+	EXPECT_EQ(0x0b0a0b0a0b0a0b0aULL, getMemoryValueUnsigned(0x1008, 64));
+	EXPECT_EQ(0x0b0a0b0a0b0a0b0aULL, getMemoryValueUnsigned(0x1010, 64));
+	EXPECT_EQ(0x0b0a0b0a0b0a0b0aULL, getMemoryValueUnsigned(0x1018, 64));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LD3_16b)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0x1000},
+	});
+	// 48 bytes of 00,11,22 repeating.
+	setMemory({
+		{0x1000, 0x1100221100221100_qw},
+		{0x1008, 0x0022110022110022_qw},
+		{0x1010, 0x2211002211002211_qw},
+		{0x1018, 0x1100221100221100_qw},
+		{0x1020, 0x0022110022110022_qw},
+		{0x1028, 0x2211002211002211_qw},
+	});
+
+	emulate_bin("00 40 40 4c"); // ld3 {v0.16b, v1.16b, v2.16b}, [x0]
+
+	EXPECT_EQ(0ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_EQ(0x1111111111111111ULL, vLow(ARM64_REG_V1));
+	EXPECT_EQ(0x1111111111111111ULL, vHigh(ARM64_REG_V1));
+	EXPECT_EQ(0x2222222222222222ULL, vLow(ARM64_REG_V2));
+	EXPECT_EQ(0x2222222222222222ULL, vHigh(ARM64_REG_V2));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ARM64_INS_INS -- insert GPR or lane into a NEON lane (x86 PINSR*)
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_INS_from_gpr)
+{
+	setV(ARM64_REG_V0, 0xaaaaaaaaaaaaaaaaULL, 0xbbbbbbbbbbbbbbbbULL);
+	setRegisters({
+		{ARM64_REG_W1, 0x12345678},
+	});
+
+	emulate_bin("20 1c 0c 4e"); // ins v0.s[1], w1
+
+	EXPECT_EQ(0x12345678bbbbbbbbULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0xaaaaaaaaaaaaaaaaULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_INS_from_lane)
+{
+	setV(ARM64_REG_V0, 0xaaaaaaaaaaaaaaaaULL, 0xaaaaaaaaaaaaaaaaULL);
+	setV(ARM64_REG_V1, 0, 0xef00000000000000ULL);
+
+	emulate_bin("20 3c 07 6e"); // ins v0.b[3], v1.b[7]
+
+	EXPECT_EQ(0xaaaaaaaaefaaaaaaULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0xaaaaaaaaaaaaaaaaULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ARM64_INS_LD1R -- load one element and replicate (x86 MOVDDUP / VBROADCAST)
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LD1R_4s)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x11223344_dw},
+	});
+
+	emulate_bin("00 c8 40 4d"); // ld1r {v0.4s}, [x0]
+
+	EXPECT_EQ(0x1122334411223344ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x1122334411223344ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LD1R_8b_zeroes_the_upper_half)
+{
+	setV(ARM64_REG_V0, 0xdeadbeefdeadbeefULL, 0);
+	setRegisters({
+		{ARM64_REG_X0, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0xab_b},
+	});
+
+	emulate_bin("00 c0 40 0d"); // ld1r {v0.8b}, [x0]
+
+	EXPECT_EQ(0xababababababababULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ARM64_INS_FACGE / FACGT -- abs compare, all-1s/0s mask like FCMGE/FCMGT
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FACGE_4s)
+{
+	// |1|>=|1| T, |-1|>=|0| T, |3|>=|2| T, |0|>=|1| F  (FCMGE would be T F T F)
+	setV(ARM64_REG_V1, 0x0000000040400000ULL, 0xbf8000003f800000ULL);
+	setV(ARM64_REG_V2, 0x3f80000040000000ULL, 0x000000003f800000ULL);
+
+	emulate_bin("20 ec 22 6e"); // facge v0.4s, v1.4s, v2.4s
+
+	EXPECT_EQ(0xffffffffffffffffULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x00000000ffffffffULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FACGE_gt_4s)
+{
+	// Named to sit next to FACGE in the required filter. |1|>|1| F, |-1|>|0| T,
+	// |3|>|2| T, |0|>|1| F.
+	setV(ARM64_REG_V1, 0x0000000040400000ULL, 0xbf8000003f800000ULL);
+	setV(ARM64_REG_V2, 0x3f80000040000000ULL, 0x000000003f800000ULL);
+
+	emulate_bin("20 ec a2 6e"); // facgt v0.4s, v1.4s, v2.4s
+
+	EXPECT_EQ(0xffffffff00000000ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x00000000ffffffffULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ARM64_INS_MLA -- integer vector dest + a*b (x86 PMULLD + add)
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_MLA_4s)
+{
+	setV(ARM64_REG_V0, 0x0000000100000001ULL, 0x0000000100000001ULL);
+	setV(ARM64_REG_V1, 0x0000000200000002ULL, 0x0000000200000002ULL);
+	setV(ARM64_REG_V2, 0x0000000300000003ULL, 0x0000000300000003ULL);
+
+	emulate_bin("20 94 a2 4e"); // mla v0.4s, v1.4s, v2.4s
+
+	EXPECT_EQ(0x0000000700000007ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0000000700000007ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_MLA_mls_4s)
+{
+	setV(ARM64_REG_V0, 0x0000000a0000000aULL, 0x0000000a0000000aULL);
+	setV(ARM64_REG_V1, 0x0000000200000002ULL, 0x0000000200000002ULL);
+	setV(ARM64_REG_V2, 0x0000000300000003ULL, 0x0000000300000003ULL);
+
+	emulate_bin("20 94 a2 6e"); // mls v0.4s, v1.4s, v2.4s
+
+	EXPECT_EQ(0x0000000400000004ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0000000400000004ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ARM64_INS_SADDLP -- pairwise widen-add (x86 PHADD-class)
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SADDLP_4s)
+{
+	// halfwords 0xffff (-1), 1, 0, 0, ...  signed: -1+1 = 0
+	setV(ARM64_REG_V1, 0, 0x000000000001ffffULL);
+
+	emulate_bin("20 28 60 4e"); // saddlp v0.4s, v1.8h
+
+	EXPECT_EQ(0ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SADDLP_uaddlp_is_unsigned)
+{
+	// Same operands: unsigned 0xffff+1 = 0x10000, which SADDLP would wrap to 0.
+	setV(ARM64_REG_V1, 0, 0x000000000001ffffULL);
+
+	emulate_bin("20 28 60 6e"); // uaddlp v0.4s, v1.8h
+
+	EXPECT_EQ(0x0000000000010000ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ARM64_INS_FMAXV -- across-vector FP max into scalar Sn
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FMAXV_4s)
+{
+	// 1.0, -1.0, 3.0, 0.0 → 3.0; dirty Q so a merge would be visible.
+	setV(ARM64_REG_V1, 0x0000000040400000ULL, 0xbf8000003f800000ULL);
+	setV(ARM64_REG_V0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+
+	emulate_bin("20 f8 30 6e"); // fmaxv s0, v1.4s
+
+	EXPECT_EQ(0x0000000040400000ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FMAXV_min_4s)
+{
+	setV(ARM64_REG_V1, 0x0000000040400000ULL, 0xbf8000003f800000ULL);
+	setV(ARM64_REG_V0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+
+	emulate_bin("20 f8 b0 6e"); // fminv s0, v1.4s
+
+	EXPECT_EQ(0x00000000bf800000ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// Saturating / widening leftovers -- x86 PADDSB / PACKSSWB / PMOVSX parity.
+// Encodings confirmed with Keystone arm64 + Capstone dump.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SQADD_16b_saturates)
+{
+	// 127+1 is 127, not a wrapping -128; 1+1 is 2 so this is not a splat of 0x7f.
+	setV(ARM64_REG_V1, 0, 0x000000000000017fULL);
+	setV(ARM64_REG_V2, 0, 0x0000000000000101ULL);
+
+	emulate_bin("20 0c 22 4e"); // sqadd v0.16b, v1.16b, v2.16b
+
+	EXPECT_EQ(0x000000000000027fULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UQADD_16b_saturates)
+{
+	setV(ARM64_REG_V1, 0, 0x00000000000005ffULL);
+	setV(ARM64_REG_V2, 0, 0x0000000000000101ULL);
+
+	emulate_bin("20 0c 22 6e"); // uqadd v0.16b, v1.16b, v2.16b
+
+	EXPECT_EQ(0x00000000000006ffULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SQSUB_16b_saturates)
+{
+	// -128-1 stays -128; 5-1 is 4.
+	setV(ARM64_REG_V1, 0, 0x0000000000000580ULL);
+	setV(ARM64_REG_V2, 0, 0x0000000000000101ULL);
+
+	emulate_bin("20 2c 22 4e"); // sqsub v0.16b, v1.16b, v2.16b
+
+	EXPECT_EQ(0x0000000000000480ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UQSUB_16b_saturates)
+{
+	setV(ARM64_REG_V1, 0, 0x0000000000000500ULL);
+	setV(ARM64_REG_V2, 0, 0x0000000000000101ULL);
+
+	emulate_bin("20 2c 22 6e"); // uqsub v0.16b, v1.16b, v2.16b
+
+	EXPECT_EQ(0x0000000000000400ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SQXTN)
+{
+	// 8h: 127, 128, -128, -129, 1, -1, 256, 0
+	setV(ARM64_REG_V1, 0x00000100ffff0001ULL, 0xff7fff800080007fULL);
+	setV(ARM64_REG_V0, 0xcafecafecafecafeULL, 0xcafecafecafecafeULL);
+
+	emulate_bin("20 48 21 0e"); // sqxtn v0.8b, v1.8h
+
+	EXPECT_EQ(0x007fff0180807f7fULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SQXTN2_keeps_the_lower_half)
+{
+	setV(ARM64_REG_V1, 0x00000100ffff0001ULL, 0xff7fff800080007fULL);
+	setV(ARM64_REG_V0, 0xcafecafecafecafeULL, 0x0123456789abcdefULL);
+
+	emulate_bin("20 48 21 4e"); // sqxtn2 v0.16b, v1.8h
+
+	EXPECT_EQ(0x0123456789abcdefULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x007fff0180807f7fULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UQXTN_is_unsigned)
+{
+	// Same halfwords as SQXTN: 0xffff saturates to 0xff unsigned, not 0x00.
+	setV(ARM64_REG_V1, 0x00000100ffff0001ULL, 0xff7fff800080007fULL);
+	setV(ARM64_REG_V0, 0, 0);
+
+	emulate_bin("20 48 21 2e"); // uqxtn v0.8b, v1.8h
+
+	EXPECT_EQ(0x00ffff01ffff807fULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ADDHN)
+{
+	// High half of 0x1234 is 0x12, not the truncated 0x34.
+	setV(ARM64_REG_V1, 0, 0x0000000000001234ULL);
+	setV(ARM64_REG_V2, 0, 0);
+
+	emulate_bin("20 40 22 0e"); // addhn v0.8b, v1.8h, v2.8h
+
+	EXPECT_EQ(0x12ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ADDHN2_keeps_the_lower_half)
+{
+	setV(ARM64_REG_V1, 0, 0x0000000000001234ULL);
+	setV(ARM64_REG_V2, 0, 0);
+	setV(ARM64_REG_V0, 0xcafecafecafecafeULL, 0x0123456789abcdefULL);
+
+	emulate_bin("20 40 22 4e"); // addhn2 v0.16b, v1.8h, v2.8h
+
+	EXPECT_EQ(0x0123456789abcdefULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x12ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_RADDHN_rounds)
+{
+	// 0x0080 >> 8 is 0; with the rounding bit it becomes 0x0100 >> 8 = 1.
+	setV(ARM64_REG_V1, 0, 0x0000000000000080ULL);
+	setV(ARM64_REG_V2, 0, 0);
+
+	emulate_bin("20 40 22 2e"); // raddhn v0.8b, v1.8h, v2.8h
+
+	EXPECT_EQ(0x01ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SADDW2_reads_the_upper_half)
+{
+	setV(ARM64_REG_V1, 0x0001000100010001ULL, 0x0001000100010001ULL);
+	setV(ARM64_REG_V2, 0x1010101010101010ULL, 0x0202020202020202ULL);
+
+	emulate_bin("20 10 22 4e"); // saddw2 v0.8h, v1.8h, v2.16b
+
+	EXPECT_EQ(0x0011001100110011ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0011001100110011ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SMULL2_reads_the_upper_half)
+{
+	setV(ARM64_REG_V1, 0x0202020202020202ULL, 0x0101010101010101ULL);
+	setV(ARM64_REG_V2, 0x0404040404040404ULL, 0x0303030303030303ULL);
+
+	emulate_bin("20 c0 22 4e"); // smull2 v0.8h, v1.16b, v2.16b
+
+	EXPECT_EQ(0x0008000800080008ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0008000800080008ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SADDLV_widens)
+{
+	setV(ARM64_REG_V1, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setV(ARM64_REG_V0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+
+	emulate_bin("20 38 30 0e"); // saddlv h0, v1.8b
+
+	// Eight signed 0xff bytes sum to -8, which fits in a halfword. ADDV of
+	// the same lanes wraps to 0xf8.
+	EXPECT_EQ(0xfff8ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UADDLV_is_unsigned)
+{
+	setV(ARM64_REG_V1, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setV(ARM64_REG_V0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+
+	emulate_bin("20 38 30 2e"); // uaddlv h0, v1.8b
+
+	// Eight unsigned 0xff bytes sum to 2040 = 0x07f8.
+	EXPECT_EQ(0x07f8ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// Leftover NEON: halving add, widening MLA, sat abs/narrow/shift.
+// Encodings confirmed with Keystone arm64 (LE bytes below).
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SHADD)
+{
+	// Signed (a+b)>>1 one bit wider than the lane: 0x80+0x80 is -128, not 0.
+	// 0x7f+0x01 is 64, so this is not a splat of 0x80.
+	setV(ARM64_REG_V1, 0, 0x0000000000007f80ULL);
+	setV(ARM64_REG_V2, 0, 0x0000000000000180ULL);
+
+	emulate_bin("20 04 22 4e"); // shadd v0.16b, v1.16b, v2.16b
+
+	EXPECT_EQ(0x0000000000004080ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UHADD)
+{
+	// Unsigned: 0xff+0x01 is 0x80. SHADD of the same lanes is 0.
+	setV(ARM64_REG_V1, 0, 0x00000000000000ffULL);
+	setV(ARM64_REG_V2, 0, 0x0000000000000001ULL);
+
+	emulate_bin("20 04 22 6e"); // uhadd v0.16b, v1.16b, v2.16b
+
+	EXPECT_EQ(0x0000000000000080ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_URHADD)
+{
+	// Rounding (a+b+1)>>1, PAVGB: 0xff+0 is 0x80, UHADD of that is 0x7f.
+	setV(ARM64_REG_V1, 0, 0x00000000000000ffULL);
+	setV(ARM64_REG_V2, 0, 0);
+
+	emulate_bin("20 14 22 6e"); // urhadd v0.16b, v1.16b, v2.16b
+
+	EXPECT_EQ(0x0000000000000080ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SMLAL)
+{
+	setV(ARM64_REG_V0, 0x0001000100010001ULL, 0x0001000100010001ULL);
+	setV(ARM64_REG_V1, 0x0a0a0a0a0a0a0a0aULL, 0x0202020202020202ULL);
+	setV(ARM64_REG_V2, 0x0b0b0b0b0b0b0b0bULL, 0x0303030303030303ULL);
+
+	emulate_bin("20 80 22 0e"); // smlal v0.8h, v1.8b, v2.8b
+
+	// 1 + 2*3 = 7. The upper source bytes are not used.
+	EXPECT_EQ(0x0007000700070007ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0007000700070007ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SMLAL2)
+{
+	setV(ARM64_REG_V0, 0x0001000100010001ULL, 0x0001000100010001ULL);
+	setV(ARM64_REG_V1, 0x0202020202020202ULL, 0x0101010101010101ULL);
+	setV(ARM64_REG_V2, 0x0404040404040404ULL, 0x0303030303030303ULL);
+
+	emulate_bin("20 80 22 4e"); // smlal2 v0.8h, v1.16b, v2.16b
+
+	// 1 + 2*4 = 9. Using the lower half would answer 4.
+	EXPECT_EQ(0x0009000900090009ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0009000900090009ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UMLAL)
+{
+	setV(ARM64_REG_V0, 0, 0);
+	setV(ARM64_REG_V1, 0, 0x00000000000000ffULL);
+	setV(ARM64_REG_V2, 0, 0x0000000000000002ULL);
+
+	emulate_bin("20 80 22 2e"); // umlal v0.8h, v1.8b, v2.8b
+
+	// 0xff*2 is 510 unsigned. Signed SMLAL of the same lanes is -2.
+	EXPECT_EQ(0x00000000000001feULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UMLAL2)
+{
+	setV(ARM64_REG_V0, 0, 0);
+	setV(ARM64_REG_V1, 0xff00000000000000ULL, 0x0101010101010101ULL);
+	setV(ARM64_REG_V2, 0x0200000000000000ULL, 0x0303030303030303ULL);
+
+	emulate_bin("20 80 22 6e"); // umlal2 v0.8h, v1.16b, v2.16b
+
+	// Upper-half last byte 0xff*2 = 510; lower-half 1*3 would be 3.
+	EXPECT_EQ(0x01fe000000000000ULL, vHigh(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vLow(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SMLSL2)
+{
+	setV(ARM64_REG_V0, 0x000a000a000a000aULL, 0x000a000a000a000aULL);
+	setV(ARM64_REG_V1, 0x0202020202020202ULL, 0x0101010101010101ULL);
+	setV(ARM64_REG_V2, 0x0404040404040404ULL, 0x0303030303030303ULL);
+
+	emulate_bin("20 a0 22 4e"); // smlsl2 v0.8h, v1.16b, v2.16b
+
+	// 10 - 2*4 = 2. Using the lower half would answer 7.
+	EXPECT_EQ(0x0002000200020002ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0002000200020002ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SMLSL)
+{
+	setV(ARM64_REG_V0, 0x000a000a000a000aULL, 0x000a000a000a000aULL);
+	setV(ARM64_REG_V1, 0, 0x0202020202020202ULL);
+	setV(ARM64_REG_V2, 0, 0x0303030303030303ULL);
+
+	emulate_bin("20 a0 22 0e"); // smlsl v0.8h, v1.8b, v2.8b
+
+	// 10 - 2*3 = 4.
+	EXPECT_EQ(0x0004000400040004ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0004000400040004ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SQABS)
+{
+	// ABS of 0x80 is 0x80; SQABS saturates to 0x7f. 0xff → 1 so this is not a splat.
+	setV(ARM64_REG_V1, 0, 0x000000000001ff80ULL);
+
+	emulate_bin("20 78 20 4e"); // sqabs v0.16b, v1.16b
+
+	EXPECT_EQ(0x000000000001017fULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SQNEG)
+{
+	setV(ARM64_REG_V1, 0, 0x0000000000000180ULL);
+
+	emulate_bin("20 78 20 6e"); // sqneg v0.16b, v1.16b
+
+	EXPECT_EQ(0x000000000000ff7fULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SQXTUN)
+{
+	// Same halfwords as SQXTN: signed→unsigned, so -1 becomes 0 not 255.
+	setV(ARM64_REG_V1, 0x00000100ffff0001ULL, 0xff7fff800080007fULL);
+	setV(ARM64_REG_V0, 0xcafecafecafecafeULL, 0xcafecafecafecafeULL);
+
+	emulate_bin("20 28 21 2e"); // sqxtun v0.8b, v1.8h
+
+	EXPECT_EQ(0x00ff00010000807fULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SQXTUN2_keeps_the_lower_half)
+{
+	setV(ARM64_REG_V1, 0x00000100ffff0001ULL, 0xff7fff800080007fULL);
+	setV(ARM64_REG_V0, 0xcafecafecafecafeULL, 0x0123456789abcdefULL);
+
+	emulate_bin("20 28 21 6e"); // sqxtun2 v0.16b, v1.8h
+
+	EXPECT_EQ(0x0123456789abcdefULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x00ff00010000807fULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SQSHL)
+{
+	setV(ARM64_REG_V1, 0, 0x0000000000002040ULL);
+
+	emulate_bin("20 74 09 4f"); // sqshl v0.16b, v1.16b, #1
+
+	// 0x40<<1 saturates to 0x7f; 0x20<<1 is 0x40.
+	EXPECT_EQ(0x000000000000407fULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UQSHL)
+{
+	setV(ARM64_REG_V1, 0, 0x0000000000004080ULL);
+
+	emulate_bin("20 74 09 6f"); // uqshl v0.16b, v1.16b, #1
+
+	EXPECT_EQ(0x00000000000080ffULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SQSHLU)
+{
+	setV(ARM64_REG_V1, 0, 0x0000000000004080ULL);
+
+	emulate_bin("20 64 09 6f"); // sqshlu v0.16b, v1.16b, #1
+
+	// Signed 0x80<<1 saturates unsigned to 0; 0x40<<1 is 0x80.
+	EXPECT_EQ(0x0000000000008000ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SQSHRN)
+{
+	setV(ARM64_REG_V1, 0, 0x0000000001000002ULL);
+	setV(ARM64_REG_V0, 0xcafecafecafecafeULL, 0xcafecafecafecafeULL);
+
+	emulate_bin("20 94 0f 0f"); // sqshrn v0.8b, v1.8h, #1
+
+	// 2>>1 is 1; 0x100>>1 is 0x80, which saturates signed to 0x7f.
+	EXPECT_EQ(0x0000000000007f01ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_RSHRN)
+{
+	setV(ARM64_REG_V1, 0, 0x0000000000000001ULL);
+	setV(ARM64_REG_V0, 0xcafecafecafecafeULL, 0xcafecafecafecafeULL);
+
+	emulate_bin("20 8c 0f 0f"); // rshrn v0.8b, v1.8h, #1
+
+	// (1+1)>>1 is 1; SHRN of the same lane is 0.
+	EXPECT_EQ(0x01ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_RSHRN2_keeps_the_lower_half)
+{
+	setV(ARM64_REG_V1, 0, 0x0000000000000001ULL);
+	setV(ARM64_REG_V0, 0xcafecafecafecafeULL, 0x0123456789abcdefULL);
+
+	emulate_bin("20 8c 0f 4f"); // rshrn2 v0.16b, v1.8h, #1
+
+	EXPECT_EQ(0x0123456789abcdefULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x01ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_USUBW2)
+{
+	setV(ARM64_REG_V1, 0x0001000100010001ULL, 0x0001000100010001ULL);
+	setV(ARM64_REG_V2, 0x1010101010101010ULL, 0x0202020202020202ULL);
+
+	emulate_bin("20 30 22 6e"); // usubw2 v0.8h, v1.8h, v2.16b
+
+	// 1 - 16 = 0xfff1. Using the lower 0x02 would answer 0xffff.
+	EXPECT_EQ(0xfff1fff1fff1fff1ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0xfff1fff1fff1fff1ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// Leftover NEON: abs-diff, rounding/halving sub, SSUBW2, widening MLS, SQSHRUN.
+// Encodings confirmed with Keystone arm64 (LE bytes below).
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SABD)
+{
+	// Signed |0-(-1)| is 1; unsigned of the same lanes is 255. Lane 0 is 0 so
+	// this is not a splat.
+	setV(ARM64_REG_V1, 0, 0x0000000000000000ULL);
+	setV(ARM64_REG_V2, 0, 0x000000000000ff00ULL);
+
+	emulate_bin("20 74 22 4e"); // sabd v0.16b, v1.16b, v2.16b
+
+	EXPECT_EQ(0x0000000000000100ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UABD)
+{
+	setV(ARM64_REG_V1, 0, 0x0000000000000000ULL);
+	setV(ARM64_REG_V2, 0, 0x000000000000ff00ULL);
+
+	emulate_bin("20 74 22 6e"); // uabd v0.16b, v1.16b, v2.16b
+
+	EXPECT_EQ(0x000000000000ff00ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SABDL)
+{
+	setV(ARM64_REG_V1, 0xaaaaaaaaaaaaaaaaULL, 0);
+	setV(ARM64_REG_V2, 0xbbbbbbbbbbbbbbbbULL, 0xffffffffffffffffULL);
+
+	emulate_bin("20 70 22 0e"); // sabdl v0.8h, v1.8b, v2.8b
+
+	// |0-(-1)| widens to 0x0001. The upper source bytes are not used.
+	EXPECT_EQ(0x0001000100010001ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0001000100010001ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SABDL2)
+{
+	setV(ARM64_REG_V1, 0, 0x1010101010101010ULL);
+	setV(ARM64_REG_V2, 0xffffffffffffffffULL, 0x0202020202020202ULL);
+
+	emulate_bin("20 70 22 4e"); // sabdl2 v0.8h, v1.16b, v2.16b
+
+	// Upper |0-(-1)| = 1. Using the lower 0x10-0x02 would answer 0x000e.
+	EXPECT_EQ(0x0001000100010001ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0001000100010001ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UABDL)
+{
+	setV(ARM64_REG_V1, 0xaaaaaaaaaaaaaaaaULL, 0);
+	setV(ARM64_REG_V2, 0xbbbbbbbbbbbbbbbbULL, 0x00000000000000ffULL);
+
+	emulate_bin("20 70 22 2e"); // uabdl v0.8h, v1.8b, v2.8b
+
+	// Unsigned |0-255| is 0x00ff. Signed SABDL of the same lanes is 0x0001.
+	EXPECT_EQ(0x00000000000000ffULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UABDL2)
+{
+	setV(ARM64_REG_V1, 0, 0x0101010101010101ULL);
+	setV(ARM64_REG_V2, 0xff00000000000000ULL, 0x0303030303030303ULL);
+
+	emulate_bin("20 70 22 6e"); // uabdl2 v0.8h, v1.16b, v2.16b
+
+	// Upper last byte |0-255| = 255; lower 1-3 would be 2.
+	EXPECT_EQ(0x00ff000000000000ULL, vHigh(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vLow(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SRHADD)
+{
+	// Rounding (a+b+1)>>1 signed: 0xff+0 is 0, SHADD of that is 0xff, URHADD is 0x80.
+	setV(ARM64_REG_V1, 0, 0x000000000000ff01ULL);
+	setV(ARM64_REG_V2, 0, 0);
+
+	emulate_bin("20 14 22 4e"); // srhadd v0.16b, v1.16b, v2.16b
+
+	EXPECT_EQ(0x0000000000000001ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SHSUB)
+{
+	// Signed (0-(-128))>>1 is 64; UHSUB of the same lanes is 0xc0.
+	setV(ARM64_REG_V1, 0, 0);
+	setV(ARM64_REG_V2, 0, 0x0000000000008002ULL);
+
+	emulate_bin("20 24 22 4e"); // shsub v0.16b, v1.16b, v2.16b
+
+	// Lane0 (0-2)>>1 = -1; lane1 (0-(-128))>>1 = 64.
+	EXPECT_EQ(0x00000000000040ffULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UHSUB)
+{
+	setV(ARM64_REG_V1, 0, 0);
+	setV(ARM64_REG_V2, 0, 0x0000000000000080ULL);
+
+	emulate_bin("20 24 22 6e"); // uhsub v0.16b, v1.16b, v2.16b
+
+	// Unsigned (0-128)>>1 is 0xc0. SHSUB of that lane is 0x40.
+	EXPECT_EQ(0x00000000000000c0ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SSUBW2)
+{
+	setV(ARM64_REG_V1, 0x0001000100010001ULL, 0x0001000100010001ULL);
+	setV(ARM64_REG_V2, 0x8080808080808080ULL, 0x0202020202020202ULL);
+
+	emulate_bin("20 30 22 4e"); // ssubw2 v0.8h, v1.8h, v2.16b
+
+	// 1 - (-128) = 129. Unsigned USUBW2 of the same lanes is 0xff81;
+	// using the lower 0x02 would answer 0xffff.
+	EXPECT_EQ(0x0081008100810081ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0081008100810081ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UMLSL)
+{
+	setV(ARM64_REG_V0, 0, 0);
+	setV(ARM64_REG_V1, 0, 0x00000000000000ffULL);
+	setV(ARM64_REG_V2, 0, 0x0000000000000002ULL);
+
+	emulate_bin("20 a0 22 2e"); // umlsl v0.8h, v1.8b, v2.8b
+
+	// 0 - 255*2 = -510 = 0xfe02. Signed SMLSL of the same lanes is +2.
+	EXPECT_EQ(0x000000000000fe02ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UMLSL2)
+{
+	setV(ARM64_REG_V0, 0, 0);
+	setV(ARM64_REG_V1, 0xff00000000000000ULL, 0x0101010101010101ULL);
+	setV(ARM64_REG_V2, 0x0200000000000000ULL, 0x0303030303030303ULL);
+
+	emulate_bin("20 a0 22 6e"); // umlsl2 v0.8h, v1.16b, v2.16b
+
+	// Upper-half last byte 0 - 0xff*2 = 0xfe02; lower-half 1*3 would be -3.
+	EXPECT_EQ(0xfe02000000000000ULL, vHigh(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vLow(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SQSHRUN)
+{
+	setV(ARM64_REG_V1, 0, 0x0000020000000002ULL);
+	setV(ARM64_REG_V0, 0xcafecafecafecafeULL, 0xcafecafecafecafeULL);
+
+	emulate_bin("20 84 0f 2f"); // sqshrun v0.8b, v1.8h, #1
+
+	// 2>>1 is 1; 0x200>>1 is 256, which saturates unsigned to 255 (SQSHRN: 127).
+	EXPECT_EQ(0x0000000000ff0001ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SQSHRUN2_keeps_the_lower_half)
+{
+	setV(ARM64_REG_V1, 0, 0x0000020000000002ULL);
+	setV(ARM64_REG_V0, 0xcafecafecafecafeULL, 0x0123456789abcdefULL);
+
+	emulate_bin("20 84 0f 6f"); // sqshrun2 v0.16b, v1.8h, #1
+
+	EXPECT_EQ(0x0123456789abcdefULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0000000000ff0001ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

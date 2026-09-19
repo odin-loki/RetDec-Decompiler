@@ -106,15 +106,23 @@ SVE tokens.
 | TBZ / TBNZ | `TBZ`, `TBNZ` | real | |
 | ADR / ADRP | `ADR`, `ADRP` | real | Capstone already folds PC + imm |
 | MUL / MADD / MSUB | `MUL`, `MADD`, `MSUB`, `MNEG` | real | Capstone reports `MUL` as its own id (alias of `MADD …, XZR`) |
-| Scalar FP | `FADD`, `FSUB`, `FMUL`, `FNMUL`, `FDIV`, `FCMP`, `FCVT`, `FMOV` (Sn/Dn) | real | Sn/Dn, `VAS` invalid |
-| SIMD lane FP | `FADD`, `FSUB`, `FMUL`, `FDIV` on `.2s`/`.4s`/`.2d` | real | `translateNeonFpLaneBinary`; `.8h`/`.4h` stay pseudo |
-| SIMD list | `LD1`, `ST1` | real | whole-register / D-form; lane and `LD2`–`LD4` stay nullptr |
+| Scalar FP | `FADD`, `FSUB`, `FMUL`, `FNMUL`, `FDIV`, `FCMP`, `FCVT`, `FMOV` (Sn/Dn), `FMLA`, `FMLS` | real | Sn/Dn, `VAS` invalid; `FMLA`/`FMLS` are 3-operand fused (`llvm.fma`); 4-operand `FMADD`/`FMSUB` already real |
+| SIMD lane FP | `FADD`, `FSUB`, `FMUL`, `FDIV`, `FMLA`, `FMLS` on `.2s`/`.4s`/`.2d` | real | `translateNeonFpLaneBinary` / `translateFMla`; `.8h`/`.4h` and by-element `vm.s[n]` stay pseudo |
+| SIMD list | `LD1`, `ST1`, `LD2`/`ST2`, `LD3`/`ST3`, `LD4`/`ST4`, `LD1R`–`LD4R` | real | whole-register / D-form; lane-index LD/ST stay nullptr. LD2–4 de-interleave. `LD*R` replicate one loaded element (x86 MOVDDUP / VBROADCAST) |
+| SIMD table | `TBL`, `TBX` | real | 1–4 table regs, 16B each; OOB is 0 (TBL) or dest (TBX) |
+| SIMD FP compare | `FCMEQ`, `FCMGE`, `FCMGT`, `FCMLE`, `FCMLT`, `FACGE`, `FACGT` | real | `.2s`/`.4s`/`.2d`; `fcmp` + sext mask like SSE cmpps. `FACGE`/`FACGT` compare `fabs` of both lanes |
+| SIMD insert / MAC | `INS`, `MLA`, `MLS` | real | `INS` merges a GPR or lane into Qn (x86 PINSR*). `MLA`/`MLS` are dest ± a*b; by-element stays pseudo |
+| SIMD pairwise widen | `SADDLP`, `UADDLP` | real | adjacent pairs, sign/zero-extend, add into double-width lanes (x86 PHADD-class) |
+| SIMD sat / widen | `SQADD`/`UQADD`/`SQSUB`/`UQSUB`, `SQXTN`/`UQXTN` (+2), `ADDHN`/`RADDHN` (+2), `SADDW2`/`UADDW2`, `SMULL2`/`UMULL2`, `SADDLV`/`UADDLV` | real | x86 PADDSB/PACKSSWB/PMOVSX parity; select-clamp like ARM32 VQADD, not `llvm.sadd.sat` |
+| SIMD across FP | `FMAXV`, `FMINV` | real | across-vector FP min/max into scalar Sn/Dn; `.4h`/`.8h` stay pseudo |
 | LSE atomics | `LDADD*`, `LDCLR*`, `LDEOR*`, `LDSET*`, `LDSMAX*`, `LDSMIN*`, `LDUMAX*`, `LDUMIN*`, `SWP*`, `CAS`/`CASA`/`CASL`/`CASAL` (+ B/H) | real | `atomicrmw` / `cmpxchg` |
-| LSE pair-CAS | `CASP`, `CASPA`, `CASPL`, `CASPAL` | nullptr | LLVM `cmpxchg` is not a register pair |
+| LSE pair-CAS | `CASP`, `CASPA`, `CASPL`, `CASPAL` | real | `cmpxchg` i128 (Xt pair) or i64 (Wt pair); Capstone lists Rs,Rs+1,Rt,Rt+1,[Xn] |
 | SVC / BRK | `SVC`, `BRK` | `__asm_svc` / `__asm_brk` | same pattern as ARM32 `SVC`; SyscallFixer keys off `ARM64_INS_SVC` |
 | PAC / BTI / HINT / PRFM | `PACIASP`, `AUTIASP`, `BTI` (`ARM64_INS_ALIAS_BTI`), `HINT`, `NOP`, `PRFM`, … | nothing | decoder `isNopInstruction` agrees |
 | AES / SHA | `AESE`, `AESD`, `AESMC`, `AESIMC`, `SHA1*`, `SHA256*` | nullptr | crypto; not the compiler production bar |
-| FMLA / FMLS | `FMLA`, `FMLS` | nullptr | fused vector FMA; scalar `FMADD`/`FMSUB` are real |
+| Widening FMA | `FMLAL`, `FMLAL2`, `FMLSL`, `FMLSL2` | unmapped | Capstone tokens exist; half→single widening is not a same-width FMA |
+| Polynomial / CRC | `PMULL`, `PMULL2`, `CRC32*` | nullptr | polynomial multiply (x86 `PCLMULQDQ` is also nullptr); CRC not compiler SIMD |
+| Remaining sat SIMD | `SQDMULH`, `SQRDMULH` (doubling), `SQRSHL`/`SQRSHRN`/`SQRSHRUN` | nullptr | doubling / rounding-sat; not x86 SSE compiler-parity of PADDSB/PACKUSWB |
 | SVE / SME | 6.x ids (`WHILELT`, `LD1W`, `FADDA`, …) | unmapped / generic pseudo | no invented SVE tokens |
 
 Shifts `LSL`/`LSR`/`ASR`/`ROR`, bitfield aliases `UBFX`/`SBFX`/`BFI`/…,
@@ -122,7 +130,8 @@ Shifts `LSL`/`LSR`/`ASR`/`ROR`, bitfield aliases `UBFX`/`SBFX`/`BFI`/…,
 integer, not listed in the must-lift table above). Canonical `UBFM` /
 `SBFM` / `BFM` stay `nullptr`: Capstone 6 still reports the aliases on compiled
 code. Integer NEON (`ADD`/`SUB`/`MUL` `.4s`, `EXT`, `BSL`, compares, permutes)
-already has a lane translator.
+already has a lane translator. `INS`, integer `MLA`/`MLS`, `SADDLP`/`UADDLP`,
+and `FMAXV`/`FMINV` are the same model.
 
 ## Tests
 

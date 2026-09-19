@@ -427,9 +427,20 @@ Capstone 6 dropped several Capstone 5 names. Compat aliases in
 | `SPARC_INS_BRZ` / `BRNZ` / … | `SPARC_INS_ALIAS_BR*` (real id `SPARC_INS_BR`) |
 | `SPARC_REG_XCC` | no register; XCC is `SPARC_CC_FIELD_XCC`. Flags packed in `SPARC_REG_ICC` bits 7:4 |
 | assembler `ldf` | `SPARC_INS_LD` with `SPARC_REG_F*` dest |
-| assembler `std` / `stdf` | `SPARC_INS_STD` |
+| assembler `lddf` / `ldd` to `D*` | `SPARC_INS_LDD` |
+| assembler `stf` | `SPARC_INS_ST` from `SPARC_REG_F*` |
+| assembler `stdf` | `SPARC_INS_STD` from `D*` / even `F*` |
+| assembler `ld`/`st` `%fsr` | `SPARC_INS_LD` / `SPARC_INS_ST` (implicit `%fsr` when no dest/src reg) |
+| assembler `cas` | `SPARC_INS_ALIAS_CAS` (real id `SPARC_INS_CASA`) |
+| assembler `casx` | `SPARC_INS_ALIAS_CASX` (real id `SPARC_INS_CASXA`) |
+| assembler `fand` | `SPARC_INS_FAND` (64-bit VIS; single-width is `SPARC_INS_FANDS`) |
+| assembler `fnot` | `SPARC_INS_FNOT1` / `SPARC_INS_FNOT2` (no `SPARC_INS_FNOT`) |
+| assembler `fmul8x16` | `SPARC_INS_FMUL8X16` |
+| assembler `fmul8sux16` | `SPARC_INS_FMUL8SUX16` |
 
-There is **no** `SPARC_INS_LDF` / `SPARC_INS_STF` in Capstone 6.
+There is **no** `SPARC_INS_LDF` / `SPARC_INS_STF` / `SPARC_INS_LDDF` / `SPARC_INS_STDF` /
+`SPARC_INS_LDFSR` / `SPARC_INS_CASX` / `SPARC_INS_FNOT` / `SPARC_INS_LDUW` / `SPARC_INS_STW`
+in Capstone 6. `lduw`/`stw` are `SPARC_INS_LD` / `SPARC_INS_ST`.
 
 ### Mapped (real LLVM IR)
 
@@ -440,10 +451,23 @@ Integer: `ADD`/`ADDCC`/`ADDX*`, `SUB`/`SUBCC`/`SUBX*`, `AND`/`ANDN`/`AND*CC`,
 `ST`/`STB`/`STH`/`STX`/`STD`, `SAVE`/`RESTORE`, `CALL`, `JMPL`, `RETT`,
 `B`, `BR`, `CMP` (alias of `SUBCC`).
 
-FP: `FADDS`/`FADDD`/`FSUBS`/`FSUBD`/`FMULS`/`FMULD`/`FDIVS`/`FDIVD`,
+FP: `FADDS`/`FADDD`/`FSUBS`/`FSUBD`/`FMULS`/`FMULD`/`FSMULD`/`FDIVS`/`FDIVD`,
 `FCMPS`/`FCMPD`/`FCMPES`/`FCMPED`, `FMOVS`/`FMOVD`, `FNEGS`/`FNEGD`,
 `FABSS`/`FABSD`, `FSQRTS`/`FSQRTD`, `FITOS`/`FITOD`/`FSTOI`/`FDTOI`/`FSTOD`/`FDTOS`,
-`FB`, `ld`/`ldd` to `F*`/`D*`, `st`/`std` from `F*`/`D*`.
+`FXTOS`/`FXTOD`/`FSTOX`/`FDTOX`, `MOVDTOX`/`MOVXTOD`/`MOVWTOS`/`MOVSTOSW`/`MOVSTOUW`,
+`FB`, `ld`/`ldd` to `F*`/`D*` (assembler `ldf`/`lddf`), `st`/`std` from `F*`/`D*`
+(assembler `stf`/`stdf`), `ld`/`st` `%fsr`.
+
+VIS (D* as i64 SIMD containers, `F*S` as i32): `FAND`/`FANDS`/`FOR`/`FORS`/`FXOR`/`FXORS`/
+`FXNOR`/`FXNORS`/`FNOT1`/`FNOT2`/`FZERO`/`FONE`/`FSRC1`/`FSRC2`/`FANDNOT1`/`FANDNOT2`
+and the `*S` single-width forms; `ALIGNADDR`/`ALIGNADDRL`/`FALIGNDATA` (GSR = `SPARC_REG_ASR19`);
+`FCMPGT16`/`FCMPGT32`/`FCMPLE16`/`FCMPLE32`/`FCMPEQ16`/`FCMPEQ32`/`FCMPNE16`/`FCMPNE32`;
+`FMUL8X16`/`FMUL8SUX16`/`FMUL8X16AL`/`FMUL8X16AU`; `FPACK16`/`FPACK32`;
+`FPADD16`/`FPADD16S`/`FPADD32`/`FPADD32S`/`FPSUB16`/`FPSUB16S`/`FPSUB32`/`FPSUB32S`;
+`FEXPAND`; `FPMERGE`; `PDIST`/`PDISTN`; `BSHUFFLE`; `ARRAY8`/`ARRAY16`/`ARRAY32`;
+`EDGE8`/`EDGE16`/`EDGE32` and `L`/`N`/`LN`.
+
+Atomics / barriers: `CASA`/`CASXA` (`cmpxchg`), `MEMBAR` (seq_cst fence), `STBAR` (release fence).
 
 Delay slot stays 1 for `B`/`FB`/`BR`/`CALL`/`JMPL`/`RETT`/`RET`/`RETL`.
 `hasDelaySlotLikely` remains false (annul is a hint, not an id).
@@ -454,13 +478,32 @@ if `JMPL` still has `op_count==0`, dispatches on mnemonic/`alias_id` to
 `translateRet` (`%o7+8` vs `%i7+8`). GPR even/odd pairs (`SPARC_REG_G2_G3`, …)
 are composed from the two GPRs; they are not separate LLVM globals.
 `ld`/`ldd` to `F*`/`D*` load integer bits then `bitcast` to float/double
-(the emulator memory map is integer-typed).
+(the emulator memory map is integer-typed). `st`/`std` from `F*`/`D*` bitcast
+IEEE bits to i32/i64 before the integer store.
 
 ### Remaining gaps (pseudo-asm)
 
-VIS (`FAND`, `ARRAY*`, `ALIGNADDR`, `PDIST`, `FALIGNDATA`, 16/32-bit packed
-compares), quad `FADDq`/`LDQ`/`STQ`, ASI loads/stores (`LDA`/`STA`/`CASA`),
-`SWAP`/`LDSTUB`, `T`/`TA` traps, `MEMBAR`/`FLUSH`/`FLUSHW`, `POPC`,
-`MOVR`/`FMOVR*`, coprocessor `CB`, window state `DONE`/`RETRY`/`SAVED`/`RESTORED`,
-privileged `RDPR`/`WRPR`. Annulled delay slots still execute (decoder is id-only).
-`F*`/`D*` are separate LLVM globals (no hardware even/odd aliasing).
+Quad (`FMOVQ`/`FADDq`/`FDMULQ`/`LDQ`/`STQ`/`FMOVRQ`/`Q0..` — Q regs exist in Capstone as
+`SPARC_REG_Q0` but are not a mapped LLVM register file; skip unless a later commit
+adds them),
+ASI loads/stores other than primary/`omitted` (`LDA`/`STA`/`LDDA`/`STDA` with
+`#ASI_P` / 0x80 *are* mapped, same as `LD`/`ST`/`LDD`/`STD`; `CASA`/`CASXA` *are*
+mapped; `LDSTUB`/`SWAP` and ASI-primary/`omitted` `LDSTUBA`/`SWAPA` *are* mapped —
+other ASI values stay pseudo),
+`FLUSHW` (privileged window; `FLUSH` I-cache is a nop like x86 `PREFETCH` — I-cache is not modelled),
+coprocessor `CB`, window state `DONE`/`RETRY`/`SAVED`/`RESTORED`,
+privileged `RDPR`/`WRPR`, leftover VIS 3 (AES and anything still unmapped;
+`TADDCC`/`TADDCCTV`/`TSUBCC`/`TSUBCCTV` *are* mapped as add/sub + ICC like `ADDCC`/`SUBCC`
+(arithmetic NZVC only; tagged-overflow from operand[1:0] is not OR'd into `ICC.V`).
+TV forms have no trap side effect (same IR as CC; `T`/`TA` are mapped as `__asm_t`/`__asm_ta` like ARM64 SVC — no throw);
+`MULSCC` (V8 multiply-step: Y[0]/ICC-gated 33-bit add + 64-bit right shift of (rd:Y)) stays unmapped;
+`MOVR`/`FMOVRS`/`FMOVRD` *are* mapped — integer/FP CMOV on `SPARC_CC_REG_*` in
+`cs_sparc.cc`; aliases `ALIAS_MOVRZ`/`MOVRNZ`/`MOVRGZ`/`MOVRLEZ`/`MOVRLZ`/`MOVRGEZ`
+dispatch to the same translator; `FNOR`/`FNORS` *are* mapped via `translateVisLogical`;
+`FMEAN16` *is* mapped as signed 16-bit `(a+b+1)>>1` per lane;
+`FPADD64`/`FPACKFIX`/`FMUL8ULX16`/`FMULD8SUX16`/`FMULD8ULX16`/`FCHKSM16`/`POPC`
+*are* mapped). `FCHKSM16` is a wrapping 16-bit lane add of rs1/rs2 then
+add-fold into `rd[15:0]` (no in-tree OSA helper). Annulled delay slots still
+execute (decoder is id-only).
+`F*`/`D*` are separate LLVM globals (no hardware even/odd aliasing); 64-bit VIS
+rewrites even `F*` names to the overlapping `D*` container.

@@ -73,11 +73,13 @@ Default native extras:
   `RETDEC_NEURAL_REFINE`). See [NEURAL_REFINEMENT.md](NEURAL_REFINEMENT.md).
 
 Native CPU architectures: see [ARCHITECTURE_TARGETS.md](ARCHITECTURE_TARGETS.md).
-Compiler integer, FP, and mapped SIMD/atomics lift to LLVM IR for x86 /
+Compiler integer, FP, SIMD, and atomics lift to LLVM IR for x86 /
 x86-64, ARM / Thumb, ARM64, MIPS 32/64, PIC32, PowerPC 32/64, RISC-V 32/64,
-SPARC 32/64, SystemZ (64), and XCore (32). Leftover specialized IDs
-(SVE, AES/SHA, VIS, XCore channels, unprinted SASS opcodes) still become
-pseudo-asm. **SASS is not Production** (cubin/fatbin probe, not `-a sass`).
+SPARC 32/64, SystemZ (64), and XCore (32) at the same gcc `-O1`/`-O2` bar
+as x86-64 (including FMLA, microMIPS/R6 compact, VIS, MVC, channel IN/OUT).
+Leftover specialized IDs (SVE, AES/SHA on every ISA including x86, QPX,
+unprinted SASS opcodes) still become pseudo-asm. **SASS is not Production**
+(cubin/fatbin probe, not `-a sass`).
 
 ---
 

@@ -169,6 +169,30 @@ void appendBra133(std::vector<uint8_t>& v)
 	le64bytes(v, 0xfffffffc00fc7947ULL);
 	le64bytes(v, 0x000fc0000383ffffULL);
 }
+void appendLdc64_133(std::vector<uint8_t>& v)
+{
+	// LDC.64 R2, c[0x0][0x380] — CUDA Binary Utilities 13.3
+	le64bytes(v, 0x0000e000ff027b82ULL);
+	le64bytes(v, 0x000eb00000000a00ULL);
+}
+void appendImadMovR2_1282(std::vector<uint8_t>& v)
+{
+	// IMAD.MOV.U32 R2, RZ, RZ, c[0x0][0x160] — CUDA Binary Utilities 12.8.2
+	le64bytes(v, 0x00005800ff027624ULL);
+	le64bytes(v, 0x000fe200078e00ffULL);
+}
+void appendLdgR5_1282(std::vector<uint8_t>& v)
+{
+	// LDG.E.SYS R5, [R4] — CUDA Binary Utilities 12.8.2
+	le64bytes(v, 0x0000000004057381ULL);
+	le64bytes(v, 0x000ea200001ee900ULL);
+}
+void appendImadWideR4_133(std::vector<uint8_t>& v)
+{
+	// IMAD.WIDE R4, R9, 0x4, R4 — CUDA Binary Utilities 13.3
+	le64bytes(v, 0x0000000409047825ULL);
+	le64bytes(v, 0x008fcc00078e0204ULL);
+}
 
 std::vector<uint8_t> makeCubin(bool elf64, uint32_t sm, const std::string& secName, const std::vector<uint8_t>& text)
 {
@@ -440,6 +464,46 @@ TEST(SassDecoder, UnknownOpcodeStaysUnknown)
 	auto in = d.decodeWord(0x00000000000000ffULL, 0, 0);
 	EXPECT_EQ(in.opcode, SassOpcode::Unknown);
 	EXPECT_FALSE(in.decoded);
+}
+
+TEST(SassDecoder, ExtraPrintedVariantsFromNvidiaListings)
+{
+	SassDecoder d(80, 64);
+	std::vector<uint8_t> bytes;
+	appendLdc64_133(bytes);
+	appendImadMovR2_1282(bytes);
+	appendLdgR5_1282(bytes);
+	appendImadWideR4_133(bytes);
+	auto ins = d.decodeStream(bytes);
+	ASSERT_EQ(ins.size(), 4u);
+	EXPECT_EQ(ins[0].opcode, SassOpcode::Ldc);
+	EXPECT_EQ(ins[0].dest, 2);
+	EXPECT_EQ(ins[1].opcode, SassOpcode::Imad);
+	EXPECT_EQ(ins[1].dest, 2);
+	EXPECT_EQ(ins[1].src0, 255);
+	EXPECT_EQ(ins[2].opcode, SassOpcode::Ldg);
+	EXPECT_EQ(ins[2].dest, 5);
+	EXPECT_EQ(ins[2].src0, 4);
+	EXPECT_EQ(ins[3].opcode, SassOpcode::ImadWide);
+	EXPECT_EQ(ins[3].dest, 4);
+	EXPECT_EQ(ins[3].src0, 9);
+	EXPECT_EQ(ins[3].src1, 4);
+	EXPECT_EQ(ins[3].src2, 4);
+}
+
+TEST(SassDecoder, IsaTableMnemonicsWithoutPrintedWordStayUnknown)
+{
+	// CUDA Binary Utilities 12.8 / 13.x ISA tables name FMUL, FFMA, ISETP,
+	// SHL, SHR, LOP3, FSETP, MUFU, LEA but print no 16-byte encoding word.
+	// Low-8 values that NVIDIA did not print must stay Unknown.
+	SassDecoder d(80, 64);
+	const uint8_t unprinted[] = {0x20, 0x22, 0x23, 0x30, 0x31, 0x12, 0x13, 0x11};
+	for (uint8_t op : unprinted)
+	{
+		auto in = d.decodeWord(uint64_t(op), 0, 0);
+		EXPECT_EQ(in.opcode, SassOpcode::Unknown) << unsigned(op);
+		EXPECT_FALSE(in.decoded) << unsigned(op);
+	}
 }
 
 TEST(SassDecoder, PreVoltaEightByteExit)

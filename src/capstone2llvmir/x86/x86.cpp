@@ -2511,6 +2511,59 @@ void Capstone2LlvmIrTranslatorX86_impl::translateShiftX(cs_insn* i, cs_x86* xi, 
 }
 
 /**
+ * X86_INS_PDEP, X86_INS_PEXT — BMI2 parallel deposit / extract.
+ *
+ * PEXT packs the bits of SRC that sit under a 1 in MASK into the low end of
+ * the destination, in order. PDEP is the inverse: it scatters the low bits of
+ * SRC into the positions where MASK is 1 and writes 0 everywhere else. The
+ * Intel loop is the definition, not an implementation choice -- a popcount of
+ * the mask is not enough, because the bits have to stay in relative order.
+ *
+ * There is no portable `llvm.pdep` / `llvm.pext` to call on the LLVM 23 pin
+ * without a declaration this translator cannot prove exists, so the SDM
+ * walk is emitted as an unrolled shift/mask loop. Flags are not written:
+ * later manuals list them as unaffected, and inventing ZF here would be a
+ * different instruction.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translatePdepPext(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, xi, irb);
+
+	llvm::Value* src = loadOp(xi->operands[1], irb);
+	llvm::Value* mask = loadOp(xi->operands[2], irb);
+	auto* ty = llvm::cast<llvm::IntegerType>(src->getType());
+	mask = irb.CreateZExtOrTrunc(mask, ty);
+
+	unsigned bits = ty->getBitWidth();
+	auto* zero = llvm::ConstantInt::get(ty, 0);
+	auto* one = llvm::ConstantInt::get(ty, 1);
+
+	llvm::Value* res = zero;
+	llvm::Value* k = zero;
+	for (unsigned m = 0; m < bits; ++m)
+	{
+		llvm::Value* take = irb.CreateICmpNE(
+			irb.CreateAnd(irb.CreateLShr(mask, llvm::ConstantInt::get(ty, m)), one), zero);
+		if (i->id == X86_INS_PDEP)
+		{
+			llvm::Value* bit = irb.CreateAnd(irb.CreateLShr(src, k), one);
+			llvm::Value* placed = irb.CreateShl(bit, llvm::ConstantInt::get(ty, m));
+			res = irb.CreateSelect(take, irb.CreateOr(res, placed), res);
+			k = irb.CreateSelect(take, irb.CreateAdd(k, one), k);
+		}
+		else
+		{
+			llvm::Value* bit = irb.CreateAnd(irb.CreateLShr(src, llvm::ConstantInt::get(ty, m)), one);
+			llvm::Value* placed = irb.CreateShl(bit, k);
+			res = irb.CreateSelect(take, irb.CreateOr(res, placed), res);
+			k = irb.CreateSelect(take, irb.CreateAdd(k, one), k);
+		}
+	}
+
+	storeOp(xi->operands[0], res, irb);
+}
+
+/**
  * X86_INS_MOVBE — move with the bytes reversed.
  *
  * One of the two operands is always memory, and which one decides the

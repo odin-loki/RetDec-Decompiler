@@ -1,9 +1,9 @@
 # RetDec Imortek — Specification Extraction Decompiler
 
-**Version 2.0.25.** Repo:
+**Version 2.0.26.** Repo:
 [odin-loki/RetDec-Decompiler](https://github.com/odin-loki/RetDec-Decompiler).
 Release tag
-[v2.0.25](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.0.25).
+[v2.0.26](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.0.26).
 
 **A specification-extraction tool that contains a decompiler** — algorithm
 recovery, semantic export, and offline neural refinement are the product;
@@ -513,7 +513,7 @@ retdec-decompiler binary.elf -o output.c
 | [docs/CUDA_CAPABILITIES.md](docs/CUDA_CAPABILITIES.md) | Experimental CUDA accel (default OFF, unintegrated) |
 | [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | Profiling and perf-nightly |
 | [docs/PROVENANCE.md](docs/PROVENANCE.md) | Upstream MIT + Imortek dual-licence record |
-| [docs/ARCHITECTURE_TARGETS.md](docs/ARCHITECTURE_TARGETS.md) | Native CPU Production (compiler integer/FP/mapped SIMD); SASS not Production |
+| [docs/ARCHITECTURE_TARGETS.md](docs/ARCHITECTURE_TARGETS.md) | Native CPU Production at the x86-64 compiler bar; SASS not Production |
 | [docs/INSTALL_LINUX.md](docs/INSTALL_LINUX.md) / [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md) | Published tarball / NSIS / zip |
 | [docs/COMMERCIAL_WHITEPAPER.md](docs/COMMERCIAL_WHITEPAPER.md) | Buyer overview (must not outrun [docs/CLAIMS.md](docs/CLAIMS.md)) |
 | [docs/FORMAL_VERIFICATION_BRIDGE.md](docs/FORMAL_VERIFICATION_BRIDGE.md) | Bridge from decompilation to verification |

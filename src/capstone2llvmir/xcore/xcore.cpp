@@ -4,6 +4,9 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek
  */
 
+#include <cstring>
+#include <vector>
+
 #include <llvm/IR/Intrinsics.h>
 
 #include "capstone2llvmir/xcore/xcore_impl.h"
@@ -317,6 +320,92 @@ static unsigned xcoreOpCount(const cs_xcore* xi)
 		return n + 1;
 	}
 	return n;
+}
+
+static uint32_t xcoreRegFromName(const char* p)
+{
+	if (p[0] == 'r')
+	{
+		if (p[1] == '1' && (p[2] == '0' || p[2] == '1')
+				&& (p[3] == '\0' || p[3] == ']' || p[3] == ',' || p[3] == ' '))
+		{
+			return p[2] == '0' ? XCORE_REG_R10 : XCORE_REG_R11;
+		}
+		if (p[1] >= '0' && p[1] <= '9'
+				&& (p[2] == '\0' || p[2] == ']' || p[2] == ',' || p[2] == ' '))
+		{
+			return static_cast<uint32_t>(XCORE_REG_R0) + static_cast<uint32_t>(p[1] - '0');
+		}
+	}
+	if (p[0] == 's' && p[1] == 'p')
+	{
+		return XCORE_REG_SP;
+	}
+	if (p[0] == 'd' && p[1] == 'p')
+	{
+		return XCORE_REG_DP;
+	}
+	if (p[0] == 'c' && p[1] == 'p')
+	{
+		return XCORE_REG_CP;
+	}
+	if (p[0] == 'l' && p[1] == 'r')
+	{
+		return XCORE_REG_LR;
+	}
+	return XCORE_REG_INVALID;
+}
+
+// Printer forms: "res[rN]" (channel/resource) and "t[rN]" (thread).
+static uint32_t parseResourceReg(cs_insn* i)
+{
+	const char* s = i->op_str;
+	const char* p = std::strstr(s, "res[");
+	if (p)
+	{
+		return xcoreRegFromName(p + 4);
+	}
+	p = std::strstr(s, "t[");
+	if (p)
+	{
+		return xcoreRegFromName(p + 2);
+	}
+	return XCORE_REG_INVALID;
+}
+
+llvm::Value* Capstone2LlvmIrTranslatorXcore_impl::loadChanResource(
+		cs_insn* i,
+		cs_xcore* xi,
+		llvm::IRBuilder<>& irb)
+{
+	unsigned n = xcoreOpCount(xi);
+	for (unsigned j = 0; j < n; ++j)
+	{
+		auto& op = xi->operands[j];
+		if (op.type == XCORE_OP_MEM && op.mem.base != XCORE_REG_INVALID)
+		{
+			auto* r = loadRegister(op.mem.base, irb);
+			if (r)
+			{
+				return r;
+			}
+		}
+	}
+	uint32_t r = parseResourceReg(i);
+	if (r != XCORE_REG_INVALID)
+	{
+		return loadRegister(r, irb);
+	}
+	return nullptr;
+}
+
+llvm::Function* Capstone2LlvmIrTranslatorXcore_impl::getXcoreHelper(
+		cs_insn* i,
+		llvm::Type* retTy,
+		llvm::ArrayRef<llvm::Type*> params,
+		const char* name)
+{
+	return getPseudoAsmFunction(i, retTy, params, name);
 }
 
 llvm::Value* Capstone2LlvmIrTranslatorXcore_impl::generateMakeMask(
@@ -1326,6 +1415,393 @@ void Capstone2LlvmIrTranslatorXcore_impl::translateNop(
 		cs_xcore* xi,
 		llvm::IRBuilder<>& irb)
 {
+}
+
+void Capstone2LlvmIrTranslatorXcore_impl::translateChanIn(
+		cs_insn* i,
+		cs_xcore* xi,
+		llvm::IRBuilder<>& irb)
+{
+	unsigned n = xcoreOpCount(xi);
+	EXPECT_IS_EXPR(i, xi, irb, n >= 1);
+
+	llvm::Value* chan = loadChanResource(i, xi, irb);
+	cs_xcore_op* dest = nullptr;
+	llvm::Value* extra = nullptr;
+	for (unsigned j = 0; j < n; ++j)
+	{
+		auto& op = xi->operands[j];
+		if (op.type == XCORE_OP_MEM)
+		{
+			continue;
+		}
+		if (op.type == XCORE_OP_REG && dest == nullptr)
+		{
+			dest = &op;
+			continue;
+		}
+		if (extra == nullptr)
+		{
+			extra = loadOp(op, irb);
+		}
+	}
+	if (chan == nullptr || dest == nullptr)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	const char* name = "xcore.chan.in";
+	bool readsDest = false;
+	bool passExtra = false;
+	switch (i->id)
+	{
+		case XCORE_INS_INPW:
+			name = "xcore.chan.inpw";
+			passExtra = true;
+			break;
+		case XCORE_INS_INSHR:
+			name = "xcore.chan.inshr";
+			readsDest = true;
+			break;
+		case XCORE_INS_INCT:
+			name = "xcore.chan.inct";
+			break;
+		case XCORE_INS_INT:
+			name = "xcore.chan.int";
+			break;
+		case XCORE_INS_PEEK:
+			name = "xcore.chan.peek";
+			break;
+		case XCORE_INS_ENDIN:
+			name = "xcore.chan.endin";
+			break;
+		case XCORE_INS_TESTCT:
+			name = "xcore.chan.testct";
+			break;
+		case XCORE_INS_TESTWCT:
+			name = "xcore.chan.testwct";
+			break;
+		case XCORE_INS_GETD:
+			name = "xcore.res.getd";
+			break;
+		case XCORE_INS_GETTS:
+			name = "xcore.res.getts";
+			break;
+		case XCORE_INS_GETN:
+			name = "xcore.res.getn";
+			break;
+		default:
+			break;
+	}
+
+	std::vector<llvm::Value*> args{chan};
+	if (readsDest)
+	{
+		args.push_back(loadOp(*dest, irb));
+	}
+	if (passExtra)
+	{
+		if (extra == nullptr)
+		{
+			throwUnexpectedOperands(i);
+			translatePseudoAsmGeneric(i, xi, irb);
+			return;
+		}
+		args.push_back(irb.CreateZExtOrTrunc(extra, getDefaultType()));
+	}
+
+	std::vector<llvm::Type*> tys;
+	tys.reserve(args.size());
+	for (auto* a : args)
+	{
+		tys.push_back(a->getType());
+	}
+	llvm::Function* fnc = getXcoreHelper(i, getDefaultType(), tys, name);
+	auto* c = irb.CreateCall(fnc, args);
+	storeOp(*dest, c, irb);
+}
+
+void Capstone2LlvmIrTranslatorXcore_impl::translateChanOut(
+		cs_insn* i,
+		cs_xcore* xi,
+		llvm::IRBuilder<>& irb)
+{
+	unsigned n = xcoreOpCount(xi);
+	EXPECT_IS_EXPR(i, xi, irb, n >= 1);
+
+	llvm::Value* chan = loadChanResource(i, xi, irb);
+	llvm::Value* data = nullptr;
+	llvm::Value* extra = nullptr;
+	cs_xcore_op* dataOp = nullptr;
+	for (unsigned j = 0; j < n; ++j)
+	{
+		auto& op = xi->operands[j];
+		if (op.type == XCORE_OP_MEM)
+		{
+			continue;
+		}
+		if (data == nullptr)
+		{
+			data = loadOp(op, irb);
+			dataOp = &op;
+		}
+		else if (extra == nullptr)
+		{
+			extra = loadOp(op, irb);
+		}
+	}
+	if (chan == nullptr || data == nullptr)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	const char* name = "xcore.chan.out";
+	bool writesData = false;
+	bool passExtra = false;
+	switch (i->id)
+	{
+		case XCORE_INS_OUTPW:
+			name = "xcore.chan.outpw";
+			passExtra = true;
+			break;
+		case XCORE_INS_OUTSHR:
+			name = "xcore.chan.outshr";
+			writesData = true;
+			break;
+		case XCORE_INS_OUTCT:
+			name = "xcore.chan.outct";
+			break;
+		case XCORE_INS_OUTT:
+			name = "xcore.chan.outt";
+			break;
+		case XCORE_INS_SETD:
+			name = "xcore.res.setd";
+			break;
+		case XCORE_INS_SETC:
+			name = "xcore.res.setc";
+			break;
+		case XCORE_INS_SETCLK:
+			name = "xcore.res.setclk";
+			break;
+		case XCORE_INS_SETPT:
+			name = "xcore.res.setpt";
+			break;
+		case XCORE_INS_SETTW:
+			name = "xcore.res.settw";
+			break;
+		default:
+			break;
+	}
+
+	data = irb.CreateZExtOrTrunc(data, getDefaultType());
+	std::vector<llvm::Value*> args{chan, data};
+	if (passExtra)
+	{
+		if (extra == nullptr)
+		{
+			throwUnexpectedOperands(i);
+			translatePseudoAsmGeneric(i, xi, irb);
+			return;
+		}
+		args.push_back(irb.CreateZExtOrTrunc(extra, getDefaultType()));
+	}
+
+	std::vector<llvm::Type*> tys;
+	tys.reserve(args.size());
+	for (auto* a : args)
+	{
+		tys.push_back(a->getType());
+	}
+	if (writesData)
+	{
+		llvm::Function* fnc = getXcoreHelper(i, getDefaultType(), tys, name);
+		auto* c = irb.CreateCall(fnc, args);
+		if (dataOp)
+		{
+			storeOp(*dataOp, c, irb);
+		}
+		return;
+	}
+	llvm::Function* fnc = getXcoreHelper(i, irb.getVoidTy(), tys, name);
+	irb.CreateCall(fnc, args);
+}
+
+void Capstone2LlvmIrTranslatorXcore_impl::translateGetR(
+		cs_insn* i,
+		cs_xcore* xi,
+		llvm::IRBuilder<>& irb)
+{
+	unsigned n = xcoreOpCount(xi);
+	EXPECT_IS_EXPR(i, xi, irb, n >= 1);
+
+	cs_xcore_op* dest = nullptr;
+	llvm::Value* kind = nullptr;
+	for (unsigned j = 0; j < n; ++j)
+	{
+		auto& op = xi->operands[j];
+		if (op.type == XCORE_OP_REG && dest == nullptr)
+		{
+			dest = &op;
+		}
+		else
+		{
+			kind = loadOp(op, irb);
+		}
+	}
+	if (kind == nullptr)
+	{
+		kind = (dest != nullptr) ? loadOp(*dest, irb) : llvm::ConstantInt::get(getDefaultType(), 0);
+		dest = nullptr;
+	}
+	kind = irb.CreateZExtOrTrunc(kind, getDefaultType());
+	llvm::Function* fnc = getXcoreHelper(
+			i,
+			getDefaultType(),
+			llvm::ArrayRef<llvm::Type*>{kind->getType()},
+			"xcore.res.getr");
+	auto* c = irb.CreateCall(fnc, llvm::ArrayRef<llvm::Value*>{kind});
+	if (dest)
+	{
+		storeOp(*dest, c, irb);
+	}
+	else
+	{
+		storeRegister(XCORE_REG_R11, c, irb);
+	}
+}
+
+void Capstone2LlvmIrTranslatorXcore_impl::translateSetV(
+		cs_insn* i,
+		cs_xcore* xi,
+		llvm::IRBuilder<>& irb)
+{
+	llvm::Value* chan = loadChanResource(i, xi, irb);
+	if (chan == nullptr)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	auto* vec = loadRegister(XCORE_REG_R11, irb);
+	const char* name = (i->id == XCORE_INS_SETEV) ? "xcore.res.setev" : "xcore.res.setv";
+	llvm::Function* fnc = getXcoreHelper(
+			i,
+			irb.getVoidTy(),
+			llvm::ArrayRef<llvm::Type*>{chan->getType(), vec->getType()},
+			name);
+	irb.CreateCall(fnc, llvm::ArrayRef<llvm::Value*>{chan, vec});
+}
+
+void Capstone2LlvmIrTranslatorXcore_impl::translateResUnary(
+		cs_insn* i,
+		cs_xcore* xi,
+		llvm::IRBuilder<>& irb)
+{
+	llvm::Value* chan = loadChanResource(i, xi, irb);
+	if (chan == nullptr && xcoreOpCount(xi) >= 1)
+	{
+		chan = loadOp(xi->operands[0], irb);
+	}
+	if (chan == nullptr)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	const char* name = "xcore.res.freer";
+	switch (i->id)
+	{
+		case XCORE_INS_EEU: name = "xcore.event.eeu"; break;
+		case XCORE_INS_EDU: name = "xcore.event.edu"; break;
+		case XCORE_INS_MSYNC: name = "xcore.thread.msync"; break;
+		case XCORE_INS_MJOIN: name = "xcore.thread.mjoin"; break;
+		case XCORE_INS_SYNCR: name = "xcore.thread.syncr"; break;
+		case XCORE_INS_START: name = "xcore.thread.start"; break;
+		default: break;
+	}
+	llvm::Function* fnc = getXcoreHelper(
+			i,
+			irb.getVoidTy(),
+			llvm::ArrayRef<llvm::Type*>{chan->getType()},
+			name);
+	irb.CreateCall(fnc, llvm::ArrayRef<llvm::Value*>{chan});
+}
+
+void Capstone2LlvmIrTranslatorXcore_impl::translateEventWait(
+		cs_insn* i,
+		cs_xcore* xi,
+		llvm::IRBuilder<>& irb)
+{
+	unsigned n = xcoreOpCount(xi);
+	const char* name = "xcore.event.waiteu";
+	switch (i->id)
+	{
+		case XCORE_INS_WAITEF: name = "xcore.event.waitef"; break;
+		case XCORE_INS_WAITET: name = "xcore.event.waitet"; break;
+		case XCORE_INS_CLRE: name = "xcore.event.clre"; break;
+		default: break;
+	}
+
+	if (n == 0)
+	{
+		llvm::Function* fnc = getXcoreHelper(
+				i,
+				irb.getVoidTy(),
+				llvm::ArrayRef<llvm::Type*>{},
+				name);
+		irb.CreateCall(fnc, llvm::ArrayRef<llvm::Value*>{});
+		return;
+	}
+
+	op0 = loadOp(xi->operands[0], irb);
+	llvm::Function* fnc = getXcoreHelper(
+			i,
+			irb.getVoidTy(),
+			llvm::ArrayRef<llvm::Type*>{op0->getType()},
+			name);
+	irb.CreateCall(fnc, llvm::ArrayRef<llvm::Value*>{op0});
+}
+
+void Capstone2LlvmIrTranslatorXcore_impl::translateEventCond(
+		cs_insn* i,
+		cs_xcore* xi,
+		llvm::IRBuilder<>& irb)
+{
+	unsigned n = xcoreOpCount(xi);
+	EXPECT_IS_EXPR(i, xi, irb, n >= 1);
+
+	llvm::Value* chan = loadChanResource(i, xi, irb);
+	llvm::Value* cond = nullptr;
+	for (unsigned j = 0; j < n; ++j)
+	{
+		auto& op = xi->operands[j];
+		if (op.type == XCORE_OP_MEM)
+		{
+			continue;
+		}
+		if (cond == nullptr)
+		{
+			cond = loadOp(op, irb);
+		}
+	}
+	if (chan == nullptr || cond == nullptr)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	const char* name = (i->id == XCORE_INS_EET) ? "xcore.event.eet" : "xcore.event.eef";
+	llvm::Function* fnc = getXcoreHelper(
+			i,
+			irb.getVoidTy(),
+			llvm::ArrayRef<llvm::Type*>{cond->getType(), chan->getType()},
+			name);
+	irb.CreateCall(fnc, llvm::ArrayRef<llvm::Value*>{cond, chan});
 }
 
 } // namespace capstone2llvmir

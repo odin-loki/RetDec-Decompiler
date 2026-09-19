@@ -205,6 +205,7 @@ class Capstone2LlvmIrTranslatorArm_impl :
 		void translateVfpMla(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateVfpMov(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateVfpUnary(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateVrint(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateVmrs(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateVmsr(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateVfpLdmStm(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
@@ -215,8 +216,14 @@ class Capstone2LlvmIrTranslatorArm_impl :
 		void translateNeonDup(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateNeonExt(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateNeonSwp(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateNeonPermute(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateNeonTbl(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateNeonLdSt1(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateNeonLdStN(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateNeonRev(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateNeonWiden(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateNeonPairwise(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateNeonSatArith(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateQadd(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateDualMul(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateUmaal(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);

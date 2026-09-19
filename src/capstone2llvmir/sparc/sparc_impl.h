@@ -79,6 +79,22 @@ class Capstone2LlvmIrTranslatorSparc_impl :
 		uint32_t gprPairEven(uint32_t r) const;
 		uint32_t nextGpr(uint32_t r) const;
 		uint32_t fccFromField(sparc_cc_field field) const;
+		uint32_t visContainerReg(uint32_t r, unsigned bitWidth) const;
+		cs_sparc_op* lastRegOperand(cs_sparc* si);
+		llvm::Value* visIntegerBits(
+				llvm::Value* v,
+				unsigned bitWidth,
+				llvm::IRBuilder<>& irb);
+		llvm::Value* loadVisOperand(
+				cs_sparc_op& op,
+				unsigned bitWidth,
+				llvm::IRBuilder<>& irb);
+		void storeVisBits(
+				cs_sparc_op& op,
+				llvm::Value* bits,
+				llvm::IRBuilder<>& irb);
+		llvm::Value* loadGsr(llvm::IRBuilder<>& irb);
+		void storeGsr(llvm::Value* val, llvm::IRBuilder<>& irb);
 
 		llvm::Value* loadOpAddress(cs_sparc_op& op, llvm::IRBuilder<>& irb);
 		std::pair<llvm::Value*, llvm::Value*> loadOpRs1Rs2(
@@ -108,6 +124,12 @@ class Capstone2LlvmIrTranslatorSparc_impl :
 				uint32_t fccReg,
 				llvm::IRBuilder<>& irb);
 		llvm::Value* generateCondition(cs_sparc* si, llvm::IRBuilder<>& irb);
+		llvm::Value* generateRcond(
+				cs_insn* i,
+				cs_sparc* si,
+				llvm::Value* rs1,
+				llvm::IRBuilder<>& irb);
+		bool asiIsPrimaryOrOmitted(cs_sparc* si) const;
 
 		void copyOutsToIns(llvm::IRBuilder<>& irb);
 		void copyInsToOuts(llvm::IRBuilder<>& irb);
@@ -155,20 +177,26 @@ class Capstone2LlvmIrTranslatorSparc_impl :
 	protected:
 		void translateAdd(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateAnd(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
+		void translateAtomicXchg(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateB(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateBr(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateCall(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
+		void translateCas(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateCmp(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateDiv(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
+		void translateFence(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateFpArith(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateFpCmp(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateFpUnary(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
+		void translateMovFpInt(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateJmpl(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateLoad(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateMov(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
+		void translateMovr(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateMul(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateNop(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateOr(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
+		void translatePopc(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateRd(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateRestore(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateRet(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
@@ -178,6 +206,10 @@ class Capstone2LlvmIrTranslatorSparc_impl :
 		void translateShift(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateStore(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateSub(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
+		void translateTrap(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
+		void translateVisAlign(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
+		void translateVisLogical(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
+		void translateVisPacked(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateWr(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateXor(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 };

@@ -163,13 +163,13 @@ not a free-choice list.
 |-------------|--------|-------|
 | x86-64 | **Production** | Primary native path |
 | x86-32 | **Production** | — |
-| ARM32 / Thumb | **Production** | Compiler VFP/NEON; leftover permute/crypto may be pseudo-asm |
-| AArch64 | **Production** | Capstone + AAPCS64; scalar+vector FP; SVE/AES still unmapped |
-| MIPS32/64 | **Production** | FPU + integer MUL/DIV; compact R6/microMIPS leftovers |
-| PowerPC 32/64 | **Production** | Compiler FP + gcc -O1 VSX/Altivec; QPX unmapped |
-| RISC-V (RV32I, RV64I) | **Production** | I+C+M+F+D+A+CSR; AMOMIN/MAX and fused FP leftover |
+| ARM32 / Thumb | **Production** | Compiler VFP/NEON including VFMA, VZIP/VUZP/VTRN, VTBL/VTBX |
+| AArch64 | **Production** | Capstone + AAPCS64; scalar+vector FP including FMLA/FMLS; SVE/AES still unmapped (AES matches x86) |
+| MIPS32/64 | **Production** | FPU + MUL/DIV; microMIPS 16-bit + compact R6 (no delay slot) |
+| PowerPC 32/64 | **Production** | Compiler FP + gcc -O1/-O2 VSX/Altivec; 64-bit DIVD/MULLD/SLD; QPX unmapped |
+| RISC-V (RV32I, RV64I) | **Production** | I+C+M+F+D+A+CSR including fused FP and AMOMIN/MAX |
 | LoongArch | Research | — |
-| SPARC / SystemZ / XCore | **Production** | SPARC V8/V9 FP; SystemZ 64-only BFP; XCore 32-only (no channels) |
+| SPARC / SystemZ / XCore | **Production** | SPARC V8/V9 FP + VIS; SystemZ 64-only BFP + MVC/vector; XCore 32-only + channel IN/OUT |
 | WASM (binary) | **Shipped (input-keyed)** | `.wasm` → WAT |
 | PTX (NVIDIA virtual ISA) | In-tree `src/ptx_decompile` | **Not** a general native output choice |
 | SASS (NVIDIA machine code) | Library, not Production | cubin/fatbin loader + SM_70/80 subset in `src/sass_decode/`; no nvdisasm; not CLI |

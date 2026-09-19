@@ -158,6 +158,7 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		void translateCmp(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		llvm::Value* narrowToWord(llvm::Value* v, llvm::IRBuilder<>& irb);
 		void translateCntlzw(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translatePopcnt(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateCrModifTernary(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateCrNotMove(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateCrBitOp(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
@@ -221,7 +222,20 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		void translateVecStoreIndexed(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateVecSplatImm(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateVecFpArith(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecFpFma(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateVecIntAdd(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecPerm(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecSel(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecSldoi(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecMerge(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecCmp(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecSplat(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecLvsl(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecPack(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecFpSign(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecFpConvert(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecFpRound(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecShift128(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateXxpermdi(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateXxspltw(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateLoadFloatAsInt(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);

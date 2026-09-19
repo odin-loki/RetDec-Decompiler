@@ -38,12 +38,15 @@ Real LLVM IR (no `__asm_*` pseudo-call) for:
 | `rlwinm` / `rlwnm` / `rlwimi` | yes (32-bit rotate + mask) | yes (low word, result zero-extended) |
 | `rldicl` / `rldicr` / `rldic` / `rldimi` / `rldcl` / `rldcr` | n/a | yes |
 | compiler aliases `clrldi` / `rotldi` / `rotld` / `sldi` | n/a | yes |
+| compiler 64-bit GPR arith `divd`/`divdu`, `mulld`/`mulhd`/`mulhdu`, `sld`/`srd`/`srad`/`sradi`, `cntlzd`, `popcntd` | n/a | yes |
 | compiler FP `fadd`/`fadds`/`fmul`/`fmuls`/`fsub`/`fdiv`/`fcmpu`/`fcmpo`/`lfd`/`stfd`/`lfs`/`stfs` (+ indexed/`u`) | yes | yes |
 | `lfiwax`/`lfiwzx`/`stfiwx` | yes | yes |
 | VSX scalar gcc `-O1`: `xsadddp`/`xssubdp`/`xsmuldp`/`xsdivdp` (+ `*sp`), `xscmpudp`/`xscmpodp`, `lxsdx`/`stxsdx` | yes | yes |
+| VSX packed gcc `-O2`: `xvadddp`/`xvsubdp`/`xvmuldp`/`xvdivdp` (+ `*sp`) | yes | yes |
 | VSX move/logical: `xxlor`/`xxland`/`xxlxor`/`xxlnor`/…, `xvmovdp`/`xvmovsp` | yes | yes |
 | `xxpermdi`, `xxspltw`, `lxvd2x`/`stxvd2x` | yes | yes |
 | Altivec gcc `-O1`: `vand`/`vor`/`vxor`/`vandc`/`vnor`, `lvx`/`stvx`, `vspltisw`/`vspltish`/`vspltisb`, `vaddfp`/`vsubfp`, `vadduwm`/`vadduhm`/`vaddubm` | yes | yes |
+| Altivec gcc `-O2`: `vperm`, `vsel`, `vsldoi`, `vmrghw`/`vmrglw`, `vcmpequw`/`vcmpgtuw`, `vspltw`/`vsplth`/`vspltb`, `vsububm`/`vsubuhm`/`vsubuwm`, `lvsl`/`lvsr`, `vpkuhum`/`vpkuwum`, `vsl`/`vsr` | yes | yes |
 
 ## Mapped Capstone 6 IDs (this lift)
 
@@ -74,7 +77,50 @@ Added:
 | `PPC_INS_STVX`, `STVXL` | `translateVecStoreIndexed` |
 | `PPC_INS_VSPLTISB`, `VSPLTISH`, `VSPLTISW` | `translateVecSplatImm` |
 | `PPC_INS_VADDFP`, `VSUBFP` | `translateVecFpArith` |
+| `PPC_INS_XVADDDP`, `XVSUBDP`, `XVMULDP`, `XVDIVDP` | `translateVecFpArith` (`<2 x double>`) |
+| `PPC_INS_XVADDSP`, `XVSUBSP`, `XVMULSP`, `XVDIVSP` | `translateVecFpArith` (`<4 x float>`) |
+| `PPC_INS_XVMADDADP`, `XVMADDASP`, `XVMADDMDP`, `XVMADDMSP` | `translateVecFpFma` (type-A dest addend vs type-M dest multiplier) |
+| `PPC_INS_XVMSUBADP`, `XVMSUBASP`, `XVMSUBMDP`, `XVMSUBMSP` | `translateVecFpFma` |
+| `PPC_INS_XVNMSUBADP`, `XVNMSUBASP`, `XVNMSUBMDP`, `XVNMSUBMSP` | `translateVecFpFma` |
+| `PPC_INS_XVNMADDADP`, `XVNMADDASP`, `XVNMADDMDP`, `XVNMADDMSP` | `translateVecFpFma` (`-(product + addend)`, type-A vs type-M) |
+| `PPC_INS_XVABSDP`, `XVABSSP`, `XVNEGDP`, `XVNEGSP` | `translateVecFpSign` (AND/XOR sign bit; x86 ANDPS/XORPS) |
+| `PPC_INS_XVNABSDP`, `XVNABSSP` | `translateVecFpSign` (OR sign bit = `-abs`) |
+| `PPC_INS_XVCPSGNDP`, `XVCPSGNSP` | `translateVecFpSign` (AND/XOR: magnitude of XB, sign of XA) |
+| `PPC_INS_XVMAXDP`, `XVMINDP`, `XVMAXSP`, `XVMINSP` | `translateVecFpArith` (x86 MAXPD/MINPD `fcmp`+`select`) |
+| `PPC_INS_VCFSX` | `translateVecFpConvert` (signed word → SP; x86 CVTDQ2PS). Capstone IMM is UIM; gcc `-O2` is UIM=0. Other UIM scales by `2^-UIM`. |
+| `PPC_INS_VCFUX` | `translateVecFpConvert` (unsigned word → SP). UIM as `VCFSX`. |
+| `PPC_INS_VCTUXS` | `translateVecFpConvert` (SP → unsigned word saturate, chop; x86 CVTTPS2DQ unsigned). UIM=0 in gcc `-O2`; other UIM scales by `2^UIM`. |
+| `PPC_INS_VCTSXS` | `translateVecFpConvert` (SP → signed word saturate, chop). UIM as `VCTUXS`. |
+| `PPC_INS_VRFIN`, `VRFIZ`, `VRFIP`, `VRFIM` | `translateVecFpRound` (nearest-even / trunc / ceil / floor; x86 ROUNDPS) |
+| `PPC_INS_XVRDPI`, `XVRDPIC`, `XVRDPIM`, `XVRDPIP`, `XVRDPIZ` | `translateVecFpRound` (`<2 x double>`; nearbyint / nearbyint / floor / ceil / trunc) |
+| `PPC_INS_VRLB`, `VRLH`, `VRLW` | `translateVecShift128` (per-element rotate; count is low bits of each `vrb` lane, Capstone `vrt,vra,vrb`) |
 | `PPC_INS_VADDUBM`, `VADDUHM`, `VADDUWM` | `translateVecIntAdd` |
+| `PPC_INS_VADDSBS`, `VADDSHS`, `VADDSWS`, `VADDUBS`, `VADDUHS`, `VADDUWS` | `translateVecIntAdd` (saturating select, PADDSB-class) |
+| `PPC_INS_VSUBSBS`, `VSUBSHS`, `VSUBSWS`, `VSUBUBS`, `VSUBUHS`, `VSUBUWS` | `translateVecIntAdd` (saturating) |
+| `PPC_INS_VPERM` | `translateVecPerm` |
+| `PPC_INS_VSEL` | `translateVecSel` |
+| `PPC_INS_VSLDOI` | `translateVecSldoi` |
+| `PPC_INS_VSL`, `VSR` | `translateVecShift128` (whole-register logical shift 0–7) |
+| `PPC_INS_VSLB`, `VSLH`, `VSLW`, `VSLD`, `VSRB`, `VSRH`, `VSRW`, `VSRD`, `VSRAB`, `VSRAH`, `VSRAW`, `VSRAD` | `translateVecShift128` (per-element; count masked to element width; `VSLD`/`VSRD` are 64-bit lanes) |
+| `PPC_INS_VSPLTB`, `VSPLTH`, `VSPLTW` | `translateVecSplat` |
+| `PPC_INS_VSUBUBM`, `VSUBUHM`, `VSUBUWM` | `translateVecIntAdd` (subtract) |
+| `PPC_INS_LVSL`, `LVSR` | `translateVecLvsl` (permute control from `EA & 15`; no memory access) |
+| `PPC_INS_VPKUHUM`, `VPKUWUM` | `translateVecPack` (modulo truncate) |
+| `PPC_INS_VPKSHSS`, `VPKUHUS`, `VPKUWUS`, `VPKSHUS`, `VPKSWSS`, `VPKSWUS` | `translateVecPack` (signed/unsigned saturate; PACKSSWB / unsigned PACKUSWB-class) |
+| `PPC_INS_VMRGHW`, `VMRGLW` | `translateVecMerge` |
+| `PPC_INS_VCMPEQUW`, `VCMPGTUW` | `translateVecCmp` |
+| `PPC_INS_VCMPEQFP`, `VCMPGTFP`, `XVCMPEQDP`, `XVCMPEQSP`, `XVCMPGEDP`, `XVCMPGESP`, `XVCMPGTDP`, `XVCMPGTSP` | `translateVecCmp` (ordered FP compare → all-1s/0s lanes) |
+| `PPC_INS_DIVD`, `DIVDU` | `translateDivw` (64-bit width) |
+| `PPC_INS_MULLD` | `translateMullw` (64-bit width) |
+| `PPC_INS_MULHD`, `MULHDU` | `translateMulhw` (high half of i128 product) |
+| `PPC_INS_SLD` | `translateShiftLeft` (64-bit; count ≥ 64 → 0) |
+| `PPC_INS_SRD` | `translateShiftRight` (64-bit; count ≥ 64 → 0) |
+| `PPC_INS_SRAD`, `SRADI` | `translateSraw` (64-bit; CA as for `sraw`) |
+| `PPC_INS_CNTLZD` | `translateCntlzw` (64-bit `ctlz`) |
+| `PPC_INS_POPCNTD`, `POPCNTW` | `translatePopcnt` |
+
+`PPC_INS_DIVDE` / `DIVDEU` exist in this Capstone 6 insn enum but stay unmapped
+(extended-divide; not gcc `-O2` Altivec). QPX stays `nullptr`.
 
 ## Tests
 
@@ -83,8 +129,10 @@ Added:
 
 - Integer ALU, word loads/stores, branches, LR/CTR, `rlwinm`, `cmp*` run in
   **both** modes (`ALL_MODES`).
-- `ld`/`std`/`ldx`/`stdx` and the `rldicl` family are `ONLY_MODE_64`.
-- Compiler FP and the Altivec/VSX encodings above are `ALL_MODES`.
+- `ld`/`std`/`ldx`/`stdx`, the `rldicl` family, and compiler 64-bit GPR arith
+  (`divd`/`mulld`/`sld`/`srad`/`cntlzd`/`popcntd`) are `ONLY_MODE_64`.
+- Compiler FP and the Altivec/VSX encodings above (`vperm`/`vsel`/`vspltw`/
+  `vsububm`/`lvsl`/`vpkuhum`/`vsl` included) are `ALL_MODES`.
 - No tests were deleted, skipped, or `DISABLED_`.
 
 ## ABI (what the abi files claim)
@@ -113,8 +161,9 @@ does not own, or require decoder/config work:
 
 - **ELFv1 vs ELFv2.** No function descriptors (ELFv1 `.opd`). No ELFv2 `r12`
   for global-entry/PLT. TOC pointer `r2` is not an ABI-tracked register.
-- **64-bit FP args.** `PowerPC64CallingConvention` lists `f1`–`f8`, `f10`,
-  `f11` — it skips `f9` and stops short of ELFv2’s `f1`–`f13`.
+- **64-bit FP args.** `PowerPC64CallingConvention` (`powerpc64_conv.cpp`)
+  lists `f1`–`f13` (ELFv2). Vector args (Altivec `v2`–`v13`, VSX) still
+  have no CC entries.
 - **AIX / Darwin / Windows PowerPC.** Not implemented. Syscall layout above
   is Linux.
 - **Vararg / homogeneous aggregates / `va_list`.** Not specialised.
@@ -134,14 +183,24 @@ the tests’ Keystone strings:
   write-back still looks for a REG operand that Capstone 6 folded into MEM.
 - A few ALU (`subf`/`subfc` on 32-bit) and CR-logical (`crset`/`crclr`).
 
-QPX stays `nullptr`. Packed VSX `xv*` other than the move aliases, SPE,
-most remaining Altivec (`vperm`, `vsel`, saturating arithmetic) stay
-pseudo-asm or `nullptr`.
-
-On 64-bit specifically: `divd`/`divdu`, `mulld`/`mulhd`, `sld`/`srd`/`srad`,
-`cntlzd`, `popcntd`. Compilers usually spell 64-bit shifts as `rldicl`/
-`rldicr` (now lifted), so those nullptr entries are less common in C code
-than the MD-form family was.
+QPX stays `nullptr`. SPE, AES, `PPC_INS_DIVDE` / `DIVDEU`, `PPC_INS_VRLD`,
+and `PPC_INS_XVRSQRT*` stay unmapped.
+Remaining `xv*` leftovers are the convert family (`xvcv*`), SP round
+(`xvrspi*`), and the `xvre*`/`xvrsqrt*`/`xvsqrt*` estimates.
+Same bar as x86 not requiring 3DNow. `vmrghw`/`vmrglw`/`vcmpequw` tests use
+Capstone 6 decoder VX bits (`Inst{10-0}`), not GNU `VX=128/192/454`. Saturating
+Altivec (`vadds*`/`vsubs*` plus unsigned `*ubs`/`*uhs`/`*uws`), saturating pack
+(`vpkshss`/`vpkshus`/`vpkswss`/`vpkswus`/`vpkuhus`/`vpkuwus`), per-element
+shifts (`vslb`/`vslh`/`vslw`/`vsld`, `vsr*` including `vsrd`, `vsra*` including
+`vsrad`), per-element rotate (`vrlb`/`vrlh`/`vrlw`; Capstone `vrt,vra,vrb`),
+FP vector compare (`vcmpeqfp`/`vcmpgtfp`/`xvcmpeqdp`/`xvcmpeqsp`/
+`xvcmpge*`/`xvcmpgt*`), VSX packed FMA (`xvmadd*` / `xvmsub*` / `xvnmsub*` /
+`xvnmadd*` A and M, SP and DP), VSX abs/neg/nabs/cpsgn (`xvabsdp`/`xvabssp`/
+`xvnegdp`/`xvnegsp`/`xvnabsdp`/`xvnabssp`/`xvcpsgndp`/`xvcpsgnsp`), VSX min/max
+(`xvmaxdp`/`xvmindp`/`xvmaxsp`/`xvminsp`), VSX DP round (`xvrdpi`/`xvrdpic`/
+`xvrdpim`/`xvrdpip`/`xvrdpiz`), Altivec `vcfsx`/`vcfux`/`vctuxs`/`vctsxs`
+(UIM=0; non-zero UIM scales by `2^±UIM`), and `vrfin`/`vrfiz`/`vrfip`/`vrfim`
+are mapped.
 
 **FPR / VSL overlay:** `f0` is still its own `double` global (existing FP
 tests). `VSL0` is a separate i128. A VSX op that names `VSL0` inserts the

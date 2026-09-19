@@ -9,7 +9,7 @@ on:
       tag:
         description: Release tag whose Windows zip is inspected
         required: false
-        default: v2.0.25
+        default: v2.0.26
   schedule:
     - cron: "0 7 * * 0"
 
@@ -30,7 +30,7 @@ jobs:
       - name: Download portable zip and dumpbin retdec-gui.exe
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.inputs.tag || 'v2.0.25' }}
+          TAG: ${{ github.event.inputs.tag || 'v2.0.26' }}
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"

@@ -1020,7 +1020,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateCmp(cs_insn* i, cs_ppc* pi,
 }
 
 /**
- * PPC_INS_CNTLZW
+ * PPC_INS_CNTLZW, PPC_INS_CNTLZD
  */
 /**
  * The `w` instructions -- cntlzw, mullw, mulhw, divw, sraw and their
@@ -1037,9 +1037,10 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateCmp(cs_insn* i, cs_ppc* pi,
  * All of them are inert in 32-bit mode, which is where every test for them
  * that is not ALL_MODES lives.
  *
- * MIPS solves this centrally with isWordOperation() and narrowToWord(). On
- * PowerPC the narrowing had been applied by hand to the rotate and shift
- * family and to nothing else.
+ * The doubleword forms (cntlzd, divd, mulld, mulhd, sld, srad) use the same
+ * translators at 64-bit width. MIPS solves the word/double split centrally
+ * with isWordOperation() and narrowToWord(); here the instruction id picks
+ * the width.
  */
 llvm::Value* Capstone2LlvmIrTranslatorPowerpc_impl::narrowToWord(llvm::Value* v, llvm::IRBuilder<>& irb)
 {
@@ -1050,28 +1051,68 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateCntlzw(cs_insn* i, cs_ppc* 
 {
 	EXPECT_IS_BINARY(i, pi, irb);
 
-	op1 = narrowToWord(loadOpBinaryOp1(pi, irb), irb);
+	op1 = loadOpBinaryOp1(pi, irb);
+	if (i->id == PPC_INS_CNTLZD)
+	{
+		op1 = irb.CreateZExtOrTrunc(op1, irb.getInt64Ty());
+	}
+	else
+	{
+		op1 = narrowToWord(op1, irb);
+	}
 	auto* f = llvm::Intrinsic::getOrInsertDeclaration(
 			_module,
 			llvm::Intrinsic::ctlz,
 			op1->getType());
-	auto* val = irb.CreateCall(f, {op1, irb.getTrue()});
+	// isZeroUndef = false: Power defines cntlzw(0)=32 and cntlzd(0)=64.
+	auto* val = irb.CreateCall(f, {op1, irb.getFalse()});
 	storeOp(pi->operands[0], val, irb);
 	storeCr0(irb, pi, val);
 }
 
+void Capstone2LlvmIrTranslatorPowerpc_impl::translatePopcnt(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, pi, irb);
+
+	op1 = loadOpBinaryOp1(pi, irb);
+	if (i->id == PPC_INS_POPCNTD)
+	{
+		op1 = irb.CreateZExtOrTrunc(op1, irb.getInt64Ty());
+	}
+	else
+	{
+		op1 = narrowToWord(op1, irb);
+	}
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(
+			_module,
+			llvm::Intrinsic::ctpop,
+			op1->getType());
+	auto* val = irb.CreateCall(f, {op1});
+	storeOp(pi->operands[0], val, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
 /**
- * PPC_INS_DIVW, PPC_INS_DIVWU
+ * PPC_INS_DIVW, PPC_INS_DIVWU, PPC_INS_DIVD, PPC_INS_DIVDU
  */
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateDivw(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb);
-	op1 = narrowToWord(op1, irb);
-	op2 = narrowToWord(op2, irb);
-	// Power says RT is UNDEFINED for a zero divisor -- and, for divw, for
-	// 0x80000000 / -1 -- while the instruction COMPLETES and takes no
+	const bool dbl = (i->id == PPC_INS_DIVD || i->id == PPC_INS_DIVDU);
+	if (dbl)
+	{
+		op1 = irb.CreateZExtOrTrunc(op1, irb.getInt64Ty());
+		op2 = irb.CreateZExtOrTrunc(op2, irb.getInt64Ty());
+	}
+	else
+	{
+		op1 = narrowToWord(op1, irb);
+		op2 = narrowToWord(op2, irb);
+	}
+	const bool isSigned = (i->id == PPC_INS_DIVW || i->id == PPC_INS_DIVD);
+	// Power says RT is UNDEFINED for a zero divisor -- and, for signed
+	// divide, for MIN / -1 -- while the instruction COMPLETES and takes no
 	// interrupt. LLVM's sdiv says something much stronger: immediate
 	// undefined behaviour, which lets the optimiser delete the surrounding
 	// code rather than merely leave a value unspecified.
@@ -1091,7 +1132,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateDivw(cs_insn* i, cs_ppc* pi
 	{
 		auto* dty = op2->getType();
 		unsigned dbits = dty->getIntegerBitWidth();
-		if (i->id == PPC_INS_DIVW)
+		if (isSigned)
 		{
 			auto* overflow = irb.CreateAnd(
 				irb.CreateICmpEQ(op1, llvm::ConstantInt::get(dty, llvm::APInt::getSignedMinValue(dbits))),
@@ -1108,9 +1149,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateDivw(cs_insn* i, cs_ppc* pi
 		op2 = irb.CreateBinaryIntrinsic(llvm::Intrinsic::umax, op2, llvm::ConstantInt::get(dty, 1));
 	}
 
-	auto* val = i->id == PPC_INS_DIVW
-			? irb.CreateSDiv(op1, op2)
-			: irb.CreateUDiv(op1, op2);
+	auto* val = isSigned ? irb.CreateSDiv(op1, op2) : irb.CreateUDiv(op1, op2);
 	storeOp(pi->operands[0], val, irb);
 	storeCr0(irb, pi, val);
 }
@@ -2490,24 +2529,39 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateMflr(cs_insn* i, cs_ppc* pi
 }
 
 /**
- * PPC_INS_MULHW, PPC_INS_MULHWU
+ * PPC_INS_MULHW, PPC_INS_MULHWU, PPC_INS_MULHD, PPC_INS_MULHDU
  */
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateMulhw(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb);
+	const bool dbl = (i->id == PPC_INS_MULHD || i->id == PPC_INS_MULHDU);
+	const bool isSigned = (i->id == PPC_INS_MULHW || i->id == PPC_INS_MULHD);
+	if (dbl)
+	{
+		op1 = irb.CreateZExtOrTrunc(op1, irb.getInt64Ty());
+		op2 = irb.CreateZExtOrTrunc(op2, irb.getInt64Ty());
+		auto* wide = irb.getIntNTy(128);
+		op1 = isSigned ? irb.CreateSExt(op1, wide) : irb.CreateZExt(op1, wide);
+		op2 = isSigned ? irb.CreateSExt(op2, wide) : irb.CreateZExt(op2, wide);
+		auto* val = irb.CreateTrunc(irb.CreateLShr(irb.CreateMul(op1, op2), 64), irb.getInt64Ty());
+		storeOp(pi->operands[0], val, irb);
+		storeCr0(irb, pi, val);
+		return;
+	}
+
 	// Narrow to the word FIRST. SExtOrTrunc to i64 is a no-op when the
 	// operand is already i64, so on PPC64 this was a 64x64 multiply with
 	// bits 63:32 taken.
 	op1 = narrowToWord(op1, irb);
 	op2 = narrowToWord(op2, irb);
-	if (i->id == PPC_INS_MULHW)
+	if (isSigned)
 	{
 		op1 = irb.CreateSExt(op1, irb.getInt64Ty());
 		op2 = irb.CreateSExt(op2, irb.getInt64Ty());
 	}
-	else if (i->id == PPC_INS_MULHWU)
+	else
 	{
 		op1 = irb.CreateZExt(op1, irb.getInt64Ty());
 		op2 = irb.CreateZExt(op2, irb.getInt64Ty());
@@ -2520,7 +2574,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateMulhw(cs_insn* i, cs_ppc* p
 }
 
 /**
- * PPC_INS_MULLW, PPC_INS_MULLI
+ * PPC_INS_MULLW, PPC_INS_MULLI, PPC_INS_MULLD
  */
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateMullw(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
 {
@@ -2539,8 +2593,13 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateMullw(cs_insn* i, cs_ppc* p
 	// gives 0x0000000300000006 and narrowing gave 6. Inert on PPC32, where
 	// the narrowing is a no-op; capstone maps both MULLI and MULLI8 to this
 	// id, so the 64-bit form arrives here with i64 operands.
-	if (i->id == PPC_INS_MULLI)
+	if (i->id == PPC_INS_MULLI || i->id == PPC_INS_MULLD)
 	{
+		if (i->id == PPC_INS_MULLD)
+		{
+			op1 = irb.CreateZExtOrTrunc(op1, irb.getInt64Ty());
+			op2 = irb.CreateZExtOrTrunc(op2, irb.getInt64Ty());
+		}
 		auto* prod = irb.CreateMul(op1, op2);
 		storeOp(pi->operands[0], prod, irb);
 		storeCr0(irb, pi, prod);
@@ -3047,51 +3106,64 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateRotlw(cs_insn* i, cs_ppc* p
 }
 
 /**
- * PPC_INS_SLW
+ * PPC_INS_SLW, PPC_INS_SLD
  */
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateShiftLeft(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb);
-	auto* i32 = irb.getInt32Ty();
-	op1 = irb.CreateZExtOrTrunc(op1, i32);
-	op2 = irb.CreateAnd(irb.CreateZExtOrTrunc(op2, i32), llvm::ConstantInt::get(i32, 0x3f));
+	const bool dbl = (i->id == PPC_INS_SLD);
+	auto* ty = dbl ? irb.getInt64Ty() : irb.getInt32Ty();
+	unsigned width = dbl ? 64u : 32u;
+	unsigned countMask = dbl ? 0x7fu : 0x3fu;
+	op1 = irb.CreateZExtOrTrunc(op1, ty);
+	op2 = irb.CreateAnd(irb.CreateZExtOrTrunc(op2, ty), llvm::ConstantInt::get(ty, countMask));
 
-	// Six bits are read, but the sixth does not participate in the shift:
-	// `slw` with a count of 32 or more gives ZERO, not a wrapped shift. The
-	// old code shifted an i32 by up to 63, which is poison -- and
-	// translateRotlw, forty lines up in this same file, already says exactly
-	// that in its own comment. These two were the outliers.
-	auto* tooBig = irb.CreateICmpUGE(op2, llvm::ConstantInt::get(i32, 32));
-	auto* safe = irb.CreateAnd(op2, llvm::ConstantInt::get(i32, 31));
-	auto* val = irb.CreateSelect(tooBig, llvm::ConstantInt::get(i32, 0), irb.CreateShl(op1, safe));
-	storeOp(pi->operands[0], val, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST); // TODO: check it all others are using correct conversion
-	storeCr0Word(irb, pi, val);
+	// slw reads six bits / sld seven, but the extra bit does not participate
+	// in the shift: a count of `width` or more gives ZERO, not a wrapped
+	// shift. Shifting an iN by N or more is poison.
+	auto* tooBig = irb.CreateICmpUGE(op2, llvm::ConstantInt::get(ty, width));
+	auto* safe = irb.CreateAnd(op2, llvm::ConstantInt::get(ty, width - 1));
+	auto* val = irb.CreateSelect(tooBig, llvm::ConstantInt::get(ty, 0), irb.CreateShl(op1, safe));
+	storeOp(pi->operands[0], val, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	if (dbl)
+	{
+		storeCr0(irb, pi, val);
+	}
+	else
+	{
+		storeCr0Word(irb, pi, val);
+	}
 }
 
 /**
- * PPC_INS_SRW
+ * PPC_INS_SRW, PPC_INS_SRD
  */
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateShiftRight(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb);
-	auto* i32 = irb.getInt32Ty();
-	op1 = irb.CreateZExtOrTrunc(op1, i32);
-	op2 = irb.CreateAnd(irb.CreateZExtOrTrunc(op2, i32), llvm::ConstantInt::get(i32, 0x3f));
+	const bool dbl = (i->id == PPC_INS_SRD);
+	auto* ty = dbl ? irb.getInt64Ty() : irb.getInt32Ty();
+	unsigned width = dbl ? 64u : 32u;
+	unsigned countMask = dbl ? 0x7fu : 0x3fu;
+	op1 = irb.CreateZExtOrTrunc(op1, ty);
+	op2 = irb.CreateAnd(irb.CreateZExtOrTrunc(op2, ty), llvm::ConstantInt::get(ty, countMask));
 
-	// Six bits are read, but the sixth does not participate in the shift:
-	// `srw` with a count of 32 or more gives ZERO, not a wrapped shift. The
-	// old code shifted an i32 by up to 63, which is poison -- and
-	// translateRotlw, forty lines up in this same file, already says exactly
-	// that in its own comment. These two were the outliers.
-	auto* tooBig = irb.CreateICmpUGE(op2, llvm::ConstantInt::get(i32, 32));
-	auto* safe = irb.CreateAnd(op2, llvm::ConstantInt::get(i32, 31));
-	auto* val = irb.CreateSelect(tooBig, llvm::ConstantInt::get(i32, 0), irb.CreateLShr(op1, safe));
+	auto* tooBig = irb.CreateICmpUGE(op2, llvm::ConstantInt::get(ty, width));
+	auto* safe = irb.CreateAnd(op2, llvm::ConstantInt::get(ty, width - 1));
+	auto* val = irb.CreateSelect(tooBig, llvm::ConstantInt::get(ty, 0), irb.CreateLShr(op1, safe));
 	storeOp(pi->operands[0], val, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
-	storeCr0Word(irb, pi, val);
+	if (dbl)
+	{
+		storeCr0(irb, pi, val);
+	}
+	else
+	{
+		storeCr0Word(irb, pi, val);
+	}
 }
 
 /**
@@ -3137,68 +3209,41 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateSrwi(cs_insn* i, cs_ppc* pi
 }
 
 /**
- * PPC_INS_SRAW, PPC_INS_SRAWI - Shift Right Algebraic
- * TODO: super ugly, do we need it? use pseudo asm?
+ * PPC_INS_SRAW, PPC_INS_SRAWI, PPC_INS_SRAD, PPC_INS_SRADI
+ *
+ * Arithmetic right shift of the word or doubleword. CA is set when RS was
+ * negative and any 1-bit was shifted out. The register forms read one extra
+ * count bit (6 for sraw, 7 for srad); when that bit is set the result is
+ * all sign bits.
  */
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateSraw(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
 {
-//	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb);
-//
-//	llvm::Function* fnc = getPseudoAsmFunction(
-//			i,
-//			llvm::StructType::create(llvm::ArrayRef<llvm::Type*>{
-//					op1->getType(),
-//					irb.getInt1Ty()}),
-//			llvm::ArrayRef<llvm::Type*>{op1->getType(), op2->getType()});
-//
-//	auto* c = irb.CreateCall(fnc, {op1, op2});
-//	op0 = irb.CreateExtractValue(c, {0});
-//
-//	storeOp(pi->operands[0], op0, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
-//	storeRegister(PPC_REG_CARRY, irb.CreateExtractValue(c, {1}), irb);
-//	storeCr0(irb, pi, op0);
-
 	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb);
-	// Everything below is a hand-unrolled 32-bit rotate -- the constants 31
-	// and 32 say so -- applied to whatever width the operands arrived at.
-	op1 = narrowToWord(op1, irb);
-	op2 = narrowToWord(op2, irb);
+	const bool dbl = (i->id == PPC_INS_SRAD || i->id == PPC_INS_SRADI);
+	const bool imm = (i->id == PPC_INS_SRAWI || i->id == PPC_INS_SRADI);
+	unsigned bits = dbl ? 64u : 32u;
+	auto* ty = irb.getIntNTy(bits);
+	op1 = irb.CreateZExtOrTrunc(op1, ty);
+	op2 = irb.CreateZExtOrTrunc(op2, ty);
 
-	auto* andV = irb.CreateAnd(op2, llvm::ConstantInt::get(op2->getType(), 31));
-	auto* u2 = irb.CreateSub(llvm::ConstantInt::get(op2->getType(), 0), op2);
-	auto* and4 = irb.CreateAnd(u2, llvm::ConstantInt::get(u2->getType(), 31));
-	auto* shl = irb.CreateShl(op1, and4);
-	auto* u3 = irb.CreateXor(and4, llvm::ConstantInt::get(and4->getType(), 31));
-	auto* shr = irb.CreateLShr(op1, u3);
-	auto* shr8 = irb.CreateLShr(shr, llvm::ConstantInt::get(shr->getType(), 1));
-	auto* orv = irb.CreateOr(shr8, shl);
-	auto* and10 = irb.CreateAnd(op2, llvm::ConstantInt::get(op2->getType(), 32));
-	auto* toBool = irb.CreateICmpNE(and10, llvm::ConstantInt::get(and10->getType(), 0));
-	auto* shr11 = irb.CreateLShr(llvm::ConstantInt::getSigned(andV->getType(), -1), andV);
-	auto* storemerge = irb.CreateSelect(toBool, llvm::ConstantInt::get(shr11->getType(), 0), shr11);
-	auto* and19 = irb.CreateAnd(orv, storemerge);
-	auto* lobit = irb.CreateAShr(op1, llvm::ConstantInt::get(op1->getType(), 31));
-	auto* neg = irb.CreateXor(storemerge, llvm::ConstantInt::getSigned(storemerge->getType(), -1));
-	auto* and21 = irb.CreateAnd(lobit, neg);
-	auto* or22 = irb.CreateOr(and19, and21);
+	unsigned nmask = dbl ? (imm ? 63u : 127u) : (imm ? 31u : 63u);
+	auto* n = irb.CreateAnd(op2, llvm::ConstantInt::get(ty, nmask));
+	auto* tooBig = irb.CreateICmpUGE(n, llvm::ConstantInt::get(ty, bits));
+	auto* safeN = irb.CreateAnd(n, llvm::ConstantInt::get(ty, bits - 1));
+	auto* shifted = irb.CreateAShr(op1, safeN);
+	auto* signFill = irb.CreateAShr(op1, llvm::ConstantInt::get(ty, bits - 1));
+	auto* result = irb.CreateSelect(tooBig, signFill, shifted);
 
-	storeOp(pi->operands[0], or22, irb);
-	storeCr0(irb, pi, or22);
+	storeOp(pi->operands[0], result, irb);
+	storeCr0(irb, pi, result);
 
-	// CA is set when RS was negative and any 1-bit was shifted out.
-	auto* and26 = irb.CreateAnd(orv, neg);
-	auto* bitsLost = irb.CreateICmpNE(and26, llvm::ConstantInt::get(and26->getType(), 0));
-	auto* lobit1 = irb.CreateLShr(op1, llvm::ConstantInt::get(op1->getType(), 31));
-	auto* wasNegative = irb.CreateICmpNE(lobit1, llvm::ConstantInt::get(lobit1->getType(), 0));
-
-	// This used to shift the answer up to XER's bit position 29 and store
-	// that. PPC_REG_CARRY is a separate i1 global here, not a field of XER,
-	// so storing 0x20000000 into it truncates to bit 0 -- which is zero.
-	// CA was unconditionally false. Every other carry store in this file
-	// passes an i1 directly; this was the only one that shifted.
-	storeRegister(PPC_REG_CARRY, irb.CreateAnd(bitsLost, wasNegative), irb);
+	auto* wasNeg = irb.CreateICmpSLT(op1, llvm::ConstantInt::get(ty, 0));
+	auto* one = llvm::ConstantInt::get(ty, 1);
+	auto* lowMask = irb.CreateSub(irb.CreateShl(one, safeN), one);
+	auto* lost = irb.CreateSelect(tooBig, op1, irb.CreateAnd(op1, lowMask));
+	storeRegister(PPC_REG_CARRY, irb.CreateAnd(wasNeg, irb.CreateICmpNE(lost, llvm::ConstantInt::get(ty, 0))), irb);
 }
 
 /**
@@ -4079,14 +4124,174 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecFpArith(cs_insn* i, cs_p
 {
 	EXPECT_IS_TERNARY(i, pi, irb);
 
-	auto* a = asVec128(loadOpI128(pi->operands[1], irb), irb.getFloatTy(), 4, irb);
-	auto* b = asVec128(loadOpI128(pi->operands[2], irb), irb.getFloatTy(), 4, irb);
+	llvm::Type* elem = irb.getFloatTy();
+	unsigned lanes = 4;
+	switch (i->id)
+	{
+	case PPC_INS_XVADDDP:
+	case PPC_INS_XVSUBDP:
+	case PPC_INS_XVMULDP:
+	case PPC_INS_XVDIVDP:
+	case PPC_INS_XVMAXDP:
+	case PPC_INS_XVMINDP:
+		elem = irb.getDoubleTy();
+		lanes = 2;
+		break;
+	default:
+		break;
+	}
+
+	auto* a = asVec128(loadOpI128(pi->operands[1], irb), elem, lanes, irb);
+	auto* b = asVec128(loadOpI128(pi->operands[2], irb), elem, lanes, irb);
 	llvm::Value* r = nullptr;
 	switch (i->id)
 	{
-	case PPC_INS_VADDFP: r = irb.CreateFAdd(a, b); break;
-	case PPC_INS_VSUBFP: r = irb.CreateFSub(a, b); break;
+	case PPC_INS_VADDFP:
+	case PPC_INS_XVADDSP:
+	case PPC_INS_XVADDDP: r = irb.CreateFAdd(a, b); break;
+	case PPC_INS_VSUBFP:
+	case PPC_INS_XVSUBSP:
+	case PPC_INS_XVSUBDP: r = irb.CreateFSub(a, b); break;
+	case PPC_INS_XVMULSP:
+	case PPC_INS_XVMULDP: r = irb.CreateFMul(a, b); break;
+	case PPC_INS_XVDIVSP:
+	case PPC_INS_XVDIVDP: r = irb.CreateFDiv(a, b); break;
+	// x86 MAXPD/MINPD: ogt/olt select, second operand on unordered.
+	case PPC_INS_XVMAXSP:
+	case PPC_INS_XVMAXDP: r = irb.CreateSelect(irb.CreateFCmpOGT(a, b), a, b); break;
+	case PPC_INS_XVMINSP:
+	case PPC_INS_XVMINDP: r = irb.CreateSelect(irb.CreateFCmpOLT(a, b), a, b); break;
 	default: return;
+	}
+	storeOpI128(pi->operands[0], irb.CreateBitCast(r, irb.getInt128Ty()), irb);
+}
+
+/**
+ * VSX packed FMA. Assembly is XT, XA, XB with XT also a source.
+ *
+ * Power ISA type-A (xvmaddadp): XT = XA * XB + XT
+ * type-M (xvmaddmdp):           XT = XT * XB + XA
+ * msub subtracts the addend; nmsub is -(product - addend);
+ * nmadd is -(product + addend), same sign pattern as scalar fnmadd.
+ *
+ * Vector fmul+fadd/fsub, same shape as ARM64 scalar FMLA (llvmir-emul
+ * does not honour the addend of llvm.fma on some packed views). VSL0 is
+ * i128; f0 stays a separate double — loadOpI128 / storeOpI128 already
+ * keep that split.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecFpFma(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, pi, irb);
+
+	llvm::Type* elem = irb.getFloatTy();
+	unsigned lanes = 4;
+	bool typeA = true;
+	bool sub = false;
+	bool nmsub = false;
+	bool nmadd = false;
+	switch (i->id)
+	{
+	case PPC_INS_XVMADDADP:
+		elem = irb.getDoubleTy();
+		lanes = 2;
+		break;
+	case PPC_INS_XVMADDASP:
+		break;
+	case PPC_INS_XVMADDMDP:
+		elem = irb.getDoubleTy();
+		lanes = 2;
+		typeA = false;
+		break;
+	case PPC_INS_XVMADDMSP:
+		typeA = false;
+		break;
+	case PPC_INS_XVMSUBADP:
+		elem = irb.getDoubleTy();
+		lanes = 2;
+		sub = true;
+		break;
+	case PPC_INS_XVMSUBASP:
+		sub = true;
+		break;
+	case PPC_INS_XVMSUBMDP:
+		elem = irb.getDoubleTy();
+		lanes = 2;
+		typeA = false;
+		sub = true;
+		break;
+	case PPC_INS_XVMSUBMSP:
+		typeA = false;
+		sub = true;
+		break;
+	case PPC_INS_XVNMADDADP:
+		elem = irb.getDoubleTy();
+		lanes = 2;
+		nmadd = true;
+		break;
+	case PPC_INS_XVNMADDASP:
+		nmadd = true;
+		break;
+	case PPC_INS_XVNMADDMDP:
+		elem = irb.getDoubleTy();
+		lanes = 2;
+		typeA = false;
+		nmadd = true;
+		break;
+	case PPC_INS_XVNMADDMSP:
+		typeA = false;
+		nmadd = true;
+		break;
+	case PPC_INS_XVNMSUBADP:
+		elem = irb.getDoubleTy();
+		lanes = 2;
+		sub = true;
+		nmsub = true;
+		break;
+	case PPC_INS_XVNMSUBASP:
+		sub = true;
+		nmsub = true;
+		break;
+	case PPC_INS_XVNMSUBMDP:
+		elem = irb.getDoubleTy();
+		lanes = 2;
+		typeA = false;
+		sub = true;
+		nmsub = true;
+		break;
+	case PPC_INS_XVNMSUBMSP:
+		typeA = false;
+		sub = true;
+		nmsub = true;
+		break;
+	default:
+		return;
+	}
+
+	auto* xt = asVec128(loadOpI128(pi->operands[0], irb), elem, lanes, irb);
+	auto* xa = asVec128(loadOpI128(pi->operands[1], irb), elem, lanes, irb);
+	auto* xb = asVec128(loadOpI128(pi->operands[2], irb), elem, lanes, irb);
+
+	llvm::Value* mulA = typeA ? xa : xt;
+	llvm::Value* mulB = xb;
+	llvm::Value* addend = typeA ? xt : xa;
+	llvm::Value* prod = irb.CreateFMul(mulA, mulB);
+	llvm::Value* r = nullptr;
+	if (nmadd)
+	{
+		// -(prod + addend) as fsub from +0; llvmir-emul faults on vector fneg.
+		r = irb.CreateFSub(llvm::Constant::getNullValue(prod->getType()), irb.CreateFAdd(prod, addend));
+	}
+	else if (nmsub)
+	{
+		r = irb.CreateFSub(addend, prod);
+	}
+	else if (sub)
+	{
+		r = irb.CreateFSub(prod, addend);
+	}
+	else
+	{
+		r = irb.CreateFAdd(prod, addend);
 	}
 	storeOpI128(pi->operands[0], irb.CreateBitCast(r, irb.getInt128Ty()), irb);
 }
@@ -4097,27 +4302,101 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecIntAdd(cs_insn* i, cs_pp
 
 	unsigned laneBits = 32;
 	unsigned lanes = 4;
+	bool isSub = false;
+	bool saturate = false;
+	bool isSigned = true;
 	switch (i->id)
 	{
 	case PPC_INS_VADDUBM:
+	case PPC_INS_VSUBUBM:
 		laneBits = 8;
 		lanes = 16;
+		isSub = (i->id == PPC_INS_VSUBUBM);
 		break;
 	case PPC_INS_VADDUHM:
+	case PPC_INS_VSUBUHM:
 		laneBits = 16;
 		lanes = 8;
+		isSub = (i->id == PPC_INS_VSUBUHM);
+		break;
+	case PPC_INS_VSUBUWM:
+		isSub = true;
+		break;
+	case PPC_INS_VADDSBS:
+	case PPC_INS_VSUBSBS:
+		laneBits = 8;
+		lanes = 16;
+		saturate = true;
+		isSub = (i->id == PPC_INS_VSUBSBS);
+		break;
+	case PPC_INS_VADDSHS:
+	case PPC_INS_VSUBSHS:
+		laneBits = 16;
+		lanes = 8;
+		saturate = true;
+		isSub = (i->id == PPC_INS_VSUBSHS);
+		break;
+	case PPC_INS_VADDSWS:
+	case PPC_INS_VSUBSWS:
+		saturate = true;
+		isSub = (i->id == PPC_INS_VSUBSWS);
+		break;
+	case PPC_INS_VADDUBS:
+	case PPC_INS_VSUBUBS:
+		laneBits = 8;
+		lanes = 16;
+		saturate = true;
+		isSigned = false;
+		isSub = (i->id == PPC_INS_VSUBUBS);
+		break;
+	case PPC_INS_VADDUHS:
+	case PPC_INS_VSUBUHS:
+		laneBits = 16;
+		lanes = 8;
+		saturate = true;
+		isSigned = false;
+		isSub = (i->id == PPC_INS_VSUBUHS);
+		break;
+	case PPC_INS_VADDUWS:
+	case PPC_INS_VSUBUWS:
+		saturate = true;
+		isSigned = false;
+		isSub = (i->id == PPC_INS_VSUBUWS);
 		break;
 	case PPC_INS_VADDUWM:
 	default:
-		laneBits = 32;
-		lanes = 4;
 		break;
 	}
 
 	auto* elem = irb.getIntNTy(laneBits);
 	auto* a = asVec128(loadOpI128(pi->operands[1], irb), elem, lanes, irb);
 	auto* b = asVec128(loadOpI128(pi->operands[2], irb), elem, lanes, irb);
-	storeOpI128(pi->operands[0], irb.CreateBitCast(irb.CreateAdd(a, b), irb.getInt128Ty()), irb);
+	llvm::Value* r = nullptr;
+	if (saturate)
+	{
+		// Same select clamp as x86 PADDSB/PADDUSB: widen, add/sub, clip to
+		// the element range. llvm.*.sat would name a call the emitted C
+		// would have to teach; a select reads as arithmetic.
+		auto* wideTy = llvm::FixedVectorType::get(irb.getIntNTy(laneBits * 2), lanes);
+		auto* aw = isSigned ? irb.CreateSExt(a, wideTy) : irb.CreateZExt(a, wideTy);
+		auto* bw = isSigned ? irb.CreateSExt(b, wideTy) : irb.CreateZExt(b, wideTy);
+		r = isSub ? irb.CreateSub(aw, bw) : irb.CreateAdd(aw, bw);
+		unsigned wideBits = laneBits * 2;
+		llvm::APInt lo = isSigned ? llvm::APInt::getSignedMinValue(laneBits).sext(wideBits)
+								  : llvm::APInt::getZero(wideBits);
+		llvm::APInt hi = isSigned ? llvm::APInt::getSignedMaxValue(laneBits).sext(wideBits)
+								  : llvm::APInt::getMaxValue(laneBits).zext(wideBits);
+		auto* loC = llvm::ConstantInt::get(wideTy, lo);
+		auto* hiC = llvm::ConstantInt::get(wideTy, hi);
+		r = irb.CreateSelect(irb.CreateICmpSLT(r, loC), loC, r);
+		r = irb.CreateSelect(irb.CreateICmpSGT(r, hiC), hiC, r);
+		r = irb.CreateTrunc(r, a->getType());
+	}
+	else
+	{
+		r = isSub ? irb.CreateSub(a, b) : irb.CreateAdd(a, b);
+	}
+	storeOpI128(pi->operands[0], irb.CreateBitCast(r, irb.getInt128Ty()), irb);
 }
 
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateXxpermdi(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
@@ -4205,6 +4484,712 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateStoreFloatAsInt(cs_insn* i,
 	auto* w = irb.CreateTrunc(bits, irb.getInt32Ty());
 	auto* add = loadIndexedEffectiveAddress(pi, irb);
 	storeIntPtr(irb, w, add, irb.getInt32Ty());
+}
+
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecPerm(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_QUATERNARY(i, pi, irb);
+	(void)i;
+
+	auto* a = loadOpI128(pi->operands[1], irb);
+	auto* b = loadOpI128(pi->operands[2], irb);
+	auto* c = loadOpI128(pi->operands[3], irb);
+	auto* i256 = irb.getIntNTy(256);
+	auto* concat = irb.CreateOr(
+			irb.CreateShl(irb.CreateZExt(a, i256), 128),
+			irb.CreateZExt(b, i256));
+	llvm::Value* result = llvm::ConstantInt::get(irb.getInt128Ty(), 0);
+	for (unsigned lane = 0; lane < 16; ++lane)
+	{
+		unsigned place = (15u - lane) * 8u;
+		auto* cbyte = irb.CreateTrunc(
+				irb.CreateLShr(c, llvm::ConstantInt::get(c->getType(), place)),
+				irb.getInt8Ty());
+		auto* idx = irb.CreateZExt(irb.CreateAnd(cbyte, irb.getInt8(31)), irb.getInt32Ty());
+		auto* fromRight = irb.CreateMul(
+				irb.CreateSub(irb.getInt32(31), idx),
+				irb.getInt32(8));
+		auto* byte = irb.CreateTrunc(
+				irb.CreateLShr(concat, irb.CreateZExt(fromRight, i256)),
+				irb.getInt8Ty());
+		result = irb.CreateOr(
+				result,
+				irb.CreateShl(irb.CreateZExt(byte, irb.getInt128Ty()), place));
+	}
+	storeOpI128(pi->operands[0], result, irb);
+}
+
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecSel(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_QUATERNARY(i, pi, irb);
+	(void)i;
+
+	auto* a = loadOpI128(pi->operands[1], irb);
+	auto* b = loadOpI128(pi->operands[2], irb);
+	auto* c = loadOpI128(pi->operands[3], irb);
+	storeOpI128(pi->operands[0], irb.CreateOr(irb.CreateAnd(a, irb.CreateNot(c)), irb.CreateAnd(b, c)), irb);
+}
+
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecSldoi(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	if (pi->op_count != 3 && pi->op_count != 4)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+
+	auto* a = loadOpI128(pi->operands[1], irb);
+	auto* b = loadOpI128(pi->operands[2], irb);
+	unsigned shb = 0;
+	if (pi->op_count >= 4 && pi->operands[3].type == PPC_OP_IMM)
+	{
+		shb = static_cast<unsigned>(pi->operands[3].imm) & 15u;
+	}
+	auto* i256 = irb.getIntNTy(256);
+	auto* concat = irb.CreateOr(
+			irb.CreateShl(irb.CreateZExt(a, i256), 128),
+			irb.CreateZExt(b, i256));
+	auto* shifted = irb.CreateShl(concat, llvm::ConstantInt::get(i256, static_cast<uint64_t>(shb) * 8u));
+	auto* val = irb.CreateTrunc(irb.CreateLShr(shifted, 128), irb.getInt128Ty());
+	storeOpI128(pi->operands[0], val, irb);
+}
+
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecMerge(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, pi, irb);
+
+	auto* a = loadOpI128(pi->operands[1], irb);
+	auto* b = loadOpI128(pi->operands[2], irb);
+	auto* i32 = irb.getInt32Ty();
+	auto* i128 = irb.getInt128Ty();
+	auto word = [&](llvm::Value* v, unsigned ppcIdx) {
+		unsigned sh = (3u - ppcIdx) * 32u;
+		return irb.CreateZExt(irb.CreateTrunc(irb.CreateLShr(v, sh), i32), i128);
+	};
+	const bool high = (i->id == PPC_INS_VMRGHW);
+	unsigned a0 = high ? 0u : 2u;
+	unsigned a1 = high ? 1u : 3u;
+	auto* val = irb.CreateOr(
+			irb.CreateOr(irb.CreateShl(word(a, a0), 96), irb.CreateShl(word(b, a0), 64)),
+			irb.CreateOr(irb.CreateShl(word(a, a1), 32), word(b, a1)));
+	storeOpI128(pi->operands[0], val, irb);
+}
+
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecCmp(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, pi, irb);
+
+	llvm::Type* laneTy = irb.getInt32Ty();
+	llvm::Type* cmpTy = laneTy;
+	unsigned lanes = 4;
+	bool fp = false;
+	bool gt = false;
+	bool ge = false;
+	switch (i->id)
+	{
+	case PPC_INS_VCMPEQUW:
+		break;
+	case PPC_INS_VCMPGTUW:
+		gt = true;
+		break;
+	case PPC_INS_VCMPEQFP:
+	case PPC_INS_XVCMPEQSP:
+		fp = true;
+		cmpTy = irb.getFloatTy();
+		break;
+	case PPC_INS_VCMPGTFP:
+	case PPC_INS_XVCMPGTSP:
+		fp = true;
+		gt = true;
+		cmpTy = irb.getFloatTy();
+		break;
+	case PPC_INS_XVCMPGESP:
+		fp = true;
+		ge = true;
+		cmpTy = irb.getFloatTy();
+		break;
+	case PPC_INS_XVCMPEQDP:
+		fp = true;
+		lanes = 2;
+		laneTy = irb.getInt64Ty();
+		cmpTy = irb.getDoubleTy();
+		break;
+	case PPC_INS_XVCMPGTDP:
+		fp = true;
+		gt = true;
+		lanes = 2;
+		laneTy = irb.getInt64Ty();
+		cmpTy = irb.getDoubleTy();
+		break;
+	case PPC_INS_XVCMPGEDP:
+		fp = true;
+		ge = true;
+		lanes = 2;
+		laneTy = irb.getInt64Ty();
+		cmpTy = irb.getDoubleTy();
+		break;
+	default:
+		return;
+	}
+
+	auto* a = asVec128(loadOpI128(pi->operands[1], irb), cmpTy, lanes, irb);
+	auto* b = asVec128(loadOpI128(pi->operands[2], irb), cmpTy, lanes, irb);
+	llvm::Value* pred = nullptr;
+	if (fp)
+	{
+		if (gt)
+		{
+			pred = irb.CreateFCmpOGT(a, b);
+		}
+		else if (ge)
+		{
+			pred = irb.CreateFCmpOGE(a, b);
+		}
+		else
+		{
+			pred = irb.CreateFCmpOEQ(a, b);
+		}
+	}
+	else
+	{
+		pred = gt ? irb.CreateICmpUGT(a, b) : irb.CreateICmpEQ(a, b);
+	}
+	auto* maskTy = llvm::FixedVectorType::get(laneTy, lanes);
+	storeOpI128(
+			pi->operands[0],
+			irb.CreateBitCast(irb.CreateSExt(pred, maskTy), irb.getInt128Ty()),
+			irb);
+}
+
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecSplat(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	if (pi->op_count < 2)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+
+	cs_ppc_op* srcOp = nullptr;
+	int64_t uimm = 0;
+	bool haveImm = false;
+	for (uint8_t n = 1; n < pi->op_count; ++n)
+	{
+		if (pi->operands[n].type == PPC_OP_IMM)
+		{
+			uimm = pi->operands[n].imm;
+			haveImm = true;
+		}
+		else if (pi->operands[n].type == PPC_OP_REG && srcOp == nullptr)
+		{
+			srcOp = &pi->operands[n];
+		}
+	}
+	if (srcOp == nullptr || !haveImm)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+
+	unsigned laneBits = 32;
+	unsigned lanes = 4;
+	switch (i->id)
+	{
+	case PPC_INS_VSPLTB:
+		laneBits = 8;
+		lanes = 16;
+		break;
+	case PPC_INS_VSPLTH:
+		laneBits = 16;
+		lanes = 8;
+		break;
+	case PPC_INS_VSPLTW:
+	default:
+		break;
+	}
+
+	unsigned uim = static_cast<unsigned>(uimm) & (lanes - 1u);
+	unsigned shift = (lanes - 1u - uim) * laneBits;
+	auto* src = loadOpI128(*srcOp, irb);
+	auto* elemTy = irb.getIntNTy(laneBits);
+	auto* elem = irb.CreateTrunc(
+			irb.CreateLShr(src, llvm::ConstantInt::get(src->getType(), shift)),
+			elemTy);
+	llvm::Value* vec = llvm::UndefValue::get(llvm::FixedVectorType::get(elemTy, lanes));
+	for (unsigned lane = 0; lane < lanes; ++lane)
+	{
+		vec = irb.CreateInsertElement(vec, elem, irb.getInt32(lane));
+	}
+	storeOpI128(pi->operands[0], irb.CreateBitCast(vec, irb.getInt128Ty()), irb);
+}
+
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecLvsl(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
+
+	auto* ea = loadIndexedEffectiveAddress(pi, irb);
+	auto* sh = irb.CreateTrunc(
+			irb.CreateAnd(ea, llvm::ConstantInt::get(ea->getType(), 15)),
+			irb.getInt8Ty());
+	auto* i128 = irb.getInt128Ty();
+	llvm::Value* result = llvm::ConstantInt::get(i128, 0);
+	const unsigned bias = (i->id == PPC_INS_LVSR) ? 16u : 0u;
+	for (unsigned k = 0; k < 16; ++k)
+	{
+		auto* b = irb.CreateAdd(sh, irb.getInt8(static_cast<uint8_t>(bias + k)));
+		unsigned place = (15u - k) * 8u;
+		result = irb.CreateOr(
+				result,
+				irb.CreateShl(irb.CreateZExt(b, i128), place));
+	}
+	storeOpI128(pi->operands[0], result, irb);
+}
+
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecPack(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, pi, irb);
+
+	unsigned srcBits = 16;
+	unsigned nSrc = 8;
+	bool saturate = false;
+	bool srcSigned = false;
+	bool dstUnsigned = false;
+	switch (i->id)
+	{
+	case PPC_INS_VPKUHUM:
+		break;
+	case PPC_INS_VPKUHUS:
+		saturate = true;
+		break;
+	case PPC_INS_VPKSHSS:
+		saturate = true;
+		srcSigned = true;
+		break;
+	case PPC_INS_VPKSHUS:
+		saturate = true;
+		srcSigned = true;
+		dstUnsigned = true;
+		break;
+	case PPC_INS_VPKUWUM:
+		srcBits = 32;
+		nSrc = 4;
+		break;
+	case PPC_INS_VPKUWUS:
+		srcBits = 32;
+		nSrc = 4;
+		saturate = true;
+		break;
+	case PPC_INS_VPKSWSS:
+		srcBits = 32;
+		nSrc = 4;
+		saturate = true;
+		srcSigned = true;
+		break;
+	case PPC_INS_VPKSWUS:
+		srcBits = 32;
+		nSrc = 4;
+		saturate = true;
+		srcSigned = true;
+		dstUnsigned = true;
+		break;
+	default:
+		return;
+	}
+
+	auto* a = loadOpI128(pi->operands[1], irb);
+	auto* b = loadOpI128(pi->operands[2], irb);
+	unsigned dstBits = srcBits / 2;
+	auto* srcTy = irb.getIntNTy(srcBits);
+	auto* dstTy = irb.getIntNTy(dstBits);
+	auto* i128 = irb.getInt128Ty();
+	llvm::Value* result = llvm::ConstantInt::get(i128, 0);
+	auto packHalf = [&](llvm::Value* src, unsigned dstBase) {
+		for (unsigned k = 0; k < nSrc; ++k)
+		{
+			unsigned srcShift = (nSrc - 1u - k) * srcBits;
+			auto* elem = irb.CreateTrunc(
+					irb.CreateLShr(src, llvm::ConstantInt::get(src->getType(), srcShift)),
+					srcTy);
+			if (saturate)
+			{
+				if (dstUnsigned)
+				{
+					auto* zero = llvm::ConstantInt::get(srcTy, 0);
+					auto* hiC = llvm::ConstantInt::get(
+							srcTy, llvm::APInt::getMaxValue(dstBits).zext(srcBits));
+					elem = irb.CreateSelect(irb.CreateICmpSLT(elem, zero), zero, elem);
+					elem = irb.CreateSelect(irb.CreateICmpSGT(elem, hiC), hiC, elem);
+				}
+				else
+				{
+					llvm::APInt lo = srcSigned ? llvm::APInt::getSignedMinValue(dstBits).sext(srcBits)
+											   : llvm::APInt::getZero(srcBits);
+					llvm::APInt hi = srcSigned ? llvm::APInt::getSignedMaxValue(dstBits).sext(srcBits)
+											   : llvm::APInt::getMaxValue(dstBits).zext(srcBits);
+					auto* loC = llvm::ConstantInt::get(srcTy, lo);
+					auto* hiC = llvm::ConstantInt::get(srcTy, hi);
+					if (srcSigned)
+					{
+						elem = irb.CreateSelect(irb.CreateICmpSLT(elem, loC), loC, elem);
+						elem = irb.CreateSelect(irb.CreateICmpSGT(elem, hiC), hiC, elem);
+					}
+					else
+					{
+						elem = irb.CreateSelect(irb.CreateICmpUGT(elem, hiC), hiC, elem);
+					}
+				}
+			}
+			elem = irb.CreateTrunc(elem, dstTy);
+			unsigned dstPlace = (2u * nSrc - 1u - (dstBase + k)) * dstBits;
+			result = irb.CreateOr(
+					result,
+					irb.CreateShl(irb.CreateZExt(elem, i128), dstPlace));
+		}
+	};
+	packHalf(a, 0);
+	packHalf(b, nSrc);
+	storeOpI128(pi->operands[0], result, irb);
+}
+
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecShift128(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, pi, irb);
+
+	auto* a = loadOpI128(pi->operands[1], irb);
+	auto* b = loadOpI128(pi->operands[2], irb);
+
+	unsigned laneBits = 0;
+	unsigned lanes = 0;
+	bool left = false;
+	bool arithmetic = false;
+	bool rotate = false;
+	switch (i->id)
+	{
+	case PPC_INS_VSL:
+	{
+		auto* sh = irb.CreateAnd(b, llvm::ConstantInt::get(b->getType(), 7));
+		storeOpI128(pi->operands[0], irb.CreateShl(a, sh), irb);
+		return;
+	}
+	case PPC_INS_VSR:
+	{
+		auto* sh = irb.CreateAnd(b, llvm::ConstantInt::get(b->getType(), 7));
+		storeOpI128(pi->operands[0], irb.CreateLShr(a, sh), irb);
+		return;
+	}
+	case PPC_INS_VSLB:
+		laneBits = 8;
+		lanes = 16;
+		left = true;
+		break;
+	case PPC_INS_VSLH:
+		laneBits = 16;
+		lanes = 8;
+		left = true;
+		break;
+	case PPC_INS_VSLW:
+		laneBits = 32;
+		lanes = 4;
+		left = true;
+		break;
+	case PPC_INS_VSLD:
+		laneBits = 64;
+		lanes = 2;
+		left = true;
+		break;
+	case PPC_INS_VSRB:
+		laneBits = 8;
+		lanes = 16;
+		break;
+	case PPC_INS_VSRH:
+		laneBits = 16;
+		lanes = 8;
+		break;
+	case PPC_INS_VSRW:
+		laneBits = 32;
+		lanes = 4;
+		break;
+	case PPC_INS_VSRD:
+		laneBits = 64;
+		lanes = 2;
+		break;
+	case PPC_INS_VSRAB:
+		laneBits = 8;
+		lanes = 16;
+		arithmetic = true;
+		break;
+	case PPC_INS_VSRAH:
+		laneBits = 16;
+		lanes = 8;
+		arithmetic = true;
+		break;
+	case PPC_INS_VSRAW:
+		laneBits = 32;
+		lanes = 4;
+		arithmetic = true;
+		break;
+	case PPC_INS_VSRAD:
+		laneBits = 64;
+		lanes = 2;
+		arithmetic = true;
+		break;
+	case PPC_INS_VRLB:
+		laneBits = 8;
+		lanes = 16;
+		rotate = true;
+		break;
+	case PPC_INS_VRLH:
+		laneBits = 16;
+		lanes = 8;
+		rotate = true;
+		break;
+	case PPC_INS_VRLW:
+		laneBits = 32;
+		lanes = 4;
+		rotate = true;
+		break;
+	default:
+		return;
+	}
+
+	auto* elem = irb.getIntNTy(laneBits);
+	auto* va = asVec128(a, elem, lanes, irb);
+	auto* vb = asVec128(b, elem, lanes, irb);
+	auto* sh = irb.CreateAnd(vb, llvm::ConstantInt::get(vb->getType(), laneBits - 1));
+	llvm::Value* r = nullptr;
+	if (rotate)
+	{
+		// x86 VPROLD analogue: amount is the low bits of each rb lane
+		// (Capstone: vrt, vra, vrb — not a splat). rsh = -sh & (w-1) so a
+		// zero count does not lshr by the element width.
+		auto* rsh = irb.CreateAnd(
+				irb.CreateSub(llvm::ConstantInt::get(vb->getType(), 0), sh),
+				llvm::ConstantInt::get(vb->getType(), laneBits - 1));
+		r = irb.CreateOr(irb.CreateShl(va, sh), irb.CreateLShr(va, rsh));
+	}
+	else if (left)
+	{
+		r = irb.CreateShl(va, sh);
+	}
+	else if (arithmetic)
+	{
+		r = irb.CreateAShr(va, sh);
+	}
+	else
+	{
+		r = irb.CreateLShr(va, sh);
+	}
+	storeOpI128(pi->operands[0], irb.CreateBitCast(r, irb.getInt128Ty()), irb);
+}
+
+/**
+ * xvabsdp/xvabssp / xvnegdp/xvnegsp / xvnabs* / xvcpsgn*. llvmir-emul
+ * faults on vector fneg/copysign, so this is the x86 AND/XOR sign-bit
+ * form on the whole i128. nabs sets the sign bit (-abs). cpsgn takes
+ * magnitude from XB and sign from XA.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecFpSign(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	bool dp = false;
+	bool neg = false;
+	bool nabs = false;
+	bool cpsgn = false;
+	switch (i->id)
+	{
+	case PPC_INS_XVABSDP:
+		dp = true;
+		break;
+	case PPC_INS_XVABSSP:
+		break;
+	case PPC_INS_XVNEGDP:
+		dp = true;
+		neg = true;
+		break;
+	case PPC_INS_XVNEGSP:
+		neg = true;
+		break;
+	case PPC_INS_XVNABSDP:
+		dp = true;
+		nabs = true;
+		break;
+	case PPC_INS_XVNABSSP:
+		nabs = true;
+		break;
+	case PPC_INS_XVCPSGNDP:
+		dp = true;
+		cpsgn = true;
+		break;
+	case PPC_INS_XVCPSGNSP:
+		cpsgn = true;
+		break;
+	default:
+		return;
+	}
+
+	if (cpsgn)
+	{
+		EXPECT_IS_TERNARY(i, pi, irb);
+	}
+	else
+	{
+		EXPECT_IS_BINARY(i, pi, irb);
+	}
+
+	uint64_t signLane = dp ? 0x8000000000000000ULL : 0x8000000080000000ULL;
+	uint64_t magLane = dp ? 0x7fffffffffffffffULL : 0x7fffffff7fffffffULL;
+	const uint64_t signWords[2] = {signLane, signLane};
+	auto* signMask = llvm::ConstantInt::get(irb.getInt128Ty(), llvm::APInt(128, llvm::ArrayRef<uint64_t>(signWords, 2)));
+
+	if (cpsgn)
+	{
+		auto* a = loadOpI128(pi->operands[1], irb);
+		auto* b = loadOpI128(pi->operands[2], irb);
+		auto* signDiff = irb.CreateAnd(irb.CreateXor(a, b), signMask);
+		storeOpI128(pi->operands[0], irb.CreateXor(b, signDiff), irb);
+		return;
+	}
+
+	auto* src = loadOpI128(pi->operands[1], irb);
+	if (nabs)
+	{
+		storeOpI128(pi->operands[0], irb.CreateOr(src, signMask), irb);
+		return;
+	}
+	if (neg)
+	{
+		storeOpI128(pi->operands[0], irb.CreateXor(src, signMask), irb);
+		return;
+	}
+	const uint64_t magWords[2] = {magLane, magLane};
+	auto* magMask = llvm::ConstantInt::get(irb.getInt128Ty(), llvm::APInt(128, llvm::ArrayRef<uint64_t>(magWords, 2)));
+	storeOpI128(pi->operands[0], irb.CreateAnd(src, magMask), irb);
+}
+
+/**
+ * vcfsx: signed word → SP (x86 CVTDQ2PS). vcfux: unsigned word → SP.
+ * vctuxs: SP → unsigned word saturate with chop (CVTTPS2DQ-class, unsigned).
+ * vctsxs: SP → signed word saturate with chop. Capstone reports UIM as IMM.
+ * gcc -O2 vec_ctf/vec_ctu emit UIM=0; a non-zero UIM scales by 2^±UIM.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecFpConvert(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	if (pi->op_count < 2)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+
+	cs_ppc_op* srcOp = nullptr;
+	unsigned uim = 0;
+	for (uint8_t n = 1; n < pi->op_count; ++n)
+	{
+		if (pi->operands[n].type == PPC_OP_REG && srcOp == nullptr)
+		{
+			srcOp = &pi->operands[n];
+		}
+		else if (pi->operands[n].type == PPC_OP_IMM)
+		{
+			uim = static_cast<unsigned>(pi->operands[n].imm) & 31u;
+		}
+	}
+	if (srcOp == nullptr)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+
+	auto* i32x4 = llvm::FixedVectorType::get(irb.getInt32Ty(), 4);
+	auto* f32x4 = llvm::FixedVectorType::get(irb.getFloatTy(), 4);
+	if (i->id == PPC_INS_VCFSX || i->id == PPC_INS_VCFUX)
+	{
+		auto* src = asVec128(loadOpI128(*srcOp, irb), irb.getInt32Ty(), 4, irb);
+		llvm::Value* fp = (i->id == PPC_INS_VCFSX) ? irb.CreateSIToFP(src, f32x4) : irb.CreateUIToFP(src, f32x4);
+		if (uim != 0)
+		{
+			fp = irb.CreateFMul(fp, llvm::ConstantFP::get(f32x4, std::ldexp(1.0, -static_cast<int>(uim))));
+		}
+		storeOpI128(pi->operands[0], irb.CreateBitCast(fp, irb.getInt128Ty()), irb);
+		return;
+	}
+	if (i->id == PPC_INS_VCTUXS || i->id == PPC_INS_VCTSXS)
+	{
+		llvm::Value* src = asVec128(loadOpI128(*srcOp, irb), irb.getFloatTy(), 4, irb);
+		if (uim != 0)
+		{
+			src = irb.CreateFMul(src, llvm::ConstantFP::get(f32x4, std::ldexp(1.0, static_cast<int>(uim))));
+		}
+		// Per-lane: llvmir-emul's vector fcmp against a 2^32 splat saturates
+		// in-range positives. Scalar generateFpToIntBounded is the fctiw path.
+		const bool isSigned = i->id == PPC_INS_VCTSXS;
+		llvm::Value* conv = llvm::UndefValue::get(i32x4);
+		for (unsigned lane = 0; lane < 4; ++lane)
+		{
+			auto* e = irb.CreateExtractElement(src, lane);
+			conv = irb.CreateInsertElement(
+					conv, generateFpToIntBounded(e, irb.getInt32Ty(), isSigned, irb), lane);
+		}
+		storeOpI128(pi->operands[0], irb.CreateBitCast(conv, irb.getInt128Ty()), irb);
+		return;
+	}
+}
+
+/**
+ * vrfin/vrfiz/vrfip/vrfim — packed SP round to integral value, same modes as
+ * x86 ROUNDPS (nearest-even / trunc / ceil / floor).
+ * xvrdpi* — packed DP; nearbyint (current / nearest) / floor / ceil / trunc.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecFpRound(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, pi, irb);
+
+	llvm::Intrinsic::ID iid = llvm::Intrinsic::roundeven;
+	llvm::Type* elem = irb.getFloatTy();
+	unsigned lanes = 4;
+	switch (i->id)
+	{
+	case PPC_INS_VRFIN:
+		break;
+	case PPC_INS_VRFIZ:
+		iid = llvm::Intrinsic::trunc;
+		break;
+	case PPC_INS_VRFIP:
+		iid = llvm::Intrinsic::ceil;
+		break;
+	case PPC_INS_VRFIM:
+		iid = llvm::Intrinsic::floor;
+		break;
+	case PPC_INS_XVRDPI:
+	case PPC_INS_XVRDPIC:
+		iid = llvm::Intrinsic::nearbyint;
+		elem = irb.getDoubleTy();
+		lanes = 2;
+		break;
+	case PPC_INS_XVRDPIM:
+		iid = llvm::Intrinsic::floor;
+		elem = irb.getDoubleTy();
+		lanes = 2;
+		break;
+	case PPC_INS_XVRDPIP:
+		iid = llvm::Intrinsic::ceil;
+		elem = irb.getDoubleTy();
+		lanes = 2;
+		break;
+	case PPC_INS_XVRDPIZ:
+		iid = llvm::Intrinsic::trunc;
+		elem = irb.getDoubleTy();
+		lanes = 2;
+		break;
+	default:
+		return;
+	}
+
+	auto* src = asVec128(loadOpI128(pi->operands[1], irb), elem, lanes, irb);
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, iid, src->getType());
+	storeOpI128(pi->operands[0], irb.CreateBitCast(irb.CreateCall(f, {src}), irb.getInt128Ty()), irb);
 }
 
 } // namespace capstone2llvmir

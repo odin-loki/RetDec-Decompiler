@@ -102,6 +102,16 @@ class Capstone2LlvmIrTranslatorSysz_impl :
 		llvm::Value* loadBranchTarget(cs_sysz* si, llvm::IRBuilder<>& irb);
 		systemz_cc conditionFromInsn(cs_insn* i, cs_sysz* si);
 		bool isAlwaysCondition(systemz_cc cc, cs_insn* i);
+		unsigned gprIndex(uint32_t r) const;
+		uint32_t gpr64(unsigned idx) const;
+		uint64_t ssLength(cs_sysz* si) const;
+		unsigned lastImm(cs_sysz* si, unsigned def) const;
+		unsigned vectorLaneBits(cs_insn* i, cs_sysz* si) const;
+		unsigned vectorFpLaneBits(cs_insn* i, cs_sysz* si) const;
+		void storeCcUnsignedCompare(
+				llvm::Value* a,
+				llvm::Value* b,
+				llvm::IRBuilder<>& irb);
 //
 //==============================================================================
 // SystemZ implementation data.
@@ -156,6 +166,39 @@ class Capstone2LlvmIrTranslatorSysz_impl :
 		void translateVlrep(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
 		void translateVleg(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
 		void translateVsteg(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateSs(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateMvcl(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateLoadMultiple(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateStoreMultiple(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateCs(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateCds(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateVectorArith(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateVectorFpArith(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateVectorMul(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateVperm(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateVpdi(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateVrep(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateVpk(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateFidbr(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateFpConvert(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateFpSqrt(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateFpFma(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateLoc(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateRisbg(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateLaa(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateVsel(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateVectorShift(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateVectorUnary(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateVllez(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateVupk(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateVseg(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateVgef(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateVgbm(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateVgm(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateVlei(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateVfee(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		llvm::Value* generateCcMask(unsigned mask, llvm::IRBuilder<>& irb);
+		bool isLoc64(unsigned id) const;
 };
 
 } // namespace capstone2llvmir

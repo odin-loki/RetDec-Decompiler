@@ -45,19 +45,50 @@ Sources:
 ## Mapped Capstone IDs
 
 **Integer / control-flow:** `LR`, `LGR`, `LTR`, `LTGR`, `AR`, `AGR`, `SR`,
-`SGR`, `NR`, `OR`, `XR`, `NGR`, `OGR`, `XGR`, `L`, `LG`, `ST`, `STG`, `LA`,
-`LAY`, `LARL`, `LGHI`, `LHI`, `AGHI`, `AHI`, `CR`, `CGR`, `CHI`, `CGHI`,
-`LGFR`, `LLGFR`, `LGF`, `LLGF`, `SLLG`, `SRLG`, `SRAG`, `BR`, `BCR`, `BRC`,
-`BRCL`, `J`, `J_G_LU_`, `J*` / `J_G_L_*` condition aliases, `BASR`, `BRAS`,
-`BRASL`.
+`SGR`, `NR`, `OR`, `XR`, `NGR`, `OGR`, `XGR`, `NG`, `OG`, `XG`, `L`, `LG`, `ST`,
+`STG`, `LA`, `LAY`, `LARL`, `LGHI`, `LHI`, `AGHI`, `AHI`, `AFI`, `AGFI`, `CR`,
+`CGR`, `CHI`, `CGHI`, `LGFR`, `LLGFR`, `LGF`, `LLGF`, `SLLG`, `SRLG`, `SRAG`,
+`SLL`, `SRL`, `SRA`, `BR`, `BCR`, `BRC`, `BRCL`, `J`, `J_G_LU_`, `J*` /
+`J_G_L_*` condition aliases, `BASR`, `BRAS`, `BRASL`.
 
 **BFP (IEEE) scalar:** `AEBR`/`AEB`, `ADBR`/`ADB`, `SEBR`/`SEB`,
 `SDBR`/`SDB`, `MEEBR`/`MEEB`, `MDBR`/`MDB`, `DEBR`/`DEB`, `DDBR`/`DDB`,
 `CEBR`/`CEB`, `CDBR`/`CDB`, `LDEB`/`LDEBR`, `LEDBR`, `LE`/`LEY`, `LD`/`LDY`,
-`STE`/`STEY`, `STD`/`STDY`, `LER`, `LDR`.
+`STE`/`STEY`, `STD`/`STDY`, `LER`, `LDR`, `CGEBR`/`CGEBRA`, `CFEBR`/`CFEBRA`,
+`CGDBR`/`CGDBRA`, `CFDBR`/`CFDBRA`, `CEGBR`/`CEGBRA`, `CDGBR`/`CDGBRA`,
+`SQEBR`, `SQDBR`, `MAEBR`/`MAEB`, `MADBR`/`MADB`, `FIDBR`/`FIDBRA`,
+`FIEBR`/`FIEBRA` (`llvm.trunc` when M3=5, else `llvm.nearbyint`).
+
+**String / memory (gcc memcpy/memcmp/memset):** `MVC`, `CLC`, `XC`, `NC`, `OC`,
+`MVCL`. SS length is Capstone `mem.length` (actual byte count, not L−1). GPR 0
+as base/index is 0.
+
+**Multi-register save/restore:** `LM`, `STM` (32-bit low halves), `LMG`, `STMG`
+(64-bit). Capstone gives first register, last register, memory; the range wraps
+r15→r0.
+
+**Atomics:** `CS`, `CSG` → `llvm.cmpxchg` (seq_cst), CC 0 on success / 1 on fail.
+`CDS`, `CDSG` → same `cmpxchg` on the even-odd pair (Capstone reports
+`SYSZ_REG_R*Q`). `CDS` concatenates the low 32 bits of each GPR to i64;
+`CDSG` concatenates the two 64-bit GPRs to i128.
 
 **Vector load/store (gcc -O1):** `VL`, `VST`, `VLR`, `VLREP`/`VLREPB`/`H`/`F`/`G`,
 `VLEG`/`VLEF`, `VSTEG`/`VSTEF`.
+
+**Vector arith (gcc -O1):** `VA`/`VAB`/`VAH`/`VAF`/`VAG`/`VAQ`, `VS`/`VSB`/`VSH`/
+`VSF`/`VSG`/`VSQ`, `VN`, `VO`, `VX`, `VNC`, `VNO`, `VNN`, `VOC`, `VCEQ`/`VCEQB`/
+`VCEQH`/`VCEQF`/`VCEQG`, `VFA`/`VFASB`/`VFADB`, `VFS`/`VFSSB`/`VFSDB`, `VFM`/
+`VFMSB`/`VFMDB`, `VFD`/`VFDSB`/`VFDDB`, `VFCE`/`VFCESB`/`VFCEDB`, `VFCH`/
+`VFCHSB`/`VFCHDB`. V regs stay i128; lane ops bitcast to `<N x iK>` or
+float/double vectors. Capstone 6 often aliases `VA` with M4=0 to `VAB` (no
+`SYSZ_INS_VEQ`; compare is `VCEQ`).
+
+**Vector permute / splat / mul / pack (x86 PSHUFB / PMULLD / PACKUS class):**
+`VPERM` (byte permute of V2||V3 by V4), `VPDI` (doubleword permute by I4),
+`VREP`/`VREPB`/`H`/`F`/`G`, `VREPI`/`VREPIB`/`H`/`F`/`G`,
+`VML`/`VMLB`/`VMLH`/`VMLF` (low half), `VMH`/`VMHB`/`VMHH`/`VMHF` (signed high),
+`VPK`/`VPKH`/`VPKF`/`VPKG` (truncating pack), `VPKLS*` (unsigned saturate),
+`VPKS*` (signed saturate). `VPKZ` (packed decimal) stays unmapped.
 
 GPR 0 as a base/index contributes 0 (z/Architecture). `BR`/`BASR` to r0
 are nops.
@@ -66,15 +97,13 @@ are nops.
 
 - 31-bit / ESA-390 (no Capstone mode)
 - Hexadecimal FP (`AE`, `AD`, `ME`, `DE` without `B`) and DFP (`ADTR`, …)
-- BFP convert/round/test (`CGEBR`, `CFEBR`, `FIDBR`, `TCEB`, `SQEBR`,
-  fused `MAEBR`, …)
-- Vector arithmetic (`VA`, `VS`, `VN`, `VFA`, packed-decimal, …)
-- String / MVC / CLC / XC, `LM`/`STM`/`LMG`/`STMG`
-- CS/CSG and interlocked-access (`LAA`, …)
-- Privileged, transactional-execution, MSA crypto
+- BFP test (`TCEB`, …); Hexadecimal FP / DFP stay unmapped
+- Packed-decimal vector (`VPKZ` / `VUPKZ`), remaining VXE forms
+- Privileged, transactional-execution, MSA crypto (x86 AES is also `nullptr`)
 
 ## Tests
 
 `tests/capstone2llvmir/sysz_tests.cpp` uses **real bytes** (`emulate_bin`)
 for the integer core plus AEBR/ADBR/MEEBR/LDEB/CEBR, LD/STD, LGHI/AGHI/NGR/CGR/LAY,
-and VL/VLR. `createSysz(&_module)` (extra 0).
+VL/VLR, MVC, LMG, CSG, VAB, MAEBR, VPDI, VMLF, VREPB, VPERM, CDS, CDSG, VPKF,
+FIDBR, FIEBR. `createSysz(&_module)` (extra 0).

@@ -254,6 +254,7 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		void translateBextr(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateBzhi(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateShiftX(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translatePdepPext(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateMovbe(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateBswap(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateBt(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
@@ -394,9 +395,11 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		void translateVzeroupper(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateAvxMov(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateAvxPackedBinary(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAvxBroadcast(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateAvxPmovmskb(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateAvxMovScalar(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateAvxPackedFloat(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAvxF128Lane(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		bool hasEvexModifier(cs_x86* xi, unsigned from = 0) const;
 		unsigned vectorRegisterWidth(uint32_t r) const;
 		unsigned avxWidth(cs_x86* xi) const;
@@ -415,6 +418,7 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		void translateSseFltMinMax(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSseFltLogic(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSseSqrt(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSseRound(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSseComi(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSseMovScalar(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSseMovHalf(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
@@ -440,6 +444,11 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		void translateSsePhminposuw(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSsePshufImm(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSseBlendImm(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSsePinsr(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSsePextr(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSseInsertps(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSseBlendV(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSsePtest(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSsePalignr(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSsePavg(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateCvtSi2Ss(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);

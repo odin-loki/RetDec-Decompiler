@@ -35,8 +35,11 @@ PowerPC64CallingConvention::PowerPC64CallingConvention(const Abi* a) :
 		PPC_REG_F6,
 		PPC_REG_F7,
 		PPC_REG_F8,
+		PPC_REG_F9,
 		PPC_REG_F10,
-		PPC_REG_F11
+		PPC_REG_F11,
+		PPC_REG_F12,
+		PPC_REG_F13
 	};
 
 	_returnRegs = {

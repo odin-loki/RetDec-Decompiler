@@ -8493,6 +8493,1414 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSHR_u32)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VEXT_8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x0706050403020100ULL)},
+		{ARM_REG_D2, armDBits(0x1716151413121110ULL)},
+	});
+
+	emulate("vext.8 d0, d1, d2, #3");
+
+	EXPECT_EQ(0x1211100706050403ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSWP)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x1111111111111111ULL)},
+		{ARM_REG_D1, armDBits(0x2222222222222222ULL)},
+	});
+
+	emulate("vswp d0, d1");
+
+	EXPECT_EQ(0x2222222222222222ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x1111111111111111ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VBSL)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x00FF00FF00FF00FFULL)},
+		{ARM_REG_D1, armDBits(0x1111111111111111ULL)},
+		{ARM_REG_D2, armDBits(0x2222222222222222ULL)},
+	});
+
+	emulate("vbsl d0, d1, d2");
+
+	EXPECT_EQ(0x2211221122112211ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VBIT)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0xAAAAAAAAAAAAAAAAULL)},
+		{ARM_REG_D1, armDBits(0x1111111111111111ULL)},
+		{ARM_REG_D2, armDBits(0x00FF00FF00FF00FFULL)},
+	});
+
+	emulate("vbit d0, d1, d2");
+
+	EXPECT_EQ(0xAA11AA11AA11AA11ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VBIF)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0xAAAAAAAAAAAAAAAAULL)},
+		{ARM_REG_D1, armDBits(0x1111111111111111ULL)},
+		{ARM_REG_D2, armDBits(0x00FF00FF00FF00FFULL)},
+	});
+
+	emulate("vbif d0, d1, d2");
+
+	EXPECT_EQ(0x11AA11AA11AA11AAULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCGE_s32)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x0000000100000000ULL)},
+		{ARM_REG_D2, armDBits(0x0000000100000000ULL)},
+	});
+
+	emulate("vcge.s32 d0, d1, d2");
+
+	EXPECT_EQ(0xffffffffffffffffULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCGT_s32)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x00000002ffffffffULL)},
+		{ARM_REG_D2, armDBits(0x0000000100000000ULL)},
+	});
+
+	emulate("vcgt.s32 d0, d1, d2");
+
+	EXPECT_EQ(0xffffffff00000000ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VZIP_8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x0706050403020100ULL)},
+		{ARM_REG_D1, armDBits(0x1716151413121110ULL)},
+	});
+
+	emulate("vzip.8 d0, d1");
+
+	EXPECT_EQ(0x1303120211011000ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x1707160615051404ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VUZP_8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x0706050403020100ULL)},
+		{ARM_REG_D1, armDBits(0x1716151413121110ULL)},
+	});
+
+	emulate("vuzp.8 d0, d1");
+
+	EXPECT_EQ(0x1614121006040200ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x1715131107050301ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VTRN_8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x0706050403020100ULL)},
+		{ARM_REG_D1, armDBits(0x1716151413121110ULL)},
+	});
+
+	emulate("vtrn.8 d0, d1");
+
+	EXPECT_EQ(0x1606140412021000ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x1707150513031101ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VTBL_1reg)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x0807060504030201ULL)},
+		{ARM_REG_D2, armDBits(0x0309000208070100ULL)},
+	});
+
+	emulate("vtbl.8 d0, {d1}, d2");
+
+	EXPECT_EQ(0x0400010300080201ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VTBX_1reg)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0xAAAAAAAAAAAAAAAAULL)},
+		{ARM_REG_D1, armDBits(0x0807060504030201ULL)},
+		{ARM_REG_D2, armDBits(0x0309000208070100ULL)},
+	});
+
+	emulate("vtbx.8 d0, {d1}, d2");
+
+	EXPECT_EQ(0x04AA0103AA080201ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCVTB_f32_f16)
+{
+	ONLY_MODE_ARM;
+
+	float src = 0.0f;
+	uint32_t bits = 0x3c00u;
+	std::memcpy(&src, &bits, sizeof(src));
+
+	setRegisters({
+		{ARM_REG_S1, src},
+	});
+
+	emulate_bin("60 0a b2 ee");
+
+	EXPECT_EQ(0x3f800000u, armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCVTB_f32_f16_thumb)
+{
+	ONLY_MODE_THUMB;
+
+	float src = 0.0f;
+	uint32_t bits = 0x3c00u;
+	std::memcpy(&src, &bits, sizeof(src));
+
+	setRegisters({
+		{ARM_REG_S1, src},
+	});
+
+	emulate_bin("b2 ee 60 0a");
+
+	EXPECT_EQ(0x3f800000u, armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCVTT_f16_f32)
+{
+	ONLY_MODE_ARM;
+
+	float dest = 0.0f;
+	uint32_t dbits = 0x0000aaaau;
+	std::memcpy(&dest, &dbits, sizeof(dest));
+
+	setRegisters({
+		{ARM_REG_S0, dest},
+		{ARM_REG_S2, 1.0f},
+	});
+
+	emulate_bin("c1 0a b3 ee");
+
+	EXPECT_EQ(0x3c00aaaau, armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCVTT_f16_f32_thumb)
+{
+	ONLY_MODE_THUMB;
+
+	float dest = 0.0f;
+	uint32_t dbits = 0x0000aaaau;
+	std::memcpy(&dest, &dbits, sizeof(dest));
+
+	setRegisters({
+		{ARM_REG_S0, dest},
+		{ARM_REG_S2, 1.0f},
+	});
+
+	emulate_bin("b3 ee c1 0a");
+
+	EXPECT_EQ(0x3c00aaaau, armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCVTA_s32_f32)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_S1, 1.75f},
+	});
+
+	emulate_bin("e0 0a bc fe");
+
+	EXPECT_EQ(2u, armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+	// llvm.round.f32 is the VCVTA model; the emulator records that intrinsic.
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCVTA_s32_f32_thumb)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_S1, 1.75f},
+	});
+
+	emulate_bin("bc fe e0 0a");
+
+	EXPECT_EQ(2u, armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+	// llvm.round.f32 is the VCVTA model; the emulator records that intrinsic.
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRINTA_f32)
+{
+	ONLY_MODE_ARM;
+
+	// 2.5: llvm.round (ties away) answers 3; nearbyint (ties even) answers 2.
+	setRegisters({
+		{ARM_REG_S1, 2.5f},
+	});
+
+	emulate_bin("60 0a b8 fe");
+
+	EXPECT_EQ(armFloatRegBits(3.0f), armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRINTA_f32_thumb)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_S1, 2.5f},
+	});
+
+	emulate_bin("b8 fe 60 0a");
+
+	EXPECT_EQ(armFloatRegBits(3.0f), armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRINTM_f32)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_S1, 1.75f},
+	});
+
+	emulate_bin("60 0a bb fe");
+
+	EXPECT_EQ(armFloatRegBits(1.0f), armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRINTM_f32_thumb)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_S1, 1.75f},
+	});
+
+	emulate_bin("bb fe 60 0a");
+
+	EXPECT_EQ(armFloatRegBits(1.0f), armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRINTN_f32)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_S1, 2.5f},
+	});
+
+	emulate_bin("60 0a b9 fe");
+
+	EXPECT_EQ(armFloatRegBits(2.0f), armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRINTN_f32_thumb)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_S1, 2.5f},
+	});
+
+	emulate_bin("b9 fe 60 0a");
+
+	EXPECT_EQ(armFloatRegBits(2.0f), armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRINTP_f32)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_S1, 1.25f},
+	});
+
+	emulate_bin("60 0a ba fe");
+
+	EXPECT_EQ(armFloatRegBits(2.0f), armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRINTP_f32_thumb)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_S1, 1.25f},
+	});
+
+	emulate_bin("ba fe 60 0a");
+
+	EXPECT_EQ(armFloatRegBits(2.0f), armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRINTZ_f32)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_S1, -1.75f},
+	});
+
+	emulate_bin("e0 0a b6 ee");
+
+	EXPECT_EQ(armFloatRegBits(-1.0f), armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRINTZ_f32_thumb)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_S1, -1.75f},
+	});
+
+	emulate_bin("b6 ee e0 0a");
+
+	EXPECT_EQ(armFloatRegBits(-1.0f), armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCVT_s32_f32_neon)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x400000003f800000ULL)},
+	});
+
+	emulate("vcvt.s32.f32 d0, d1");
+
+	EXPECT_EQ(0x0000000200000001ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VADDL_u8)
+{
+	ALL_MODES;
+
+	// 0xff + 1 at eight bits wraps to 0. The widening form keeps 0x0100.
+	setRegisters({
+		{ARM_REG_D2, armDBits(0xffffffffffffffffULL)},
+		{ARM_REG_D3, armDBits(0x0101010101010101ULL)},
+	});
+
+	emulate("vaddl.u8 q0, d2, d3");
+
+	EXPECT_EQ(0x0100010001000100ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0100010001000100ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VADDL_s8_is_signed)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D2, armDBits(0xffffffffffffffffULL)},
+		{ARM_REG_D3, armDBits(0x0101010101010101ULL)},
+	});
+
+	emulate("vaddl.s8 q0, d2, d3");
+
+	EXPECT_EQ(0ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSUBL_s16)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D2, armDBits(0x0006000500040003ULL)},
+		{ARM_REG_D3, armDBits(0x0001000100010001ULL)},
+	});
+
+	emulate("vsubl.s16 q0, d2, d3");
+
+	EXPECT_EQ(0x0000000300000002ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0000000500000004ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VPADD_i32)
+{
+	ALL_MODES;
+
+	// Adjacent pairs of Dn then Dm, not lane-wise Dn+Dm (which would be 4, 6).
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x0000000200000001ULL)},
+		{ARM_REG_D2, armDBits(0x0000000400000003ULL)},
+	});
+
+	emulate("vpadd.i32 d0, d1, d2");
+
+	EXPECT_EQ(0x0000000700000003ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VPADDL_s16)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x00040003ffff0001ULL)},
+	});
+
+	emulate("vpaddl.s16 d0, d1");
+
+	EXPECT_EQ(0x0000000700000000ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQADD_s8_saturates)
+{
+	ALL_MODES;
+
+	// 127 + 1 is 127, not a wrapping -128.
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x7f7f7f7f7f7f7f7fULL)},
+		{ARM_REG_D2, armDBits(0x0101010101010101ULL)},
+	});
+
+	emulate("vqadd.s8 d0, d1, d2");
+
+	EXPECT_EQ(0x7f7f7f7f7f7f7f7fULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQADD_u8_saturates)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0xffffffffffffffffULL)},
+		{ARM_REG_D2, armDBits(0x0101010101010101ULL)},
+	});
+
+	emulate("vqadd.u8 d0, d1, d2");
+
+	EXPECT_EQ(0xffffffffffffffffULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VLD2_32)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R0, 0x1000},
+	});
+	setMemory({
+		{0x1000, 1_dw},
+		{0x1004, 2_dw},
+		{0x1008, 3_dw},
+		{0x100c, 4_dw},
+	});
+
+	emulate("vld2.32 {d0, d1}, [r0]");
+
+	EXPECT_EQ(0x0000000300000001ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0000000400000002ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VST2_32)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R0, 0x1000},
+		{ARM_REG_D0, armDBits(0x0000000300000001ULL)},
+		{ARM_REG_D1, armDBits(0x0000000400000002ULL)},
+	});
+
+	emulate("vst2.32 {d0, d1}, [r0]");
+
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 1_dw},
+		{0x1004, 2_dw},
+		{0x1008, 3_dw},
+		{0x100c, 4_dw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VLD3_32)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R0, 0x1000},
+	});
+	setMemory({
+		{0x1000, 1_dw},
+		{0x1004, 2_dw},
+		{0x1008, 3_dw},
+		{0x100c, 4_dw},
+		{0x1010, 5_dw},
+		{0x1014, 6_dw},
+	});
+
+	emulate("vld3.32 {d0, d1, d2}, [r0]");
+
+	EXPECT_EQ(0x0000000400000001ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0000000500000002ULL, dBits(ARM_REG_D1));
+	EXPECT_EQ(0x0000000600000003ULL, dBits(ARM_REG_D2));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VLD4_32)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R0, 0x1000},
+	});
+	setMemory({
+		{0x1000, 1_dw},
+		{0x1004, 2_dw},
+		{0x1008, 3_dw},
+		{0x100c, 4_dw},
+		{0x1010, 5_dw},
+		{0x1014, 6_dw},
+		{0x1018, 7_dw},
+		{0x101c, 8_dw},
+	});
+
+	emulate("vld4.32 {d0, d1, d2, d3}, [r0]");
+
+	EXPECT_EQ(0x0000000500000001ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0000000600000002ULL, dBits(ARM_REG_D1));
+	EXPECT_EQ(0x0000000700000003ULL, dBits(ARM_REG_D2));
+	EXPECT_EQ(0x0000000800000004ULL, dBits(ARM_REG_D3));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VPMAX_u8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x0706050403020100ULL)},
+		{ARM_REG_D2, armDBits(0x0807060504030201ULL)},
+	});
+
+	// vpmax.u8 d0, d1, d2 — A32 0xF3010A02 / T32 0xFF010A02
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("01 ff 02 0a");
+	}
+	else
+	{
+		emulate_bin("02 0a 01 f3");
+	}
+
+	EXPECT_EQ(0x0806040207050301ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VPMIN_u8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x0706050403020100ULL)},
+		{ARM_REG_D2, armDBits(0x0807060504030201ULL)},
+	});
+
+	// vpmin.u8 d0, d1, d2 — A32 0xF3010A12 / T32 0xFF010A12
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("01 ff 12 0a");
+	}
+	else
+	{
+		emulate_bin("12 0a 01 f3");
+	}
+
+	EXPECT_EQ(0x0705030106040200ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQSUB_s8_saturates)
+{
+	ALL_MODES;
+
+	// -128 - 1 saturates to -128, not a wrapping 127.
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x8080808080808080ULL)},
+		{ARM_REG_D2, armDBits(0x0101010101010101ULL)},
+	});
+
+	// vqsub.s8 d0, d1, d2 — A32 0xF2010212 / T32 0xEF010212
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("01 ef 12 02");
+	}
+	else
+	{
+		emulate_bin("12 02 01 f2");
+	}
+
+	EXPECT_EQ(0x8080808080808080ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSHLL_s8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x00000000000000FFULL)},
+	});
+
+	// vshll.s8 q0, d1, #1 — A32 0xF2890A11 / T32 0xEF890A11
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("89 ef 11 0a");
+	}
+	else
+	{
+		emulate_bin("11 0a 89 f2");
+	}
+
+	EXPECT_EQ(0x000000000000FFFEULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0000000000000000ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VADDHN_i16)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D2, armDBits(0x0100010001000100ULL)},
+		{ARM_REG_D3, armDBits(0x0100010001000100ULL)},
+		{ARM_REG_D4, armDBits(0x0100010001000100ULL)},
+		{ARM_REG_D5, armDBits(0x0100010001000100ULL)},
+	});
+
+	// vaddhn.i16 d0, q1, q2 — A32 0xF2820404 / T32 0xEF820404
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("82 ef 04 04");
+	}
+	else
+	{
+		emulate_bin("04 04 82 f2");
+	}
+
+	EXPECT_EQ(0x0202020202020202ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMULL_s8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D2, armDBits(0xffffffffffffffffULL)},
+		{ARM_REG_D3, armDBits(0x0202020202020202ULL)},
+	});
+
+	// vmull.s8 q0, d2, d3 — A32 0xF2820C03 / T32 0xEF820C03
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("82 ef 03 0c");
+	}
+	else
+	{
+		emulate_bin("03 0c 82 f2");
+	}
+
+	EXPECT_EQ(0xFFFEFFFEFFFEFFFEULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0xFFFEFFFEFFFEFFFEULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQMOVN_s16)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D2, armDBits(0x00FF00FF00FF00FFULL)},
+		{ARM_REG_D3, armDBits(0x00FF00FF00FF00FFULL)},
+	});
+
+	// vqmovn.s16 d0, q1 — A32 0xF3B20282 / T32 0xFFB20282
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("b2 ff 82 02");
+	}
+	else
+	{
+		emulate_bin("82 02 b2 f3");
+	}
+
+	EXPECT_EQ(0x7F7F7F7F7F7F7F7FULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VADDW_s8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D2, armDBits(0x0002000200020002ULL)},
+		{ARM_REG_D3, armDBits(0x0002000200020002ULL)},
+		{ARM_REG_D4, armDBits(0xffffffffffffffffULL)},
+	});
+
+	// vaddw.s8 q0, q1, d4 — A32 0xF2820104 / T32 0xEF820104
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("82 ef 04 01");
+	}
+	else
+	{
+		emulate_bin("04 01 82 f2");
+	}
+
+	EXPECT_EQ(0x0001000100010001ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0001000100010001ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSUBW_s8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D2, armDBits(0x0002000200020002ULL)},
+		{ARM_REG_D3, armDBits(0x0002000200020002ULL)},
+		{ARM_REG_D4, armDBits(0xffffffffffffffffULL)},
+	});
+
+	// vsubw.s8 q0, q1, d4 — A32 0xF2820304 / T32 0xEF820304
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("82 ef 04 03");
+	}
+	else
+	{
+		emulate_bin("04 03 82 f2");
+	}
+
+	EXPECT_EQ(0x0003000300030003ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0003000300030003ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQSHL_s8_saturates)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x4040404040404040ULL)},
+	});
+
+	// vqshl.s8 d0, d1, #1 — A32 0xF2890711 / T32 0xEF890711
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("89 ef 11 07");
+	}
+	else
+	{
+		emulate_bin("11 07 89 f2");
+	}
+
+	EXPECT_EQ(0x7F7F7F7F7F7F7F7FULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQSHLU_s8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x8040804080408040ULL)},
+	});
+
+	// vqshlu.s8 d0, d1, #1 — A32 0xF3890611 / T32 0xFF890611
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("89 ff 11 06");
+	}
+	else
+	{
+		emulate_bin("11 06 89 f3");
+	}
+
+	EXPECT_EQ(0x0080008000800080ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VABD_s8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x0000000000000000ULL)},
+		{ARM_REG_D2, armDBits(0xffffffffffffffffULL)},
+	});
+
+	// vabd.s8 d0, d1, d2 — A32 0xF2010702 / T32 0xEF010702
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("01 ef 02 07");
+	}
+	else
+	{
+		emulate_bin("02 07 01 f2");
+	}
+
+	EXPECT_EQ(0x0101010101010101ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VHADD_s8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x8080808080808080ULL)},
+		{ARM_REG_D2, armDBits(0x8080808080808080ULL)},
+	});
+
+	// vhadd.s8 d0, d1, d2 — A32 0xF2010002 / T32 0xEF010002
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("01 ef 02 00");
+	}
+	else
+	{
+		emulate_bin("02 00 01 f2");
+	}
+
+	EXPECT_EQ(0x8080808080808080ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRHADD_u8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x0101010101010101ULL)},
+		{ARM_REG_D2, armDBits(0x0000000000000000ULL)},
+	});
+
+	// vrhadd.u8 d0, d1, d2 — A32 0xF3010102 / T32 0xFF010102
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("01 ff 02 01");
+	}
+	else
+	{
+		emulate_bin("02 01 01 f3");
+	}
+
+	EXPECT_EQ(0x0101010101010101ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMOVN_i16)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D2, armDBits(0x7788556633441122ULL)},
+		{ARM_REG_D3, armDBits(0xff00ddeebbcc99aaULL)},
+	});
+
+	// vmovn.i16 d0, q1 — A32 0xF3B20202 / T32 0xFFB20202
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("b2 ff 02 02");
+	}
+	else
+	{
+		emulate_bin("02 02 b2 f3");
+	}
+
+	EXPECT_EQ(0x00eeccaa88664422ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQMOVUN_s16)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D2, armDBits(0xFFFF00FF01000080ULL)},
+		{ARM_REG_D3, armDBits(0xFFFF00FF01000080ULL)},
+	});
+
+	// vqmovun.s16 d0, q1 — A32 0xF3B20242 / T32 0xFFB20242
+	// PACKUSWB: 128 stays 128, 256 sat 255, 255 stays 255, -1 sat 0 (not 255).
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("b2 ff 42 02");
+	}
+	else
+	{
+		emulate_bin("42 02 b2 f3");
+	}
+
+	EXPECT_EQ(0x00FFFF8000FFFF80ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRADDHN_i16)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D2, armDBits(0x0080008000800080ULL)},
+		{ARM_REG_D3, armDBits(0x0080008000800080ULL)},
+		{ARM_REG_D4, armDBits(0x0000000000000000ULL)},
+		{ARM_REG_D5, armDBits(0x0000000000000000ULL)},
+	});
+
+	// vraddhn.i16 d0, q1, q2 — A32 0xF3820404 / T32 0xFF820404
+	// 0x0080 + 0 rounds (add 0x80) to 0x0100, high half 0x01; VADDHN would be 0.
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("82 ff 04 04");
+	}
+	else
+	{
+		emulate_bin("04 04 82 f3");
+	}
+
+	EXPECT_EQ(0x0101010101010101ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSUBHN_i16)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D2, armDBits(0x0200020002000200ULL)},
+		{ARM_REG_D3, armDBits(0x0200020002000200ULL)},
+		{ARM_REG_D4, armDBits(0x0000000000000000ULL)},
+		{ARM_REG_D5, armDBits(0x0000000000000000ULL)},
+	});
+
+	// vsubhn.i16 d0, q1, q2 — A32 0xF2820604 / T32 0xEF820604
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("82 ef 04 06");
+	}
+	else
+	{
+		emulate_bin("04 06 82 f2");
+	}
+
+	EXPECT_EQ(0x0202020202020202ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VABDL_s8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D2, armDBits(0x0000000000000000ULL)},
+		{ARM_REG_D3, armDBits(0xffffffffffffffffULL)},
+	});
+
+	// vabdl.s8 q0, d2, d3 — A32 0xF2820703 / T32 0xEF820703
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("82 ef 03 07");
+	}
+	else
+	{
+		emulate_bin("03 07 82 f2");
+	}
+
+	EXPECT_EQ(0x0001000100010001ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0001000100010001ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VABA_s8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x0101010101010101ULL)},
+		{ARM_REG_D1, armDBits(0x0000000000000000ULL)},
+		{ARM_REG_D2, armDBits(0xffffffffffffffffULL)},
+	});
+
+	// vaba.s8 d0, d1, d2 — A32 0xF2010712 / T32 0xEF010712
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("01 ef 12 07");
+	}
+	else
+	{
+		emulate_bin("12 07 01 f2");
+	}
+
+	EXPECT_EQ(0x0202020202020202ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VABAL_s8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x0001000100010001ULL)},
+		{ARM_REG_D1, armDBits(0x0001000100010001ULL)},
+		{ARM_REG_D2, armDBits(0x0000000000000000ULL)},
+		{ARM_REG_D3, armDBits(0xffffffffffffffffULL)},
+	});
+
+	// vabal.s8 q0, d2, d3 — A32 0xF2820503 / T32 0xEF820503
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("82 ef 03 05");
+	}
+	else
+	{
+		emulate_bin("03 05 82 f2");
+	}
+
+	EXPECT_EQ(0x0002000200020002ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0002000200020002ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMLAL_s8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x0001000100010001ULL)},
+		{ARM_REG_D1, armDBits(0x0001000100010001ULL)},
+		{ARM_REG_D2, armDBits(0xffffffffffffffffULL)},
+		{ARM_REG_D3, armDBits(0x0202020202020202ULL)},
+	});
+
+	// vmlal.s8 q0, d2, d3 — A32 0xF2820803 / T32 0xEF820803
+	// acc 1 + (-1)*2 = -1; VMULL alone would leave 0xFFFE.
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("82 ef 03 08");
+	}
+	else
+	{
+		emulate_bin("03 08 82 f2");
+	}
+
+	EXPECT_EQ(0xFFFFFFFFFFFFFFFFULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0xFFFFFFFFFFFFFFFFULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VHSUB_s8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x0000000000000000ULL)},
+		{ARM_REG_D2, armDBits(0x8080808080808080ULL)},
+	});
+
+	// vhsub.s8 d0, d1, d2 — A32 0xF2010202 / T32 0xEF010202
+	// (0 - (-128)) / 2 = 64; VHADD of the same pair is -64.
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("01 ef 02 02");
+	}
+	else
+	{
+		emulate_bin("02 02 01 f2");
+	}
+
+	EXPECT_EQ(0x4040404040404040ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQSHRN_s16)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D2, armDBits(0x0100010001000100ULL)},
+		{ARM_REG_D3, armDBits(0x0100010001000100ULL)},
+	});
+
+	// vqshrn.s16 d0, q1, #1 — A32 0xF28F0912 / T32 0xEF8F0912
+	// 256 >> 1 is 128, sat to int8 is 127; truncating the shift is 0x80.
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("8f ef 12 09");
+	}
+	else
+	{
+		emulate_bin("12 09 8f f2");
+	}
+
+	EXPECT_EQ(0x7F7F7F7F7F7F7F7FULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSHRN_i16)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D2, armDBits(0x0100010001000100ULL)},
+		{ARM_REG_D3, armDBits(0x0100010001000100ULL)},
+	});
+
+	// vshrn.i16 d0, q1, #1 — A32 0xF28F0812 / T32 0xEF8F0812
+	// 256 >> 1 is 128; VQSHRN.s16 of the same lane saturates to 127.
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("8f ef 12 08");
+	}
+	else
+	{
+		emulate_bin("12 08 8f f2");
+	}
+
+	EXPECT_EQ(0x8080808080808080ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRSHRN_i16)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D2, armDBits(0x0001000100010001ULL)},
+		{ARM_REG_D3, armDBits(0x0001000100010001ULL)},
+	});
+
+	// vrshrn.i16 d0, q1, #1 — A32 0xF28F0852 / T32 0xEF8F0852
+	// (1+1)>>1 is 1; VSHRN of the same lane is 0.
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("8f ef 52 08");
+	}
+	else
+	{
+		emulate_bin("52 08 8f f2");
+	}
+
+	EXPECT_EQ(0x0101010101010101ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQSHRUN_s16)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D2, armDBits(0xFFFF0100FFFF0100ULL)},
+		{ARM_REG_D3, armDBits(0xFFFF0100FFFF0100ULL)},
+	});
+
+	// vqshrun.s16 d0, q1, #1 — A32 0xF38F0812 / T32 0xFF8F0812
+	// 256>>1 is 128 (unsigned keeps 0x80; VQSHRN sat 0x7F). -1>>1 sat unsigned 0.
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("8f ff 12 08");
+	}
+	else
+	{
+		emulate_bin("12 08 8f f3");
+	}
+
+	EXPECT_EQ(0x0080008000800080ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMOVL_s8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D2, armDBits(0x00000000000000FFULL)},
+	});
+
+	// vmovl.s8 q0, d2 — A32 0xF2880A12 / T32 0xEF880A12
+	// sign-extend 0xFF to 0xFFFF; VSHLL #1 of the same lane is 0xFFFE.
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("88 ef 12 0a");
+	}
+	else
+	{
+		emulate_bin("12 0a 88 f2");
+	}
+
+	EXPECT_EQ(0x000000000000FFFFULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0000000000000000ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMLSL_s8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x000A000A000A000AULL)},
+		{ARM_REG_D1, armDBits(0x000A000A000A000AULL)},
+		{ARM_REG_D2, armDBits(0x0202020202020202ULL)},
+		{ARM_REG_D3, armDBits(0x0303030303030303ULL)},
+	});
+
+	// vmlsl.s8 q0, d2, d3 — A32 0xF2820A03 / T32 0xEF820A03
+	// 10 - 2*3 = 4; VMLAL of the same would be 16.
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("82 ef 03 0a");
+	}
+	else
+	{
+		emulate_bin("03 0a 82 f2");
+	}
+
+	EXPECT_EQ(0x0004000400040004ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0004000400040004ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQABS_s8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x000000000001FF80ULL)},
+	});
+
+	// vqabs.s8 d0, d1 — A32 0xF3B00701 / T32 0xFFB00701
+	// ABS of 0x80 is 0x80; VQABS saturates to 0x7F. 0xFF → 1 so this is not a splat.
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("b0 ff 01 07");
+	}
+	else
+	{
+		emulate_bin("01 07 b0 f3");
+	}
+
+	EXPECT_EQ(0x000000000001017FULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQNEG_s8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x0000000000000180ULL)},
+	});
+
+	// vqneg.s8 d0, d1 — A32 0xF3B00781 / T32 0xFFB00781
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("b0 ff 81 07");
+	}
+	else
+	{
+		emulate_bin("81 07 b0 f3");
+	}
+
+	EXPECT_EQ(0x000000000000FF7FULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRSUBHN_i16)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D2, armDBits(0x0100010001000100ULL)},
+		{ARM_REG_D3, armDBits(0x0100010001000100ULL)},
+		{ARM_REG_D4, armDBits(0x0080008000800080ULL)},
+		{ARM_REG_D5, armDBits(0x0080008000800080ULL)},
+	});
+
+	// vrsubhn.i16 d0, q1, q2 — A32 0xF3820604 / T32 0xFF820604
+	// 0x0100-0x0080 = 0x0080, +0x80 rounds to 0x0100, high half 0x01.
+	// VSUBHN of the same pair is 0; VRADDHN would be 0x02.
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("82 ff 04 06");
+	}
+	else
+	{
+		emulate_bin("04 06 82 f3");
+	}
+
+	EXPECT_EQ(0x0101010101010101ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
