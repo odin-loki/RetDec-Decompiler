@@ -1,6 +1,16 @@
 # RetDec Imortek — Master Engineering Review and Execution Plan
 
-**Subject:** `github.com/odin-loki/RetDec-Decompiler` @ `ebf3627` · v2.0.20 (CHANGELOG says 2.0.21)
+> **Status 2026-09-19 — v2.0.22 ships.** This file is a historical engineering
+> review (prepared August 2026 at v2.0.20 / CHANGELOG 2.0.21). It is **not** the
+> live ship checklist. **v2.0.22** ships Linux and macOS installers, a Windows
+> installer via GitHub Actions (`release-installers.yml`: `linux-installer`,
+> `macos-installer`, `windows-installer`), the Qt 6 GUI (macOS `RetDec.app`),
+> and specification-extraction positioning: input-keyed outputs, **buildable C
+> default**, optional llama.cpp. Do not treat later parts as current claims;
+> see `README.md`, `CHANGELOG.md` `[2.0.22]`, and `docs/CLAIMS.md`. The body
+> below is left as the August 2026 snapshot.
+
+**Subject:** `github.com/odin-loki/RetDec-Decompiler` @ `ebf3627` · v2.0.20 (CHANGELOG says 2.0.21) — snapshot; current tag is **v2.0.22**
 **Scope:** full tree — 504,305 LOC `src`+`include`, 185,893 LOC tests, 8,815 test cases, 97 modules, 215 scripts, 10 CI workflows
 **Prepared:** August 2026
 **Author:** Odin Loch

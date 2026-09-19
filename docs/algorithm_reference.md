@@ -1,6 +1,21 @@
 # RetDec Algorithm Reference
 
-Algorithms documented in source file headers. Fields marked `-` are not stated in the header.
+Imortek **2.0.22**. Algorithms documented in **source file headers**. Fields
+marked `-` are not stated in the header. Complexity numbers are copied from
+those headers, not independently measured.
+
+**Wiring:** files under `src/algo_recover`, `src/ipa`, `src/type_inference`,
+`src/call_conv`, and `src/ssa` (rebuild) participate in **post-pipeline**
+analysis in `src/retdec/retdec.cpp` (type inference only if
+`RETDEC_TYPE_INFERENCE=1`). Files under `src/cfg_structure`, `src/var_recovery`,
+`src/dce`, `src/alias_analysis`, and `src/codegen` belong to the parallel
+SSA/codegen stack used by tests / `cxx_backend`, **not** the llvmir2hll C
+writer. See [architecture.md](architecture.md) and
+[pipeline_stage_map.md](pipeline_stage_map.md).
+
+Do not treat detector rows as production-quality recovery. Name-blind
+algorithm-recovery F1 on the 216-binary corpus is **0.056**
+([BENCHMARKS.md](BENCHMARKS.md)).
 
 | Algorithm | Citation | Source file | Complexity |
 |-----------|----------|-------------|------------|
@@ -27,6 +42,8 @@ Algorithms documented in source file headers. Fields marked `-` are not stated i
 | Iterator pattern recovery — begin/end → range-based for | - | `src/algo_recover/iterator_recover.cpp` | - |
 | std::find / std::find_if detector — equality compare + early exit | - | `src/algo_recover/find_detect.cpp` | - |
 | std::accumulate / max_element / min_element detector | - | `src/algo_recover/accumulate_detect.cpp` | - |
+| Binary search detector — midpoint + load + compare + bound update (no name hints) | - | `src/algo_recover/binary_search_detect.cpp` | - |
+| Classic C idiom detectors (atoi, BFS, varint, …) | - | `src/algo_recover/idiom_detect.cpp` | - |
 | ABI artifact detection: stack alignment, prologue/epilogue, shadow space, callee-save pairs, red zone | - | `src/dce/abi_artifact_marker.cpp` | - |
 | C-semantic live root collection | - | `src/dce/live_root_collector.cpp` | - |
 | Backward SSA def-use liveness propagation from C-semantic live roots | - | `src/dce/dead_propagation.cpp` | - |
@@ -42,3 +59,18 @@ Algorithms documented in source file headers. Fields marked `-` are not stated i
 | DVSA: Data-flow-driven Variable and Stack-slot Analysis | - | `src/var_recovery/dvsa.cpp` | - |
 | Variable naming + VarRecoveryPass orchestration | - | `src/var_recovery/var_namer.cpp` | - |
 | ABI-mandated frame region carving | - | `src/var_recovery/abi_regions.cpp` | - |
+
+### Other detector libraries (headers, not this table’s original set)
+
+These also run post-pipeline unless noted. They emit `semanticDetections`
+hints; they do not rewrite native output into STL/C++.
+
+| Area | Directory | What exists |
+|------|-----------|-------------|
+| Containers | `src/container_detect/` | vector, list, map, unordered_map, string, ring buffer, open-addressing |
+| Sorts | `src/sort_detect/` | introsort, mergesort, heapsort, quicksort, bubblesort, radix, partition |
+| Crypto | `src/crypto_detect/` | AES, SHA-1/256, ChaCha20, Salsa20, RSA/DH, RC4, MD5, CRC, HMAC, Poly1305, Blowfish, DES (and related enums) |
+| Serialisation | `src/serial_detect/serial_detect.cpp` | Protobuf, FlatBuffers, JSON, XML detectors |
+| Concurrency | `src/concurrency_detect/` | std::thread, pthread, Win32, atomics, spinlock, OpenMP, TBB |
+| Design patterns | `src/pattern_detect/` | Singleton, Factory, and related heuristics |
+| Compiler idioms (unwired) | `src/idiom_reconstruct/` | magic-number div/mod, abs, bit ops, SIMD memcpy — **not** linked from `decompile()`; bin2llvmir `retdec-idioms` is what runs |

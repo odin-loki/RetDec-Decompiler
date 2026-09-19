@@ -89,13 +89,13 @@ What this script does:
 - Enables `RETDEC_ENABLE_MACHO_EXTRACTOR=ON`, `RETDEC_ENABLE_UNPACKER=ON`,
   `RETDEC_ENABLE_UNPACKERTOOL=ON` (required by `retdec-decompiler`)
 - Injects the host `llvm-tblgen` path via
-  `-DRETDEC_LLVM_TABLEGEN=/path/to/retdec-master/build/linux/deps/install/llvm/bin/llvm-tblgen`
+  `-DRETDEC_LLVM_TABLEGEN=<repo>/build/linux/deps/install/llvm/bin/llvm-tblgen`
 - Configures into `build/linux/mingw-w64-release/` (install prefix `install/linux/mingw-w64-release/`)
 
 Manual equivalent:
 
 ```bash
-ROOT=/path/to/retdec-master
+ROOT=/path/to/RetDec
 TBLGEN="${ROOT}/build/linux/deps/install/llvm/bin/llvm-tblgen"
 cmake -S "${ROOT}" \
       -B "${ROOT}/build/linux/mingw-w64-release" \
@@ -244,10 +244,10 @@ If not found automatically:
 
 ```bash
 # Option 1: pass on the command line
-cmake ... -DRETDEC_LLVM_TABLEGEN=/path/to/retdec-master/build/linux/deps/install/llvm/bin/llvm-tblgen
+cmake ... -DRETDEC_LLVM_TABLEGEN=/path/to/RetDec/build/linux/deps/install/llvm/bin/llvm-tblgen
 
 # Option 2: set in environment before cmake
-export RETDEC_LLVM_TABLEGEN=/path/to/retdec-master/build/linux/deps/install/llvm/bin/llvm-tblgen
+export RETDEC_LLVM_TABLEGEN=/path/to/RetDec/build/linux/deps/install/llvm/bin/llvm-tblgen
 cmake ...
 ```
 

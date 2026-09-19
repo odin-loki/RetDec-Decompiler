@@ -1,5 +1,9 @@
 # Measuring detector-stage cost (C9)
 
+**Current as of v2.0.22.** Measurement procedure only. No public CLI flag.
+Stem-derived augment is gone; remaining detector cost is the post-pipeline
+block in `src/retdec/retdec.cpp`.
+
 Filename-derived stem augment is gone from the analysis pipeline. Remaining
 detector cost is the real post-pipeline block in `src/retdec/retdec.cpp`
 (container, algo, idiom, sort, concurrency, then semantic export).

@@ -1,5 +1,9 @@
 # RetDec GUI Polish Checklist
 
+**Status as of v2.0.22:** GUI v3 shipped; polish items below are complete.
+`ctest-linux` and `ctest-macos` run on push/PR. `ctest-windows` is schedule /
+`workflow_dispatch`. i18n remains optional.
+
 Polish-only work (no new features). Update as items ship.
 
 ## Completed (v3 maintenance)

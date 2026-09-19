@@ -1,10 +1,19 @@
 # Decompile pass profiles
 
-Registry of named LLVM pass lists for `retdec-decompiler`. Profiles control **bin2llvmir → LLVM opts → llvmir2hll** only; backend HLL optimizers are configured separately in `decompiler-config.json` (`backendEnabledOpts`, `--backend-no-opts`, etc.).
+Registry of named LLVM pass lists for `retdec-decompiler` (RetDec Imortek
+v2.0.22). Profiles control **bin2llvmir → LLVM opts → llvmir2hll** only;
+backend HLL optimizers are configured separately in `decompiler-config.json`
+(`backendEnabledOpts`, `--backend-no-opts`, etc.).
+
+They sit in the specification-extraction pipeline that emits **buildable C**
+by default. They do not change output language (native stays C;
+`--output-lang cpp` is rejected) and they do not enable parked CUDA/OpenCL
+accel.
 
 ## Index
 
-See [index.json](index.json) for machine-readable metadata. Validate any profile file with:
+See [index.json](index.json) for machine-readable metadata. Validate any
+profile file with:
 
 ```bash
 python3 scripts/validate_pipeline_json.py path/to/profile.json
@@ -29,7 +38,7 @@ retdec-decompiler --profile fast|balanced|quality -o out.c input.exe
 Resolution order for `--profile`:
 
 1. `$RETDEC_PROFILES_DIR/<profile>.json` if set
-2. `<bin>/../share/retdec/profiles/<profile>.json` (install layout)
+2. `<bin>/../share/retdec/profiles/<profile>.json` (install layout, including Linux/macOS/Windows installers)
 3. For `fast` only: `<bin>/../share/retdec/llvm_passes_fast.json`
 
 Explicit pass list file (`--llvm-passes-json FILE`). The file may be:
@@ -49,6 +58,10 @@ retdec-decompiler -o out.c \
   --llvm-passes-json src/retdec-decompiler/profiles/balanced.json input.exe
 ```
 
+On an installed tree (Linux tarball, macOS `RetDec.app` sibling `bin/`, or
+Windows NSIS/portable), the same `--profile` names resolve from
+`share/retdec/profiles/`.
+
 ## Custom profiles
 
 Copy `balanced.json`, edit `passes`, set a unique `name`, and validate:
@@ -58,7 +71,8 @@ python3 scripts/validate_pipeline_json.py my_team.json
 retdec-decompiler --llvm-passes-json my_team.json -o out.c binary.exe
 ```
 
-Pass names must match LLVM/RetDec registered passes (see `RegisterPass` in `src/bin2llvmir/` and `src/llvmir2hll/`).
+Pass names must match LLVM/RetDec registered passes (see `RegisterPass` in
+`src/bin2llvmir/` and `src/llvmir2hll/`).
 
 ## Related
 

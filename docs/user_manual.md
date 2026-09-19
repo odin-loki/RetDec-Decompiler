@@ -1,30 +1,56 @@
 # RetDec User Manual
 
-This manual describes the **Qt 6 GUI** (`retdec-gui`), its panels, settings, and common workflows. For **building** RetDec from source (CMake presets, `build/linux` vs `build/windows`, CUDA, MSVC), read [BUILD_REFERENCE.md](BUILD_REFERENCE.md) and the platform guides [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) / [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md). The top-level [README.md](../README.md) lists supported file formats and CLI examples.
+This manual describes the **Qt 6 GUI** (`retdec-gui`), its panels, settings, and common workflows for **RetDec Imortek 2.0.22**. For **building** from source, read [BUILD_REFERENCE.md](BUILD_REFERENCE.md) and the platform guides [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) / [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md). The top-level [README.md](../README.md) lists supported file formats and CLI examples.
+
+Decompilation in the GUI is the same `retdec-decompiler` subprocess as the CLI. Algorithm recovery, semantic export, and optional offline neural refinement are the product; recovered C is a supporting artefact.
 
 ---
 
 ## Getting Started
 
-### Installation
+### CMake versions
+
+| File | Minimum |
+|------|---------|
+| [CMakeLists.txt](../CMakeLists.txt) | **3.13** (`cmake_minimum_required`) |
+| [CMakePresets.json](../CMakePresets.json) | **3.26** (`cmakeMinimumRequired`) |
+
+Use 3.26+ if you configure with `cmake --preset …`. A raw `cmake -S . -B <dir>` configure is accepted by 3.13+. CUDA acceleration is **optional and off**: `RETDEC_ENABLE_CUDA_ACCEL` defaults **OFF** (including `full-linux-*` / `full-windows-*` presets) and is not linked from `src/retdec`.
+
+### Installation from a GitHub Release
+
+Prebuilt trees are on
+[v2.0.22](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.0.22).
+See [../QUICKSTART.md](../QUICKSTART.md) for exact asset names.
+
+| Platform | What you get |
+|----------|----------------|
+| Linux x86_64 | `retdec-2.0.22-linux-x64.tar.gz` with `bin/retdec-gui` |
+| macOS arm64 | `retdec-2.0.22-macos-arm64.tar.gz` with **`RetDec.app`** plus `bin/` |
+| Windows | `retdec-2.0.22-windows-x64-setup.exe` (NSIS) and/or `retdec-2.0.22-windows-x64-portable.zip` |
+
+macOS: the bundle is ad-hoc signed, **not notarised**. `install.sh` inside the tarball strips `com.apple.quarantine`. GitHub also uploads loose `install-macos.sh` so it does not collide with Linux `install.sh`. Launch with `open RetDec.app`.
+
+Linux AppImage (`retdec-2.0.22-x86_64.AppImage`) is **opt-in** in
+`release-installers.yml` (`APPIMAGE` defaults to `0`) and is often absent.
+
+### Build from source (GUI presets)
 
 **Prerequisites**
 
-- CMake **3.26** or later (see [CMakePresets.json](../CMakePresets.json))
+- CMake as in the table above
 - A C++17-capable compiler (GCC 11+, Clang 14+, or MSVC 2019+ on Windows)
 - Qt 6 (6.4 or later) with Widgets, Core, Gui, **and Test** — **required** for the `full-linux-*` and `full-windows-*` presets that build `retdec-gui`
 - Ninja (recommended)
-- CUDA Toolkit is optional. Full presets are CPU-only unless you pass `-DRETDEC_ENABLE_CUDA_ACCEL=ON`. The CUDA acceleration layer is experimental and not wired into the decompiler.
+- CUDA Toolkit is **not** required
 
-**Build (Linux/WSL — full GUI preset)**
+**Linux / WSL / macOS — full GUI preset** (binary dir `build/linux/`)
 
 ```bash
 # Ubuntu/Debian: sudo apt install qt6-base-dev qt6-base-dev-tools
 bash scripts/wsl_configure_nosudo.sh
 cmake --build build/linux -j"$(nproc)"
 ```
-
-**Build (manual preset)**
 
 ```bash
 cmake --preset full-linux-release
@@ -34,16 +60,14 @@ cmake --build --preset full-linux-release
 **Install (from the same binary directory you built)**
 
 ```bash
-# Typical system install:
 cmake --install build/linux --prefix /usr/local
-
-# Or use the preset’s default prefix under the repo:
-cmake --install build/linux
 ```
 
 After install, ensure `retdec-gui` is on your `PATH` (e.g. `/usr/local/bin`).
+On macOS a relocatable `RetDec.app` is produced by
+`scripts/build-macos-installer.sh`, not by `cmake --install` alone.
 
-**Windows (native MSVC build)** — use the PowerShell scripts so MSVC, CUDA, and Qt are detected; binaries are usually run from `dist\windows\` after staging:
+**Windows (native MSVC)** — binaries are usually run from `dist\windows\` after staging:
 
 ```powershell
 .\scripts\windows_native_configure.ps1
@@ -55,13 +79,19 @@ After install, ensure `retdec-gui` is on your `PATH` (e.g. `/usr/local/bin`).
 
 ```bash
 retdec-gui
-```
-
-Or pass a binary to open it directly:
-
-```bash
 retdec-gui /path/to/binary.elf
 ```
+
+Headless / CI:
+
+```bash
+retdec-gui --headless
+retdec-gui --headless-decompile /path/to/binary.elf
+```
+
+`--headless` uses Qt offscreen (`RETDEC_GUI_HEADLESS=1` is equivalent).
+`--headless-decompile` requires a binary path. Optional
+`--headless-exit-ms N` quits after N ms.
 
 **WSL with Windows display:** if you do not have WSLg, use an X server on Windows (e.g. VcXsrv) and follow [scripts/launch_gui.sh](../scripts/launch_gui.sh) or [scripts/launch_gui_vcxsrv.sh](../scripts/launch_gui_vcxsrv.sh) comments.
 
@@ -69,54 +99,68 @@ retdec-gui /path/to/binary.elf
 
 ## The Interface
 
-### Main Window Layout
-
-RetDec uses a dockable panel layout.  All panels can be rearranged,
-floated, or closed via the **View** menu.
+There is **no Edit menu**. Menus are **File**, **Analysis**, **View**, **Tools**, **Help**.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  Menu: File  Edit  View  Analysis  Tools  Help                            │
+│  Menu: File  Analysis  View  Tools  Help                                    │
 ├──────────┬───────────────────────────────────────────────┬──────────────────┤
 │ Functions│ [Decompiled C][Assembly][IR][CFG][Synced]    │ Strings          │
-│  (list)  │                                               │ Inspect          │
-│          │          (active centre tab)                  │ Binary Browser   │
+│  (dock)  │          (centre document tabs)               │ Inspect          │
+│          │                                               │ Binary           │
 │          │                                               │ Target           │
 ├──────────┴───────────────────────────────────────────────┴──────────────────┤
-│ [Console] [Problems] [History] [Progress]                                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ Status: stage message… | progress bar                                       │
+│ [Console] [Problems] [History] [Progress]   (Output dock; Progress starts hidden) │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Active GUI work and shipped milestones: [GUI_ROADMAP.md](internal/GUI_ROADMAP.md).
+On first launch the centre is an empty state (“Open a binary to begin”) until
+**File → Open Binary…**. A triage banner sits above the centre stack.
+
+Docks (View menu toggles):
+
+| Dock | Contents |
+|------|----------|
+| **Functions** (left) | Function list |
+| **Workspace** (right) | Tabs: Strings, Inspect, Binary, Target |
+| **Output** (bottom) | Tabs: Console, Problems, History, Progress |
+
+Tools windows (not docks): Type Hierarchy, Call Graph, Signature Studio,
+Compare, AI Assistant. Settings and Batch Decompile are dialogs.
+
+Active GUI work: [GUI_ROADMAP.md](internal/GUI_ROADMAP.md).
 
 ---
 
 ## Opening a Binary
 
-1. **File → Open…** (Ctrl+O) — opens a file browser.
-2. Select any ELF, PE, Mach-O, or raw binary file.
-3. RetDec will automatically detect the architecture and format.
-4. The analysis pipeline starts immediately.
+1. **File → Open Binary…** (Ctrl+O), drag-and-drop, or pass a path on the command line.
+2. The file dialog filters `*.exe *.dll *.elf *.so *.dylib *.bin`; **All Files (*)** covers `.wasm`, `.class`, `.pyc`, `.luac`, and the rest.
+3. Opening **does not** start decompilation. The GUI loads the binary, runs **fileinfo** for the Binary tab, and tries **cache reuse** of existing `.c` / `.dsm` / `.ll` artifacts. Status shows `not decompiled` or `cached`.
+4. Press **F5** (**Analysis → Run Full Analysis**) to run `retdec-decompiler`.
+
+**File → Open Project…** (Ctrl+Shift+O) loads a `.retdec` project file.
 
 ### Supported input formats
+
+Same loaders as the CLI. Native CPU maturity is not “file opens”:
 
 | Format | Extensions | Notes |
 |--------|-----------|-------|
 | ELF    | `.elf`, `.so`, `.o` | Linux/Android |
 | PE     | `.exe`, `.dll`, `.sys` | Windows |
 | Mach-O | (no extension), `.dylib` | macOS/iOS |
-| Raw    | `.bin` | Specify base address in settings |
-| WASM   | `.wasm` | WebAssembly binary |
-| JVM bytecode | `.class`, `.jar` | Java 1–21+ |
-| Android DEX  | `.dex`, `.apk` | Android bytecode |
-| Python bytecode | `.pyc` | CPython 3.8–3.12 |
-| Lua bytecode | `.luac` | Lua 5.1, 5.2, 5.3, 5.4 |
+| Raw    | `.bin` | **Analysis → Treat input as raw image**; set arch/endian/bit-size |
+| WASM   | `.wasm` | WebAssembly |
+| JVM bytecode | `.class`, `.jar` | Managed path |
+| Android DEX  | `.dex`, `.apk` | Managed path |
+| .NET CIL | `.dll` (managed) | Managed path |
+| Python bytecode | `.pyc` | Managed path |
+| Lua bytecode | `.luac` | Lua 5.1–5.4 |
 
-**Managed language inputs** (`.class`, `.dex`, `.pyc`, `.luac`, `.wasm`) bypass
-the LLVM pipeline entirely — they are detected by magic bytes and dispatched
-directly to the appropriate language-specific pipeline.
+**Managed language inputs** (`.class`, `.dex`, `.pyc`, `.luac`, `.wasm`, CIL)
+bypass the LLVM pipeline and dispatch to format-specific emitters.
+Native binaries emit **C**. `--output-lang cpp` is rejected.
 
 ---
 
@@ -124,90 +168,91 @@ directly to the appropriate language-specific pipeline.
 
 ### Functions dock (left)
 
-Displays all recovered functions sorted by address.  Each entry shows:
+Recovered functions with name, address, a **confidence bar** (green ≥ 0.75,
+yellow ≥ 0.40, red below), and pattern badges (STL, crypto, algo, design,
+library). Double-click / select navigates Assembly, IR, Decompiled C, CFG,
+Call Graph, and the Synced tab.
 
-- **Name** — recovered or mangled symbol name (demangled if available)
-- **Confidence badge** — coloured dot indicating recovery quality
-  - 🟢 High (≥ 0.8)
-  - 🟡 Medium (≥ 0.5)
-  - 🔴 Low (< 0.5)
-- **Pattern flags** — icons for detected patterns (STL, Crypto, Virtual, etc.)
-
-**Filter** the list using the search box (supports regex toggle).
-**Double-click** a function to navigate all panes to that function.
+Filter bar: wildcard **Search…** (not a regex toggle), address range,
+**Conf≥** spin, and STL / Crypto / Algo / Pat / Lib checkboxes. CSV / JSON /
+Copy export the filtered list.
 
 ### Centre tabs (Decompiled C · Assembly · IR · CFG · Synced)
 
-The workspace centre holds five tabs. **Decompiled C**, **Assembly**, and **IR**
-show whole-file views loaded from decompiler artifacts (`.c`, `.dsm`, `.ll`).
-**CFG** shows the control-flow graph of the selected function. **Synced** is a
-tri-pane view (Assembly | SSA IR | Decompiled C) for the current function.
+**Decompiled C**, **Assembly**, and **IR** are whole-file views from
+decompiler artifacts (`.c`, `.dsm`, `.ll`). **CFG** is the selected
+function. **Synced** is a tri-pane (Assembly | SSA IR | Decompiled C).
 
-Scrolling any pane in **Synced** scrolls all three in sync.  Click any line to
-highlight the corresponding lines in the other two panes.
+Ctrl+1 … Ctrl+5 switch those tabs. **View → Go to address…** is Ctrl+G.
 
-### CFG Visualiser
+### CFG visualiser
 
-Shows the control-flow graph of the currently selected function.
+Toolbar: Fit, 100%, Expand chains, **Export SVG**, **Export PNG**.
+SVG export requires Qt Svg (`QT_SVG`); otherwise the button warns.
+Click a block to select; drag to pan; scroll to zoom. A mini-map is
+shown for large graphs.
 
-- **Click** a basic block to select it; highlights the corresponding code.
-- **Drag** to pan; **scroll wheel** to zoom.
-- **Mini-map** (bottom-right) for navigating large CFGs.
-- Loop regions are shown with a coloured overlay.
-- **Export** as SVG via right-click menu.
+### Type Hierarchy / Call Graph / Signature Studio / Compare
 
-### Type Hierarchy Browser
+Opened from **Tools**, not as permanent docks:
 
-Shows the recovered C++ class hierarchy.
+- **Type Hierarchy…** — recovered C++ class tree and vtable table.
+- **Call Graph…** — interactive graph; large SCCs collapse to super-nodes
+  (Tarjan).
+- **Signature Studio…** — static-code signatures for the active binary.
+- **Compare…** / **Compare original vs refined…** — side-by-side diff
+  (**▲ Prev** / **▼ Next**; export `.patch` or HTML). Myers diff is used
+  in `DiffPanel`.
 
-- Left tree: inheritance hierarchy (subclass → superclass arrows).
-- Right table: vtable layout for the selected class.
-- **Double-click** a class to navigate to its constructor.
+### Strings (Workspace tab)
 
-### Call Graph Explorer
+Two inner tabs: **Strings** and **Constants**, with CSV export on the
+constants table. Categories are inferred (URL, FilePath, format string,
+and similar labels in the panel).
 
-Interactive call graph.
+### Inspect / Binary / Target
 
-- Strongly-connected components are collapsed into super-nodes (shown in
-  a different colour).
-- Module clusters are shown as background regions.
-- **Filter** by function name prefix.
+**Inspect** runs `retdec-fileinfo`. **Binary** is the hex/section browser
+(context menu: re-run fileinfo, copy hashes, decompile a range).
+**Target** edits architecture / format hints for the project.
 
-### Strings & Constants Browser
+---
 
-Two tabs:
+## Analysis menu (maps to CLI flags)
 
-**Strings tab** — all string literals with:
-- Encoding (ASCII / UTF-8 / UTF-16)
-- Inferred category (URL, FilePath, RegEx, FormatString, CryptoConst)
-- Filter by category dropdown
+| Action | CLI equivalent |
+|--------|----------------|
+| Run Full Analysis (F5) | `retdec-decompiler` child |
+| Re-decompile Selected Function | `--select-functions` |
+| Fast decompile (skip backend optimisations) | `--backend-no-opts --disable-static-code-detection` |
+| Print LLVM IR after/before every pass | `--print-after-all` / `--print-before-all` |
+| Keep unreachable functions | `-k` / `--keep-unreachable-funcs` |
+| Delete intermediates | `--cleanup` |
+| Try emulation unpacking | `--try-emulation` |
+| Keep library functions | `--backend-keep-library-funcs` |
+| Set max memory / No memory limit | `--max-memory` / `--no-memory-limit` |
+| C output style… | backend flags (brackets, renaming, call-info, disabled/enabled opts) |
+| Treat input as raw image | `-m raw` |
+| Set PDB / static-code signature | `-p` / `--static-code-sigfile` |
+| Variable renamer submenu | `--backend-var-renamer` |
+| Stop Analysis (F6) | terminate child / cancel batch |
 
-**Constants tab** — numeric constants with:
-- Size (8/16/32/64-bit)
-- Semantic label (MagicNumber, CryptoKey, Port, FloatSpecial)
-
-**Export CSV** button saves the table.
-
-### Diff / Compare View
-
-Compare decompiled output before and after a recovery pass.
-
-1. Select a recovery stage from the **Stage** dropdown.
-2. Before (left) and After (right) are shown side by side.
-3. Lines are colour-coded: red = removed, green = added.
-4. Use **▲ Prev** / **▼ Next** to jump between hunks.
-5. **Export** as `.patch` or HTML report.
+**Analysis → Fast decompile** is a quality trade-off, not a measured “~24%
+faster” figure (that claim is withdrawn).
 
 ---
 
 ## AI-assisted analysis
 
-The GUI includes an **AI Assistant** Tools window (`AIAssistantPanel`).
+**Tools → AI Assistant…** opens `AIAssistantPanel` (not a dock).
+
 Optional llama.cpp refine uses env vars, not a CLI `--model` flag:
 
-1. Open **Settings → ML tab** and set **Model file** to a `.gguf`. Apply.
-   The GUI passes `RETDEC_NEURAL_REFINE` / `RETDEC_NEURAL_MODEL` to the
-   `retdec-decompiler` child.
+1. **Tools → Settings… → ML** — set **Model file (.gguf)**. When that path
+   exists, Run Full Analysis sets `RETDEC_NEURAL_REFINE` /
+   `RETDEC_NEURAL_MODEL` on the child. CPU device forces
+   `RETDEC_NEURAL_N_GPU_LAYERS=0`; GPU/Auto use `-1`. Empty path leaves
+   refinement off.
 2. Or set the same variables on the CLI:
 
 ```bash
@@ -215,122 +260,154 @@ RETDEC_NEURAL_REFINE=1 RETDEC_NEURAL_MODEL=/path/to/model.gguf \
   retdec-decompiler binary.elf -o output.c
 ```
 
-There is no `retdec-qwen3-runner` binary. Product direction:
-[GUI_ROADMAP.md](internal/GUI_ROADMAP.md).
+There is no `retdec-qwen3-runner` binary. The compile gate is
+`cc`/`gcc -fsyntax-only`; decompiled C is not executed.
 
 ---
 
 ## Exporting Results
 
-**File → Export As…** offers recovered C (default). Other rows in the dialog
-are format-keyed managed emitters or unwired writers — not a free-choice
-list of eleven languages for native binaries. Native pipeline output is C.
+| Menu | What it does |
+|------|----------------|
+| **File → Save Decompiled…** (Ctrl+S) | Write decompiled C |
+| **File → Export CMakeLists.txt…** | Skeleton `CMakeLists.txt` that `add_executable`s the recovered `.c` |
+| **File → Export Decompile Bundle…** | ZIP of artifacts + decompiler command text |
+| **File → Export Threat Intel…** | Threat-intel export from the current project |
+| **File → Export As** | Rows from loaded **output plugins** (`IOutputPlugin`); empty shows “(no output plugins loaded)” |
+| **File → Batch Decompile…** | Queue of binaries (dialog) |
 
-**Analysis → Save CMakeLists.txt** exports the module clustering result as a
-`CMakeLists.txt` ready for compilation.
+Native pipeline output is C. Other languages are format-keyed managed
+emitters, not a free-choice list of eleven languages.
 
 ---
 
 ## Configuration Reference
 
-Open **Settings** (Ctrl+,) or **Edit → Settings**.
+Open **Tools → Settings…** (Ctrl+,). There is no Edit → Settings.
+Tabs: **General**, **Analysis**, **CUDA**, **ML**, **Recovery**,
+**Advanced**, **Decompiler**, **Plugins**. OK / Cancel / Apply /
+Restore Defaults, plus **Export…** / **Import…** JSON.
+
+The Analysis tab banner is accurate: **F5 runs `retdec-decompiler`
+externally; those toggles affect in-process analysis only.**
 
 ### General Tab
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| Theme | Dark | Dark / Light / System Default |
-| Editor font | Cascadia Code 10pt | Monospace font for code panes |
-| Show line numbers | Yes | Display line numbers in code editors |
-| Word wrap | No | Wrap long lines in decompiled output |
-| Restore session | Yes | Re-open last binary on startup |
+| Theme | Dark | Dark / Light / System Default (Catppuccin Mocha / Latte) |
+| Editor font | Cascadia Code, JetBrains Mono, Consolas 10pt | Monospace for code panes |
+| Language | English (en) | en / de / fr / es / zh (restart) |
+| Show line numbers | Yes | Code editors |
+| Word wrap | No | Decompiled output |
+| Restore last session | Yes | Re-open last **File → Open Binary** path |
 
-### Analysis Tab
+### Analysis Tab (in-process; not the F5 child)
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| Type inference | Enabled | Recover variable types |
-| Pattern matching | Enabled | Match STL/crypto/libc patterns |
-| Concurrency detection | Enabled | Find mutexes, threads, atomics |
-| CUDA host recovery | Enabled | Recover CUDA runtime calls |
-| Thread count | Auto | 0 = use all hardware threads |
-| Max analysis time | 300s | Abort analysis after timeout |
+| Type inference | On | In-process stage |
+| Pattern matching | On | In-process stage |
+| Concurrency detection | On | In-process stage |
+| CUDA host recovery | On | CPU-side host API detection (`ptx_decompile`), not `cuda_accel` |
+| Serialisation detection | On | In-process stage |
+| Module clustering | On | In-process stage |
+| C++ lifter | On | In-process stage |
+| Confidence minima | 0.5 / 0.6 / 0.4 | Type / pattern / recovery |
+| Max analysis time | 300 s | 0 = Unlimited |
+| Thread count | Auto (0) | `hardware_concurrency` |
 
 ### CUDA Tab
 
 These widgets persist `CUDASettings`. They do **not** drive `cuda_accel` or
-decompiler GPU analysis kernels (`C-CUDA-PIPE` withdrawn). Neural GPU offload
-is llama.cpp `n_gpu_layers` via `RETDEC_NEURAL_REFINE` (ML tab / Tools → AI
-Assistant). CUDA host recovery is the Analysis-tab checkbox (CPU-side
-`ptx_decompile` host API detection).
+decompiler GPU kernels (`C-CUDA-PIPE` withdrawn). Neural GPU offload is
+llama.cpp `n_gpu_layers` via the ML tab.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| CUDA device | Auto | Persisted device preference; not wired into `cuda_accel` |
-| Prefer GPU over CPU | Yes | Persisted; does not enable decompiler GPU kernels (`C-CUDA-PIPE` withdrawn) |
-| Work group size | 256 | Persisted; not a pipeline kernel launch parameter |
-| Enable cl_event profiling | No | Maps to `RETDEC_PROFILE_JSON` on the decompiler child; not CUDA kernel timings |
+| CUDA device | Auto | Persisted preference |
+| Prefer GPU over CPU | Yes | Persisted; does not enable decompiler GPU kernels |
+| Work group size | 256 | Persisted |
+| Kernel cache dir | (empty) | Persisted path |
+| Enable cl_event profiling | No | Maps to `RETDEC_PROFILE_JSON` on the child; not CUDA kernel timings |
 
 ### ML Tab
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| Model file | (empty) | Path to `.gguf` model |
-| Quantisation | Q4_K_M | Quantisation level |
+| Model file (.gguf) | (empty) | Path; empty leaves refine off |
+| Quantisation | Q4_K_M | Q4_0 / Q4_K_M / Q5_K_M / Q6_K / F16 / F32 |
 | Inference device | Auto | CPU / GPU / Auto |
-| Temperature | 0.7 | Sampling temperature |
-| Top-P | 0.9 | Nucleus sampling threshold |
-| Max new tokens | 512 | Maximum tokens per response |
+| Temperature | 0.7 | Sampler |
+| Top-P | 0.9 | Sampler |
+| Top-K | 40 | Sampler |
+| Max new tokens | 512 | Cap |
+| Context length | 4096 | Passed to the child |
 
 ### Recovery Tab
 
-Individual toggles for each semantic detector, with per-detector confidence
-thresholds.
+Per-detector toggles and confidence spins: STL, crypto, patterns,
+concurrency, CUDA host, RTTI, exceptions, virtual.
 
 ### Advanced Tab
 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Verbosity | Normal | Quiet / Normal / Verbose / Debug |
-| Dump IR | No | Write SSA IR to file after each stage |
-| Dump CFG | No | Write CFG as DOT files |
-| Max functions | All | 0 = decompile all functions |
-| Demangle names | Yes | Demangle C++/D/Rust symbol names |
+| Dump SSA IR / assembly / CFG (DOT) / SSA after each stage | Off | Dump checkboxes |
+| Colour terminal output | On | |
+| IR dump path / intermediate dir | (empty) | Browse |
+| Max functions | All (0) | 0 = all |
+| Demangle symbol names | Yes | |
+
+### Decompiler Tab
+
+Passed to the `retdec-decompiler` child on Run Full Analysis:
+
+- **Decompile profile** — `--profile` `fast` / `balanced` / `quality` (default balanced). Analysis → Fast decompile overrides to fast for the next run.
+- Custom LLVM pass list — `--llvm-passes-json` when enabled.
+- Output directory for `.gui-decompiled.*` (empty = beside the binary).
+- Preferred `--output-lang` for native binaries: c / python / csharp / java / wat (default **c**). Managed inputs ignore this.
+- Stream decompiler log to Console.
+- Optional `--config` JSON path.
 
 ### Plugins Tab
 
-Lists all installed plugins.  Use the checkbox to enable/disable each plugin
-without unloading it.  Click **Install Plugin…** to load a `.so`/`.dll` plugin.
+Installed plugins with enable checkboxes, search paths, and **Install Plugin…**
+(`.so` / `.dll`). Types: `IDecompilerPlugin`, `IOutputPlugin`,
+`IVisualisationPlugin`, `IAnalysisPlugin`.
 
 ---
 
 ## Keyboard Shortcuts
 
+From **Help → Keyboard Shortcuts…** and the bound `QAction`s:
+
 | Shortcut | Action |
 |----------|--------|
-| Ctrl+O | Open binary |
-| Ctrl+Shift+O | Open project |
+| Ctrl+O | Open Binary |
+| Ctrl+Shift+O | Open Project |
 | Ctrl+S | Save decompiled C |
-| Ctrl+Shift+S | Save project |
-| Ctrl+Shift+A | Save project as |
-| Ctrl+Q | Quit |
-| Ctrl+, | Open settings (Tools menu) |
-| F5 | Run full analysis (decompile) |
+| Ctrl+Shift+S | Save Project |
+| Ctrl+Shift+A | Save Project As |
+| Ctrl+Q | Quit (`QKeySequence::Quit`) |
+| Ctrl+, | Settings (Tools menu) |
+| F5 | Run Full Analysis |
 | F6 | Stop analysis / batch |
-| Ctrl+1 … Ctrl+5 | Centre document tabs (Decompiled C, Assembly, IR, CFG, Synced) |
+| Ctrl+1 … Ctrl+5 | Centre tabs (Decompiled C, Assembly, IR, CFG, Synced) |
 | Ctrl+` | Show Console |
 | Ctrl+Shift+` | Show Problems |
-| G | Assembly panel: go to address (when panel focused) |
-| F | Assembly panel: find in disassembly (when focused) |
-| Ctrl+F | Decompiled C / Synced tab: find in source |
+| Ctrl+G | Go to address |
+| Ctrl+L | Go to line (window shortcut) |
+| G | Assembly: go to address (when that panel is focused) |
+| F | Assembly: find in disassembly (when focused) |
+| Ctrl+F | Decompiled C / Synced: find in source |
 | F3 / Shift+F3 | Decompiled C: find next / previous |
 | Alt+← / Alt+→ | Synced tab: navigation history |
 
 ---
 
 ## Command-line companion (`retdec-decompiler`)
-
-The GUI and the **`retdec-decompiler`** CLI share the same analysis engines. After installation, run:
 
 ```bash
 retdec-decompiler --help
@@ -343,6 +420,11 @@ retdec-decompiler input.exe -o output.c
 retdec-decompiler module.wasm -o module.wat
 retdec-decompiler script.pyc -o script.py
 ```
+
+`--buildable` is **on by default** (`.h`, `_stubs.c`, `.buildable.c`).
+`--no-buildable` or `RETDEC_EMIT_BUILDABLE=0` turns it off.
+`--output-lang` for native binaries is `c|python|csharp|java|wat`
+(default `c`). There is no dedicated C++ writer.
 
 Optional GGUF refine (no `--model` flag):
 
@@ -357,7 +439,7 @@ On Windows staged builds:
 .\dist\windows\retdec-decompiler.exe --help
 ```
 
-Full feature lists and format tables: [README.md](../README.md).
+Full feature lists: [README.md](../README.md).
 
 ---
 
@@ -365,10 +447,10 @@ Full feature lists and format tables: [README.md](../README.md).
 
 | Topic | Detail |
 |-------|--------|
-| **Portable folder** | `dist\windows\` after `windows_native_build.ps1` contains `retdec-gui.exe`, Qt platforms plugins, CUDA runtime DLLs if built with CUDA, and MSVC redistributables copied by the script. |
-| **Debuggable bundle** | `windows_prepare_debuggable_gui.ps1` produces `dist\windows\debuggable\` with PDBs for RetDec targets; use for deep debugging. |
+| **Portable folder** | `dist\windows\` after `windows_native_build.ps1` contains `retdec-gui.exe`, Qt platforms plugins, and MSVC redistributables. CUDA runtime DLLs only if you built with `RETDEC_ENABLE_CUDA_ACCEL=ON` (default OFF). |
+| **Debuggable bundle** | `windows_prepare_debuggable_gui.ps1` produces `dist\windows\debuggable\` with PDBs. |
 | **Smoke tests** | `.\scripts\Test-RetdecWindows.ps1 -DistDir dist\windows` |
-| **VcXsrv / X11** | For GUI from WSL without WSLg, install an X server on Windows and set `DISPLAY` as described in `scripts/launch_gui_vcxsrv.sh`. |
+| **VcXsrv / X11** | For GUI from WSL without WSLg, see `scripts/launch_gui_vcxsrv.sh`. |
 
 ---
 
@@ -376,11 +458,11 @@ Full feature lists and format tables: [README.md](../README.md).
 
 | Problem | What to check |
 |---------|----------------|
-| GUI does not start | Run from `dist\windows` (or install prefix `bin`) so Qt plugins and `platforms\qwindows.dll` sit next to the executable; re-run `windeployqt` if you moved files manually. |
-| “No CUDA” / slow analysis | The decompiler pipeline is CPU. GUI CUDA settings do not drive `cuda_accel` (`C-CUDA-PIPE` withdrawn). Neural GPU is llama.cpp `n_gpu_layers` via `RETDEC_NEURAL_REFINE`. CUDA host recovery is the Analysis-tab checkbox (CPU-side). |
-| AI-assisted naming | Tools → AI Assistant, or `RETDEC_NEURAL_REFINE` + `RETDEC_NEURAL_MODEL`. There is no `--model` flag and no `retdec-qwen3-runner`. |
-| Empty decompilation | Check **Settings → Advanced → Max functions** (0 = all). Very large binaries may hit **Max analysis time** on the Analysis tab. |
-| Crash on open file | Try **File → Open** with a smaller sample; enable **Verbosity** under Advanced and capture console output; on Windows use `run_gui_with_procdump.ps1` (see [scripts/README.md](../scripts/README.md)). |
+| GUI does not start | Run from `dist\windows` (or install prefix `bin`) so Qt plugins sit next to the executable; on macOS use `RetDec.app` from the tarball, not a Homebrew-prefix copy. |
+| “No CUDA” / slow analysis | The decompiler pipeline is CPU. GUI CUDA settings do not drive `cuda_accel`. |
+| AI-assisted naming | Tools → AI Assistant, or `RETDEC_NEURAL_REFINE` + `RETDEC_NEURAL_MODEL`. |
+| Empty decompilation | Opening a file does not decompile — press F5. Check **Settings → Advanced → Max functions** (0 = all). |
+| Crash on open file | Try a smaller sample; raise **Verbosity** under Advanced; on Windows `run_gui_with_procdump.ps1` (see [scripts/README.md](../scripts/README.md)). |
 
 For **build** failures (OpenSSL, LLVM download, Qt, MSVC env), see [BUILD_REFERENCE.md](BUILD_REFERENCE.md#troubleshooting) and [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md).
 
@@ -391,8 +473,9 @@ For **build** failures (OpenSSL, LLVM download, Qt, MSVC env), see [BUILD_REFERE
 | Need | Document |
 |------|----------|
 | Build from source | [BUILD_REFERENCE.md](BUILD_REFERENCE.md) |
-| MSVC + CUDA + Qt | [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) |
-| All docs index | [docs/README.md](README.md) |
+| MSVC + Qt | [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) |
+| All docs + CI table | [docs/README.md](README.md) |
 | Architecture / pipeline | [architecture.md](architecture.md) |
-| GUI roadmap (v3+) | [GUI_ROADMAP.md](internal/GUI_ROADMAP.md) |
+| GUI roadmap | [GUI_ROADMAP.md](internal/GUI_ROADMAP.md) |
+| Claims / F1 honesty | [CLAIMS.md](CLAIMS.md) |
 | Contributing code | [developer_guide.md](developer_guide.md) |

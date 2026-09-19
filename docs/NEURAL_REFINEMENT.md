@@ -1,15 +1,25 @@
 # Neural refinement
 
-Offline, gated post-processing after the deterministic decompiler.
+Imortek **2.0.22**. Offline, gated post-processing **after** deterministic
+C emission. Not a decompiler pass and not GPU acceleration of lifting.
 
 ## Status
 
 - `retdec::neural` with mock + optional llama.cpp (`RETDEC_ENABLE_LLAMACPP`).
-  Pin: **b10451** (Qwen 3.5 architecture / MTP load flag). Default installers
-  keep llama.cpp OFF.
-- **9B Instruct path:** Qwen 3.6 has no 9B (27B / 35B only). The 9B checkpoint
-  is **Qwen 3.5**. Stage a **llama.cpp-native** GGUF with
-  `bash scripts/fetch_qwen_gguf.sh`. Prefer the Unsloth
+  Pin: **b10451** in `cmake/deps.cmake` (`llama.cpp` archive tag `b10451`).
+  Default installers keep llama.cpp **OFF**.
+- Runtime refine is a **separate switch** from the compile gate:
+  - Build: `RETDEC_ENABLE_LLAMACPP` (fetch/link llama.cpp),
+    `RETDEC_ENABLE_NEURAL` (library; default ON, stub if llama.cpp OFF).
+  - Run: `RETDEC_NEURAL_REFINE=1` + `RETDEC_NEURAL_MODEL` (GGUF).
+- **Compile gate is implemented:** `cc`/`gcc -fsyntax-only` (`src/neural/gates.cpp`).
+  Skip with `RETDEC_NEURAL_SKIP_COMPILE_GATE=1`.
+- **Differential gate is not implemented:** `RETDEC_NEURAL_DIFF_GATE=1`
+  prints a warning and **skips** (treated as pass). Decompiled C is never
+  compiled-and-executed as a test oracle.
+- **9B Instruct path:** Qwen 3.6 has no 9B (27B / 35B only). The 9B
+  checkpoint is **Qwen 3.5**. Stage a **llama.cpp-native** GGUF with
+  `bash scripts/fetch_qwen_gguf.sh`. Prefer Unsloth
   `Qwen3.5-9B-Q4_K_M.gguf` (b10451). `ollama pull qwen3.5:9b` writes
   `rope.dimension_sections` length 3; b10451 expects 4 (llama.cpp PR 25334
   is still open). Do not load `mmproj`.
@@ -33,10 +43,14 @@ Offline, gated post-processing after the deterministic decompiler.
   `RETDEC_NEURAL_MTP=1` sets `llama_model_params.load_mtp`. Speculative
   MTP decode has no C API at b10451.
 
+When `RETDEC_ENABLE_LLAMACPP` is OFF, `src/retdec/neural_refine_stub.cpp`
+provides an empty `maybeRefineDecompilerOutput`.
+
 **Build-time:** `RETDEC_NEURAL_GPU_OFFLOAD=ON` compiles `GGML_CUDA` into
 llama.cpp. CI default is OFF.
 
-**Runtime (decompiler / GUI child):**
+**Runtime (decompiler / GUI child `QProcess` env):**
+
 - `RETDEC_NEURAL_REFINE=1`
 - `RETDEC_NEURAL_MODEL`
 - `RETDEC_NEURAL_MODEL_SHA256`
@@ -53,13 +67,13 @@ llama.cpp. CI default is OFF.
 - `RETDEC_NEURAL_SKIP_COMPILE_GATE`
 
 GUI: Settings → ML model path that exists on disk is passed to the
-decompiler child as these env vars. Headless `--headless-decompile` does
-not apply saved ML settings.
+`retdec-decompiler` child as these env vars when the run is interactive.
+`retdec-gui --headless-decompile` sets `quitWhenDecompileFinishes`, which
+calls `buildDecompilerProcessEnvironment(..., applyInteractiveOverrides=false)`
+and therefore does **not** inject `RETDEC_NEURAL_*` from saved ML settings.
 
-- Compile gate is `cc`/`gcc -fsyntax-only`. Differential gate is **not
-  implemented**: `RETDEC_NEURAL_DIFF_GATE=1` warns and skips.
-- Refinement latency is `neural_refine_wall_s` in DecompileBench; it is
-  not mixed into `mean_wall_s`.
+Refinement latency is `neural_refine_wall_s` in DecompileBench; it is
+not mixed into `mean_wall_s`.
 
 ## Build and run
 
@@ -94,13 +108,16 @@ First smoke: `RETDEC_NEURAL_TIER_MAX=1`.
 
 ## Gates
 
-1. **Compile** — `gcc -fsyntax-only` (skip with `RETDEC_NEURAL_SKIP_COMPILE_GATE=1`).
-2. **Structural** — non-empty; size sanity vs original.
+1. **Compile** — `gcc`/`cc -fsyntax-only` (skip with `RETDEC_NEURAL_SKIP_COMPILE_GATE=1`).
+2. **Structural** — non-empty; size sanity vs original; tree-sitter C when built.
 3. **Differential** — **not implemented.** `RETDEC_NEURAL_DIFF_GATE=1` warns and skips; C is never executed.
 
-On any gate failure, deterministic output is kept.
+On compile or structural failure, deterministic output is kept.
 
 ## Offline
 
 Build with `RETDEC_NEURAL_OFFLINE_ONLY=ON` and run with `RETDEC_NO_NETWORK=1`.
 Inference is in-process llama.cpp only.
+
+Hook: `neural::maybeRefineDecompilerOutput` in
+`include/retdec/neural/decompile_hook.h`, called from `src/retdec/retdec.cpp`.

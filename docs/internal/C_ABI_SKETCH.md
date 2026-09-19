@@ -1,5 +1,7 @@
 # P1 — C ABI sketch (not shipped)
 
+**Status as of v2.0.22:** still a sketch. No public C ABI shipped.
+
 This is a **design sketch only**. No `libretdec.so` / `retdec.dll` export map,
 version script, or public C header is added here. P2 (bindings) waits on a
 real ABI. Names below are placeholders, not APIs in this tree.

@@ -1,8 +1,8 @@
 # Benchmarks
 
-Live artifacts live in [`results/`](../results/README.md). Historical SHA
-dumps, eval JSON, and local logs live in [`data/archive/`](../data/README.md)
-(not committed).
+**Version:** 2.0.22. Live artifacts live in [`results/`](../results/README.md).
+Historical SHA dumps, eval JSON, and local logs live in
+[`data/archive/`](../data/README.md) (not committed).
 
 Harness: `scripts/run_benchmarks.sh` writes `results/<git-sha>.json`.
 
@@ -27,14 +27,21 @@ $env:PATH = "C:\Program Files\Docker\Docker\resources\bin;" + $env:PATH
 py -3 scripts\run_stock_retdec_docker.py --profile full --skip-pull
 ```
 
-On this set both sides are typically syntax 1.0 on **default `.c`**. The
-fork's recompile rate on default `.c` was measured at 0% before the cause was
-fixed; re-taken over the whole corpus by CC-01 in ctest-linux run 276, it is
-**216/216** (see `docs/BENCHMARKS_TABLE.md`). Buildable sidecars
-(`--buildable`, default on)
-recompile **216/216** on the fork vs **0/216**
-stock. That is the headline quality number; see
-[BENCHMARKS_TABLE.md](BENCHMARKS_TABLE.md).
+On this set both sides are typically syntax 1.0 on **default `.c`**.
+
+Two measurements must not be collapsed:
+
+- **DecompileBench JSON** (`results/compare-fork-vs-stock-full.md`,
+  `results/decompilebench-full.json`): default `.c` `tu_valid` / `recompile`
+  still **0**; buildable sidecar **216/216** vs stock **0/216**.
+- **CC-01** (`scripts/ci/check_emitted_c_compiles.sh` in `ctest-linux` run
+  276 at `2c3669d`): default `.c` **216/216**. The live job also gates the
+  expanded corpus the workflow names as **252** (six FP sources); that later
+  count was not re-measured for this doc pass.
+
+Headline quality vs stock remains **buildable C 216/216 vs 0/216**. See
+[BENCHMARKS_TABLE.md](BENCHMARKS_TABLE.md). RISC-V is not in this corpus.
+There is no dedicated C++ emitter on the native path (`C-CXX-EMIT` withdrawn).
 
 Wall times that mix Debug/WSL with stock Release-in-Docker are not a
 comparison (BENCH-06).

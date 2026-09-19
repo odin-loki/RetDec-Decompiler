@@ -1,5 +1,10 @@
 # Reproducibility of the decompiler's output
 
+**Current as of v2.0.22.** DET-01 and CACHE-05 are the live gates. The defects
+in the table below are the ones those gates were written to catch; they are
+fixed in tree. Time budgets still make large binaries non-reproducible by
+construction.
+
 Two runs of `retdec-decompiler` on the same binary, with the same options,
 have to produce the same `.c`. People diff decompiler output, and the
 function-analysis cache is only meaningful if the thing it caches is a

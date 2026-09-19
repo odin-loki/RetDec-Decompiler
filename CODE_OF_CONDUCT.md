@@ -2,7 +2,11 @@
 
 ## Our pledge
 
-We pledge to make participation in the RetDec project a harassment-free experience for everyone, regardless of age, body size, disability, ethnicity, gender identity and expression, level of experience, nationality, personal appearance, race, religion, or sexual identity and orientation.
+We pledge to make participation in the **RetDec Imortek** project a
+harassment-free experience for everyone, regardless of age, body size,
+disability, ethnicity, gender identity and expression, level of experience,
+nationality, personal appearance, race, religion, or sexual identity and
+orientation.
 
 ## Our standards
 
@@ -14,8 +18,11 @@ We pledge to make participation in the RetDec project a harassment-free experien
 
 Report unacceptable behaviour to **odin.loch@outlook.com**. All complaints will be reviewed and investigated promptly and fairly. Maintainers may remove, edit, or reject contributions that violate this code.
 
+Security-sensitive reports (crashes on hostile binaries, RCE in parsers)
+use [SECURITY.md](SECURITY.md), not a public issue.
+
 ## Attribution
 
 This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org/), version 2.1.
 
-RetDec — Copyright (c) 2025-2026 Odin Loch, trading as Imortek.
+RetDec Imortek — Copyright (c) 2025-2026 Odin Loch, trading as Imortek.

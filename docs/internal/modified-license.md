@@ -1,5 +1,7 @@
 # Licence (readable summary)
 
+**As of v2.0.22:** readable summary only. Binding texts are `LICENSE*`.
+
 This is a short guide. The binding texts are `LICENSE`, `LICENSE-AGPL`,
 and `LICENSE-COMMERCIAL`.
 

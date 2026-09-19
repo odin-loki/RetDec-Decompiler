@@ -1,23 +1,39 @@
 # RetDec Decompiler Benchmark
 
-A self-contained benchmark suite that measures the **quality and performance** of
-the RetDec decompilation pipeline.  It provides a stable, reproducible score that
-can be used to detect regressions and measure improvement over time.
+A **local** quality/performance suite for the RetDec Imortek C backend
+optimizers and (on the C++ binary) demangling / STL-pattern signals. It is
+**not** the 216-binary DecompileBench contract
+([tests/decompilebench/README.md](../decompilebench/README.md)) and **not**
+the algorithm-recovery F1 harness
+([tests/algorithm_recovery/README.md](../algorithm_recovery/README.md)).
+
+v2.0.22 still emits **C** for native binaries. The C++ program here is
+compiled then decompiled to `.c`; it does not exercise `src/cxx_backend`
+(`--output-lang cpp` is rejected).
 
 ---
 
-## Quick Start (WSL)
+## Quick Start
+
+Needs `retdec-decompiler` from a CMake preset (`full-linux-debug` /
+`full-linux-release` on Linux, WSL, or macOS → `build/linux`;
+`full-windows-*` → `build/windows`).
 
 ```bash
 # One shot — compile, decompile, score, compare against baseline
 bash tests/benchmark/run_full_benchmark.sh
 
+# Optional: pass the build directory
+bash tests/benchmark/run_full_benchmark.sh /path/to/build/linux
+
 # First-time baseline establishment
 bash tests/benchmark/run_full_benchmark.sh --save-baseline
 
-# C++ decompilation only (takes ~60s — run separately)
+# C++ binary decompilation only (takes ~60s — run separately)
 bash tests/benchmark/decompile_cpp.sh
 ```
+
+`run_full_benchmark.sh` defaults `BUILD_DIR` to `$REPO_ROOT/build/linux`.
 
 ---
 
@@ -102,10 +118,13 @@ Each of the 20 C checks is worth **5 points** (PASS=5, PARTIAL=3, FAIL=0):
 
 ## C++ Benchmark Sections (benchmark_cpp.cpp)
 
+These sections exercise **detectors and demangling visible in C output**,
+not a C++ writer.
+
 | § | Name | Module(s) targeted |
 |---|------|-------------------|
-| 1 | `Circle`, `Rectangle`, `Triangle`, `Shape` (virtual dispatch) | `cxx_backend::VtableDetector` |
-| 2 | `Buffer` (ctor/dtor, `new[]`/`delete[]`) | `cxx_backend::CtorDtorDetector`, new/delete recovery |
+| 1 | `Circle`, `Rectangle`, `Triangle`, `Shape` (virtual dispatch) | `cxx_backend::VtableDetector` (unwired backend; patterns still appear in C) |
+| 2 | `Buffer` (ctor/dtor, `new[]`/`delete[]`) | ctor/dtor, new/delete recovery |
 | 3 | `shape_type_name`, `dispatch_by_type` (dynamic_cast, typeid) | `rtti-finder`, RTTI recovery |
 | 4 | `DomainError`, `safe_sqrt`, `try_sqrt`, `exception_chain` | `eh_reconstruct` (Itanium EH) |
 | 5 | `build_vec`, `vec_sum`, `vec_filter_inplace` | `container_detect::VectorDetector` |
@@ -120,10 +139,10 @@ Each of the 20 C checks is worth **5 points** (PASS=5, PARTIAL=3, FAIL=0):
 | 14 | `stl_sort_copy`, `stl_stable_sort_copy` | `sort_detect` (IntrosortDetector, MergesortDetector) |
 | 15 | `insertion_sort`, `heap_sort`, `quicksort` | `sort_detect` (InsertionSort, Heapsort, Quicksort) |
 | 16 | `mutex_increment`, `atomic_fetch_add_loop`, `cas_spinlock_demo` | `concurrency_detect` |
-| 17 | `tpl_max`, `tpl_clamp`, `tpl_sum` (templates) | `type_inference`, `cxx_backend::TemplateSkeleton` |
+| 17 | `tpl_max`, `tpl_clamp`, `tpl_sum` (templates) | `type_inference` |
 | 18 | `is_even`/`is_odd` mutual recursion, `ackermann` | `ipa` (call_graph, Tarjan SCC) |
-| 19 | `Vec2` operator overloading | `cxx_backend` (operator recovery, field inference) |
-| 20 | `Animal`/`Mammal`/`Dog`/`Cat`/`Bird` hierarchy | `cxx_backend` (multi-level inheritance) |
+| 19 | `Vec2` operator overloading | operator recovery, field inference |
+| 20 | `Animal`/`Mammal`/`Dog`/`Cat`/`Bird` hierarchy | multi-level inheritance |
 
 ## C++ Scoring Rubric (100 pts — `benchmark_cpp_O1.c`)
 
@@ -150,9 +169,16 @@ Each of the 20 C checks is worth **5 points** (PASS=5, PARTIAL=3, FAIL=0):
 | 19 | QuicksortRecursion | quicksort body: recursive call + `quicksort_partition` + if |
 | 20 | CppFunctionCount | ≥200 functions recovered (including inlined STL) |
 
+These C++ checks are **symbol/pattern scores on C text**. They are not
+algorithm-recovery name-blind F1 (0.056 on 216) and must not be advertised
+as product STL recovery quality.
+
 ---
 
 ## Baseline (established 2026-04-03)
+
+Historical local score, kept as the committed `baseline.json` for this
+suite. Re-run before treating the numbers as current.
 
 | Metric | Value |
 |--------|-------|
@@ -169,28 +195,30 @@ Each of the 20 C checks is worth **5 points** (PASS=5, PARTIAL=3, FAIL=0):
 ### Known C Partials
 
 **GotoCFGOptimizer (3/5):** Two `goto` statements remain in a complex multi-exit
-loop inside `binary_search` / `fibonacci` area.  This is a genuine edge case in
+loop inside `binary_search` / `fibonacci` area. This is a genuine edge case in
 retdec's unstructured-CFG recovery — the GotoCFG optimizer cannot always eliminate
 all gotos from multi-exit loops.
 
-**CastRemoval (3/5):** Cast density is 43%.  For stripped x86-64 binaries, retdec
+**CastRemoval (3/5):** Cast density is 43%. For stripped x86-64 binaries, retdec
 inserts many `(uint32_t)` and `(int32_t)` truncation casts because all registers
-are 64-bit.  Reducing this requires deeper type-range analysis in the lifter.
+are 64-bit. Reducing this requires deeper type-range analysis in the lifter.
 
 ---
 
 ## Regression Workflow
 
 ```bash
-# After making changes, re-run and compare:
 bash tests/benchmark/run_full_benchmark.sh
 
 # Exit code 0 = no regression, 1 = regression detected
 echo "Exit: $?"
 ```
 
-`compare_benchmark.sh` prints a delta table.  Any check that drops points triggers
-an exit code of 1, making it suitable for CI pipelines.
+`compare_benchmark.sh` prints a delta table. Any check that drops points triggers
+an exit code of 1.
+
+For the **product** regression gates used in CI, use
+`scripts/run_benchmarks.sh` and `results/` instead of this suite.
 
 ---
 
@@ -202,5 +230,5 @@ an exit code of 1, making it suitable for CI pipelines.
 - `volatile` parameters prevent GCC constant-folding loop bounds away.
 - `g_sink` / `g_sink_cpp` absorb all return values so the linker keeps every function.
 - The C++ binary takes ~59 s to decompile because `std::sort`, `std::stable_sort`,
-  and `std::map` inline thousands of lines of STL template instantiations.  This is
+  and `std::map` inline thousands of lines of STL template instantiations. This is
   intentional — it exercises the decompiler at scale.

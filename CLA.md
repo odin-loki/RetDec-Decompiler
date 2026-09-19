@@ -1,7 +1,8 @@
 # Contributor Licence Agreement (individual)
 
 This is the outbound-relicensing grant Plan.md `LEG-05` requires so
-Imortek can keep offering the dual AGPL / commercial licence.
+Imortek can keep offering the dual AGPL / commercial licence for
+**RetDec Imortek** (currently **2.0.22**).
 
 By submitting a contribution (including a pull request) to this
 repository, you agree that:
@@ -27,9 +28,9 @@ repository, you agree that:
 Entity contributions (employees contributing on behalf of a company)
 need a signed entity CLA before merge. Email the maintainers.
 
-Workflow `.github/workflows/cla.yml` runs CLA-assistant on
-`pull_request_target` and stores signatures on the `cla-signatures`
-branch. Contributors sign by commenting
+Workflow `.github/workflows/cla.yml` (`CLA Assistant`) runs
+CLA-assistant on `pull_request_target` and stores signatures on the
+`cla-signatures` branch. Contributors sign by commenting
 `I have read the CLA Document and I hereby sign the CLA` on the PR.
 Making **CLA Assistant** a required check is a branch-protection setting
 (`LEG-06` leftover). Until that box is ticked, maintainers also treat the

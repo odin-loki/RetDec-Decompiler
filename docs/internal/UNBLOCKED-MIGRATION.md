@@ -1,10 +1,15 @@
 # Unblocked migration (2026-08-23)
 
-User-scoped: unlock the Wave 5 hard blocks, move Clang/LLVM to latest
-upstream, and **port LLVM 8 typed-pointer facts into RetDec-owned
+**Historical.** Status as of v2.0.22 is in [README.md](README.md) and
+[LLVM_MIGRATION_SCOPE.md](LLVM_MIGRATION_SCOPE.md). The pin is already
+`llvm-project` **23.1.0**. Do not treat this file as a live bump plan.
+Further LLVM changes are out of scope unless explicitly tasked.
+
+User-scoped (then): unlock the Wave 5 hard blocks, move Clang/LLVM to
+latest upstream, and **port LLVM 8 typed-pointer facts into RetDec-owned
 metadata** so opaque pointers do not delete type recovery.
 
-This file is the working plan. Inventories are from in-repo search
+This file was the working plan. Inventories are from in-repo search
 (`src/`, `include/`, `tests/` — not `deps/llvm/`). Do not invent APIs.
 
 ## Non-negotiables

@@ -1,8 +1,8 @@
 # Fuzzing the untrusted-input parsers
 
-Everything a decompiler reads is hostile by assumption. `scripts/standalone_fuzz.sh`
-builds and runs libFuzzer harnesses for the parsers that read attacker-controlled
-bytes, using nothing but `clang++`.
+Version **2.0.22**. Everything a decompiler reads is hostile by assumption.
+`scripts/standalone_fuzz.sh` builds and runs libFuzzer harnesses for the
+parsers that read attacker-controlled bytes, using nothing but `clang++`.
 
 ```bash
 ./scripts/standalone_fuzz.sh --replay        # deterministic regression, ~1 min
@@ -17,7 +17,23 @@ matching `libclang-rt-<N>-dev` package, plus `zlib1g-dev` for the archive
 readers. The script says so if the runtime is missing rather than failing at
 link time.
 
+## CI (`.github/workflows/fuzz-pr.yml`)
+
+Do not describe this workflow as “libFuzzer on every PR”. The jobs are:
+
+| Job | Trigger | What it actually does |
+|-----|---------|------------------------|
+| `fuzz-option-smoke` | **pull_request only** | Confirms `RETDEC_FUZZ` and harness **`.cpp` files exist** (elf, pe, macho, wasm, dex, jvm, pyc, lua, apk, jar, unpacker, pdb, cli, unpacker_plugins). Does **not** compile them. |
+| `fuzz-standalone-replay` | push (`main`, `claude/**`) + PR | `./scripts/standalone_fuzz.sh --replay` — seeds and `tests/crash_corpus/<target>/` with `-runs=0`. This is the PR gate. |
+| `fuzz-standalone-discover` | **schedule / `workflow_dispatch` only** | Mutates (`FUZZ_TIME=300`). Not on push, not on PR. Uploads `tests/crash_corpus/` on failure. |
+| `fuzz-libfuzzer` | not a PR (push / schedule / dispatch) | Clang + `RETDEC_FUZZ=ON`, ~120 s per LLVM-linked target (`fuzz_elf`, `fuzz_pe`, `fuzz_macho`, unpacker, …). 360 min timeout. Seeds from fixtures and `tests/crash_corpus/fuzz_*`. |
+
+`.github/workflows/sanitizers.yml` is a separate ASan/UBSan **decompile** of
+compiled samples, not a replay of `tests/crash_corpus`.
+
 ## Targets
+
+Standalone `TARGETS` in `scripts/standalone_fuzz.sh` (dependency-free):
 
 | Target | Parser | Reads |
 |---|---|---|
@@ -31,26 +47,35 @@ link time.
 | `pdb` | `pdbparser` | Microsoft PDB |
 | `cil` | `cli_parser` | .NET CIL metadata |
 | `pelib` | `pelib` | PE headers and every data directory |
-| `lattice` | `fileformat/lattice` | The signature-lattice format detector — the first structured read of an untrusted file |
+| `lattice` | `fileformat/lattice` | Signature-lattice format detector |
+| `demangle` | `type_seed` | Mangled symbol text |
+| `loadersim` | `loader_sim` | PE/ELF section table, relocs, imports, TLS |
+| `unpack` | `mini_emu` + lattice | Lattice classify + MiniUnpacker emulate |
 
-ELF, Mach-O and the unpacker harnesses are **not** here: they link
-`retdec::fileformat`, which publicly links LLVM. Those stay on the
-`-DRETDEC_FUZZ=ON` path in `.github/workflows/fuzz-pr.yml`. `fuzz_pe.cpp` is on
-that path too — but PeLib itself is not, which is why `pelib` above drives
-`PeLib::PeFileT` directly. It is 9,791 lines that read attacker-controlled bytes
-and had neither a unit suite nor any fuzzing.
+ELF, Mach-O and the CMake unpacker harnesses are **not** in standalone replay:
+they link `retdec::fileformat`, which publicly links LLVM. Those stay on the
+`-DRETDEC_FUZZ=ON` path in `fuzz-libfuzzer`. `fuzz_pe.cpp` is on that path
+too — but PeLib itself is not, which is why `pelib` above drives
+`PeLib::PeFileT` directly.
 
 `lattice` is here for the mirror-image reason. `src/fileformat/lattice/` is the
 one translation unit under `src/fileformat/` that links no LLVM, so `fuzz_pe.cpp`
-on the RETDEC_FUZZ path cannot reach it and this driver can. It is the
-decompiler's first structured read of a file, before any loader is chosen.
+on the RETDEC_FUZZ path cannot reach it and this driver can.
+
+Committed reproducers live under `tests/crash_corpus/` as
+`apk/`, `cil/`, `dex/`, `jvm/`, `jar/`, `lattice/`, `lua/`, `pdb/`, `pelib/`,
+`pyc/`, `wasm/`, `demangle/`, `loadersim/`, plus `fuzz_elf/` and `fuzz_macho/`
+for the LLVM-linked job (see `tests/crash_corpus/README.md`). A target with no
+seeds and no reproducers is reported as ungated rather than printed green.
 
 ## The two modes, and why they are separate
 
 **`--replay`** runs every seed and every reproducer committed under
 `tests/crash_corpus/<target>/` with `-runs=0`. No mutation, so the result is the
-same on every machine and every run. That is what gates a pull request: it
-cannot be flaky, and it fails if a previously fixed crash comes back.
+same on every machine and every run. That is what `fuzz-standalone-replay`
+gates on a pull request: it cannot be flaky, and it fails if a previously
+fixed crash comes back. It does **not** replay `fuzz_elf/` / `fuzz_macho/`
+(those directories are for `fuzz-libfuzzer`).
 
 **Discovery** (the default) mutates. It may find something new, which means it
 may fail for a reason unrelated to the change under test — so it runs on a

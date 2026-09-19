@@ -21,7 +21,10 @@ Windows deploy copies the shared libraries next to the executable:
 the shared-plugin layout, not a statically linked Qt.
 
 Linux/macOS: the binary depends on distro or Qt-installer `.so` / `.dylib`
-files (`macdeployqt` when building a bundle).
+files (`macdeployqt` when building a bundle). On macOS, MAC-01
+(`scripts/ci/check_macos_bundle.py`) copies Qt frameworks into `RetDec.app`
+and rewrites rpaths so they stay inside the bundle; that is still dynamic
+linking, not a static Qt.
 
 ## Relink (LGPL §4)
 

@@ -1,5 +1,8 @@
 # E1 — real-binary detector tests
 
+**Status as of v2.0.22:** IR-shape fixtures shipped; there is still no
+public API that loads a compiled ELF and returns `ssa::SSAFunction`.
+
 Goal: 3–5 tests that exercise detectors on **compiled** gcc `-O0` shapes,
 without filename hints and without lowering thresholds.
 

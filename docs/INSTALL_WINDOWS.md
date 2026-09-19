@@ -45,7 +45,8 @@ From **Developer PowerShell for VS 2022**, after a successful native configure/b
 | Staged bundle (NSIS input) | `dist\windows-bundle\` |
 | Portable archive | `dist\retdec-<version>-windows-x64-portable.zip` |
 | Graphical installer | `dist\retdec-<version>-windows-x64-setup.exe` (if NSIS installed) |
-| Git-tracked copies (Git LFS) | `releases\windows\` |
+
+Binaries are **not** committed. `build-windows-installer.ps1` writes `dist\` only; there is no `releases\windows\` tree in git.
 
 ### Parameters (`build-windows-installer.ps1`)
 
@@ -56,7 +57,7 @@ From **Developer PowerShell for VS 2022**, after a successful native configure/b
 | `-OutDir` | `dist` | ZIP and setup.exe output |
 | `-BundleDir` | `dist\windows-bundle` | Staging layout for NSIS |
 | `-SkipBuild` | off | Skip `cmake --build` / `--install` |
-| `-Version` | from `CMakeLists.txt` | Package version (e.g. `2.0.21`) |
+| `-Version` | from `CMakeLists.txt` | Package version (e.g. `2.0.22`) |
 | `-QtRoot` | auto-detect | Qt kit root (e.g. `C:\Qt\6.11.0\msvc2022_64`) |
 
 The bundle includes:
@@ -73,7 +74,7 @@ The bundle includes:
 ### Option A — NSIS installer (recommended)
 
 ```powershell
-.\scripts\install-windows.ps1 -SetupExe dist\retdec-2.0.21-windows-x64-setup.exe
+.\scripts\install-windows.ps1 -SetupExe dist\retdec-2.0.22-windows-x64-setup.exe
 ```
 
 Or double-click `retdec-*-windows-x64-setup.exe`. The installer:
@@ -117,7 +118,7 @@ NSIS is **not** required for the portable ZIP. To produce `setup.exe`:
 Manual compile:
 
 ```powershell
-makensis /DVERSION=5.0 /DBUNDLE_DIR=..\..\dist\windows-bundle packaging\nsis\retdec.nsi
+makensis /DVERSION=2.0.22 /DBUNDLE_DIR=..\..\dist\windows-bundle packaging\nsis\retdec.nsi
 ```
 
 The NSIS script lives at `packaging\nsis\retdec.nsi`. An optional **“.exe file association”** section is included but commented out; uncomment `SEC_ASSOC` in the `.nsi` file to add “Open with RetDec GUI” for `.exe` files.
@@ -130,6 +131,18 @@ The NSIS script lives at `packaging\nsis\retdec.nsi`. An optional **“.exe file
 & "C:\Program Files\RetDec\bin\retdec-decompiler.exe" --help
 & "C:\Program Files\RetDec\bin\retdec-gui.exe" --version
 ```
+
+Smoke-test with the Release sample PE (MSVC fixture: `/ENTRY:main /NODEFAULTLIB` plus `msvc_fixture_printf.c` in `tests/decompiler/CMakeLists.txt`):
+
+```powershell
+curl.exe -fL -O https://github.com/odin-loki/RetDec-Decompiler/releases/download/v2.0.22/fib_smoke.exe
+retdec-decompiler fib_smoke.exe -o fib.c
+```
+
+Put `bin` on PATH first (NSIS does this for a system install; portable zip needs `-AddToPath` or a manual PATH entry). Keyless Sigstore bundles
+`retdec-2.0.22-windows-x64-setup.exe.sigstore.json`,
+`retdec-2.0.22-windows-x64-portable.zip.sigstore.json`, and
+`fib_smoke.exe.sigstore.json` ship on the Release. **Authenticode is not applied.**
 
 Or from the repo after staging:
 
@@ -151,7 +164,7 @@ Or from the repo after staging:
 
 | File | Purpose |
 |------|---------|
-| `scripts\build-windows-installer.ps1` | Build, stage, zip, NSIS, sync `releases\windows\` |
+| `scripts\build-windows-installer.ps1` | Build, stage, zip, NSIS under `dist\` |
 | `scripts\build-all.ps1` | Configure + build + install + package (one command) |
 | `scripts\install-windows.ps1` | User-facing install helper |
 | `scripts\windows_cmake_install.ps1` | `cmake --install` only |
@@ -159,17 +172,20 @@ Or from the repo after staging:
 | `scripts\bundle-windows.sh` | Linux/WSL cross-compile bundle (same NSIS layout) |
 | `packaging\nsis\retdec.nsi` | NSIS installer definition |
 | [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) | Build from source (MSVC + CUDA + Qt6) |
-| [../releases/README.md](../releases/README.md) | Git LFS artifacts + GitHub Releases |
+| [../releases/README.md](../releases/README.md) | Git-tracked install scripts + GitHub Release binaries |
 | [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md) | CLI-only cross-compile from WSL |
 
 ---
 
 ## 6. CI and GitHub Releases
 
-- **Integration tests:** `.github/workflows/ctest-windows.yml` (fetch-large-files, Qt6, MSVC, CPU-only).
-- **Release publishing:** `.github/workflows/release-installers.yml`
-  - Tag push: `git tag v5.0 && git push origin v5.0`
-  - Reuses prebuilt files from `releases/windows/` when present (LFS checkout required).
-  - Attachments appear on [GitHub Releases](https://github.com/odin-loki/RetDec-Decompiler/releases).
+- **Integration tests:** `.github/workflows/ctest-windows.yml` is **schedule + `workflow_dispatch` only** (not every push). Fetch-large-files, Qt6, MSVC, CPU-only (`RETDEC_ENABLE_CUDA_ACCEL=OFF`).
+- **Release publishing:** `.github/workflows/release-installers.yml` job **`windows-installer`** on `windows-latest`:
+  - NSIS `setup.exe` + portable zip.
+  - `RETDEC_TESTS=OFF`, `CMAKE_BUILD_PARALLEL_LEVEL=1`.
+  - Installs the EnVar NSIS plugin; signs artefacts with sigstore cosign (no Authenticode).
+  - Resolves version locally (tag / dispatch `version` input / `CMakeLists.txt`) and does **not** `needs: release`, so a queued Ubuntu runner cannot block the Windows zip.
+  - `skip_build` defaults to **false**. Do not treat uploading a local `dist/` as the release path.
+  - Tag: `git tag v2.0.22 && git push origin v2.0.22`.
 
-After each local packaging run, commit updated `releases/` so `main` and releases stay in sync.
+Attachments appear on [GitHub Releases](https://github.com/odin-loki/RetDec-Decompiler/releases).

@@ -1,6 +1,6 @@
 # Performance guide
 
-Post-ship performance features (MASTER-UPGRADE-PLAN Part 11, step 27).
+Version **2.0.22**. Post-ship performance features (MASTER-UPGRADE-PLAN Part 11, step 27).
 
 ## Environment flags
 
@@ -16,7 +16,7 @@ Post-ship performance features (MASTER-UPGRADE-PLAN Part 11, step 27).
 | `RETDEC_NEURAL_REFINE` | off | Offline llama.cpp refine (needs GGUF + `RETDEC_ENABLE_LLAMACPP`) |
 | `RETDEC_EMIT_BUILDABLE` | on | Write `.h` / `_stubs.c` / `.buildable.c` next to output C. `.buildable.c` is one linkable TU (libc headers, cloned prototypes, orphan break rewrite, weak stubs, `main` if missing). Default `.c` unchanged. CLI: `--buildable` (default) / `--no-buildable`. |
 | `RETDEC_SKIP_SEMANTIC_RECOVERY` | off | A/B only: skip post-pipeline detectors (default F5 still runs them) |
-| `RETDEC_NEURAL_REQUIRE_COMPILE` | off | Accept neural refine only if `cc -fsyntax-only` passes |
+| `RETDEC_NEURAL_REQUIRE_COMPILE` | off | Accept neural refine only if `cc -fsyntax-only` passes. C is not executed. `RETDEC_NEURAL_DIFF_GATE` is **not implemented** (`C-NEURAL-DIFF` withdrawn): if set, the gate warns and skips. |
 | `RETDEC_NEURAL_THINKING` | off | Qwen `/think` (slower; off = `/no_think`) |
 | `RETDEC_NEURAL_MAX_TOKENS` | `512` | Cap generated tokens per tier |
 | `RETDEC_NEURAL_THREADS` | llama default | llama.cpp generation threads |
@@ -60,7 +60,9 @@ Getting the concurrency back means keying and clearing the providers per
 
 ## Profiling
 
-- **CI:** `perf-nightly.yml` runs weekly (Sunday 03:00 UTC).
+- **CI:** `perf-nightly.yml` runs weekly (Sunday 03:00 UTC). Not a substitute
+  for `ctest-macos`, `standalone-check`, `doc-integrity`, `verify-esbmc`, or
+  `fuzz-pr`.
 - **Local flame graph (Linux):** `bash scripts/flamegraph_profile.sh <binary>`
 - **Stage JSON:** `RETDEC_PROFILE_JSON=auto ./retdec-decompiler in.bin -o out.c`
 - **Pass split:** `RETDEC_BIN2LLVMIR_DIAG=1 ./retdec-decompiler in.bin -o out.c`
@@ -83,10 +85,14 @@ fast default-quality path. Neural refine is a separate cost axis.
 ## CUDA
 
 CUDA acceleration is **optional** and **off by default** in CI and full presets (`RETDEC_ENABLE_CUDA_ACCEL=OFF`; `C-CUDA-PIPE` withdrawn).
-Post-LLVM analysis detectors (container, sort, algo) run on CPU; see
+`src/cuda_accel` / `src/opencl` are unintegrated. Post-LLVM analysis detectors (container, sort, algo) run on CPU; see
 [GUI_PHASE_D.md](internal/GUI_PHASE_D.md) for the product decision.
 
 Neural inference may use llama.cpp CUDA when enabled at build time.
+
+Do not treat Docker Hub `imortek/retdec` or a default AppImage as the
+performance story (`C-DOCKER-HUB` unpublished; `C-APPIMAGE` opt-in). RISC-V
+and a dedicated C++ emitter are unimplemented (`C-ARCH-UNIMP`; `C-CXX-EMIT` withdrawn).
 
 ## Roadmap
 

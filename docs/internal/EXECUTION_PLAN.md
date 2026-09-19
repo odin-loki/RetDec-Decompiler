@@ -1,10 +1,15 @@
 # Execution plan — remaining audit + benchmark + compilable neural
 
+**Historical.** Status as of v2.0.22 is in [README.md](README.md) and
+[MAINTAINER_SCOPE.md](MAINTAINER_SCOPE.md). Waves 1–3 landed; Wave 5's
+LLVM pin is already 23.1.0. Do not treat open Wave 4/5 checkboxes as
+current work.
+
 **Date:** 2026-08-22  
 **Head:** after `6196d738` (Weeks 1–2 blocking set is done)  
 **Hard stops:** no `deps/llvm/` bump; no test deletion; default F5 unchanged unless opt-in.
 
-This is the working order. Later waves depend on earlier measurement.
+This was the working order in August 2026. Later waves depended on earlier measurement.
 
 ---
 

@@ -76,9 +76,11 @@ needs `moc`, the resource bundle needs `rcc`, and a `QApplication` has to exist
 before the first widget — so `check_gui` in the script does those three things
 itself and links the result against Qt plus `retdec-neural`, which is all the
 suite actually needs. `RETDEC_GUI_HEADLESS=1` and `QT_QPA_PLATFORM=offscreen`
-are what the project's own ctest run sets; the first is load-bearing, because
+are what `ctest-linux.yml` and `ctest-windows.yml` set; the first is load-bearing, because
 without it the panels defer a rehighlight into an offscreen widget that has no
-viewport and the run stalls.
+viewport and the run stalls. `ctest-macos.yml` uses `QT_QPA_PLATFORM=cocoa`
+instead (the relocatable bundle does not ship the offscreen plugin). This
+standalone script runs on Linux CI and keeps offscreen.
 
 `RETDEC_GUI_HAS_NEURAL` is defined, because a default build defines it —
 compiling without it would check the `#else` branches, which is not what ships.
@@ -215,7 +217,8 @@ guards:
   `llvm-dev`, and FF-01 has run the whole directory since. 83 of the suite's 129
   cases had been evaluated by nothing.
 * `.github/workflows/standalone-check.yml` runs the check under both `g++` and
-  `clang++`, plus an ASan/UBSan job, on every pull request. Two compilers is not
+  `clang++`, plus an ASan/UBSan job. Triggers: push to `main` and `claude/**`,
+  every pull request, and `workflow_dispatch`. Two compilers is not
   redundancy: Clang rejects code GCC quietly miscompiles, and the first run of
   this job found exactly that.
 
@@ -279,6 +282,8 @@ see [docs/FUZZING.md](FUZZING.md).
 
 This is a fast gate, not a product gate. It says nothing about lifting,
 LLVM-side optimisation, the C backend, or end-to-end decompilation. Those still
-need `ctest-linux` / `ctest-windows` and the benchmark jobs. What it does say —
-in a minute, on any machine — is whether this fork's own analysis layer still
-compiles and still passes its tests.
+need `ctest-linux` / `ctest-macos` / `ctest-windows` and the benchmark jobs.
+(`ctest-linux` and `ctest-macos` run on push/PR to `main`; `ctest-windows` is
+schedule + `workflow_dispatch` only.) What it does say — in a minute, on any
+machine — is whether this fork's own analysis layer still compiles and still
+passes its tests.

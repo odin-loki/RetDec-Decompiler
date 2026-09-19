@@ -1,5 +1,7 @@
 # GUI Phase D decisions (closed)
 
+**Status as of v2.0.22:** GUI v3 shipped. These decisions still hold.
+
 ## CUDA in hot analysis paths
 
 **Decision:** CPU-only default for analysis and CI. CUDA remains optional for

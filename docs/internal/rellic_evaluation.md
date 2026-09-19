@@ -1,5 +1,8 @@
 # rellic evaluation (step 28)
 
+**Status as of v2.0.22:** optional research spike. Not adopted. LLVM pin
+is `llvm-project` 23.1.0 (not the Avast LLVM 8 fork this checklist named).
+
 **Library:** [rellic](https://github.com/lifting-bits/rellic) (Apache-2.0, Trail of Bits)  
 **Goal:** Evaluate LLVM IR → C as an alternative to `llvmir2hll`.
 

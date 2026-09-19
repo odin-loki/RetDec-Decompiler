@@ -33,7 +33,28 @@ files remain Avast's MIT-licensed work.
 
 ## How to classify a file
 
-Look at the file header, not the directory name alone.
+Look at the file header, not the directory name alone. Machine-generated
+counts are produced by `scripts/ci/generate_provenance.py` (`LEG-03`) into
+[PROVENANCE-files.md](PROVENANCE-files.md). That script scans `src/`,
+`include/`, and `tests/` for C/C++ suffixes and assigns **exactly four**
+classes:
+
+| Class | Rule in `generate_provenance.py` |
+|-------|----------------------------------|
+| `pelib-porst` | Header contains `Sebastian Porst` |
+| `avast-mit` | Header contains `2017 Avast Software` |
+| `rewrite-tell-leftover` | Header contains `@copyright (c) 2017\|2018\|2019\|2020 Odin Loch` and is not Avast/Porst |
+| `imortek-or-undated` | Everything else (Imortek-new, undated, or missing the Avast line) |
+
+`Odin-only files in known-upstream modules` is a **second** cut: class
+`imortek-or-undated` whose path module is in the generator's
+`UPSTREAM_MODULES` set. It is not a fifth class. The generator never
+classifies by directory name alone, never scans `deps/` or `build/`, and
+does not emit per-file origin/LOC evidence beyond the first 80 Odin-in-upstream
+paths. Do not hand-edit `PROVENANCE-files.md`.
+
+Human-readable header meanings (the generator uses substrings, not this
+table):
 
 | Header | Meaning |
 |---|---|
@@ -154,12 +175,21 @@ Matching `include/retdec/<module>/` and `tests/<module>/` trees follow the same 
 
 This is a module-level map, not a 5,000-file inventory. Regenerated
 file-level counts: [PROVENANCE-files.md](PROVENANCE-files.md)
-(`scripts/ci/generate_provenance.py`).
+(`scripts/ci/generate_provenance.py`). After the 2.0.22 doc pass that
+script reported **4102** scanned files, `avast-mit` **1941**,
+`pelib-porst` **25**, `imortek-or-undated` **2136**,
+`rewrite-tell-leftover` **0**, Odin-only in upstream modules **178**.
+Those counts move when files are added; re-run the generator rather than
+editing the markdown.
 
 ## CI
 
+- `scripts/ci/generate_provenance.py` — four header classes into
+  `docs/PROVENANCE-files.md`; fails if `rewrite-tell-leftover` is non-zero.
+  Wired in `.github/workflows/doc-integrity.yml` (LEG-03).
 - `scripts/ci/restore_avast_headers.py` — restore Avast-era rewrite years (`--year 2017|2018|2019|2020`). L1 did 2017; Phase 1 did 2018+2019+2020; leftover rewrite tells 0.
 - `scripts/ci/check_avast_mit_notice.py` — fails if `LICENSE-MIT` is missing or if `@copyright (c) 2017|2018|2019|2020 Odin Loch` still exists under `src/`, `include/`, `tests/`, or `docs/doxygen/`. Wired in `.github/workflows/doc-integrity.yml`.
+- `scripts/ci/check_version_drift.py` — CMake / `releases/VERSION` / CHANGELOG / workflow tag literals (`REL-04`).
 
 ## Related files
 

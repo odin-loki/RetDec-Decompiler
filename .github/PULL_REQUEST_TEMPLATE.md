@@ -1,6 +1,6 @@
 ## Summary
 
-<!-- What does this PR change and why? -->
+<!-- What does this PR change and why? RetDec Imortek is a specification-extraction decompiler (v2.0.22): buildable C default, input-keyed outputs, Qt 6 GUI, optional llama.cpp. -->
 
 ## Type of change
 
@@ -12,11 +12,23 @@
 
 ## Testing
 
-<!-- How did you verify? e.g. ctest --test-dir build/linux --output-on-failure -->
+Build with a current CMake preset, not an ad-hoc cache:
+
+- Linux / WSL / **macOS**: `cmake --preset full-linux-debug` then `cmake --build --preset full-linux-debug` (`build/linux`)
+- Windows MSVC: `full-windows-debug` (`build/windows`)
+- Core-only: `core-debug` / `core-debug-msvc`
+
+```bash
+# example
+ctest --preset full-linux-debug
+# or: ctest --test-dir build/linux --output-on-failure
+```
 
 - [ ] `bash scripts/check_format.sh`
-- [ ] Tests pass locally
-- [ ] GUI tested (if applicable)
+- [ ] Tests pass locally (preset above)
+- [ ] GUI tested if applicable (`retdec-gui`, macOS `RetDec.app`, or `--headless-decompile`)
+
+CUDA/OpenCL accel is parked (`RETDEC_ENABLE_CUDA_ACCEL=OFF`). Do not add a CUDA-on job unless the PR is explicitly about that research tree. Do not disable, SKIP, or loosen tests.
 
 ## Documentation
 

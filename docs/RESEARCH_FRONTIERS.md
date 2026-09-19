@@ -1,13 +1,26 @@
 # RetDec — Research Frontiers (Tier 7)
 
-Long-horizon research and speculative engineering. **Not scheduled for product sprints.**
-For shippable work see [ENGINEERING_ROADMAP.md](internal/ENGINEERING_ROADMAP.md) (Tiers 1–5).
+Long-horizon research and speculative engineering. **Not scheduled for product
+sprints. Not shipped at v2.0.22.**
+
+For shippable work see [ENGINEERING_ROADMAP.md](internal/ENGINEERING_ROADMAP.md)
+(Tiers 1–5). For what the product actually is — specification extraction,
+buildable C, input-keyed outputs, Qt 6 GUI, optional llama.cpp, Linux / macOS /
+Windows installers — see [README.md](../README.md) and [CLAIMS.md](CLAIMS.md).
+
+Roadmap overlap (STL detectors vs reconstruction quality, architecture gaps):
+[future_directions.md](future_directions.md).
 
 ---
 
 ## 1. Whole-program concurrency model
 
-**Goal:** Infer lock ownership, shared-state protection, and data-race hints — not just individual `pthread_mutex_lock` calls.
+**Goal:** Infer lock ownership, shared-state protection, and data-race hints —
+not just individual `pthread_mutex_lock` calls.
+
+v2.0.22 already ships **primitive** concurrency detection (`src/concurrency_detect`:
+mutex, thread, atomic). Reconstructing the *model* (which thread owns which
+lock) is this research item.
 
 | Approach | Notes |
 |----------|-------|
@@ -34,6 +47,8 @@ Compiled `co_await` lowers to a **state machine** with suspend/resume points and
 
 **Risk:** Compiler-specific (MSVC vs Clang) frame layouts; high false-positive rate without ABI docs.
 
+**Not shipped.**
+
 ---
 
 ## 3. Cross-language FFI reconstruction
@@ -47,7 +62,7 @@ Modern binaries mix languages via stable ABIs:
 | P/Invoke | `DllImport` metadata in CIL sidecar | C# + C split |
 | Python C API | `PyObject*`, `PyArg_ParseTuple` | `.py` + `_native.c` |
 
-**Requires:** Per-ABI marshalling tables and format-specific loaders (partially exists for managed paths).
+**Requires:** Per-ABI marshalling tables and format-specific loaders (partially exists for managed paths). Dual-language output is **not** a v2.0.22 product feature. Native output stays **C**.
 
 ---
 
@@ -55,9 +70,14 @@ Modern binaries mix languages via stable ABIs:
 
 Train models on **(source, compiled, decompiled)** triples at multiple `-O` levels:
 
-1. **Naming model** — function/variable names from IR + context (complements opt-in llama.cpp refine (`RETDEC_NEURAL_REFINE`); `C-QWEN3-GPU` withdrawn).
+1. **Naming model** — function/variable names from IR + context.
 2. **Structure model** — predict `if`/`while`/`for` from CFG + memory accesses (seq2seq on graph).
 3. **Diff model** — patch-aware naming (“version bump changed bounds check here”).
+
+**Shipped, separate, opt-in:** llama.cpp refine (`RETDEC_ENABLE_LLAMACPP`,
+`RETDEC_NEURAL_REFINE`). Complements item 1; it is not this research programme.
+There is no in-tree `src/qwen3` (`C-QWEN3-GPU` withdrawn). The neural
+**differential** gate is not implemented.
 
 **Data:** LLVM `-g` corpora, Compiler Explorer snapshots, self-hosted RetDec round-trips.
 
@@ -74,9 +94,13 @@ Train models on **(source, compiled, decompiled)** triples at multiple `-O` leve
 | Fast filter | TLSH / ssdeep on function bytes |
 | Structural | CFG edit distance, call-graph neighborhood hash |
 | Semantic | Embedding of lifted IR snippets (Graph Neural Net) |
-| GPU batch | Extend `retdec-gpu-scanner` to batched MinHash |
+| GPU batch | Research extension of `retdec-gpu-scanner` (`src/utils/gpu_scanner.cu`) to batched MinHash |
 
-**Integration:** Index sidecar next to `.config.json`; GUI “Find similar” on selected function.
+`retdec-gpu-scanner` is **built and unit-tested only**. Nothing in `src/retdec`
+calls it. `RETDEC_ENABLE_CUDA` defaults OFF. Do not advertise GPU scanning as
+shipped. See [CUDA_CAPABILITIES.md](CUDA_CAPABILITIES.md).
+
+**Integration (research):** Index sidecar next to `.config.json`; GUI “Find similar” on selected function.
 
 ---
 
@@ -89,6 +113,7 @@ Decompile **RetDec binaries with RetDec**, track:
 - Performance regressions on real 10 MB+ `retdec-decompiler` PE
 
 Publish a living **dogfood scorecard** in CI (informational, non-gating).
+**Not shipped** as a CI job at v2.0.22.
 
 ---
 
@@ -100,6 +125,8 @@ Malware RE should not run `fileinfo` / unpackers on the host without isolation.
 - Windows Sandbox / Firejail wrapper scripts
 - WASM sandbox for parsers only (not full decompile — too heavy)
 - Remote worker queue (commercial tier)
+
+**Not shipped.**
 
 ---
 
@@ -113,6 +140,8 @@ Intel PT / ARM CoreSight **executed-edge** annotations overlaid on CFG:
 
 **Value:** Analysts see what actually ran, not all static paths.
 
+**Not shipped.**
+
 ---
 
 ## 9. Formal verification bridge
@@ -123,6 +152,8 @@ Export lifted logic to **Why3**, **Frama-C**, or **Boogie** for niche certificat
 
 **Long shot:** If STL recovery emits `std::vector<int>`, map to verified spec library.
 
+**Not shipped.** Native output remains buildable C; that is not a proof.
+
 ---
 
 ## 10. Async / event-loop patterns
@@ -131,16 +162,18 @@ Beyond coroutines: Node-style callbacks, `.NET async/await` state machines, Qt s
 
 **Detection:** Repeated indirect calls through vtables + timer APIs + queue push/pop pairs.
 
+**Not shipped.**
+
 ---
 
 ## Priority for research investment
 
 | Rank | Topic | Why |
 |------|-------|-----|
-| 1 | Learned naming (4) | Low infra; high analyst satisfaction |
+| 1 | Learned naming (4) | Complements opt-in llama.cpp; high analyst satisfaction |
 | 2 | Binary similarity (5) | Malware + patch diff workflows |
 | 3 | FFI reconstruction (3) | Growing mixed-language firmware |
-| 4 | Concurrency model (1) | Hard but differentiating |
+| 4 | Concurrency model (1) | Hard but differentiating; primitives already ship |
 | 5 | Coroutines (2) | Niche until C++20 corpus grows |
 | 6 | Formal bridge (9) | Commercial certification door |
 | 7 | HW trace (8) | Needs hardware lab |
@@ -152,13 +185,14 @@ Beyond coroutines: Node-style callbacks, `.NET async/await` state machines, Qt s
 
 ## GPU acceleration (parked)
 
-`src/cuda_accel/` and `src/opencl/` are **parked research** (~9.5k LOC).
+`src/cuda_accel/` and `src/opencl/` are **parked research**.
 They are not on the product sprint. Default CMake is OFF; `src/retdec`
 does not link them. Public docs: [CUDA_CAPABILITIES.md](CUDA_CAPABILITIES.md).
 
 Phase 1 `DEAD-03` still wants the trees moved off `main` onto a research
 branch. Until that deletion, treat the directories as archival source, not
-as a capability.
+as a capability. v2.0.22 installers (Linux, macOS, Windows) do **not**
+require NVIDIA or OpenCL.
 
 ---
 
@@ -167,3 +201,4 @@ as a capability.
 - [future_directions.md](future_directions.md) — STL recovery, targets, performance
 - [pipeline_stage_map.md](pipeline_stage_map.md) — stage inventory
 - [ENGINEERING_ROADMAP.md](internal/ENGINEERING_ROADMAP.md) — shippable Tiers 1–5
+- [CLAIMS.md](CLAIMS.md) — asserted / withdrawn / demonstrated claims

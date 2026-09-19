@@ -2,11 +2,13 @@
 
 **Read first:** [MAINTAINER_SCOPE.md](MAINTAINER_SCOPE.md).
 
-## Shippable product
+**v2.0.22** — automation steps 1–26 complete, GitHub Release ships Linux /
+Windows / macOS, default-`.c` recompile is **216/216**. These are optional
+follow-ups, not a second master plan.
 
-v2.0.21 — automation steps 1–26 complete, plus stock RetDec 5.0 compare. Stock RetDec 5.0 compare is in
-`results/stock-retdec-docker-full.json` and [BENCHMARKS_TABLE.md](../BENCHMARKS_TABLE.md).
-Historical dumps: [data/README.md](../../data/README.md).
+Stock RetDec 5.0 compare is in `results/stock-retdec-docker-full.json` and
+[BENCHMARKS_TABLE.md](../BENCHMARKS_TABLE.md). Historical dumps:
+[data/README.md](../../data/README.md).
 
 ```bash
 bash scripts/automation_status.sh
@@ -28,17 +30,26 @@ gh auth login
 .\scripts\dispatch_algorithm_recovery_nightly.ps1 -FullCorpus
 ```
 
-## Confirmed defects behind the LLVM build
+## Remaining real findings
 
-[UNFIXED_AUDIT_FINDINGS.md](UNFIXED_AUDIT_FINDINGS.md) records audit findings
-that could not be built or tested without the LLVM pin, so were written down
-rather than attempted. The first entry is the single cause of the 0/216
-default-`.c` recompile rate: `NoInitVarDefOptimizer` deletes every
-initializer-less local declaration for C output, and the call-site comment
-describes a use check the pass does not perform.
+The 0/216 default-`.c` rate is **closed** (216/216 at run 276).
+[UNFIXED_AUDIT_FINDINGS.md](UNFIXED_AUDIT_FINDINGS.md) is a running log; the
+items that still stand are listed at the top of that file. Among them:
+
+- Native arm64 Mach-O still decompiles to an empty file (`ctest-macos` prints it)
+- `types_propagator.cpp` is in no `CMakeLists.txt`
+- libc++ deprecates `char_traits` for `WideCharType` (`uint32_t`)
+- `DerefOpExpr` inherits `UnaryOpExpr::getType()` (pointer, not pointee)
+- `ctest-linux` / `ctest-windows` still build a named subset of suites
+- Pipeline stages marked **hook** / **partial** in
+  [PIPELINE_REDESIGN_TODO.md](PIPELINE_REDESIGN_TODO.md)
+
+Do not bump LLVM unless an explicitly scoped task says so.
 
 ## Not planned
 
 - OSS-Fuzz 23k corpus
 - Four-toolchain `retdec-support` regen
 - Dual Windows/WSL Git
+- Further LLVM pin change
+- Developer ID / notarised macOS packages

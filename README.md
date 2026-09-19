@@ -1,13 +1,20 @@
 # RetDec Imortek — Specification Extraction Decompiler
 
+**Version 2.0.22.** Repo:
+[odin-loki/RetDec-Decompiler](https://github.com/odin-loki/RetDec-Decompiler).
+Release tag
+[v2.0.22](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.0.22).
+
 **A specification-extraction tool that contains a decompiler** — algorithm
 recovery, semantic export, and offline neural refinement are the product;
 recovered C pseudocode is a supporting artefact, not the headline.
 
 Built on upstream [RetDec](https://github.com/avast/retdec) v5.0 (dormant since
 2022), this fork adds semantic library recovery, a Qt 6 GUI, optional offline
-neural refinement (llama.cpp via `RETDEC_ENABLE_LLAMACPP`), and structured
-algorithm/concurrency/serialisation detection no stock decompiler ships.
+neural refinement (llama.cpp via `RETDEC_ENABLE_LLAMACPP`), packaged Linux /
+macOS / Windows installs, and structured algorithm/concurrency/serialisation
+detection no stock decompiler ships. Dual-licensed AGPL-3.0+ / commercial
+(Imortek).
 
 ---
 
@@ -121,18 +128,22 @@ Output is **input-keyed**, not a free-choice list of eleven languages.
 F#, VB.NET, Kotlin, and CUDA-C emitters exist in-tree and are **not** wired as
 general native-pipeline targets. Do not treat them as shipped output choices.
 
-### Semantic Recovery
+### Semantic recovery
 
-- **STL containers**: `std::vector`, `std::map`, `std::unordered_map`,
-  `std::list`, `std::string`, `std::shared_ptr`
-- **Algorithms**: sorting (introsort, merge sort, heapsort, radix),
-  binary search, BFS/DFS, graph algorithms
-- **Cryptography**: AES, SHA-{1,256,512}, ChaCha20, RSA, EC primitives
-- **Concurrency**: `std::thread`, pthreads, Win32 threads, OpenMP, TBB,
-  atomics, spinlocks
-- **CUDA host**: `cudaLaunchKernel`, memory ops, streams, events, NVCC stubs
-- **Serialisation**: Protobuf, FlatBuffers, MessagePack, JSON, XML
-- **C++ runtime**: vtables, RTTI, constructors/destructors, exceptions
+Post-pipeline detectors annotate the config sidecar and `// [RetDec]`
+comments. They do **not** rewrite the C as `std::vector` / `std::sort`.
+Name-blind algorithm F1 on the 216-binary corpus is **0.056**. Detail:
+[docs/SEMANTIC_OUTPUT.md](docs/SEMANTIC_OUTPUT.md).
+
+What `decompile()` actually runs:
+
+- **Containers** (`src/container_detect/`): vector/list/map/string-like layouts
+- **Algorithms** (`src/algo_recover/`, `src/sort_detect/`): STL-like loops, sorts
+- **Crypto / serialisation / concurrency / patterns**: matching `*_detect` libs
+- **C++ runtime**: vtables, RTTI, EH where metadata exists (bin2llvmir)
+
+Not in `decompile()`: `CudaHostRecovery` (tests only), `src/idiom_reconstruct/`,
+`src/module_cluster/`, `src/cxx_backend/`. OpenCL host recovery logs a summary.
 
 ### Offline neural refinement
 
@@ -155,6 +166,7 @@ Harness: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 Decompilation runs the same `retdec-decompiler` subprocess as the CLI. **Cache
 reuse** on re-open. The former “~24% faster Fast decompile” figure is
 **withdrawn**. Post-decompile loads `.c`, `.config.json`, `.dsm`, and `.ll`.
+macOS Release packages ship **`RetDec.app`** (ad-hoc signed, not notarised).
 
 Shipped panels (constructed in `createPanels()`):
 
@@ -243,8 +255,8 @@ Qt6, NSIS, Perl, Python, git-lfs, and other common build prerequisites.
 
 | Dependency | Version | Required for |
 |------------|---------|-------------|
-| CMake | **3.26+** | Required by [CMakePresets.json](CMakePresets.json); all targets |
-| GCC or Clang | GCC 11+ / Clang 14+ | Linux / WSL build |
+| CMake | **3.13+** to configure (`CMakeLists.txt`); **3.26+** for [CMakePresets.json](CMakePresets.json) | All targets |
+| GCC or Clang | GCC 11+ / Clang 14+ | Linux / WSL / macOS build |
 | MinGW-w64 | `g++-mingw-w64-x86-64` | Windows cross-compile |
 | Qt 6 | 6.4+ (Widgets, Core, Gui, Test) | **Required** for `full-linux-*` / `full-windows-release` / `full-windows-debug` presets (`retdec-gui`) |
 | Python 3 | 3.4+ | LLVM TableGen scripts |
@@ -252,10 +264,15 @@ Qt6, NSIS, Perl, Python, git-lfs, and other common build prerequisites.
 | CUDA Toolkit | 11.8+ | **Optional / opt-in** (`RETDEC_ENABLE_CUDA_ACCEL` defaults **OFF**, including full presets). Experimental `cuda_accel` layer is unintegrated — not required to evaluate or build. |
 | Ninja | any | Recommended generator |
 
-### Linux / WSL build
+### Linux / WSL / macOS build
 
-The normal development build targets the **Linux ELF** toolchain. CMake presets
+The normal development build targets the **Linux ELF** toolchain. On Darwin the
+same Unix presets apply (`CMakePresets.json` `_pathUnix`). CMake presets
 put the build tree under **`build/linux/`** or **`build/windows/`** (from `CMakePresets.json` `base`, by host OS).
+`ctest-macos` configures `full-linux-release` on `macos-latest` (**arm64**).
+A shippable **`RetDec.app`** is produced by `scripts/build-macos-installer.sh`
+and published as `retdec-2.0.22-macos-arm64.tar.gz` (ad-hoc signed, not
+notarised).
 The **`full-linux-*` presets require Qt 6** (same idea as the native Windows full build). CUDA acceleration is **opt-in** (`RETDEC_ENABLE_CUDA_ACCEL=OFF` by default). Install Qt dev packages first, for example on Ubuntu:
 
 ```bash
@@ -321,8 +338,9 @@ unintegrated and is not required to evaluate the product.
 The `dist\windows\` folder contains the complete deployment:
 - `retdec-decompiler.exe`, `retdec-gui.exe`, `retdec-unpacker.exe`
 - Qt6 DLLs (deployed by `windeployqt`)
-- CUDA runtime DLLs (`cudart64_*.dll`)
 - MSVC runtime DLLs (`msvcp140.dll`, `vcruntime140.dll`)
+- CUDA runtime DLLs (`cudart64_*.dll`) **only** if you configured
+  `-DRETDEC_ENABLE_CUDA_ACCEL=ON` (default **OFF**, unintegrated)
 
 > If Qt6 is not in a standard location, pass its path explicitly:
 > ```powershell
@@ -406,15 +424,26 @@ See [docs/STANDALONE_CHECK.md](docs/STANDALONE_CHECK.md),
 
 ## Quick Start
 
-Prebuilt Linux x86_64 tarball, AppImage, Windows NSIS/zip, and `fib_smoke` / `fib_smoke.exe` samples: [QUICKSTART.md](QUICKSTART.md).
-`docker pull imortek/retdec` is not published.
+Prebuilt **Linux** x86_64 tarball, **macOS** arm64 tarball (`RetDec.app`),
+**Windows** NSIS installer and portable zip (intended names; a given CI run
+may still be building), keyless Sigstore bundles, and `fib_smoke` /
+`fib_smoke.exe`: [QUICKSTART.md](QUICKSTART.md). Linux AppImage is **opt-in**
+in `release-installers.yml` (`APPIMAGE` defaults off) and is often absent.
+`docker pull imortek/retdec` is not published. GHCR
+`ghcr.io/odin-loki/retdec:v2.0.22` may still return 401 until the package is
+public.
 
-### GUI (Linux/WSL)
+Do not install Avast's archived RetDec 5.0 binaries and expect this fork's
+CLI flags, GUI, or semantic export.
+
+### GUI (Linux / WSL / macOS)
 
 ```bash
 # Launch the GUI (requires WSLg or X11 forwarding)
 bash scripts/launch_gui.sh
 ```
+
+On a macOS Release tree: `open RetDec.app`.
 
 ### Command-line decompiler
 
@@ -457,7 +486,7 @@ retdec-decompiler binary.elf -o output.c
 
 | Document | Description |
 |----------|-------------|
-| [QUICKSTART.md](QUICKSTART.md) | Ten-minute decompile (Docker when published, or a local binary) |
+| [QUICKSTART.md](QUICKSTART.md) | Ten-minute decompile from the v2.0.22 GitHub Release (Docker when published) |
 | [docs/README.md](docs/README.md) | **Documentation hub** — reading order, CI, Docker, diagnostics env vars, WSL/Windows quick refs |
 | [docs/BUILD_REFERENCE.md](docs/BUILD_REFERENCE.md) | **Canonical build guide** — presets, `build/linux` vs `build/windows`, superbuild, install, testing, troubleshooting |
 | [docs/user_manual.md](docs/user_manual.md) | GUI walkthrough, panels, settings, export, keyboard shortcuts |
@@ -466,10 +495,21 @@ retdec-decompiler binary.elf -o output.c
 | [docs/algorithm_reference.md](docs/algorithm_reference.md) | Mathematical descriptions of key algorithms |
 | [docs/pipeline_stage_map.md](docs/pipeline_stage_map.md) | Stage names ↔ source directories |
 | [docs/MINGW_CROSS_DEEP_DIVE.md](docs/MINGW_CROSS_DEEP_DIVE.md) | Linux/WSL → Windows PE (MinGW), `llvm-tblgen`, OpenSSL, staging |
-| [docs/WINDOWS_NATIVE_BUILD.md](docs/WINDOWS_NATIVE_BUILD.md) | Native Windows: MSVC + CUDA + Qt6, deployment, troubleshooting |
-| [docs/STANDALONE_CHECK.md](docs/STANDALONE_CHECK.md) | Building and testing the LLVM-free layer with just a compiler |
-| [docs/FUZZING.md](docs/FUZZING.md) | Fuzzing the untrusted-input parsers; the crash corpus and how to add a harness |
-| [docs/VERIFICATION.md](docs/VERIFICATION.md) | 272 ESBMC proofs over 13 verified kernels — what is proved, which solver proved it, and what is not |
+| [docs/WINDOWS_NATIVE_BUILD.md](docs/WINDOWS_NATIVE_BUILD.md) | Native Windows: MSVC + Qt6 (CUDA optional / unintegrated) |
+| [docs/STANDALONE_CHECK.md](docs/STANDALONE_CHECK.md) | LLVM-free compile + unit suites |
+| [docs/FUZZING.md](docs/FUZZING.md) | Parser fuzz harnesses and crash corpus |
+| [docs/VERIFICATION.md](docs/VERIFICATION.md) | 286 ESBMC proofs over 14 verified kernels — what is proved, which solver proved it, and what is not |
+| [docs/NEURAL_REFINEMENT.md](docs/NEURAL_REFINEMENT.md) | Optional llama.cpp refine, gates, model allowlist |
+| [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) | Untrusted-input model; no in-tree sandbox |
+| [docs/CUDA_CAPABILITIES.md](docs/CUDA_CAPABILITIES.md) | Experimental CUDA accel (default OFF, unintegrated) |
+| [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | Profiling and perf-nightly |
+| [docs/PROVENANCE.md](docs/PROVENANCE.md) | Upstream MIT + Imortek dual-licence record |
+| [docs/ARCHITECTURE_TARGETS.md](docs/ARCHITECTURE_TARGETS.md) | Native CPU maturity; SPARC/SystemZ/XCore unimplemented |
+| [docs/INSTALL_LINUX.md](docs/INSTALL_LINUX.md) / [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md) | Published tarball / NSIS / zip |
+| [docs/COMMERCIAL_WHITEPAPER.md](docs/COMMERCIAL_WHITEPAPER.md) | Buyer overview (must not outrun [docs/CLAIMS.md](docs/CLAIMS.md)) |
+| [docs/FORMAL_VERIFICATION_BRIDGE.md](docs/FORMAL_VERIFICATION_BRIDGE.md) | Bridge from decompilation to verification |
+| [docs/CLAIMS.md](docs/CLAIMS.md) | Claims register — do not invent F1 numbers |
+| [ROADMAP.md](ROADMAP.md) | Public status vs leftovers |
 | [docs/future_directions.md](docs/future_directions.md) | Research agenda, recovery targets, open problems |
 | [scripts/README.md](scripts/README.md) | Every major `scripts/*.sh` and `*.ps1` helper |
 

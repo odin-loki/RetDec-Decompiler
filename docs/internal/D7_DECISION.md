@@ -1,8 +1,8 @@
 # Decision D7 — Product positioning (CLOSED)
 
-**Status:** Settled — option **(b)**  
+**Status:** Settled — option **(b)** (still current at **v2.0.22**)  
 **Date:** 2026-08-08  
-**Version:** v1.8.0
+**Version:** v1.8.0 (positioning unchanged through v2.0.22)
 
 ## Decision
 
@@ -33,6 +33,7 @@ supporting artefact for human review, not the primary benchmark headline.
 
 ## References
 
-- README opening paragraph
+- [README.md](../../README.md) opening paragraph — same sentence: a
+  specification-extraction tool that contains a decompiler
 - [docs/BENCHMARKS.md](../BENCHMARKS.md)
-- [MASTER-UPGRADE-PLAN.md](MASTER-UPGRADE-PLAN.md) Part 3, Decision D7
+- [MASTER-UPGRADE-PLAN.md](MASTER-UPGRADE-PLAN.md) Part 3, Decision D7 (historical)

@@ -12,6 +12,7 @@ Paths are relative to the **repository root**. See [docs/BUILD_REFERENCE.md](../
 | `install/linux/mingw-w64-release/` | MinGW install prefix |
 | `dist/windows/` | Portable PE staging (`windows_native_build.ps1`, `wsl_build.sh`, `wsl_cross_build.sh`) |
 | `dist/windows/debuggable/` | Debuggable GUI bundle (`windows_prepare_debuggable_gui.ps1`) |
+| `dist/` | Installer artefacts: Linux tarball / optional AppImage, Windows zip + setup.exe, macOS tarball |
 
 ## Windows (MSVC)
 
@@ -49,6 +50,33 @@ Paths are relative to the **repository root**. See [docs/BUILD_REFERENCE.md](../
 | `run_all_tests.sh` | CTest + optional PE smoke / Valgrind; auto-picks `build/linux` or `build/`; smoke PE from `dist/windows` or legacy `build-win/...` (`BUILD`, `SMOKE_BIN` override) |
 | `run_asan.sh` | ASan+LSan decompiler run; binary under `build/linux` or `build/`, test PE under `dist/windows` or `build-win/win-runtime` |
 | `superbuild-build-all-linux.sh` | Superbuild (GCC): `superbuild-debug` + `superbuild-release` under `build/linux/<preset>/`; optional `SUPERBUILD_MINGW=1`, `SUPERBUILD_CLANG=1` |
+| `build-linux-installer.sh` | `cmake --install` + portable tarball (optional AppImage when `APPIMAGE=1` / `.deb` when `fpm` is present) |
+| `install-linux.sh` | User wrapper: build+package or install from a tarball |
+| `make-appimage.sh` | Wrap a staged Linux tree as an AppImage |
+| `standalone_check.sh` | LLVM-free compile + gtest shim (`docs/STANDALONE_CHECK.md`) |
+| `standalone_fuzz.sh` | Same idea for libFuzzer harnesses |
+
+## macOS
+
+| Script | Role |
+|--------|------|
+| `build-macos-installer.sh` | Stage `bin/`, `lib/`, `share/`, `RetDec.app`, `install.sh`, `uninstall.sh` → `dist/retdec-<ver>-macos-<arch>.tar.gz`. Default `--install-dir` is `install/macos`; CI passes `install/linux`. |
+| `ci/check_macos_bundle.py` | MAC-01: rewrite rpaths so they stay inside the `.app`; `--fix` then `codesign --verify`. |
+
+## Windows installers
+
+| Script | Role |
+|--------|------|
+| `build-windows-installer.ps1` | Stage portable zip + optional NSIS installer under `dist/` (EnVar plugin required for PATH) |
+| `install-windows.ps1` | User-facing NSIS or copy-tree install (`-AddToPath`) |
+| `bundle-windows.sh` | Linux/WSL cross-compile bundle (same NSIS layout) |
+
+## Decompiler fixtures
+
+| Script | Role |
+|--------|------|
+| `decompiler/build_corpus_fixtures.sh` | Compile corpus C sources (`hello`, `vector_sort`) to native binaries |
+| `decompiler/build_corpus_fixtures.ps1` | Same on Windows |
 
 ## CI / tooling
 
@@ -57,7 +85,7 @@ Paths are relative to the **repository root**. See [docs/BUILD_REFERENCE.md](../
 | `ci/benchmark_rename_guard.sh` | B6: decompile named vs SHA-256-renamed corpus copies; fail if detections appear only on the named file |
 | `doctor.ps1` / `doctor.sh` | Read-only prerequisite check: CMake 3.26+, fetch-large-files marker, Qt6 hint, git-lfs, python3, perl; Windows also checks NSIS/makensis and EnVar |
 | `fetch-large-files.ps1` / `fetch-large-files.sh` | Download support files omitted from git (~60 MiB; required before first build). Use `bash scripts/fetch-large-files.sh` when `.sh` is not executable |
-| `.github/workflows/ci-smoke.yml` | Lightweight CI on `main` push/PR: fetch-large-files, CLI helper tests, pipeline/semantic JSON validation (no full compile) |
+| `.github/workflows/ci-smoke.yml` | Lightweight CI on every push/PR: fetch-large-files, format, CMake/docs checks, ship checklist (no LLVM compile) |
 | `validate_pipeline_json.py` | Validate pipeline JSON against `docs/pipeline_builder_schema.json` (`python3 scripts/validate_pipeline_json.py --all-profiles`) |
 | `parity_bench.ps1` | Compare CLI vs GUI subprocess wall time on a fixed binary; `-Help` for options |
 | `install_smoke.ps1` | Smoke-test a `cmake --install` tree (decompiler + fileinfo on a fixture PE) |
@@ -65,8 +93,6 @@ Paths are relative to the **repository root**. See [docs/BUILD_REFERENCE.md](../
 | `retdec_cli.py` | Unified CLI: batch decompile, diff, emit-json, export-intel, watch, yara-bridge |
 | `unpack_and_decompile.ps1` / `unpack_and_decompile.sh` | Unpack (when needed) then decompile a binary |
 | `build-all.ps1` / `build-all.sh` | End-to-end configure, build, install, and package (Windows / Linux) |
-| `build-windows-installer.ps1` | Stage portable zip + optional NSIS installer under `dist/` |
-| `build-linux-installer.sh` | `cmake --install` + portable tarball (optional AppImage / `.deb`) |
 | `run_stock_retdec_docker.py` / `.sh` | Stock RetDec 5.0 compare via `remnux/retdec` (Windows `docker.exe`) |
 | `_stage_stock_docker_corpus.py` | Copy real ELF files for the stock Docker mount (dereferences WSL/OneDrive links) |
 | `simulate_raw_refine.py` / `reprocess_predictions_raw.py` | Offline label refine / re-score (no decompiler) |
@@ -76,6 +102,12 @@ Paths are relative to the **repository root**. See [docs/BUILD_REFERENCE.md](../
 | `ci/run_clang_tidy.py` | QUAL-01: clang-tidy on Imortek-new modules; skip-safe, warn-only first land |
 | `ci/check_elf_hardening.py` | QUAL-08: RELRO/PIE/NX/canary-style ELF hardening on shipped Linux binaries |
 | `ci/check_doc_vs_code.py` | E9 / CI-03: advertised tokens in public docs must resolve in the tree |
+| `ci/check_macos_bundle.py` | MAC-01 relocatable RetDec.app / `retdec-gui.app` (see macOS section) |
+| `ci/check_qt_dynamic_link.py` | LGPL: refuse `find_package(Qt6 STATIC …)` |
+| `ci/check_cmake_presets.py` | Presets sharing a binary dir must set the same cache-variable key set |
+| `ci/check_workflow_yaml.py` | Every workflow parses; no duplicate keys |
+| `ci/generate_cyclonedx.py` | CycloneDX SBOM from CMake pins |
+| `ci/check_release_binaries.py` | Release artefact checks |
 
 On Linux or WSL clones, shell scripts do **not** need `chmod +x` if you invoke them with `bash scripts/<name>.sh`. To run directly (`./scripts/...`), mark entrypoints executable once after checkout:
 
@@ -85,7 +117,7 @@ chmod +x scripts/*.sh scripts/lib/*.sh
 
 ## Other
 
-Coverage, ASan, AppImage, model download, type_extractor, and MinGW superbuild helpers live here; prefer **CMake presets** for new workflows.
+Coverage, ASan, AppImage, model download, type_extractor, and MinGW superbuild helpers live here; prefer **CMake presets** for new workflows. Do not invent extra installer scripts — the ones above are the ones that exist.
 
 Ad hoc corpus/coverage/debug scripts used by maintainers live under [`../tools/dev/`](../tools/dev/README.md), not in CI.
 

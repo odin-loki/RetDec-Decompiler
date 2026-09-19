@@ -32,9 +32,9 @@ This script checks for and installs (via `winget`) everything in the table below
 | Tool | Minimum | Where to get |
 |------|---------|-------------|
 | **Visual Studio Build Tools 2022** | MSVC v143, Windows 11 SDK | [visualstudio.microsoft.com/downloads](https://visualstudio.microsoft.com/downloads/) — select "Build Tools for Visual Studio 2022"; check: C++ Build Tools, Windows 11 SDK |
-| **CUDA Toolkit** | 11.8 | [developer.nvidia.com/cuda-downloads](https://developer.nvidia.com/cuda-downloads) — pick Windows > x86_64 > Local installer |
+| **CUDA Toolkit** | 11.8 | **Optional.** Needed only if you pass `-DRETDEC_ENABLE_CUDA_ACCEL=ON`. Full presets leave that **OFF**. [developer.nvidia.com/cuda-downloads](https://developer.nvidia.com/cuda-downloads) |
 | **Qt 6 (MSVC x64)** | 6.4 | [qt.io/download-qt-installer](https://www.qt.io/download-qt-installer) — during install select: Qt 6.7.x > MSVC 2019 64-bit *or* MSVC 2022 64-bit |
-| **CMake** | **3.26+** | [cmake.org/download](https://cmake.org/download/) or `winget install Kitware.CMake` (matches root `CMakePresets.json`) |
+| **CMake** | **3.26+** | [cmake.org/download](https://cmake.org/download/) or `winget install Kitware.CMake`. Root `CMakeLists.txt` still has `cmake_minimum_required(VERSION 3.13)`; presets (`CMakePresets.json`) require 3.26. |
 | **Ninja** | any | `winget install Ninja-build.Ninja` |
 | **Strawberry Perl** | any | [strawberryperl.com](https://strawberryperl.com) — needed for bundled OpenSSL configure |
 | **Git** | any | `winget install Git.Git` |
@@ -73,7 +73,7 @@ Optional parameters:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `-Preset` | `full-windows-release` | CMake preset; binary dir `build\<Preset>\` |
+| `-Preset` | `full-windows-release` | CMake preset; binary dir is always `build\windows` (not `build\<Preset>`). |
 | `-QtDir` | auto-detected | Qt6 CMake config dir (**required** for `full-*` unless `-AllowOptionalQt`) |
 | `-CudaPath` | `$env:CUDA_PATH` | CUDA Toolkit root |
 | `-NoCuda` | off | Skip the NVCC probe and pass `RETDEC_ENABLE_CUDA_ACCEL=OFF`. The `full-windows-*` presets already set that option OFF. |
@@ -112,9 +112,11 @@ Subsequent incremental builds take a few minutes.
 
 The script verifies:
 1. `retdec-decompiler.exe --help`
-2. Decompiles Lua, Python, Java, WebAssembly samples
-3. `retdec-gui.exe` launches without crashing
-4. CUDA runtime DLLs are present
+2. Decompiles Lua, Python, Java, WebAssembly samples when present
+3. `retdec-gui.exe` launches without crashing (skipped if the GUI was not staged)
+4. CUDA runtime DLLs — **skipped** if `cudart64_*.dll` is absent (CPU-only / MinGW)
+
+`fib_smoke` on MSVC is built with `/ENTRY:main /NODEFAULTLIB` plus `msvc_fixture_printf.c` (`tests/decompiler/CMakeLists.txt`). `decompiler_cli_diagnostics` uses TIMEOUT 900 on WIN32.
 
 ---
 
@@ -124,10 +126,11 @@ For a **full** default component set (not the smaller `core-*` presets), use:
 
 | Preset | Host | Notes |
 |--------|------|--------|
-| `full-linux-debug` | Linux / WSL | Debug, tests, **`RETDEC_ENABLE_CUDA_ACCEL=OFF`**, **`RETDEC_REQUIRE_QT6=ON`** |
-| `full-linux-release` | Linux / WSL | Release + LTO, same |
-| `full-windows-release` | Windows | Shown only on Windows; Release + LTO, bundled OpenSSL; **Qt6 required**; `RETDEC_ENABLE_CUDA_ACCEL=OFF` |
+| `full-linux-debug` | Linux / WSL / macOS | Debug, tests, **`RETDEC_ENABLE_CUDA_ACCEL=OFF`**, **`RETDEC_REQUIRE_QT6=ON`** |
+| `full-linux-release` | Linux / WSL / macOS | Release + LTO, same |
+| `full-windows-release` | Windows | Shown only on Windows; Release + LTO, bundled OpenSSL; **Qt6 required**; tests ON; `RETDEC_ENABLE_CUDA_ACCEL=OFF` |
 | `full-windows-debug` | Windows | Same components as release, **Debug** (`/MDd`), no LTO — use for PDB debugging and `windows_native_build.ps1` → `dist\windows\` by default |
+| `core-debug-msvc` / `core-release-msvc` | Windows | Smaller core set; `build\windows` (Unix `core-debug` / `core-release` are hidden on Windows) |
 
 Superbuild presets (`superbuild-debug`, `superbuild-release`, `superbuild-windows-cross-mingw`, `superbuild-linux-clang`) live in [`cmake/superbuild/CMakePresets.json`](../cmake/superbuild/CMakePresets.json). Configure with `cmake -S cmake/superbuild --preset <name>` from the repo root (CMake 4.x no longer allows `sourceDir` in root `CMakePresets.json`).
 

@@ -1,8 +1,10 @@
 # RetDec Developer Guide
 
-This guide covers everything needed to contribute to, extend, and debug RetDec.
+Imortek **2.0.22**. How to contribute, extend, and debug this tree.
 
-For **CMake presets, directory layout, superbuild, CI secrets, and packaging**, use the canonical [BUILD_REFERENCE.md](BUILD_REFERENCE.md) first; this file focuses on **code**, **tests**, and **workflow** inside the tree.
+For **CMake presets, directory layout of `build/`, superbuild, CI secrets,
+and packaging**, use [BUILD_REFERENCE.md](BUILD_REFERENCE.md) first. This
+file is **code**, **tests**, and **workflow**.
 
 ---
 
@@ -23,36 +25,70 @@ For **CMake presets, directory layout, superbuild, CI secrets, and packaging**, 
 
 ## Repository Layout {#layout}
 
+`include/retdec/` does **not** 1:1-mirror `src/`. Tools live only under
+`src/`. Tests live under `tests/` and only partially mirror library names.
+
 ```
-retdec-master/
-├── CMakeLists.txt            Root superbuild
-├── CMakePresets.json         Root presets → build/linux or build/windows by host
-├── cmake/superbuild/         Superbuild project + CMakePresets.json
-├── vcpkg.json                Dependency manifest
-├── retdec-config.cmake       CMake package config for downstream consumers
-├── .clang-format             Clang-format style (Google-based, 4-space indent)
-├── .env.example              Environment variable template
-├── include/retdec/           All public headers (installed with the library)
-│   ├── concurrency_detect/   — Concurrency and synchronisation detector
-│   ├── module_cluster/       — Module clustering and CMake generation
-│   ├── profiling/            — Performance profiling harness
-│   ├── ptx_decompile/        — PTX parser and CUDA C lifter
-│   ├── neural/               — Opt-in llama.cpp refine (`RETDEC_NEURAL_REFINE`)
-│   ├── testing/              — Test harness utilities
-│   └── gui/
-│       ├── panels/           — Qt panel widgets
-│       └── settings/         — AppSettings, PluginManager, plugin interfaces
-├── src/                      Implementation files (mirrors include/ layout)
-├── tests/                    Tests (mirrors src/ layout)
-├── docs/                     Documentation
-│   ├── architecture.md       — Full pipeline and component descriptions
-│   ├── user_manual.md        — End-user guide
-│   ├── developer_guide.md    — This file
-│   ├── algorithm_reference.md — Mathematical algorithm descriptions
-│   └── future_directions.md  — Research agenda and roadmap
-├── scripts/                  Build helper scripts (WSL, Windows PowerShell)
-└── tools/dev/                Optional one-off maintainer scripts (not used by CI)
+RetDec/
+├── CMakeLists.txt            cmake_minimum_required 3.13; project VERSION 2.0.22
+├── CMakePresets.json         cmakeMinimumRequired 3.26; core-* and full-*
+├── cmake/
+│   ├── deps.cmake            LLVM 23.1.0, Capstone, llama.cpp b10451, …
+│   ├── options.cmake
+│   └── superbuild/           Superbuild; also requires CMake 3.26
+├── vcpkg.json                Leftover; no CMake/preset/workflow reads it
+├── .clang-format             Custom (4-space, column 120, SortIncludes: Never)
+├── include/retdec/           Public headers for libraries
+├── src/                      See directory list below
+├── tests/                    Unit + integration + managed + algorithm_recovery
+├── docs/
+├── scripts/                  Build, CI, format, neural, WSL/Windows helpers
+└── tools/dev/                Optional maintainer scripts (not used by CI)
 ```
+
+### `src/` (from `src/CMakeLists.txt`)
+
+**Core decompiler / Avast-era libs (feature-gated `cond_add_subdirectory`):**
+`ar-extractor`, `bin2llvmir`, `bin2pat`, `capstone2llvmir`, `common`,
+`config`, `cpdetect`, `ctypes`, `ctypesparser`, `debugformat`, `demangler`,
+`fileformat`, `fileinfo`, `getsig`, `idr2pat`, `llvmir-emul`, `llvmir2hll`,
+`loader`, `macho-extractor`, `pat2yara`, `patterngen`, `pdbparser`, `pelib`,
+`retdec`, `retdec-decompiler`, `retdectool`, `rtti-finder`, `serdes`,
+`stacofin`, `unpacker`, `unpackertool`, `utils`, `yaracpp`, optional `neural`,
+optional `gui`.
+
+**Always-added libraries (many are test-only or post-pipeline — check
+`scripts/ci/check_link_graph.py` and [architecture.md](architecture.md)):**
+`cuda_accel`, `packer`, `mini_emu`, `compiler_detect`, `loader_sim`,
+`code_data`, `sem_decoder`, `func_boundary`, `cfg`, `debug_info`, `rtti`,
+`compiler_abi`, `type_seed`, `idiom_reconstruct`, `string_detect`,
+`eh_reconstruct`, `ssa`, `var_recovery`, `alias_analysis`, `type_inference`,
+`cfg_structure`, `call_conv`, `dce`, `codegen`, `sort_detect`,
+`container_detect`, `algo_recover`, `pattern_detect`, `crypto_detect`,
+`bc_module`, `jvm_parser`, `jvm_reconstruct`, `java_emitter`,
+`kotlin_emitter`, `cli_parser`, `cil_reconstruct`, `csharp_emitter`,
+`pyc_parser`, `py_reconstruct`, `py_emitter`, `fsharp_emitter`,
+`vbnet_emitter`, `wasm_parser`, `lua_parser`, `cxx_backend`, `dex_parser`,
+`serial_detect`, `concurrency_detect`, `ptx_decompile`, `module_cluster`,
+`profiling`, `testing`.
+
+`src/opencl/` exists on disk and is **not** `add_subdirectory`’d from
+`src/CMakeLists.txt`. `src/experimental/` only if
+`RETDEC_ENABLE_EXPERIMENTAL_SCAFFOLD`.
+
+### `tests/` (from `tests/CMakeLists.txt`)
+
+Mirrors many `src/` library names, plus:
+
+- `tests/decompiler/` — CLI / format-router tests
+- `tests/retdec/` — library tests for `src/retdec`
+- `tests/managed_integration/` — JVM, DEX, CIL, pyc, lua, wasm fixtures
+- `tests/algorithm_recovery/` — labelled corpus (gitignored built binaries)
+- `tests/decompilebench/` — recompile / syntax harness
+- `tests/gui/` — only if `retdec-gui` was built
+- `tests/neural/` — only if `RETDEC_ENABLE_NEURAL`
+- `tests/cuda_accel/` — only if `RETDEC_HAS_CUDA`
+- `tests/test_binaries/`, `tests/crash_corpus/`, `tests/bounds/`
 
 ---
 
@@ -60,29 +96,15 @@ retdec-master/
 
 ### Prerequisites
 
-| Tool | Minimum Version | Notes |
-|------|----------------|-------|
-| CMake | 3.26 | Matches `cmakeMinimumRequired` in CMakePresets.json |
-| GCC or Clang | GCC 11 / Clang 14 | C++17 required |
-| Ninja | any | Recommended generator |
-| Qt6 | 6.4 | Widgets, Core, Gui, Test modules |
-| CUDA Toolkit | 11.8 | Optional; parked `RETDEC_ENABLE_CUDA_ACCEL` (defaults **OFF**) |
-| MinGW-w64 | `g++-mingw-w64-x86-64` | Windows cross-compile only |
-| Perl + make | any | OpenSSL cross-build only |
+| Tool | Minimum | Notes |
+|------|---------|-------|
+| CMake | **3.13** to configure the root project; **3.26** to use `CMakePresets.json` / superbuild | Do not document 3.26 as the only possible CMake |
+| GCC or Clang | GCC 11 / Clang 14 typical | Libraries `cxx_std_17`; `retdec-decompiler` is `cxx_std_20` |
+| Ninja | any | Presets use the Ninja generator |
+| Qt6 | 6.4-class Widgets | Required only for `retdec-gui` / `full-*` presets that pull GUI |
+| CUDA Toolkit | optional | `RETDEC_ENABLE_CUDA` / `RETDEC_ENABLE_CUDA_ACCEL` default **OFF** |
 
 ### Quick build (Linux/WSL)
-
-The **`full-linux-*` presets require Qt 6** for `retdec-gui`. CUDA accel stays
-**OFF** (`RETDEC_ENABLE_CUDA_ACCEL`). Install Qt dev packages first (e.g.
-`sudo apt install qt6-base-dev qt6-base-dev-tools` on Ubuntu).
-
-```bash
-# Configure into build/linux/ (preset full-linux-debug):
-bash scripts/wsl_configure_nosudo.sh
-cmake --build build/linux -j"$(nproc)"
-```
-
-Or manually:
 
 ```bash
 cmake --preset full-linux-release
@@ -90,50 +112,40 @@ cmake --build --preset full-linux-release
 ctest --test-dir build/linux --output-on-failure
 ```
 
-**Preset summary** (root `CMakePresets.json`): `core-debug`, `core-release`, `core-asan`, `core-coverage`, `full-linux-debug`, `full-linux-release`, `full-windows-release`, `full-windows-debug` (Windows-only). See [BUILD_REFERENCE.md](BUILD_REFERENCE.md#root-cmake-presets).
+Helper: `bash scripts/wsl_configure_nosudo.sh` then
+`cmake --build build/linux -j"$(nproc)"`.
 
-For **CLI-only** iteration without mandating Qt on full presets, use `core-debug` / `core-release` or `-DRETDEC_REQUIRE_QT6=OFF`.
+**Root presets:** `core-debug`, `core-release`, `core-asan`, `core-coverage`,
+`full-linux-debug`, `full-linux-release`, `full-windows-release`,
+`full-windows-debug` (Windows-only), plus `*-msvc` core variants. There is
+**no** preset named `asan`, `tsan`, or `debug`. See
+[BUILD_REFERENCE.md](BUILD_REFERENCE.md#root-cmake-presets).
+
+CLI-only: `core-debug` / `core-release` or `-DRETDEC_REQUIRE_QT6=OFF`.
 
 ### Windows cross-compile (from Linux/WSL)
 
-See [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md) for full details.
+See [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md).
+
+### Running individual test binaries
+
+Under the configured binary dir (`build/linux` or `build/windows`), for
+example:
 
 ```bash
-# 1. Ensure native build exists for llvm-tblgen:
-bash scripts/wsl_configure_nosudo.sh && cmake --build build/linux -j"$(nproc)"
-
-# 2. Configure + build Windows target:
-bash scripts/wsl_cross_configure.sh
-bash scripts/wsl_cross_build.sh
-
-# 3. Test on Windows:
-#    (PowerShell)  .\scripts\Test-RetdecWindows.ps1
-```
-
-### Running individual test suites
-
-Paths are under the configured binary directory (`build/linux` or `build/windows`):
-
-```bash
-./build/linux/tests/module_cluster/retdec-module-cluster-tests
-./build/linux/tests/profiling/retdec-profiling-tests
 ./build/linux/tests/concurrency_detect/retdec-concurrency-detect-tests
 ./build/linux/tests/ptx_decompile/retdec-ptx-decompile-tests
-./build/linux/tests/testing/retdec-testing-tests
-./build/linux/tests/gui/retdec-gui-tests
 ```
 
-On Windows, use `build\windows\tests\...`.
+A passing library test does **not** mean the library is in `decompile()`.
 
-### Updating snapshot tests
-
-When a stage intentionally changes its output:
+### Snapshot tests
 
 ```bash
 RETDEC_UPDATE_SNAPSHOTS=1 ./build/linux/tests/<suite>/retdec-*-tests
 ```
 
-### Soft performance assertions (noisy CI)
+### Soft performance assertions
 
 ```bash
 RETDEC_SOFT_PERF_ASSERT=1 ctest --test-dir build/linux
@@ -143,156 +155,101 @@ RETDEC_SOFT_PERF_ASSERT=1 ctest --test-dir build/linux
 
 ## Code Style {#style}
 
-All code is formatted with `clang-format` using the project's `.clang-format`.
-Run `bash scripts/check_format.sh` from the repository root before committing (requires `clang-format` on `PATH`).
+`.clang-format` is **custom**, not Google style (Google is 2-space; this
+tree is **4-space**, `ColumnLimit: 120`, `PointerAlignment: Left`,
+`SortIncludes: Never`). Include order is load-bearing in some files
+(see the comment at the top of `.clang-format`).
+
+```bash
+bash scripts/check_format.sh
+```
 
 ### Naming conventions
 
 | Element | Convention | Example |
-|---------|-----------|---------|
+|---------|------------|---------|
 | Types (class, struct, enum) | `PascalCase` | `ConcurrencyModel` |
 | Functions and methods | `camelCase` | `detectMutex()` |
 | Member variables | `trailingUnderscore_` | `stages_` |
-| Constants | `kPascalCase` | `kFlashBR` |
-| Macros | `UPPER_SNAKE` | `RETDEC_EXPORT_PLUGIN` |
+| Constants | `kPascalCase` | `kParallelAnalysisMinFunctions` |
+| Macros | `UPPER_SNAKE` | `RETDEC_PLUGIN_API_VERSION` |
 | Files | `snake_case` | `concurrency_detect.h` |
 | Namespaces | `retdec::module_name` | `retdec::profiling` |
 
 ### Other style rules
 
 - No `using namespace std;` in headers.
-- All public API must have Doxygen `/** @brief ... */` comments.
-- No raw `new`/`delete` — use smart pointers or containers.
-- Prefer `std::string_view` over `const std::string&` for read-only string
-  parameters.
-- All new files: copyright header matching existing files.
-- Comments explain *why*, not *what*. Avoid "// increment counter".
+- Public API: Doxygen `/** @brief ... */`.
+- No raw `new`/`delete` in new code — smart pointers or containers.
+- Prefer `std::string_view` for read-only string parameters where the
+  surrounding code already does.
+- Match the copyright header of neighbouring files.
+- Comments explain *why*.
 
 ---
 
 ## Writing a New Pipeline Stage {#newstage}
 
-### Step 1 — Header
+A new `src/foo/` library is **not** in the decompiler until something in
+`src/retdec/` or `decompiler-config.json` calls it.
+`scripts/ci/check_link_graph.py` will classify it as test-only if only
+`tests/foo` links it.
 
-```cpp
-// include/retdec/mystage/mystage.h
-#ifndef RETDEC_MYSTAGE_MYSTAGE_H
-#define RETDEC_MYSTAGE_MYSTAGE_H
+### Path A — LLVM pass (native pipeline)
 
-#include <string>
-#include <vector>
+1. Implement a `llvm::FunctionPass` / `ModulePass` under
+   `src/bin2llvmir/optimizations/` (or llvmir2hll).
+2. Register it with the existing pass infrastructure.
+3. Append the pass name to `src/retdec-decompiler/decompiler-config.json`
+   `decompParams.llvmPasses` (and any `--profile` JSON under
+   `src/retdec-decompiler/profiles/`).
+4. Add tests under `tests/bin2llvmir/` or `tests/llvmir2hll/`.
 
-namespace retdec::mystage {
+This is how `retdec-decoder`, `retdec-idioms`, and `retdec-llvmir2hll` run.
 
-/**
- * @brief Results of the MyStage analysis pass.
- */
-struct MyStageResult {
-    std::vector<std::string> findings;
-    double confidence = 0.0;
-};
+### Path B — Post-pipeline detector
 
-/**
- * @brief Detects X in the given SSA function.
- */
-class MyStageDetector {
-public:
-    /**
-     * @brief Run the analysis.
-     * @param functionName  Name of the function being analysed.
-     * @param irText        SSA IR text representation.
-     */
-    MyStageResult analyse(const std::string& functionName,
-                           const std::string& irText);
-};
+1. Consume `retdec::ssa::SSAFunction` (see `src/container_detect/` as a
+   model).
+2. Link the library from `src/retdec/CMakeLists.txt`.
+3. Call it from `src/retdec/retdec.cpp` / `function_analysis_cache.cpp`.
+4. Export via `semantic_recovery_export.cpp` if it is a user-visible hint.
+5. Tests under `tests/<name>/` **and** algorithm-recovery labels if it
+   claims corpus F1.
 
-} // namespace retdec::mystage
-#endif
-```
+### Path C — Standalone library (default if you only add a subdirectory)
 
-### Step 2 — Implementation
+`add_subdirectory` in `src/CMakeLists.txt` + `tests/` builds and tests the
+code. It will **not** change `out.c` until Path A or B. That is the state
+of `src/idiom_reconstruct`, `src/module_cluster`, `src/func_boundary`, etc.
 
-```cpp
-// src/mystage/mystage.cpp
-#include "retdec/mystage/mystage.h"
-#include <algorithm>
+Do **not** add GUI Analysis checkboxes and assume F5 honours them. F5
+spawns `retdec-decompiler`.
 
-namespace retdec::mystage {
+### Adding a managed emitter
 
-MyStageResult MyStageDetector::analyse(const std::string& name,
-                                        const std::string& ir) {
-    MyStageResult result;
-    // ... detection logic ...
-    return result;
-}
+Native binaries still emit **C**. Extra emitters are managed-format routes.
 
-} // namespace retdec::mystage
-```
+1. Parser + emitter under `src/<name>/`.
+2. Wire `detectManagedFormatFromBytes` + `decompileManaged` in
+   `src/retdec-decompiler/managed_decompiler.cpp`.
+3. `target_link_libraries(retdec-decompiler …)` in
+   `src/retdec-decompiler/CMakeLists.txt`.
+4. Tests in `tests/managed_integration/`.
 
-### Step 3 — CMake
+`kotlin_emitter`, `fsharp_emitter`, and `vbnet_emitter` exist without
+step 2–3. Do not document them as CLI targets until they are dispatched.
 
-```cmake
-# src/mystage/CMakeLists.txt
-add_library(retdec-mystage
-    mystage.cpp
-)
-target_include_directories(retdec-mystage
-    PUBLIC ${PROJECT_SOURCE_DIR}/include
-)
-set_target_properties(retdec-mystage PROPERTIES
-    CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED ON
-)
-install(TARGETS retdec-mystage ARCHIVE DESTINATION lib LIBRARY DESTINATION lib)
-```
+### Adding an architecture
 
-Add to `src/CMakeLists.txt`:
-```cmake
-add_subdirectory(mystage)
-```
+1. `src/capstone2llvmir/<arch>/` translator (`createArch` must not throw).
+2. ABI in `src/bin2llvmir/providers/abi/`.
+3. `-a` allow-list in `retdec-decompiler.cpp`.
+4. fileformat machine-type detection.
+5. Tests under `tests/capstone2llvmir/` and a smoke binary.
 
-### Step 4 — Tests
-
-```cmake
-# tests/mystage/CMakeLists.txt
-add_executable(retdec-mystage-tests
-    mystage_test.cpp
-    ${PROJECT_SOURCE_DIR}/src/mystage/mystage.cpp
-)
-target_include_directories(retdec-mystage-tests PRIVATE ${PROJECT_SOURCE_DIR}/include)
-target_link_libraries(retdec-mystage-tests PRIVATE GTest::GTest GTest::Main)
-set_target_properties(retdec-mystage-tests PROPERTIES CXX_STANDARD 17)
-add_test(NAME retdec-mystage-tests COMMAND retdec-mystage-tests)
-```
-
-```cpp
-// tests/mystage/mystage_test.cpp
-#include "retdec/mystage/mystage.h"
-#include <gtest/gtest.h>
-
-TEST(MyStage, EmptyIRReturnsNoFindings) {
-    retdec::mystage::MyStageDetector d;
-    auto r = d.analyse("main", "");
-    EXPECT_TRUE(r.findings.empty());
-}
-
-TEST(MyStage, DetectsKnownPattern) {
-    retdec::mystage::MyStageDetector d;
-    auto r = d.analyse("foo", "call pthread_mutex_lock");
-    EXPECT_FALSE(r.findings.empty());
-}
-```
-
-Add to `tests/CMakeLists.txt`:
-```cmake
-add_subdirectory(mystage)
-```
-
-### Step 5 — Register in settings and GUI
-
-1. Add a toggle to `AnalysisSettings` in `include/retdec/gui/settings/settings.h`.
-2. Add a checkbox to `SettingsDialog::buildAnalysisTab()`.
-3. Consult the toggle in `AnalysisBridge` before running the stage.
+See [ARCHITECTURE_TARGETS.md](ARCHITECTURE_TARGETS.md). SPARC/SystemZ/XCore
+stubs throw; RISC-V has no directory.
 
 ---
 
@@ -300,12 +257,9 @@ add_subdirectory(mystage)
 
 ### Unit tests (Google Test)
 
-Each library has its own test binary in `tests/<name>/`.  All tests use
-`TEST(Suite, Name)` or `TEST_F(Fixture, Name)`.
+Each library that has tests uses `TEST` / `TEST_F` under `tests/<name>/`.
 
-**Prefer `EXPECT_*` over `ASSERT_*`** in most cases — `ASSERT_*` aborts the
-test function immediately on failure, which can hide multiple errors.  Use
-`ASSERT_*` only when subsequent lines would crash on a failed precondition.
+Prefer `EXPECT_*` over `ASSERT_*` unless a failed precondition would crash.
 
 ### Building synthetic binaries
 
@@ -314,14 +268,16 @@ test function immediately on failure, which can hide multiple errors.  Use
 
 TEST(MyLoader, ParsesELF64Header) {
     auto binary = retdec::testing::TestBinary::makeELF64(
-        {0x55, 0x48, 0x89, 0xE5, 0xC3},  // push rbp; mov rbp,rsp; ret
+        {0x55, 0x48, 0x89, 0xE5, 0xC3},
         {{"main", 0x401000, true}}
     );
     auto path = binary.writeToTempFile(".elf");
-    // ... pass path to loader under test ...
     std::filesystem::remove(path);
 }
 ```
+
+(`retdec-testing` is a test support library — it is supposed to be
+test-only.)
 
 ### Snapshot regression tests
 
@@ -337,199 +293,61 @@ TEST(Emitter, OutputMatchesSnapshot) {
 }
 ```
 
-Create the initial snapshot: `RETDEC_UPDATE_SNAPSHOTS=1 ./build/tests/...`
-
-### Performance assertions
-
-```cpp
-#include "retdec/testing/test_harness.h"
-
-TEST(Profiler, AnalysisCompletesUnder500ms) {
-    auto r = retdec::testing::PerformanceAsserter::benchmark(
-        [&]{ runAnalysis(testBinary); },
-        10,          // iterations
-        testBinarySize
-    );
-    EXPECT_LT(r.p99Ms, 500.0) << r.format();
-}
-```
-
-### Mock pipeline
-
-```cpp
-#include "retdec/testing/test_harness.h"
-
-TEST(Pipeline, StagesChainCorrectly) {
-    retdec::testing::MockPipeline p;
-    p.addStage("type_infer", [](auto s) { return s + "\n// typed"; })
-     .addStage("structuring",[](auto s) { return s + "\n// structured"; });
-    auto out = p.run("int x;");
-    EXPECT_NE(out.find("typed"),      std::string::npos);
-    EXPECT_NE(out.find("structured"), std::string::npos);
-    EXPECT_EQ(p.executedStages().size(), 2u);
-}
-```
-
-### Corpus tests
-
-```cpp
-#include "retdec/testing/test_harness.h"
-
-TEST(Corpus, AllELFBinariesParse) {
-    retdec::testing::CorpusRunner runner("tests/corpus");
-    runner.iterate([](const retdec::testing::CorpusEntry& e) {
-        EXPECT_NO_THROW({ auto r = parseFile(e.binaryPath); })
-            << "Failed on: " << e.binaryPath;
-        return true;
-    }, ".elf");
-}
-```
-
-If `tests/corpus` does not exist (CI without binary fixtures), `CorpusRunner`
-returns `syntheticCorpus()` automatically.
+Never delete, skip, or loosen a failing test to make a change look green.
 
 ---
 
 ## Debugging {#debug}
 
-### Verbose pipeline logging
+### Verbose CLI
 
-```cpp
-AppSettings::instance().advanced.verbosity = AdvancedSettings::Verbosity::Debug;
-```
-
-Or raise the GUI **Advanced → verbosity** setting to Debug before launching.
-
-### Dump intermediate IR
-
-```cpp
-AppSettings::instance().advanced.dumpIR     = true;
-AppSettings::instance().advanced.dumpSSA    = true;
-AppSettings::instance().advanced.irDumpPath = "/tmp/retdec_ir";
-```
-
-After analysis, `/tmp/retdec_ir/` will contain one `.ssa` file per function.
+`retdec-decompiler` `--silent` off (default) prints `Log::phase` lines.
+Pass-level dumps: `--print-after-all` / `--print-before-all` (GUI Analysis
+menu can add these to the next child process).
 
 ### AddressSanitizer
 
 ```bash
-cmake --preset asan
-cmake --build --preset asan -j$(nproc)
-ASAN_OPTIONS=detect_leaks=1:halt_on_error=0 \
-    ./build-asan/tests/concurrency_detect/retdec-concurrency-detect-tests
+cmake --preset core-asan
+cmake --build --preset core-asan
+ctest --test-dir build/linux --output-on-failure   # path follows the preset
 ```
 
-### ThreadSanitizer
+There is no `tsan` preset in root `CMakePresets.json`.
 
-```bash
-cmake --preset tsan
-cmake --build --preset tsan -j$(nproc)
-TSAN_OPTIONS=halt_on_error=0 \
-    ./build-tsan/tests/profiling/retdec-profiling-tests
-```
+### GUI vs CLI
 
-### GDB with Qt
-
-```bash
-cmake --preset debug
-cmake --build --preset debug
-gdb -ex "set follow-fork-mode child" ./build/src/gui/retdec-gui
-```
-
-Set breakpoints by class name: `(gdb) break AIAssistantPanel::onSendQuery`
-
-### Valgrind (Linux)
-
-```bash
-valgrind --tool=memcheck --leak-check=full \
-    ./build/tests/module_cluster/retdec-module-cluster-tests
-```
+Debug the decompiler in the CLI first. The GUI is a `QProcess` wrapper
+(`src/gui/decompiler_launch.cpp`). `gdb` on `retdec-gui` will not step
+`decompile()` unless you attach to the child.
 
 ---
 
 ## Performance Profiling {#profiling}
-
-### Instrument a stage
 
 ```cpp
 #include "retdec/profiling/profiling.h"
 
 void MyStage::run(const Function& fn) {
     auto guard = retdec::profiling::Profiler::instance().measure("my_stage");
-    // ... work ...
-}  // guard destructor records elapsed time
-```
-
-### Record per-function timing
-
-```cpp
-#include "retdec/profiling/profiling.h"
-using Clock = std::chrono::steady_clock;
-
-for (const auto& fn : functions) {
-    auto t0 = Clock::now();
-    analyseFunction(fn);
-    auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-        Clock::now() - t0).count();
-    retdec::profiling::Profiler::instance()
-        .recordFunction(fn.name, static_cast<retdec::profiling::Nanos>(ns));
+    // ...
 }
 ```
 
-### Record CUDA kernel time (parked `cuda_accel` only)
+`src/retdec/retdec.cpp` already scopes `pipeline.pm_run`,
+`analysis.detectors`, `analysis.neural_refine`, `analysis.ocl_host`, etc.
 
-Not the default decompiler pipeline (`C-CUDA-PIPE` withdrawn). The header
-exists under `include/retdec/cuda_accel/` for research builds.
-
-```cpp
-// Using CUDAProfiler from include/retdec/cuda_accel/cuda_profiler.h:
-#include "retdec/cuda_accel/cuda_profiler.h"
-
-retdec::cuda_accel::CUDAProfiler prof;
-prof.startKernel("my_kernel");
-
-myKernel<<<grid, block>>>(args...);
-cudaDeviceSynchronize();
-
-prof.stopKernel("my_kernel");
-prof.printSummary();
-```
-
-### Generate a report
-
-```cpp
-auto& prof = retdec::profiling::Profiler::instance();
-prof.sampleRss();  // snapshot peak RSS
-auto report = prof.report();
-
-std::cout << report.toText();   // formatted table
-report.toCsv("profile.csv");    // machine-readable
-std::cout << report.toJson();   // JSON for tooling
-```
-
-### Function time histogram
-
-```cpp
-retdec::profiling::FunctionHistogram hist(
-    1'000,          // 1 µs minimum
-    1'000'000'000,  // 1 s maximum
-    30              // buckets
-);
-for (const auto& s : prof.report().functionSamples)
-    hist.add(s.elapsedNs);
-std::cout << hist.format();
-std::cout << "P50=" << hist.percentile(0.5)/1e3 << " µs\n";
-std::cout << "P99=" << hist.percentile(0.99)/1e3 << " µs\n";
-```
+CUDA kernel timers under `include/retdec/cuda_accel/` apply only to parked
+`RETDEC_ENABLE_CUDA_ACCEL` builds — not the default pipeline.
 
 ---
 
 ## Writing a Plugin {#plugin}
 
-### Minimum decompiler plugin
+GUI plugins only (`include/retdec/gui/settings/plugin_interface.h`).
+API version **`"1.0"`**. They cannot insert LLVM passes.
 
 ```cpp
-// my_plugin.cpp
 #include "retdec/gui/settings/plugin_interface.h"
 using namespace retdec::gui;
 
@@ -537,151 +355,61 @@ class MyPlugin : public IDecompilerPlugin {
 public:
     PluginMetadata metadata() const override {
         PluginMetadata m;
-        m.id          = "com.example.myplugin";
-        m.name        = "My Plugin";
-        m.version     = "1.0";
-        m.description = "Prepends a comment to every decompiled function.";
-        m.author      = "Your Name";
+        m.id = "com.example.myplugin";
+        m.name = "My Plugin";
+        m.version = "1.0";
         return m;
     }
     void runStage(PipelineContext& ctx) override {
-        ctx.decompiledText.prepend("// Processed by MyPlugin v1.0\n");
+        ctx.decompiledText.prepend("// Processed by MyPlugin\n");
     }
 };
 RETDEC_EXPORT_PLUGIN(MyPlugin)
 ```
 
-### Build
-
-```cmake
-add_library(my_plugin SHARED my_plugin.cpp)
-target_include_directories(my_plugin PRIVATE /path/to/retdec/include)
-target_link_libraries(my_plugin PRIVATE Qt6::Core)
-set_target_properties(my_plugin PROPERTIES CXX_STANDARD 17)
-```
-
-### Install
-
-Either copy the `.so`/`.dll` to a directory in
-`AppSettings::instance().plugins.searchPaths`, or use
-**Settings → Plugins → Install Plugin…** in the GUI.
-
-### API version contract
-
-The exported `retdec_plugin_api_version()` function must return exactly
-`"1.0"` (the current `RETDEC_PLUGIN_API_VERSION`).  A mismatch causes the
-plugin to be rejected at load time with a `loadError` signal.
+Install the `.so`/`.dll` on `AppSettings::plugins.searchPaths` or
+**Settings → Plugins → Install Plugin…**.
 
 ---
 
 ## Contributing {#contributing}
 
-### Before you start
-
-1. Open an issue or discussion to describe what you want to add.
-2. Check `docs/future_directions.md` — your idea may already be planned.
-3. For new pipeline stages, read the existing detector implementations
-   (`concurrency_detect`, `serial_detect`) as models.
-
-### Branch and commit conventions
-
-- Branch names: `feat/short-description`, `fix/issue-number`, `docs/topic`.
-- Commit messages: imperative mood, present tense.
-  - Good: `Add RISC-V lifting frontend`
-  - Bad: `Added support for RISC-V` / `riscv stuff`
-- Keep commits focused — one logical change per commit.
-- Run `bash scripts/check_format.sh` before every commit.
+1. Open an issue or discussion first for new stages.
+2. Read [architecture.md](architecture.md) so you do not reimplement an
+   unwired library that already exists.
+3. Branch names: `feat/…`, `fix/…`, `docs/…`.
+4. Commits: imperative, one logical change. One dependency pin per commit.
+5. `bash scripts/check_format.sh` before you ask for review.
 
 ### Pull request checklist
 
-- [ ] All new code has unit tests.
-- [ ] All tests pass: e.g. `ctest --test-dir build/linux --output-on-failure` (or your configured binary dir)
-- [ ] No new format drift: `bash scripts/check_format.sh`
-- [ ] New public APIs have Doxygen comments.
-- [ ] `docs/architecture.md` updated if new stages or modules added.
-- [ ] `docs/future_directions.md` updated if a planned item is now implemented.
-- [ ] Performance-sensitive code has a profiling test or benchmark.
-
-### Adding a new language emitter
-
-Native binaries still emit **C**. Extra emitters are managed-format routes
-or research (`DEAD-02`); they are not a free-choice native language list.
-
-1. Create `include/retdec/<lang>_emitter/` with type, stmt, expr, file emitters.
-2. Implement in `src/<lang>_emitter/`.
-3. Register in `codegen`'s language dispatch table.
-4. Add to the `Output Language Targets` table in `docs/future_directions.md`.
-5. Add tests including at least one snapshot test.
-
-### Adding a new architecture
-
-1. Create a new capstone-to-LLVMIR lifter in `src/capstone2llvmir/<arch>/`.
-2. Add architecture detection in `src/fileformat/`.
-3. Add calling convention descriptor in `src/call_conv/`.
-4. Update the architecture table in `docs/future_directions.md`.
-5. Add a corpus entry in `tests/corpus/<arch>/` with at least one binary.
+- [ ] Unit tests for new code; no tests deleted or `DISABLED_`.
+- [ ] `ctest` (or the relevant binary) on the files you touched.
+- [ ] Public APIs have Doxygen comments.
+- [ ] [architecture.md](architecture.md) / [pipeline_stage_map.md](pipeline_stage_map.md)
+      updated if you **wire** a library into `decompile()` or the CLI.
+- [ ] Do not edit `deps/llvm/` or drive-by bump `cmake/deps.cmake`.
 
 ---
 
 ## Research Notes {#research}
 
-### STL semantic recovery (planned)
+### STL / algorithm recovery
 
-See `docs/future_directions.md` Part 1 for the full design.
+Detectors live in `src/container_detect/`, `src/algo_recover/`,
+`src/sort_detect/`. They are implemented and wired as **comments/JSON**.
+Name-blind F1 **0.056** is the honest headline. Prototype-quality, not a
+finished product.
 
-The implementation plan:
-1. **Layer 1 structural detectors**: implement one per container/algorithm.
-   Start with `std::vector` (three-pointer layout + growth check) and
-   binary search (midpoint arithmetic + three-way branch) as the highest
-   coverage/easiest targets.
-2. **Layer 2 context validator**: cross-check calling context against inferred
-   container type.  Key challenge: resolving the element type from arithmetic
-   stride and comparator functions.
-3. **Layer 3 reconstructor**: replace low-level pointer operations with
-   idiomatic STL calls in the emitted output.
+`src/idiom_reconstruct/` is implemented and **unwired**.
 
-Prototype location: `src/container_detect/` (implemented; not a stub).
-Algorithm detection: `src/algo_recover/` (implemented). Name-blind F1 is
-the headline in [BENCHMARKS.md](BENCHMARKS.md); do not treat these
-modules as finished product quality.
+### Neural KV / MoE
 
-### Algorithm recognition via structural fingerprints
+There is no in-tree `Qwen3Config`. Optional KV reuse is llama.cpp
+`RETDEC_NEURAL_REUSE_KV` — [NEURAL_REFINEMENT.md](NEURAL_REFINEMENT.md).
 
-The core idea is a library of `AlgorithmDescriptor` structs capturing:
+### CUDA
 
-```cpp
-struct AlgorithmDescriptor {
-    std::string name;      // "introsort", "binary_search", "fft", ...
-    int         loopDepth; // expected maximum loop nesting depth
-    bool        recursive; // makes recursive calls?
-    bool        usesAuxMemory;
-    std::string indexArithmetic; // regex on loop variable patterns
-    double      minConfidence;
-    std::function<double(const FunctionFeatures&)> scoreFunction;
-};
-```
-
-`FunctionFeatures` is extracted from the SSA IR by counting:
-- Loop nesting depth
-- Recursive call count
-- Comparison-swap pairs
-- Memory allocation calls
-- Pointer arithmetic patterns
-
-### MoE expert load balancing / paged KV
-
-There is no in-tree `Qwen3Config` / `qwen3_config.h` (`C-QWEN3-GPU` withdrawn).
-Optional neural KV reuse is llama.cpp `RETDEC_NEURAL_REUSE_KV` in
-[NEURAL_REFINEMENT.md](NEURAL_REFINEMENT.md).
-
-### CUDA portability and CPU fallback
-
-`RETDEC_ENABLE_CUDA` (`GpuScanner` signature/entropy) has a CPU twin in
-`gpu_scanner_cpu.cpp`. Parked `cuda_accel` / OpenCL are **not** wired into
-`src/retdec` (`C-CUDA-PIPE` withdrawn). Neural GPU offload is llama.cpp
-`n_gpu_layers`, opt-in via `RETDEC_NEURAL_REFINE`, not a decompiler pass.
-
-Do not treat NVCC as required for a default build. Sources under
-`src/cuda_accel/` remain in-tree with tests under `tests/cuda_accel/`;
-that is parked research, not the default pipeline. See
-[CUDA_CAPABILITIES.md](CUDA_CAPABILITIES.md).
+[CUDA_CAPABILITIES.md](CUDA_CAPABILITIES.md): distinguish GPU accel
+(parked), `CudaHostRecovery` (unwired), `OclHostRecovery` (log), PTX
+lifter (no CLI).

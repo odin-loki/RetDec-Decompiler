@@ -1,15 +1,17 @@
 # RetDec — Engineering Roadmap
 
-Shippable engineering tiers for RetDec. Research-only items live in
-[RESEARCH_FRONTIERS.md](../RESEARCH_FRONTIERS.md).
+**Status as of v2.0.22:** Tiers 1–5 and GUI v3 shipped. This file is the
+historical tier list, not a live backlog. Open pipeline gaps stay in
+[PIPELINE_REDESIGN_TODO.md](PIPELINE_REDESIGN_TODO.md). Research-only items
+live in [RESEARCH_FRONTIERS.md](../RESEARCH_FRONTIERS.md).
 
 ---
 
 ## Tier 1 — Core stability & infrastructure
 
-- Windows native build parity (MSVC preset, install smoke)
-- GUI headless decompile path
-- Managed format smoke tests (Java, Python, WASM fixtures)
+- [x] Windows native build parity (MSVC preset, `ctest-windows`, NSIS/zip)
+- [x] GUI headless decompile path
+- [x] Managed format smoke tests (Java, Python, WASM fixtures)
 - [x] Decompile profiles — `--profile fast|balanced|quality`, `src/retdec-decompiler/profiles/`
 - [x] Unified CLI — `scripts/retdec_cli.py` (batch, diff, emit-json, watch, yara-bridge, export-intel)
 - [x] Golden corpus — `tests/decompiler/corpus/` + `corpus_regression_test.py`

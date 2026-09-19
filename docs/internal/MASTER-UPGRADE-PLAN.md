@@ -1,6 +1,8 @@
 # Master Upgrade Plan — Enhanced Retargetable Decompiler
 
-**Status (v2.0.20):** Steps 1–26 are done. This file is the historical plan.
+**Historical plan; status as of 2.0.22 is in [README.md](../../README.md) and [docs/internal/README.md](README.md).**
+
+Steps 1–26 are done. Do not treat open checkboxes here as current work.
 Current scope: [MAINTAINER_SCOPE.md](MAINTAINER_SCOPE.md). Completion:
 [PLAN_COMPLETION.md](PLAN_COMPLETION.md).
 

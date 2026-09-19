@@ -1,1 +1,53 @@
-Compilation and installation of YARA rules is done in deps/yara.
+# support/
+
+Runtime support data for RetDec Imortek (v2.0.22): PE ordinal databases,
+YARA tool/packer/compiler patterns, and (when fetched) type JSON used by
+fileinfo / static-code detection.
+
+This directory is **not** the decompiler pipeline. Installers and
+`cmake --install` copy a processed tree to `share/retdec/support/`. Large
+files that are gitignored are pulled once with
+`scripts/fetch-large-files.sh` (Linux/macOS/WSL) or
+`scripts/fetch-large-files.ps1` (Windows). Those scripts download from the
+upstream RetDec mirror (`avast/retdec`); that is data provenance, not an
+Avast-only build.
+
+## Layout
+
+| Path | Role |
+|------|------|
+| `ordinals/` | PE export ordinal → name maps (`x86/`, `arm/`) |
+| `yara_patterns/` | YARA sources for tools, packers, compilers, signsrch |
+| `types/` | OS type JSON (`windows.json`, `linux.json`, `windrivers.json`) — fetched, not all committed |
+| `install-yara.py` | Compile/install YARA patterns with `retdec-yarac` at install time |
+| `install-share.py` | Fetch the versioned support tarball into `share/retdec/support` |
+| `CMakeLists.txt` | Single install script for ordinals + YARA + share package |
+| `models.json` / `models.md` | Metadata for optional GGUF neural models (llama.cpp is opt-in; not required) |
+
+YARA **compilation** at install time uses in-tree `retdec-yarac` (YARA sources
+live under `deps/yara`). It is driven by `support/CMakeLists.txt` and
+`install-yara.py`, not by a separate Avast website step.
+
+`scripts/regenerate-retdec-support.sh` is **reference only**. Four-toolchain
+signature regen is out of maintainer scope; the tarball pin in
+`cmake/deps.cmake` is sufficient.
+
+## How it is installed
+
+A normal product configure already wires this. Example:
+
+```bash
+cmake --preset full-linux-release
+cmake --build --preset full-linux-release
+cmake --install build/linux
+```
+
+`RETDEC_ENABLE_SUPPORT_ORDINALS`, `RETDEC_ENABLE_SUPPORT_YARA_TOOLS`, and
+related options are set by the full presets. You do not compile YARA rules
+by hand for a GUI or CLI install.
+
+First-time large-file fetch (before the first build):
+
+```bash
+bash scripts/fetch-large-files.sh
+```

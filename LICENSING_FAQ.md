@@ -4,6 +4,12 @@ This is not legal advice. It restates what the in-tree licence files already say
 The texts of record are [LICENSE-AGPL](LICENSE-AGPL) and
 [LICENSE-COMMERCIAL](LICENSE-COMMERCIAL). [NOTICE](NOTICE) lists third-party
 components. Qt LGPL evidence is in [docs/LGPL_QT.md](docs/LGPL_QT.md).
+File-level provenance is [docs/PROVENANCE.md](docs/PROVENANCE.md).
+
+**RetDec Imortek 2.0.22** is a specification-extraction decompiler (algorithm
+recovery, semantic export, optional offline neural refinement; recovered C is
+a supporting artefact). Built on Avast RetDec 5.0 (MIT retained in
+[LICENSE-MIT](LICENSE-MIT)). Dual **AGPL-3.0+** / **commercial (Imortek)**.
 
 ## Can we run this air-gapped without disclosing our source?
 
@@ -16,8 +22,10 @@ The commercial licence has no numbered clauses. Those permissions are the
 bullets under **What you can do**.
 
 Air-gapped operation of the decompiler itself does not require a model download.
-Optional neural refinement is local llama.cpp only; see [SECURITY.md](SECURITY.md)
-(`RETDEC_NO_NETWORK=1`).
+Optional neural refinement is local llama.cpp only (`RETDEC_ENABLE_LLAMACPP` at
+build, `RETDEC_NEURAL_REFINE` at run); see [SECURITY.md](SECURITY.md)
+(`RETDEC_NO_NETWORK=1`). CUDA acceleration is **not** a product feature
+(`RETDEC_ENABLE_CUDA_ACCEL` defaults OFF and is unintegrated).
 
 ## What if we use AGPL instead?
 
@@ -52,7 +60,8 @@ published in git.
 
 Keystone is GPL-2.0 and is excluded from commercial-package install of
 `capstone2llvmirtool` (see [NOTICE](NOTICE) and the LEG-11 CI gate). Qt 6 is
-LGPL and must stay dynamically linked; see [docs/LGPL_QT.md](docs/LGPL_QT.md).
+LGPL and must stay dynamically linked on Linux, Windows, and macOS
+(`RetDec.app`); see [docs/LGPL_QT.md](docs/LGPL_QT.md).
 
 ## Warranty
 

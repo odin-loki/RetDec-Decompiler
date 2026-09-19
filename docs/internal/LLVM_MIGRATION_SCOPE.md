@@ -1,25 +1,29 @@
 # LLVM migration scope (D1 / D4)
 
-Working plan: [`UNBLOCKED-MIGRATION.md`](UNBLOCKED-MIGRATION.md).
-User-unblocked 2026-08-23.
+**Current as of v2.0.22: no bump unless explicitly tasked.**
 
-## Pin (current — do not change until Track 1 MD is the source of truth)
+The pin is already upstream `llvm-project` **23.1.0**. This file is the
+policy for any *further* move. The Wave 5 plan that got here is historical:
+[UNBLOCKED-MIGRATION.md](UNBLOCKED-MIGRATION.md).
+
+## Pin (current — do not change until an explicitly scoped task says so)
 
 From [`cmake/deps.cmake`](../../cmake/deps.cmake):
 
 | Variable | Value |
 |----------|--------|
-| `LLVM_URL` | `https://github.com/avast/llvm/archive/a776c2a976ef64d9cd84d7ee71d0e4a04aa117a1.zip` |
-| Commit | `a776c2a976ef64d9cd84d7ee71d0e4a04aa117a1` |
-| `LLVM_ARCHIVE_SHA256` | `b5879b30768135e5fce84ccd8be356d2c55c940ab32ceb22d278b228e88c4c60` |
+| `LLVM_URL` | `https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.0/llvm-project-23.1.0.src.tar.xz` |
+| Tag | `llvmorg-23.1.0` |
+| `LLVM_ARCHIVE_SHA256` | `ab1f0e3ec52448c33e8782eaf0422504b87c7b016b22514653ee0d8fcee479ff` |
 
-Avast LLVM 8-era fork. Clang is not a separate pin.
+Upstream llvm-project (not the Avast LLVM 8 fork). Clang is not a separate pin.
+Configure from the `llvm/` subdirectory (`SOURCE_SUBDIR` in `deps/llvm/CMakeLists.txt`).
 
 ## Policy
 
 - Never edit `deps/llvm/`.
-- One URL/SHA change in `cmake/deps.cmake` per commit, only after
-  `retdec.pointee` metadata is the source of truth.
+- One URL/SHA change in `cmake/deps.cmake` per commit, only as an explicitly
+  scoped task. Snapshot `retdec.pointee` metadata before moving the URL.
 - No drive-by bump. No `RETDEC_LLVM_NEXT` flag unless a later commit
   adds a real dual-build.
 
@@ -30,7 +34,8 @@ LLVM 17 deletes pointee types from `ptr`. RetDec ports LLVM 8
 (same `setMetadata` pattern as `insn.addr`). Readers use
 `llvm_utils::pointeeType` (MD first, typed-pointer fallback).
 
-Counts (src/include/tests, not deps/llvm):
+Counts (src/include/tests, not deps/llvm) — inventory from the migration
+research, not a live census:
 
 - 25 `getPointerElementType`
 - 78 `PointerType::get(`
@@ -40,11 +45,12 @@ Counts (src/include/tests, not deps/llvm):
 ## New pass manager
 
 Still legacy: `llvm::legacy::PassManager` in `src/retdec/retdec.cpp`,
-JSON pass names in `decompiler-config.json` / profiles. Rewrite is
-Track 2, same branch family as the pin bump, not Track 1.
+JSON pass names in `decompiler-config.json` / profiles. A new-PM rewrite is
+the same class of work as a pin bump: not Track 1, not 2.0.22, not unless
+tasked.
 
-## Out of scope for Track 1
+## Out of scope unless tasked
 
 - No change to `cmake/deps.cmake`
 - No edit under `deps/llvm/`
-- No compile against upstream LLVM yet
+- No compile against a newer upstream LLVM

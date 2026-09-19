@@ -1,10 +1,13 @@
 # RetDec Architecture Guide
 
-This document describes the complete architecture of the RetDec enhanced
-decompiler: every pipeline stage, all library modules, the Qt GUI subsystem,
-the AI inference engine, and the plugin system.
+RetDec Imortek **2.0.22** architecture as implemented in this tree. This
+document describes the **running** decompiler, not the proposed 29-stage
+redesign. For a stage-by-stage map of that redesign onto real files, see
+[pipeline_stage_map.md](pipeline_stage_map.md).
 
-**Companion docs:** [BUILD_REFERENCE.md](BUILD_REFERENCE.md) (how to compile and lay out `build/` trees) · [developer_guide.md](developer_guide.md) (contributing, tests, style) · [user_manual.md](user_manual.md) (GUI) · [docs/README.md](README.md) (index).
+**Companion docs:** [BUILD_REFERENCE.md](BUILD_REFERENCE.md) ·
+[developer_guide.md](developer_guide.md) · [user_manual.md](user_manual.md) ·
+[docs/README.md](README.md).
 
 ---
 
@@ -12,93 +15,115 @@ the AI inference engine, and the plugin system.
 
 1. [High-Level Overview](#overview)
 2. [Build System and Module Layout](#modules)
-3. [Full Pipeline Stage Reference](#pipeline)
-4. [Core Library Details](#libraries)
-5. [Qt GUI Architecture](#gui)
-6. [AI Inference Engine](#ai)
-7. [Plugin System](#plugins)
-8. [Performance and Threading Model](#threading)
-9. [Design Decisions](#decisions)
-10. [Data Flow Diagrams](#diagrams)
+3. [Running Pipeline](#pipeline)
+4. [Managed-Language Dispatch](#managed)
+5. [Core Library Details](#libraries)
+6. [Qt GUI Architecture](#gui)
+7. [AI Inference Engine](#ai)
+8. [Plugin System](#plugins)
+9. [Performance and Threading Model](#threading)
+10. [Design Decisions](#decisions)
+11. [Data Flow Diagrams](#diagrams)
 
 ---
 
 ## High-Level Overview {#overview}
 
-RetDec is a retargetable machine-code decompiler.  Given a binary (ELF, PE,
-Mach-O, CUDA, WASM, JVM, DEX, `.pyc`, `.luac`, CIL), it produces human-readable
-source code in **C** for native binaries. Managed formats emit the language
-of the input (Python from `.pyc`, Lua from `.luac`, WAT from `.wasm`, and
-so on). The CLI rejects `--output-lang cpp` because `cxx_backend` is unwired;
-native output is C.
+RetDec is a retargetable machine-code decompiler. Output is **input-keyed**:
 
-The enhanced version adds:
+| Input | Emitter path | Output |
+|-------|----------------|--------|
+| Native ELF / PE / Mach-O / COFF / Intel HEX / raw | `bin2llvmir` → `llvmir2hll` C writer | **C** (`.c`) |
+| Python `.pyc` | `pyc_parser` + `py_reconstruct` → `py_emitter` | Python |
+| Lua `.luac` | `lua_parser` → `lua_emitter` | Lua |
+| WebAssembly `.wasm` | `wasm_parser` → `wat_emitter` | WAT |
+| JVM `.class` / `.jar` | `jvm_parser` + `jvm_reconstruct` → `java_emitter` | Java |
+| Android `.dex` / `.apk` | `dex_parser` → `java_emitter` | Java |
+| .NET CLI PE | `cli_parser` → `csharp_emitter` | C# |
 
-- **Semantic recovery**: STL containers, cryptographic primitives, concurrency
-  synchronisation, CUDA host/device code, serialisation frameworks (Protobuf,
-  FlatBuffers, JSON, XML).
-- **Input-keyed output**: native binaries emit C; managed formats emit the
-  source language of that format.
-- **AI assistant**: optional llama.cpp GGUF refine (`RETDEC_NEURAL_REFINE`);
-  GUI Tools → AI Assistant. There is no `retdec-qwen3-runner` / `--model`.
-- **Qt 6 GUI**: multi-panel IDE-style interface with CFG visualiser, type
-  hierarchy browser, call graph explorer, diff view, strings browser, and
-  settings/plugin system.
-- **Performance harness**: wall-clock profiling, OpenCL kernel timing, RSS
-  tracking, CSV/JSON reports.
-- **Testing infrastructure**: `TestBinary` stub builder, snapshot regression
-  testing, corpus runner, performance asserter, mock pipeline.
+There is **no** general `--output-lang cpp`. The CLI rejects `cpp` / `c++` /
+`cxx` (`src/retdec-decompiler/output_lang.cpp`). `src/cxx_backend/` exists
+and is unit-tested; it is not a shipped native writer.
+
+In-tree emitters that are **not** wired from `decompileManaged()`:
+
+- `src/fsharp_emitter/` — F# writer, tests only
+- `src/vbnet_emitter/` — VB.NET writer, tests only
+- `src/kotlin_emitter/` — Kotlin writer, tests only (JVM/DEX still emit Java)
+- PTX → CUDA-C (`src/ptx_decompile/` parser + lifter) — no CLI path accepts `.ptx`
+
+Native `--output-lang python|csharp|java|wat` is accepted by the CLI but the
+native LLVM path still emits C (`applyNativeOutputLanguage` forces the `c`
+HLL writer). Managed inputs ignore `--output-lang` and use the table above.
+
+**LLVM pin:** `cmake/deps.cmake` fetches
+`llvmorg-23.1.0` (`llvm-project-23.1.0.src.tar.xz`). Do not treat this as
+LLVM 8.
+
+Default native extras:
+
+- **Buildable C sidecar** on by default: `--buildable` /
+  `RETDEC_EMIT_BUILDABLE` writes `.h`, `_stubs.c`, and `.buildable.c` next to
+  the unchanged `.c`. Opt out with `--no-buildable` or
+  `RETDEC_EMIT_BUILDABLE=0`.
+- **Post-pipeline semantic detectors** (comments + `.config.json`), not
+  production-quality STL reconstruction. Name-blind algorithm-recovery F1 on
+  the 216-binary corpus is **0.056** ([BENCHMARKS.md](BENCHMARKS.md)).
+- **Optional llama.cpp refine** (`RETDEC_ENABLE_LLAMACPP`, runtime
+  `RETDEC_NEURAL_REFINE`). See [NEURAL_REFINEMENT.md](NEURAL_REFINEMENT.md).
+
+Native CPU architectures: see [ARCHITECTURE_TARGETS.md](ARCHITECTURE_TARGETS.md).
+Production bar is x86 / x86-64. ARM / Thumb / MIPS / PowerPC have lifters and
+ABI tables. ARM64 has Capstone + `bin2llvmir` ABI init and is incomplete
+end-to-end. SPARC / SystemZ / XCore throw `GenericError`. RISC-V is not
+implemented (`-a` has no `riscv`).
 
 ---
 
 ## Build System and Module Layout {#modules}
 
-The project uses CMake **3.26+** (see root `CMakePresets.json`) with per-library `CMakeLists.txt` files.
-Dependencies are downloaded and built by ExternalProject from the pinned URLs and SHA-256 hashes in `cmake/deps.cmake` and the per-dependency `deps/*/CMakeLists.txt`; see docs/BUILD_REFERENCE.md. `vcpkg.json` is a leftover manifest that no CMake file, preset, script or workflow reads, and its versions do not match the real pins.
+Root `CMakeLists.txt` requires **CMake 3.13**. Root `CMakePresets.json` and
+`cmake/superbuild/` require **CMake 3.26**. Presets are the documented
+developer path; a direct `cmake -S . -B build` can still use 3.13.
+
+Dependencies are ExternalProject pins in `cmake/deps.cmake`. `vcpkg.json` is
+a leftover manifest that no CMake file, preset, script, or workflow reads.
 
 ```
-retdec-master/
-├── CMakeLists.txt            Root superbuild
-├── CMakePresets.json         core/full debug and release, asan, coverage presets
-├── vcpkg.json                Unused leftover; the real pins are cmake/deps.cmake
-├── include/retdec/           All public headers
-│   ├── concurrency_detect/   Concurrency/synchronisation detector
-│   ├── module_cluster/       Louvain module clustering + CMake generation
-│   ├── profiling/            Performance profiling harness
-│   ├── neural/               Opt-in llama.cpp refine (`RETDEC_NEURAL_REFINE`)
-│   ├── ptx_decompile/        PTX parser + CUDA C lifter
-│   ├── testing/              Test harness utilities
-│   └── gui/
-│       ├── panels/           All Qt panel widgets
-│       └── settings/         AppSettings, PluginManager, plugin interfaces
-├── src/                      Implementations (mirrors include/)
-├── tests/                    Unit + integration tests
-└── docs/                     Documentation
+RetDec/
+├── CMakeLists.txt            Root project (VERSION 2.0.22, cmake 3.13)
+├── CMakePresets.json         core/full debug and release, asan, coverage
+├── cmake/deps.cmake          LLVM 23.1.0, Capstone 5.0.9, llama.cpp b10451, …
+├── include/retdec/           Public headers
+├── src/                      Implementations (see developer_guide.md)
+├── tests/                    Unit, integration, managed, algorithm-recovery
+└── docs/
 ```
 
-### Library dependency graph
+`include/retdec/` does **not** 1:1-mirror `src/`. Many `src/` libraries have
+headers there; tools (`retdec-decompiler`, `fileinfo`, …) do not.
 
-Dependencies flow strictly downward; no cycles.
+### What actually links into `retdec-decompiler`
 
-```
-retdec-gui
-  ├── retdec-gui-panels
-  │     └── retdec::neural (optional llama.cpp refine)
-  └── Qt6::Widgets / Qt6::Core / Qt6::Gui (+ optional Qt6::Svg)
+Native decompile (`src/retdec/retdec.cpp`) links:
 
-retdec-testing              (standalone — test helpers only)
-retdec-profiling            (standalone)
-retdec-module-cluster       (standalone)
-retdec-concurrency-detect   (standalone)
-retdec-ptx-decompile        (standalone; not linked from the GUI)
-```
+`bin2llvmir`, `llvmir2hll`, `llvmir-emul`, `config`, `fileformat`,
+`concurrency_detect`, `sort_detect`, `container_detect`, `algo_recover`,
+`type_inference`, `crypto_detect`, `serial_detect`, `pattern_detect`, `ipa`,
+`call_conv`, `ptx_decompile` (OpenCL host recovery only), `ssa`, optional
+`neural`, `gpu-scanner` (built; **not called** from `decompile()`),
+`profiling`.
 
-#### Libraries the product does not link
+Managed dispatch (`src/retdec-decompiler/managed_decompiler.cpp`) additionally
+links: `jvm_parser`, `jvm_reconstruct`, `java_emitter`, `cli_parser`,
+`csharp_emitter`, `dex_parser`, `pyc_parser`, `py_reconstruct`, `py_emitter`,
+`lua_parser`, `wasm_parser`. It includes `cil_reconstruct` types but passes
+an **empty** reconstruction map into the C# emitter.
+
+### Libraries the product does not link
 
 Twelve library targets under `src/` are built, unit-tested and installed, and
-reach no decompilation: nothing under `src/` or the root `CMakeLists.txt` links
-them, and no source outside their own directory includes their headers. Their
-only consumer is their own test binary.
+reach no decompilation. `scripts/ci/check_link_graph.py` owns this list:
 
 | Library | Directory | Why it is not in the pipeline |
 | --- | --- | --- |
@@ -106,103 +131,127 @@ only consumer is their own test binary.
 | `retdec-code-data` | `src/code_data` | code/data separation; the loader decides that today |
 | `retdec-compiler-abi` | `src/compiler_abi` | ABI tables; `param_return` in bin2llvmir carries its own |
 | `retdec-compiler-detect` | `src/compiler_detect` | compiler identification; `cpdetect` is what runs |
-| `retdec-eh-reconstruct` | `src/eh_reconstruct` | exception-handler recovery, not yet consumed by any emitter |
-| `retdec-func-boundary` | `src/func_boundary` | function boundary detection; the decoder finds functions itself |
-| `retdec-idiom-reconstruct` | `src/idiom_reconstruct` | idiom recovery; llvmir2hll has its own idiom passes |
+| `retdec-eh-reconstruct` | `src/eh_reconstruct` | exception-handler recovery, not consumed by any emitter |
+| `retdec-func-boundary` | `src/func_boundary` | function boundary detection; the decoder finds functions |
+| `retdec-idiom-reconstruct` | `src/idiom_reconstruct` | idiom recovery; bin2llvmir `retdec-idioms` is what runs |
 | `retdec-loader-sim` | `src/loader_sim` | loader simulation, used only by its own tests |
 | `retdec-module-cluster` | `src/module_cluster` | module clustering, no caller |
 | `retdec-rtti` | `src/rtti` | RTTI reconstruction; `rtti-finder` is the one bin2llvmir links |
 | `retdec-string-detect` | `src/string_detect` | string classification, no caller |
-| `retdec-testing` | `src/testing` | test support library, which is what it is for |
+| `retdec-testing` | `src/testing` | test support library |
 
-`retdec-experimental` (`src/experimental`) is linked by nothing at all, tests
+`retdec-experimental` (`src/experimental`) is linked by nothing, tests
 included; it is the task scaffold behind `RETDEC_ENABLE_EXPERIMENTAL_SCAFFOLD`.
 
-This is a statement about the tree, not a defect list: a fix landing in one of
-these reaches no user of the decompiler, which is worth knowing before making
-one. `scripts/ci/check_link_graph.py` recomputes the set from the CMakeLists on
-every doc-integrity run and fails if it has changed in either direction, so the
-table above cannot drift and the count cannot grow by one without somebody
-saying so.
+Also unwired from the CLI (built, tested, not a native/managed target):
+
+- `src/cxx_backend/` + `src/codegen/` (C++ writer / alternate C emitter)
+- `src/fsharp_emitter/`, `src/vbnet_emitter/`, `src/kotlin_emitter/`
+- `src/cuda_accel/`, `src/opencl/` (parked GPU accel; OpenCL is not added
+  from `src/CMakeLists.txt`)
+- `src/debug_info/` (`pdb_extractor.cpp` LLVM PDB reader; the live PDB path
+  is `debugformat` + `pdbparser`)
 
 ---
 
-## Full Pipeline Stage Reference {#pipeline}
+## Running Pipeline {#pipeline}
 
-### Front-End (Stages 1–10): Binary → SSA IR
+There is one native LLVM pass pipeline, then optional post-passes. It is
+**not** the 29-stage table in older drafts of this file.
 
-| Stage | Library | Input | Output |
-|-------|---------|-------|--------|
-| 1 Binary Loader | `fileformat` | Raw bytes | Sections, symbols, imports, relocations |
-| 2 Disassembler | `capstone2llvmir` | Sections | LLVM IR basic blocks |
-| 3 CFG Construction | `cfg` | LLVM IR | Per-function CFGs |
-| 4 Function Boundary | `func_boundary` | CFGs | Confirmed function list |
-| 5 SSA Lifting | `ssa` | CFGs | SSA IR (`PhiNode`, `SSAValue`) |
-| 6 Type Inference | `type_inference` | SSA IR | Type annotations |
-| 7 Calling Convention | `call_conv` | Functions | CC descriptors (SysV, Win64, ARM AAPCS) |
-| 8 RTTI Recovery | `rtti` | SSA IR + symbols | C++ class hierarchy |
-| 9 EH Reconstruction | `eh_reconstruct` | DWARF / `.pdata` | `try`/`catch`/`finally` blocks |
-| 10 Pattern Matching | `pattern_detect` | SSA IR | Library call identifications |
+### 0. CLI dispatch (`retdec-decompiler`)
 
-**Key design choice — LLVM IR as pivot**: all front-ends (x86, ARM, MIPS,
-PowerPC) produce LLVM IR.  All back-ends consume LLVM IR.  Adding a new
-architecture means adding only a new lifting front-end; the entire middle-end
-and back-end is shared.
+`src/retdec-decompiler/retdec-decompiler.cpp`:
 
-### Middle-End (Stages 11–20): SSA IR → Language AST
+1. Parse flags (`--output-lang`, `--buildable`, `--pdb FILE`, `-a`, …).
+2. Probe input bytes. If a managed format matches, call `decompileManaged()`
+   and **return** (no `bin2llvmir`).
+3. Optional unpacker. `--try-emulation` is opt-in when no unpacker plugin
+   matches (`tryEmulationUnpacking`).
+4. `retdec::decompile(config)` for native binaries.
 
-| Stage | Library | Purpose |
-|-------|---------|---------|
-| 11 Alias Analysis | `alias_analysis` | Points-to sets, must/may alias |
-| 12 Dead Code Elimination | `dce` | Remove unreachable and unused SSA defs |
-| 13 Control Flow Structuring | `cfg_structure` | Recover `if/else`, `while`, `for`, `switch` |
-| 14 Expression Recovery | `var_recovery` | Simplify SSA → C expressions |
-| 15 IPA | `ipa` | Inter-procedural summary propagation |
-| 16 Concurrency Detection | `concurrency_detect` | Mutexes, threads, atomics, OpenMP, TBB |
-| 17 CUDA Host Recovery | `ptx_decompile` | `cudaLaunchKernel`, memory ops, streams |
-| 18 PTX Lifting | `ptx_decompile` | **Unwired**, like stage 24. The parser and lifter build and are unit-tested; nothing routes a `.ptx` file to them, and `retdec-decompiler` does not accept one. `src/retdec/retdec.cpp` links this library only for `OclHostRecovery`. |
-| 19 Serialisation Detection | `serial_detect` | Protobuf, FlatBuffers, JSON, XML patterns |
-| 20 Module Clustering | `module_cluster` | Louvain community detection on call graph |
+### 1. LLVM pass manager (`decompiler-config.json`)
 
-### Semantic Recovery (Stages 21–25): IR + Metadata → Annotated AST
+`src/retdec/retdec.cpp` builds `llvm::legacy::PassManager` from
+`decompParams.llvmPasses`. Default order (abbreviated):
 
-| Stage | Library | Purpose |
-|-------|---------|---------|
-| 21 STL/Container Recovery | `container_detect` | std::vector, map, list, string, etc. |
-| 22 Algorithm Recovery | `algo_recover` | sort, binary search, BFS/DFS |
-| 23 Crypto Detection | `crypto_detect` | AES, SHA, RSA, ChaCha20 implementations |
-| 24 C++ Lifting | `cxx_backend` | **Unwired.** Not a shipped `--output-lang cpp` writer. |
-| 25 CMake Generation | `module_cluster` | Emit `CMakeLists.txt` from module graph |
+```
+retdec-provider-init
+retdec-decoder                 # Capstone lift via capstone2llvmir
+retdec-x86-addr-spaces, retdec-x87-fpu, retdec-main-detection
+retdec-idioms-libgcc, retdec-inst-opt, retdec-cond-branch-opt
+retdec-syscalls, retdec-stack, retdec-constants
+retdec-param-return, retdec-simple-types
+retdec-jump-table-recovery, retdec-class-hierarchy
+retdec-value-protect + LLVM simplifycfg / mem2reg / instcombine / dse / …
+retdec-idioms
+retdec-llvmir2hll              # C emission
+```
 
-### Back-End (Stages 26–29): AST → Source Code
+Front-end lifting is `src/capstone2llvmir/` (x86, ARM/Thumb, ARM64, MIPS,
+PowerPC). Middle-end and C back-end are `src/bin2llvmir/` and
+`src/llvmir2hll/`. Adding an architecture means a new Capstone translator
+**and** ABI / decoder coverage; the HLL writer is shared.
 
-| Stage | Library | Purpose |
-|-------|---------|---------|
-| 26 Language Emission | `codegen` | Dispatch to language-specific emitter |
-| 27 Name Demangling | `demangler` | C++/D/Rust/Swift symbol demangling |
-| 28 Comment Insertion | `codegen` | Recovery metadata as inline comments |
-| 29 Formatter | `codegen` | clang-format style application |
+### 2. Post-pipeline analysis (`retdec.cpp`)
 
-### Managed / Interpreted Language Paths
+After `pm.run()`, the decompiler rebuilds a lightweight
+`retdec::ssa::SSAModule` from LLVM IR (`src/retdec/llvm_to_ssa.cpp`) and
+runs detectors **if** `RETDEC_SKIP_SEMANTIC_RECOVERY` is unset:
 
-These bypass the SSA pipeline entirely, operating on their own bytecode:
+| Step | Library | Notes |
+|------|---------|--------|
+| Calling convention | `src/call_conv` | `CallConvPass::runAll` |
+| IPA | `src/ipa` | summaries / inline candidates; does not rewrite C |
+| Type inference | `src/type_inference` | **only if** `RETDEC_TYPE_INFERENCE=1` |
+| Container / algo / idiom / sort | `container_detect`, `algo_recover`, `sort_detect` | per-function; optional incremental cache |
+| Concurrency | `concurrency_detect` | module-wide |
+| Crypto / serial / design patterns | `crypto_detect`, `serial_detect`, `pattern_detect` | annotations |
+| Export | `semantic_recovery_export.cpp` | JSON sidecar + `// [RetDec]` comments |
+| Neural refine | `src/neural` | opt-in env; writes `*.refined.c` |
+| Buildable sidecar | `maybeWriteBuildableSidecars` | default on |
+| OpenCL host | `ptx_decompile::OclHostRecovery` | log-only if `cl*` APIs seen |
 
-| Input | Lifter | Emitter |
-|-------|--------|---------|
-| JVM `.class` / `.jar` | `jvm_parser` + `jvm_reconstruct` | `java_emitter`, `kotlin_emitter` |
-| Android `.dex` / `.apk` | `dex_parser` | `java_emitter`, `kotlin_emitter` |
-| .NET CIL / `.dll` | `cli_parser` + `cil_reconstruct` | `csharp_emitter`, `vbnet_emitter` |
-| Python `.pyc` | `pyc_parser` + `py_reconstruct` | `py_emitter` |
-| Lua `.luac` | `lua_parser` | `lua_emitter` |
-| WASM `.wasm` | `wasm_parser` | `wat_emitter` |
+`ptx_decompile::CudaHostRecovery` (`cudaLaunchKernel` / `cuLaunchKernel`
+detectors) is **implemented and unit-tested** and is **not** constructed
+from `decompile()`. CUDA host recovery is therefore not a shipped pipeline
+stage.
+
+Standalone `src/ssa`, `src/cfg_structure`, `src/var_recovery`, `src/dce`,
+and `src/codegen` are **not** the llvmir2hll C writer. llvmir2hll has its
+own structuring (`structure_converter.cpp`), alias analyses, and validators.
+
+---
+
+## Managed-Language Dispatch {#managed}
+
+Bypass the LLVM pipeline. Probe in
+`src/retdec-decompiler/managed_decompiler.cpp`
+(`detectManagedFormatFromBytes`):
+
+| Magic / probe | Format | Writer |
+|---------------|--------|--------|
+| Java class `CAFEBABE` (with lattice vs Mach-O fat) | `JavaClass` | `JavaFileEmitter` |
+| ZIP + JAR | `JavaJar` | `JavaFileEmitter` |
+| `dex\n` | `Dex` | `JavaFileEmitter` |
+| ZIP + APK | `Apk` | `JavaFileEmitter` |
+| WASM `\0asm` | `Wasm` | `WatEmitter` |
+| Lua `\x1bLua` | `LuaBytecode` | `lua_emitter` |
+| CPython marshal magic | `PythonPyc` | `PyFileEmitter` |
+| MZ + CLI metadata | `CliAssembly` | `CsFileEmitter` (`cil_reconstruct` is **linked** via `csharp_emitter` but `decompileCliAssembly` passes an empty result map — reconstructor not run) |
+
+Default language hints (`managedOutputLangHint`): java / python / lua /
+wat / csharp. There is no `fsharp`, `vbnet`, or `kotlin` route in this
+function.
 
 ---
 
 ## Core Library Details {#libraries}
 
-### `concurrency_detect`
+### `concurrency_detect` (post-pipeline)
 
-Seven detector classes, all implementing `IConcurrencyDetector`:
+Seven detector classes implementing `IConcurrencyDetector`
+(`include/retdec/concurrency_detect/concurrency_detect.h`):
 
 | Class | Detects |
 |-------|---------|
@@ -211,178 +260,95 @@ Seven detector classes, all implementing `IConcurrencyDetector`:
 | `Win32ThreadDetector` | `CreateThread`, `WaitForSingleObject`, CRITICAL_SECTION, events |
 | `AtomicDetector` | `std::atomic<T>`, `__atomic_*` builtins, `LOCK XCHG` patterns |
 | `SpinlockDetector` | Compare-and-swap loops, `__sync_bool_compare_and_swap` |
-| `OpenMPDetector` | `__kmpc_fork_call`, `omp_get_thread_num`, parallel region entry/exit |
+| `OpenMPDetector` | `__kmpc_fork_call`, `omp_get_thread_num` |
 | `TBBDetector` | `tbb::parallel_for`, `tbb::task_group`, `tbb::concurrent_vector` |
 
-Results stored in `ConcurrencyModel`.  `ConcurrencyEmitter` produces a
-human-readable summary.  `ConcurrencyDetector` orchestrates all sub-detectors.
+`ConcurrencyDetector` orchestrates them. Results become
+`semanticDetections` comments/JSON. Detection is pattern-based; do not
+treat it as complete concurrency recovery.
 
 ### `ptx_decompile`
 
-**`PtxParser`**: tokenises PTX text; parses `.target`, `.entry`, `.func`,
-`.reg`, `.shared`, `.local`, `.param` directives; produces `PtxModule`.
+**`PtxParser` / `InstrLifter` / `ThreadIndexRecovery`:** PTX text → CUDA-C
+strings. Unit-tested. Nothing in `retdec-decompiler` feeds a `.ptx` file
+here.
 
-**`InstrLifter`**: maps 30+ PTX instruction types to CUDA C:
-`mov`, `add`, `mul`, `ld`, `st`, `setp`, `selp`, `cvt`, `bar.sync`,
-`membar`, `atom`, `vote`, `shfl`, `sqrt`, `bra`, labels, `ret`.
+**`OclHostRecovery`:** wired from `decompile()`; looks for `clCreate*` /
+`clEnqueue*` / etc. on the post-pipeline SSA module. Emits a log summary.
 
-**`ThreadIndexRecovery`**: maps PTX special registers:
-- `%tid.{x,y,z}` → `threadIdx.{x,y,z}`
-- `%ctaid.{x,y,z}` → `blockIdx.{x,y,z}`
-- `%ntid.{x,y,z}` → `blockDim.{x,y,z}`
-- `%nctaid.{x,y,z}` → `gridDim.{x,y,z}`
-- `%laneid` → `threadIdx.x % 32`
-- `%warpid` → `threadIdx.x / 32`
+**`CudaHostRecovery`:** five detectors (`KernelLaunchDetector`,
+`CudaMemoryDetector`, `CudaDeviceDetector`, `CudaStreamEventDetector`,
+`NvccStubDetector`). Tests only; not called from `decompile()`.
 
-**`CudaHostRecovery`**: five detector classes for CUDA Runtime and Driver API:
-`KernelLaunchDetector`, `CudaMemoryDetector`, `CudaDeviceDetector`,
-`CudaStreamEventDetector`, `NvccStubDetector`.
+This is **host API recovery**, not GPU acceleration. See
+[CUDA_CAPABILITIES.md](CUDA_CAPABILITIES.md).
 
 ### `module_cluster`
 
-**`LouvainClusterer`**: iterative modularity maximisation.
+Louvain clustering, header inference, `CMakeEmitter`. **No caller** in the
+decompiler (test-only library). GUI Analysis → “Module clustering” is an
+in-process settings checkbox; F5 still runs `retdec-decompiler` and does
+not invoke this library.
 
-Modularity formula:
-```
-Q = (1/2m) Σ_{ij} [A_{ij} − γ·k_i·k_j/2m] δ(c_i, c_j)
-```
+### Semantic detectors (post-pipeline, low F1)
 
-Node-moving complexity: O((N+M)·D) where D ≤ 20 passes in practice.
+Documented further in [SEMANTIC_OUTPUT.md](SEMANTIC_OUTPUT.md).
 
-Post-Louvain refinements:
-1. **String locality**: merge communities sharing string-pool references.
-2. **Debug symbols**: merge communities where functions share a `sourceFile`.
-3. **RTTI clustering**: merge classes with shared typeinfo into one module.
-4. **Symbol prefix**: merge functions with a common demangled namespace prefix.
+- `container_detect`: vector, list, map, unordered_map, string, ring buffer
+- `algo_recover`: transform, find, binary search, partition, accumulate, …
+- `sort_detect`: introsort, mergesort, heapsort, quicksort, bubblesort, radix
+- `crypto_detect`: AES, SHA-1/256, ChaCha20, Salsa20, RSA/DH, RC4, MD5, CRC, …
+- `serial_detect`: Protobuf, FlatBuffers, JSON, XML (symbol + structural)
+- `pattern_detect`: Singleton, Factory, and related design-pattern heuristics
 
-**`ModuleNamer`**: heuristics for module names:
-- Common symbol prefix (demangled namespace)
-- Library call fingerprint (e.g., functions calling `SSL_*` → "crypto")
-- Source file name from debug info
-
-**`HeaderInference`**: maps library symbol sets to `#include` directives.
-Covers: stdlib, stdio, POSIX, OpenSSL, CUDA, pthreads, WinAPI, Qt6.
-
-**`CMakeEmitter`**: generates `CMakeLists.txt` with `add_library`, `add_executable`,
-`find_package`, `target_link_libraries`, install rules, and optional CTest.
+Labels are recovery **hints**. Default C output stays pointers/structs.
 
 ### `profiling`
 
-See [algorithm_reference.md](algorithm_reference.md) for the online softmax
-algorithm.  Key implementation points:
-
-- All public methods are thread-safe via `std::mutex`.
-- `Profiler::time(name, fn)` is a zero-overhead template when disabled.
-- `RssTracker` is platform-specific:
-  - Linux: parses `/proc/self/status` `VmPeak:` line.
-  - macOS: `getrusage(RUSAGE_SELF)` + `mach_task_basic_info` for current RSS.
-  - Windows: `GetProcessMemoryInfo` (PSAPI).
-- `FunctionHistogram` stores up to 10,000 raw samples for percentile computation,
-  falling back to bucket counts beyond that limit.
+Thread-safe `Profiler` with `std::mutex`. `RssTracker`: Linux
+`/proc/self/status` `VmPeak:`; macOS `getrusage` + Mach; Windows
+`GetProcessMemoryInfo`. Used around pipeline phases in `retdec.cpp`.
 
 ### `testing`
 
-`TestBinary` serialises valid (but trivially empty) binaries:
-
-- **ELF64**: 64-byte Ehdr + 56-byte PT_LOAD phdr + sections + section headers.
-  ELF magic `0x7F 'E' 'L' 'F'`, class byte 2 (64-bit), little-endian.
-- **ELF32**: same with 32-bit fields and class byte 1.
-- **PE32**: DOS MZ stub + PE signature + minimal COFF header + optional header
-  with 16 zeroed data directories.
-- **Raw**: no header; just section data concatenated.
-
-`SnapshotTester` uses FNV-1a 64-bit as its hash function — non-cryptographic,
-single-pass, ~1 byte/cycle, no dependencies.
+`TestBinary` builds trivial ELF64/ELF32/PE32/raw fixtures.
+`SnapshotTester` uses FNV-1a 64-bit.
 
 ---
 
 ## Qt GUI Architecture {#gui}
 
-### Window Layout
+`retdec-gui` is optional (`RETDEC_REQUIRE_QT6` or Qt6 found). Decompilation
+is **not** in-process: `RetDecMainWindow` starts `retdec-decompiler` as a
+`QProcess` (`src/gui/decompiler_launch.cpp`).
 
-`MainWindow` (QMainWindow) hosts all panels as `QDockWidget`s.
+### Window layout (`src/gui/mainwindow.cpp`)
 
 ```
 MainWindow
-  ├── TriPaneCodeView          [central widget]
-  ├── FunctionListPanel        [left dock]
-  ├── TypeHierarchyPanel       [right dock, tabbed]
-  ├── CallGraphPanel           [right dock, tabbed]
-  ├── CFGPanel                 [bottom dock, tabbed]
-  ├── StringsBrowserPanel      [bottom dock, tabbed]
-  ├── AIAssistantPanel         [bottom dock, tabbed]
-  ├── ProgressPanel            [bottom status dock]
-  └── DiffPanel                [on demand, floating]
+  ├── documentTabs_          Decompiled C | Assembly | IR (SSA) | CFG | Synced tri-pane
+  ├── workspaceTabWidget_    Strings | Inspect | Binary | Target
+  ├── outputTabs_            Console | Problems | History | Progress
+  └── tool windows           Function list, Call Graph, Type Hierarchy,
+                             AI Assistant (Tools menu; not a default dock)
 ```
 
-All panels inherit `PanelBase : QWidget`, which adds:
-- `title()` — used as dock widget title.
-- `clear()` — resets panel to empty state.
-- `setActiveFunction(const QString&)` — called when the selected function changes.
-
-### TriPaneCodeView
-
-Three `SyncedCodePane` instances (each a `QPlainTextEdit` subclass) share a
-`LineMapping` that maps source lines to assembly addresses and SSA IR nodes.
-Scroll synchronisation uses `QScrollBar::valueChanged` with a re-entrancy guard.
-
-`CodeSyntaxHighlighter` implements `QSyntaxHighlighter` with keyword/operator/
-string/comment rules for C, assembly, and SSA IR dialects.
-
-### CFGPanel
-
-`CFGScene` (QGraphicsScene) + `CFGView` (QGraphicsView):
-
-- `BasicBlockItem`: rounded-rect with opcode text; highlighted on selection.
-- `CFGEdgeItem`: arrow with true/false colour coding for conditional branches.
-- `LoopRegionItem`: semi-transparent background overlay for back-edge loops.
-- `MiniMapView`: scaled thumbnail of the full scene with a viewport rectangle.
-
-### TypeHierarchyPanel + CallGraphPanel
-
-`ClassHierarchyModel` (QAbstractItemModel) drives a `QTreeView`.
-`VtableModel` (QAbstractTableModel) drives a `QTableView`.
-
-`CallGraphScene` uses `SccSuperNodeItem` for strongly-connected components
-and `ModuleClusterItem` (coloured background region) for Louvain modules.
-
-### AIAssistantPanel
-
-Threading model:
-```
-Main Thread                   Worker Thread (QThread)
-    │                               │
-    │── startInferenceRequest ──►  InferenceWorker::startInference()
-    │                               │  pipeline_->generate(prompt, callback)
-    │◄── tokenGenerated(token) ────◄│  callback: emit tokenGenerated (queued)
-    │◄── inferenceComplete() ──────◄│
-    │
-    onTokenGenerated: append to HTML chat bubble
-```
-
-`InferenceWorker` holds an `std::atomic_bool abort_` which is set by
-`abortInference()`.  The generation callback checks this flag and returns
-`false` (stop) when set.
+`AnalysisBridge` reports progress to `ProgressPanel`. It does **not** run
+pipeline stages on `QThreadPool`.
 
 ### SettingsDialog
 
-Seven-tab `QDialog` backed by `AppSettings`:
+Eight tabs (`src/gui/panels/settings_dialog.cpp`): General, Analysis, **CUDA**,
+ML, Recovery, Advanced, Decompiler, Plugins. There is **no** OpenCL tab.
+Analysis checkboxes (module clustering, C++ lifter, CUDA host recovery) are
+GUI-only in-process toggles; F5 still uses the CLI pipeline above.
 
-| Tab | Settings struct |
-|-----|-----------------|
-| General | `GeneralSettings` — theme, font, language |
-| Analysis | `AnalysisSettings` — stage toggles, thresholds, threads |
-| OpenCL | `OpenCLSettings` — device, cache dir, profiling |
-| ML | `MLSettings` — model path, quantisation, temperature |
-| Recovery | `RecoverySettings` — per-detector toggles and thresholds |
-| Advanced | `AdvancedSettings` — verbosity, IR dump, intermediate output |
-| Plugins | `PluginSettings` + live `PluginManager` interaction |
+`AppSettings` uses `QSettings(QSettings::IniFormat, QSettings::UserScope,
+"retdec", "settings")` — INI on every platform. Typical paths:
+`~/.config/retdec/settings.ini` (Linux) and
+`%APPDATA%/retdec/settings.ini` (Windows). Not the Windows registry.
 
-`AppSettings` persists to `~/.config/retdec/settings.ini` on Linux/macOS
-and to `HKCU\Software\retdec\settings.ini` on Windows (INI format forced
-on all platforms for portability and diff-friendliness).
-
-### Plugin System
+### Plugin System {#plugins}
 
 ```
 Plugin file (.so / .dll)
@@ -392,73 +358,72 @@ Plugin file (.so / .dll)
     retdec_plugin_api_version() → const char*  (must == "1.0")
 ```
 
-`PluginManager` loads plugins with `QPluginLoader`, verifies the API version,
-calls `initialize()`, and inserts into a topologically sorted list (Kahn's
-algorithm on declared dependencies).
-
-Plugin types:
+`PluginManager` uses `QPluginLoader`, checks `RETDEC_PLUGIN_API_VERSION`
+(`"1.0"`), and topological-sorts declared dependencies.
 
 | Interface | Hook |
 |-----------|------|
-| `IDecompilerPlugin` | `runStage(PipelineContext&)` — runs after all built-in stages |
-| `IOutputPlugin` | `transform(decompiledC)` — new export format |
-| `IVisualisationPlugin` | `createPanel(parent)` — new dockable panel |
-| `IAnalysisPlugin` | `analyse(PipelineContext&)` — post-processing pass |
+| `IDecompilerPlugin` | `runStage(PipelineContext&)` |
+| `IOutputPlugin` | `transform(decompiledC)` |
+| `IVisualisationPlugin` | `createPanel(parent)` |
+| `IAnalysisPlugin` | `analyse(PipelineContext&)` |
+
+Plugins do not insert LLVM passes into `decompiler-config.json`.
 
 ---
 
 ## AI Inference Engine {#ai}
 
-**Not in the default decompiler pipeline.** There is no `src/qwen3/`,
-`Qwen3Pipeline`, or in-tree FlashAttention engine (`C-QWEN3-GPU` withdrawn).
-Live refinement is opt-in llama.cpp in `src/neural/`
-(`RETDEC_NEURAL_REFINE` + `RETDEC_NEURAL_MODEL`). See
-[NEURAL_REFINEMENT.md](NEURAL_REFINEMENT.md).
+**Not in the default decompiler pipeline.** There is no `src/qwen3/`.
 
-### Component stack
+Two separate consumers:
+
+1. **Post-decompile refine** — `neural::maybeRefineDecompilerOutput` when
+   `RETDEC_NEURAL_REFINE=1` and a GGUF path is set. Requires
+   `RETDEC_ENABLE_LLAMACPP` at build time for a real backend; otherwise the
+   stub in `src/retdec/neural_refine_stub.cpp` is a no-op. Compile gate is
+   `cc`/`gcc -fsyntax-only`. Differential gate is **not implemented**
+   (`RETDEC_NEURAL_DIFF_GATE=1` warns and skips). See
+   [NEURAL_REFINEMENT.md](NEURAL_REFINEMENT.md).
+2. **GUI Tools → AI Assistant…** — `InferenceWorker` on a `QThread` loads a
+   GGUF in-process when neural is linked. Independent of the refine sidecar.
 
 ```
 maybeRefineDecompilerOutput
   ├── model_verify     SHA-256 allowlist (fails closed if empty)
   ├── llama.cpp        GGUF generate (optional n_gpu_layers)
-  ├── gates            -fsyntax-only + tree-sitter AST
+  ├── gates            -fsyntax-only + tree-sitter AST (structural)
   └── applyJsonRenameMap  Naming-tier GBNF JSON map
 ```
 
-There is no `retdec-qwen3-runner` and no CLI `--model`.
+No `retdec-qwen3-runner` and no CLI `--model`.
 
 ---
 
 ## Performance and Threading Model {#threading}
 
-### Analysis Pipeline Threads
+### Native decompile process
 
-- Analysis stages run on `QThreadPool::globalInstance()`.
-- Functions are independent; structuring and expression recovery run per-function
-  in parallel across all hardware threads.
-- `AnalysisBridge` coordinates stage sequencing and emits progress signals to
-  `ProgressPanel`.
+`decompile()` takes a process-wide `pipelineLock()` (bin2llvmir providers
+are not re-entrant). LLVM passes run on the calling thread. Post-pipeline
+per-function detectors may use `retdec::utils::ThreadPool` when
+`RETDEC_PARALLEL_ANALYSIS` allows it and function count is high enough.
 
-### AI Inference Thread
+The GUI does not share that lock: it spawns another `retdec-decompiler`
+process.
 
-- The GUI Tools → AI Assistant window is a separate process/env path for
-  `RETDEC_NEURAL_REFINE`; it does not call a `Qwen3Pipeline` in-process.
-  See [NEURAL_REFINEMENT.md](NEURAL_REFINEMENT.md).
+### OpenCL / CUDA accel
 
-### OpenCL Concurrency
+Parked `src/opencl/` is **not** added from `src/CMakeLists.txt`.
+`src/cuda_accel/` is opt-in `RETDEC_ENABLE_CUDA_ACCEL` (default OFF) and is
+not linked from `src/retdec`. `RETDEC_ENABLE_CUDA` (in
+`src/utils/CMakeLists.txt`, default OFF) builds `GpuScanner`; nothing in
+`decompile()` constructs one.
 
-Parked `src/opencl/` is **not** wired into `src/retdec`
-(`C-CUDA-PIPE` withdrawn; `C-QWEN3-GPU` withdrawn). Do not treat
-FlashAttention command queues as a shipped decompiler path.
+### Profiling overhead
 
-### Profiling Overhead
-
-`Profiler::measure(name)` takes one `std::mutex` lock on construction and one
-on destruction.  On a modern CPU this is approximately 20–50 ns per scope — well
-below the granularity of any pipeline stage.
-
-When disabled (`setEnabled(false)`), `ScopeTimer` is a no-op: the constructor
-stores the name and start time, but the destructor skips the lock and record.
+`Profiler::measure(name)` takes a mutex on construction and destruction.
+When disabled, the destructor skips the record.
 
 ---
 
@@ -466,129 +431,63 @@ stores the name and start time, but the destructor skips the lock and record.
 
 ### Why LLVM IR as the pivot format?
 
-LLVM IR provides a stable, well-defined semantics for all supported architectures.
-The entire middle-end (alias analysis, DCE, structuring, expression recovery)
-operates on LLVM IR regardless of the input architecture.  This maximises code
-reuse and separates front-end correctness from back-end quality.
+Native architectures lift to LLVM IR so llvmir2hll and LLVM scalar passes
+are shared. Managed formats never enter that IR.
 
-The alternative (architecture-specific IRs, as in older decompilers) requires
-reimplementing every middle-end pass per architecture.
+### Why a second SSA module after llvmir2hll?
 
-### Why Louvain for module clustering?
+Detectors in `src/algo_recover` and friends consume `retdec::ssa`, not
+llvmir2hll BIR. `buildSsaModule` is an adapter. It does not replace
+mem2reg / llvmir2hll.
 
-Louvain achieves near-linear time O((N+M)·D) on call graphs with tens of
-thousands of nodes.  The resolution parameter γ provides a tunable trade-off
-between many small modules and few large ones.  Alternative approaches
-(spectral clustering, k-means on call vectors) are slower and less
-interpretable.
+### Why llama.cpp instead of a custom Qwen engine?
 
-The post-processing refinements (string locality, debug symbols) are necessary
-because the call graph alone is an impoverished signal for code organisation:
-utility functions called by many modules will be placed in the largest
-community, which is not always the most meaningful grouping.
+`src/qwen3/` was deleted. Optional refinement uses pinned llama.cpp
+**b10451** in `cmake/deps.cmake`.
 
-### Why Myers diff in the DiffPanel?
+### Why INI for GUI settings?
 
-Myers produces the *minimum edit script* in O((N+M)·D) time.  For typical
-decompiler output changes (a few hundred lines), this is sub-millisecond.
-The Hirschberg divide-and-conquer variant reduces space from O(ND) to O(N+M),
-which matters for large functions.
-
-The minimum edit script produces the cleanest visual diff — fewer spurious
-changes than greedy or heuristic approaches.
-
-### Why FNV-1a for snapshot hashing?
-
-FNV-1a is:
-- **Fast**: ~1 byte/cycle, no hardware acceleration needed.
-- **Dependency-free**: 10 lines of code.
-- **Non-cryptographic**: collision resistance is not needed for regression testing.
-
-SHA-256 would add a dependency, be ~10× slower, and provide no practical
-benefit for the use case of detecting unintentional output changes.
-
-### Why INI format for settings?
-
-INI is human-readable, diff-friendly, and portable.  Settings files can be
-committed to version control for team configuration sharing.  JSON would also
-work but requires a JSON parser dependency.  QSettings handles INI natively.
-
-### Why llama.cpp instead of a custom Qwen3 engine?
-
-`src/qwen3/` was deleted (`C-QWEN3-GPU` withdrawn). Optional refinement uses
-the pinned llama.cpp backend in `src/neural/` (`maybeRefineDecompilerOutput`).
-That path has GBNF naming maps, compile/structural gates, and a fail-closed
-model allowlist. There is no in-tree FlashAttention / MoE engine.
+`QSettings::IniFormat` is human-readable and the same format on Windows and
+Unix.
 
 ---
 
 ## Data Flow Diagrams {#diagrams}
 
-### Full Pipeline
+### Native pipeline (what `decompile()` runs)
 
 ```
 Binary File
     │
     ▼
-┌──────────────────────────────────────────────────────┐
-│  Stage 1–5: Front-End                                │
-│  Loader → Disasm → CFG → Func Boundary → SSA         │
-└─────────────────────────┬────────────────────────────┘
-                          │  SSA IR
-                          ▼
-┌──────────────────────────────────────────────────────┐
-│  Stage 6–10: Type & Pattern Recovery                 │
-│  Types → CC → RTTI → EH → Patterns                  │
-└─────────────────────────┬────────────────────────────┘
-                          │  Annotated SSA IR
-                          ▼
-┌──────────────────────────────────────────────────────┐
-│  Stage 11–15: Middle-End Optimisation                │
-│  Alias → DCE → Structuring → Expr → IPA             │
-└─────────────────────────┬────────────────────────────┘
-                          │  Structured AST
-                          ▼
-┌──────────────────────────────────────────────────────┐
-│  Stage 16–25: Semantic & Structural Recovery         │
-│  Concurrency → CUDA → Serial → Modules               │
-│  STL → Algorithms → Crypto → C++ Lift → CMake       │
-└─────────────────────────┬────────────────────────────┘
-                          │  Language AST
-                          ▼
-┌──────────────────────────────────────────────────────┐
-│  Stage 26–29: Back-End Emission                      │
-│  Language Emit → Demangle → Comments → Format        │
-└─────────────────────────┬────────────────────────────┘
-                          │
-                 Final Source Code
-                 (native: C; managed: format-keyed)
+fileformat + loader + optional unpacker
+    │
+    ▼
+LLVM PassManager (decompiler-config.json)
+    decoder / capstone2llvmir → bin2llvmir opts → llvmir2hll C
+    │
+    ▼
+Post-pipeline SSA rebuild
+    call_conv → ipa → (optional type_inference)
+    → container / algo / sort / concurrency / crypto / serial / patterns
+    → comments + config JSON
+    → optional llama.cpp refine (*.refined.c)
+    → default --buildable sidecars
+    → OclHostRecovery log
+    │
+    ▼
+out.c  (native C; managed formats never reach here)
 ```
 
-### Managed Language Paths (bypass SSA)
+### Managed paths (bypass LLVM)
 
 ```
-JVM .class/.jar  →  jvm_parser → jvm_reconstruct → java_emitter / kotlin_emitter
-Android .dex     →  dex_parser →                 → java_emitter / kotlin_emitter
-.NET CIL         →  cli_parser → cil_reconstruct → csharp_emitter / vbnet_emitter
+JVM .class/.jar  →  jvm_parser → jvm_reconstruct → java_emitter
+Android .dex/.apk → dex_parser →                 → java_emitter
+.NET CLI         →  cli_parser → (no cil_reconstruct run) → csharp_emitter
 Python .pyc      →  pyc_parser → py_reconstruct  → py_emitter
 Lua .luac        →  lua_parser →                 → lua_emitter
 WASM .wasm       →  wasm_parser →                → wat_emitter
-PTX .ptx         →  ptx_parser →  ptx_lifter     → CUDA C   (library only; no CLI path takes a .ptx)
 ```
 
-### AI Inference Pipeline
-
-```
-RETDEC_NEURAL_REFINE=1 + RETDEC_NEURAL_MODEL (GGUF)
-    │
-    ▼
-maybeRefineDecompilerOutput
-    │
-    ▼
-llama.cpp generate (optional n_gpu_layers)
-    │
-    ▼
-gates (-fsyntax-only, tree-sitter) + optional GBNF rename map
-```
-
-There is no `Qwen3Pipeline` / `src/qwen3/` (`C-QWEN3-GPU` withdrawn).
+Not wired: F# / VB.NET / Kotlin emitters; PTX parser → CUDA-C; `cxx_backend`.

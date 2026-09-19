@@ -6,6 +6,15 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ## [Unreleased]
 
+### Changed
+
+- Public and maintainer documentation was walked against the 2.0.22 tree:
+  product positioning (specification extraction), input-keyed outputs,
+  CMake 3.13 vs presets 3.26, Linux/macOS/Windows packages, the full
+  GitHub Actions workflow list (including `ctest-macos`), MAC-01 /
+  `RetDec.app`, and honesty on neural/CUDA/C++/F1. Semantic recovery is
+  documented as post-pipeline detectors (F1 0.056), not idiomatic C++.
+
 ## [2.0.22] — 2026-09-18
 
 ### Added
@@ -587,6 +596,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   Fixtures now link `/ENTRY:main /NODEFAULTLIB` with
   `msvc_fixture_printf.c`. `decompiler_cli_diagnostics` was 180 s
   of 60 s LLVM startups; the Windows timeout is 900 s.
+
+- `windows-installer` waited on the ubuntu `release` job, so the
+  Windows zip sat queued for an hour while `windows-latest` was
+  free. It now reads the version from the tag, dispatch input, or
+  `CMakeLists.txt` and starts on its own.
 
 - `DEPS-01` (`scripts/ci/check_dependency_urls.py`): every `<NAME>_URL` in
   `cmake/deps.cmake` either holds more than one URL or points at a host where a

@@ -1,5 +1,8 @@
 # Retypd, SAILR, LLVM migration (steps 30–33)
 
+**Status as of v2.0.22:** not planned. LLVM pin stays 23.1.0 unless
+explicitly tasked. Historical spike.
+
 Human-led roadmap items. Do not hand to Composer without tight specs.
 
 ## Step 30 — Retypd (3–6 months)

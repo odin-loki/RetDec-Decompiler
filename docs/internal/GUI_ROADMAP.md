@@ -1,5 +1,9 @@
 # RetDec GUI Roadmap
 
+**Status as of v2.0.22:** GUI v3 shipped (Qt 6). Phases A–E below are
+complete. Optional leftovers (i18n) are not release blockers. macOS GUI
+tests use `QT_QPA_PLATFORM=cocoa`; MAC-01 checks the relocatable bundle.
+
 Phased plan for GUI/product work. Update checkboxes as items ship.
 
 ## Phase A — Trustworthy IDE (complete)

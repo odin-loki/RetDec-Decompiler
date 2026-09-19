@@ -1,5 +1,7 @@
 # Goto optimizer baseline (Q4)
 
+**Status as of v2.0.22:** measurement only. **SAILR is not ported.**
+
 Measurement only. **SAILR is not ported.** Do not treat this pass as
 structure recovery.
 

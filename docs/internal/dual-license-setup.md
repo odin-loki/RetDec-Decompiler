@@ -1,5 +1,8 @@
 # Licensing
 
+**As of v2.0.22:** drafts. Canonical text is `LICENSE*`, `NOTICE` at the
+repo root.
+
 RetDec is dual-licensed.
 
 ## AGPL-3.0+

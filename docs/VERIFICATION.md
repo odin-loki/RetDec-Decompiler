@@ -1,11 +1,33 @@
 # Formal verification of the arithmetic every parser depends on
 
+Version **2.0.22**. This document is the ESBMC kernel-proof story
+(`C-ESBMC`). It is **not** a proof of the parsers, of decompiled C, or of
+Frama-C. The Frama-C analyst path is documentation-only — see
+[FORMAL_VERIFICATION_BRIDGE.md](FORMAL_VERIFICATION_BRIDGE.md).
+
 `scripts/verify_esbmc.sh` proves the verified kernels under
 `include/retdec/utils/` correct with
 [ESBMC](https://github.com/esbmc/esbmc), a bounded model checker, using an SMT
 solver rather than test cases.
 
 **286 properties across 14 verified kernels, all discharged.**
+
+## CI (`.github/workflows/verify-esbmc.yml`)
+
+Pinned release: **`ESBMC_TAG: v8.5`**. The workflow does **not** download
+`releases/latest`. `scripts/verify_esbmc.sh` refuses to run below
+`ESBMC_MIN_VERSION`.
+
+| Job | When | What |
+|-----|------|------|
+| `syntax` | push to `main`/`claude/**`; PRs that touch utils headers, harnesses, this doc, or the workflow; weekly | `--syntax`, `--routing`, `--doc` (table in this file must match the harnesses) |
+| `prove` | after `syntax` | `./scripts/verify_esbmc.sh` (TIMEOUT 600 s per property) |
+| `cross` | weekly Monday 05:00 UTC and `workflow_dispatch` only (360 min) | `./scripts/verify_esbmc.sh --cross` |
+
+Other verification that is **not** ESBMC lives in other workflows: `ctest-macos`
+(MAC-01), `standalone-check` (C2L-01, FLAG-01, OPT-01, …), `fuzz-pr`,
+`doc-integrity`, `sanitizers`, `coverage` (lcov, no numeric floor),
+`ctest-linux` (CC-01). See [CLAIMS.md](CLAIMS.md).
 
 ```bash
 ./scripts/verify_esbmc.sh              # every proof
@@ -18,11 +40,12 @@ solver rather than test cases.
 SOLVER=--boolector ./scripts/verify_esbmc.sh
 ```
 
-ESBMC is not packaged in Debian or Ubuntu. Take the release build:
+ESBMC is not packaged in Debian or Ubuntu. Take the **pinned** release build
+(v8.5), matching CI:
 
 ```bash
 curl -fsSL -o esbmc-linux.zip \
-  https://github.com/esbmc/esbmc/releases/latest/download/esbmc-linux.zip
+  https://github.com/esbmc/esbmc/releases/download/v8.5/esbmc-linux.zip
 unzip -q esbmc-linux.zip && chmod +x release/bin/esbmc
 export ESBMC=$PWD/release/bin/esbmc
 ```
@@ -434,7 +457,9 @@ reported as expected disagreement; anything else is a finding and fails the run,
 because a property two solvers disagree about is not proved. Everything above
 was measured with it rather than assumed.
 
-The measured result over all 272, at a 300s budget per proof per backend:
+The measured result over all **272** proofs (the suite size when `--cross` was
+last recorded here — the default suite is now **286**; `--cross` was **not**
+re-run for the 2.0.22 doc pass):
 
 | | |
 |---|---|
@@ -766,6 +791,18 @@ until it knows it fits; it is stated by subtraction instead.
 
 The full set of SMT-confirmed defects, with the counterexample for each, is
 tracked in the fix log rather than here.
+
+## Adjacent verification in 2.0.22 (not ESBMC)
+
+These landed in `CHANGELOG.md` `[2.0.22]`. They are compiler/CI gates, not SMT
+proofs. Do not fold them into the 286.
+
+| ID | What | Artefact |
+|----|------|----------|
+| MAC-01 | `RetDec.app` load commands resolve inside the bundle; ad-hoc `codesign --verify --deep --strict` | `scripts/ci/check_macos_bundle.py` in `ctest-macos` and `release-installers.yml` |
+| APInt isPowerOf2 | i128 pow2 fold no longer calls `getZExtValue()` | `C-APINT-POW2` |
+| MSVC u128 | `division_recovery.cpp` builds under MSVC | `C-MSVC-U128` |
+| MSVC fixtures | corpus links `/ENTRY:main /NODEFAULTLIB` so UCRT is not pulled in | `C-MSVC-FIXTURE` |
 
 ## Adding a proof
 

@@ -1,5 +1,8 @@
 # LIEF adoption plan (step 29)
 
+**Status as of v2.0.22:** adapter done; FormatFactory cutover still
+optional. Historical spike, not a live cutover plan.
+
 **Library:** [LIEF](https://github.com/lief-project/LIEF) (Apache-2.0)  
 **Goal:** Incrementally replace aging `fileformat` parsers for PE/ELF/Mach-O.
 

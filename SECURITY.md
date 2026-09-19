@@ -23,10 +23,17 @@ Security tab). That is enabled on this repo. You can also email
 - Affected component (CLI, GUI, unpacker, file parsers, neural backend, plugins)
 - Version or commit hash
 
-**Acknowledgement:** within **5 business days**.  
+**Acknowledgement:** within **5 business days**.
 **Target fix window:** **90 days** for confirmed high/critical issues; coordinated disclosure preferred.
 
 ## Scope
+
+**Decompiling untrusted binaries is the point of this tool.** The input
+file is fully attacker-controlled (PE/ELF/Mach-O, managed bytecode,
+archives, optional GGUF weights). Parsers, the unpacker, Capstone
+lifting, YARA, and the GUI's `retdec-decompiler` child all run **in
+process as the analyst user**. Isolation is operator-provided (VM or
+container), not built into RetDec. See [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
 In scope:
 
@@ -43,9 +50,18 @@ Out of scope:
 ## Operational guidance
 
 - Run RetDec on **untrusted binaries** in isolated VMs or containers.
+  That is normal use, not an edge case.
 - Treat decompiler output, temporary files, and GGUF models as untrusted.
-- Use `RETDEC_NO_NETWORK=1` for air-gapped analysis; neural refinement uses local llama.cpp only.
-- Commercial packages must not include GPL-2.0 `capstone2llvmirtool` (see LICENSE-COMMERCIAL).
+  Recovered C is data. Optional neural refinement never **executes**
+  decompiled C; the compile gate is `cc`/`gcc -fsyntax-only`.
+- Use `RETDEC_NO_NETWORK=1` for air-gapped analysis; neural refinement
+  uses local llama.cpp only when `RETDEC_ENABLE_LLAMACPP` was built and
+  `RETDEC_NEURAL_REFINE=1`.
+- Release blobs on GitHub may carry keyless Sigstore
+  `.sigstore.json` bundles. Authenticode is not applied. macOS
+  `RetDec.app` is ad-hoc signed, not notarised.
+- Commercial packages must not include GPL-2.0 `capstone2llvmirtool`
+  (see LICENSE-COMMERCIAL).
 
 ## FIPS
 

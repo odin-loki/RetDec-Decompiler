@@ -1,5 +1,9 @@
 # Pipeline Redesign — Gap Checklist
 
+**Status as of v2.0.22:** still a gap checklist. Rows marked **hook** or
+**partial** are not done. Do not read “RetDec has a hook” as shipped full
+algorithms. The 29-stage map is [pipeline_stage_map.md](../pipeline_stage_map.md).
+
 Reconciled checklist for the 29-stage pipeline described in [pipeline_stage_map.md](../pipeline_stage_map.md). The stage map marks many entries **Implemented** at the “RetDec has a hook / partial pass” level; this file tracks what still falls short of the **full** algorithms in the original design write-up.
 
 **Related:** Per-stage diagnostics and test fixtures are tracked in [pipeline_stage_map.md](../pipeline_stage_map.md) (stage → source mapping) and the env-var table in [docs/README.md](README.md#developer-diagnostics-environment-variables).

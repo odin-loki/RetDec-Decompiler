@@ -1,28 +1,38 @@
-# Confirmed audit findings not fixed here
+# Confirmed audit findings
 
-A 14-dimension subsystem audit of this fork produced 217 findings, 129 of them
-high or critical. The ones that could be built and tested without LLVM were
-fixed on the branch that produced this file; these could not, so they are
-written down rather than attempted.
+**As of v2.0.22.** This file is a running audit log. Later sections close
+earlier ones. Do not treat the original 0/216 heading as current:
+[README.md](../../README.md) and CC-01 measure **216/216** default-`.c`
+recompile (run 276). `NoInitVarDefOptimizer` is skipped for the C back end.
 
-**Why they are not fixed.** A full build needs the LLVM pin from
-`cmake/deps.cmake` -- upstream `llvm-project` 23.1.0, not the Avast LLVM-8 fork
-this document used to say -- and the environment this audit ran in could not
-build it.
-Changing `llvmir2hll` or `src/retdec/retdec.cpp` there would mean shipping an
-edit to the C emitter that had never been compiled, let alone run against the
-216-binary corpus. Everything below is therefore *read and verified against the
-source*, but not tested.
+The LLVM pin is `llvm-project` **23.1.0** (`cmake/deps.cmake`). Historical
+batches below stay as written. A finding may already be fixed; verify
+against the tree before acting.
 
-Each entry names the file and line, states what is wrong, and says what the fix
-is. Verify before acting: this tree moves, and a finding may already be fixed.
+## Still open as of 2.0.22
 
-**Later sections carry their own reasons.** The paragraph above explains the
-original audit's findings, which were behind a build that environment could not
-run. Everything under "Found while fixing the reproducibility defects" and after
-was found with CI available and is unfixed for a reason stated in the entry --
-an output change too large to make without a reproducer, a platform this
-environment cannot compile, a failure whose log does not yet say enough.
+Verified against the tree or left open in the last batches of this file:
+
+| Item | Why it still stands |
+|------|---------------------|
+| Native arm64 Mach-O → empty `.c` | Decoding phases never run. `ctest-macos` attempts it every run. Corpus is ELF. |
+| `src/bin2llvmir/optimizations/types_propagator/types_propagator.cpp` | Present; named by no `CMakeLists.txt`; does not compile in the product build |
+| `include/retdec/utils/string.h` `WideStringType` | `std::basic_string<uint32_t>`; libc++ deprecates non-standard `char_traits` |
+| `DerefOpExpr` / `UnaryOpExpr::getType()` | Returns the operand's type (the pointer), not the pointee. Consumers tuned against that |
+| Copy-propagation def-use comparator | Not a strict weak ordering; left because a fix changes emit order |
+| `llama_tokenize(..., parse_special=false)` | ChatML template is literal text, not special tokens |
+| `ctest-linux` / `ctest-windows` suite subset | Named targets only. `ctest-macos` runs `ctest` with no `-L` |
+| Pipeline stages marked hook/partial | [PIPELINE_REDESIGN_TODO.md](PIPELINE_REDESIGN_TODO.md) — not done |
+| Neural differential gate | `RETDEC_NEURAL_DIFF_GATE` warns and skips |
+| Further LLVM bump | Out of scope unless explicitly tasked |
+
+The original audit produced 217 findings. Many in the body of this file are
+**closed** (including the 0/216 cause). The table above is the remaining set
+to treat as current; do not count the closed 0/216 entry as unfixed.
+
+**Later sections carry their own reasons.** Everything under "Found while
+fixing the reproducibility defects" and after was found with CI available
+and is unfixed (or closed) for a reason stated in the entry.
 
 ---
 
@@ -11671,6 +11681,10 @@ The Windows half is **not verified in this container**, which has no MSVC. A
 
 ### macOS: never compiled, anywhere
 
+**As of v2.0.22 this heading is historical.** `ctest-macos` and
+`macos-installer` shipped; a native arm64 Mach-O input still yields an
+empty `.c`.
+
 `macos-latest` appeared in exactly one workflow — `doc-integrity`, running
 three Python documentation checks. No job has ever compiled this tree on
 Darwin, and `release-installers.yml` has three jobs: `release`,
@@ -11708,6 +11722,11 @@ Darwin and the runner is arm64, which nothing here has targeted either.
   now would be exactly the unbacked claim the register exists to prevent.
 - The version is still 2.0.21 with the whole of this branch under
   `[Unreleased]`.
+
+**As of v2.0.22 this list is historical.** `macos-installer` shipped,
+`C-MACOS` / `C-MACOS-BUNDLE` are in `docs/CLAIMS.md`, and the version is
+2.0.22. Remaining items that still stand are in the table at the top of
+this file.
 
 ---
 
@@ -11802,6 +11821,10 @@ investigated here.
 - libc++ deprecates `char_traits<T>` for `T` outside the standard five, and
   `include/retdec/utils/string.h:28` instantiates `std::basic_string<WideCharType>`.
   A warning today; libc++ says it will be removed.
+
+**As of v2.0.22:** MAC-01, `macos-installer`, and `C-MACOS*` shipped. The
+char_traits warning and the arm64 Mach-O empty-output item still stand
+(see the table at the top of this file).
 
 ## Batch BQ — 2,158 test cases selected by nothing, and a Mac app that opens on one machine (2026-09-18)
 
@@ -11948,3 +11971,8 @@ writes goes out through `Write-Host` now.
   compile.
 - `ctest-linux` and `ctest-windows` build a named subset of targets, so the
   thirty suites above run on macOS only.
+
+**As of v2.0.22 these four still stand.** They are the last batch's open
+set and are copied into the table at the top of this file. The macOS
+installer / CLAIMS / "never compiled on Darwin" claims in Batches BO–BP
+above are closed.
