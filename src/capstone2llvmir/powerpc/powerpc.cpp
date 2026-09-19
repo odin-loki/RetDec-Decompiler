@@ -6,7 +6,9 @@
  */
 
 #include <cmath>
+#include <cstdint>
 #include <iomanip>
+#include <set>
 
 #include "capstone2llvmir/powerpc/powerpc_impl.h"
 
@@ -826,12 +828,15 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateClrlwi(cs_insn* i, cs_ppc* 
  */
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateCmp(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
 {
-	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
+	std::set<int> opCountTemp = {2, 3, 4};
+	EXPECT_IS_SET(i, pi, irb, opCountTemp)
 
 	uint32_t crReg = PPC_REG_CR0;
+	bool word = false;
+	bool haveL = false;
+
 	if (pi->op_count == 2)
 	{
-		crReg = PPC_REG_CR0;
 		std::tie(op0, op1) = loadOpBinary(pi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
 	}
 	else if (pi->op_count == 3
@@ -842,16 +847,51 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateCmp(cs_insn* i, cs_ppc* pi,
 		crReg = pi->operands[0].reg;
 		std::tie(op0, op1) = loadOpBinaryOrTernaryOp1Op2(pi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
 	}
+	else if (pi->op_count == 3 && pi->operands[0].type == PPC_OP_IMM)
+	{
+		// Primary form with CR0 implied: cmpi L, rA, SI / cmp L, rA, rB.
+		haveL = true;
+		word = (pi->operands[0].imm == 0);
+		op0 = loadOp(pi->operands[1], irb);
+		op1 = loadOp(pi->operands[2], irb);
+	}
+	else if (pi->op_count == 4
+			&& pi->operands[0].type == PPC_OP_REG
+			&& pi->operands[0].reg >= PPC_REG_CR0
+			&& pi->operands[0].reg <= PPC_REG_CR7)
+	{
+		crReg = pi->operands[0].reg;
+		if (pi->operands[1].type == PPC_OP_IMM)
+		{
+			haveL = true;
+			word = (pi->operands[1].imm == 0);
+		}
+		op0 = loadOp(pi->operands[2], irb);
+		op1 = loadOp(pi->operands[3], irb);
+	}
 	else
 	{
-		throw GenericError("Unhandled cmp instruction format.");
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
 	}
 
-	if (i->id == PPC_INS_CMPW
-			|| i->id == PPC_INS_CMPL
-			|| i->id == PPC_INS_CMPWI
-			|| i->id == PPC_INS_CMPLW
-			|| i->id == PPC_INS_CMPLWI)
+	if (op0->getType() != op1->getType())
+	{
+		op1 = irb.CreateSExtOrTrunc(op1, op0->getType());
+	}
+
+	if (!haveL
+			&& (i->id == PPC_INS_CMPW
+				|| i->id == PPC_INS_CMPL
+				|| i->id == PPC_INS_CMPWI
+				|| i->id == PPC_INS_CMPLW
+				|| i->id == PPC_INS_CMPLWI))
+	{
+		word = true;
+	}
+
+	if (word)
 	{
 		op0 = irb.CreateSExtOrTrunc(op0, irb.getInt32Ty());
 		op1 = irb.CreateSExtOrTrunc(op1, irb.getInt32Ty());
@@ -861,6 +901,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateCmp(cs_insn* i, cs_ppc* pi,
 	if (i->id == PPC_INS_CMPLD
 			|| i->id == PPC_INS_CMPL
 			|| i->id == PPC_INS_CMPLDI
+			|| i->id == PPC_INS_CMPLI
 			|| i->id == PPC_INS_CMPLW
 			|| i->id == PPC_INS_CMPLWI)
 	{
@@ -2515,6 +2556,202 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateRotateWordMask(cs_insn* i, 
 
 	storeOp(pi->operands[0], res, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 	storeCr0Word(irb, pi, res);
+}
+
+/**
+ * 64-bit PowerPC mask: bit 0 is the MSB (0x8000...0). Same wrap rule as
+ * ppcRotateMask(): MB > ME means bits MB..63 and 0..ME.
+ */
+static uint64_t ppcRotateMask64(unsigned mb, unsigned me)
+{
+	mb &= 63;
+	me &= 63;
+	uint64_t m = 0;
+	if (mb <= me)
+	{
+		for (unsigned b = mb; b <= me; ++b)
+		{
+			m |= uint64_t(1) << (63 - b);
+		}
+	}
+	else
+	{
+		for (unsigned b = mb; b <= 63; ++b)
+		{
+			m |= uint64_t(1) << (63 - b);
+		}
+		for (unsigned b = 0; b <= me; ++b)
+		{
+			m |= uint64_t(1) << (63 - b);
+		}
+	}
+	return m;
+}
+
+static llvm::Value* ppcRotateLeft64(
+		llvm::Value* w,
+		llvm::Value* sh,
+		llvm::IRBuilder<>& irb)
+{
+	auto* i64 = irb.getInt64Ty();
+	w = irb.CreateZExtOrTrunc(w, i64);
+	sh = irb.CreateAnd(irb.CreateZExtOrTrunc(sh, i64), llvm::ConstantInt::get(i64, 63));
+	llvm::Value* spun = irb.CreateOr(
+			irb.CreateShl(w, sh),
+			irb.CreateLShr(w, irb.CreateSub(llvm::ConstantInt::get(i64, 64), sh)));
+	return irb.CreateSelect(irb.CreateICmpEQ(sh, llvm::ConstantInt::get(i64, 0)), w, spun);
+}
+
+static llvm::Value* ppcRotateLeft64Imm(llvm::Value* w, unsigned sh, llvm::IRBuilder<>& irb)
+{
+	auto* i64 = irb.getInt64Ty();
+	w = irb.CreateZExtOrTrunc(w, i64);
+	sh &= 63;
+	if (sh == 0)
+	{
+		return w;
+	}
+	return irb.CreateOr(
+			irb.CreateShl(w, llvm::ConstantInt::get(i64, sh)),
+			irb.CreateLShr(w, llvm::ConstantInt::get(i64, 64 - sh)));
+}
+
+/**
+ * PPC_INS_RLDICL, RLDICR, RLDIC, RLDIMI, RLDCL, RLDCR, and the compiler
+ * aliases CLRLDI / ROTLDI / ROTLD / SLDI.
+ *
+ *     rldicl rA, rS, SH, MB    rA = ROTL64(rS, SH) & MASK(MB, 63)
+ *     rldicr rA, rS, SH, ME    rA = ROTL64(rS, SH) & MASK(0, ME)
+ *     rldic  rA, rS, SH, MB    rA = ROTL64(rS, SH) & MASK(MB, 63-SH)
+ *     rldimi rA, rS, SH, MB    insert into MASK(MB, 63-SH)
+ *
+ * GCC/clang emit these for every 64-bit shift, zero-extend, and bitfield
+ * extract (`clrldi` = uint32_t cast, `srdi`/`sldi` = shifts, `rotldi` =
+ * rotate). They were nullptr → __asm_rldicl() on ppc64.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateRotateDoubleMask(
+		cs_insn* i,
+		cs_ppc* pi,
+		llvm::IRBuilder<>& irb)
+{
+	std::set<int> opCountTemp = {3, 4};
+	EXPECT_IS_SET(i, pi, irb, opCountTemp)
+
+	auto* i64 = irb.getInt64Ty();
+	llvm::Value* src = loadOp(pi->operands[1], irb);
+	llvm::Value* rot = nullptr;
+	unsigned shImm = 0;
+	bool shIsImm = false;
+	unsigned mb = 0;
+	unsigned me = 63;
+
+	auto takeImm = [&](const cs_ppc_op& op) -> unsigned {
+		return static_cast<unsigned>(op.imm) & 63;
+	};
+
+	if (pi->op_count == 4)
+	{
+		if (pi->operands[3].type != PPC_OP_IMM)
+		{
+			throwUnexpectedOperands(i);
+			translatePseudoAsmGeneric(i, pi, irb);
+			return;
+		}
+		if (pi->operands[2].type == PPC_OP_IMM)
+		{
+			shIsImm = true;
+			shImm = takeImm(pi->operands[2]);
+			rot = ppcRotateLeft64Imm(src, shImm, irb);
+		}
+		else
+		{
+			rot = ppcRotateLeft64(src, loadOp(pi->operands[2], irb), irb);
+		}
+		unsigned field = takeImm(pi->operands[3]);
+		switch (i->id)
+		{
+			case PPC_INS_RLDICR:
+			case PPC_INS_RLDCR:
+				mb = 0;
+				me = field;
+				break;
+			case PPC_INS_RLDIC:
+			case PPC_INS_RLDIMI:
+				mb = field;
+				me = shIsImm ? ((63 - shImm) & 63) : 63;
+				break;
+			default:
+				mb = field;
+				me = 63;
+				break;
+		}
+	}
+	else
+	{
+		// Three-operand aliases. Capstone 5 reports clrldi/rotldi/sldi/rotld
+		// this way instead of the four-operand MD form.
+		switch (i->id)
+		{
+			case PPC_INS_CLRLDI:
+				shIsImm = true;
+				shImm = 0;
+				rot = ppcRotateLeft64Imm(src, 0, irb);
+				mb = (pi->operands[2].type == PPC_OP_IMM) ? takeImm(pi->operands[2]) : 0;
+				me = 63;
+				break;
+			case PPC_INS_ROTLDI:
+			case PPC_INS_SLDI:
+				if (pi->operands[2].type != PPC_OP_IMM)
+				{
+					throwUnexpectedOperands(i);
+					translatePseudoAsmGeneric(i, pi, irb);
+					return;
+				}
+				shIsImm = true;
+				shImm = takeImm(pi->operands[2]);
+				rot = ppcRotateLeft64Imm(src, shImm, irb);
+				if (i->id == PPC_INS_SLDI)
+				{
+					mb = 0;
+					me = (63 - shImm) & 63;
+				}
+				else
+				{
+					mb = 0;
+					me = 63;
+				}
+				break;
+			case PPC_INS_ROTLD:
+				rot = ppcRotateLeft64(src, loadOp(pi->operands[2], irb), irb);
+				mb = 0;
+				me = 63;
+				break;
+			default:
+				throwUnexpectedOperands(i);
+				translatePseudoAsmGeneric(i, pi, irb);
+				return;
+		}
+	}
+
+	if (i->id == PPC_INS_RLDIC && !shIsImm)
+	{
+		// ME = 63-SH is dynamic. MASK(MB, 63-SH) is "clear the SH bits that
+		// rotated into the right, and also the bits left of MB".
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+
+	auto* mask = llvm::ConstantInt::get(i64, ppcRotateMask64(mb, me));
+	llvm::Value* res = irb.CreateAnd(rot, mask);
+	if (i->id == PPC_INS_RLDIMI)
+	{
+		llvm::Value* old = irb.CreateZExtOrTrunc(loadOp(pi->operands[0], irb), i64);
+		res = irb.CreateOr(res, irb.CreateAnd(old, irb.CreateNot(mask)));
+	}
+
+	storeOp(pi->operands[0], res, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	storeCr0(irb, pi, res);
 }
 
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateRotateComplex5op(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)

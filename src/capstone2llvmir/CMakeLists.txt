@@ -10,6 +10,14 @@ add_library(capstone2llvmir STATIC
 	mips/mips.cpp
 	powerpc/powerpc_init.cpp
 	powerpc/powerpc.cpp
+	riscv/riscv_init.cpp
+	riscv/riscv.cpp
+	sparc/sparc_init.cpp
+	sparc/sparc.cpp
+	sysz/sysz_init.cpp
+	sysz/sysz.cpp
+	xcore/xcore_init.cpp
+	xcore/xcore.cpp
 	x86/x86_init.cpp
 	x86/x86.cpp
 	x86/x86_sse.cpp

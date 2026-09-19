@@ -49,6 +49,14 @@ namespace {
 				return "PowerPC";
 			case retdec::fileformat::Architecture::MIPS:
 				return "MIPS";
+			case retdec::fileformat::Architecture::RISCV:
+				return "RISC-V";
+			case retdec::fileformat::Architecture::SPARC:
+				return "SPARC";
+			case retdec::fileformat::Architecture::SYSZ:
+				return "SystemZ";
+			case retdec::fileformat::Architecture::XCORE:
+				return "XCore";
 			default:
 				return "unknown";
 		}

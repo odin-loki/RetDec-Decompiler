@@ -149,6 +149,35 @@ void Decoder::initTranslator()
 		arch = CS_ARCH_ARM64;
 		basicMode = CS_MODE_ARM;
 	}
+	else if (a.isRiscv())
+	{
+		arch = CS_ARCH_RISCV;
+		basicMode = a.isRiscv64() ? CS_MODE_RISCV64 : CS_MODE_RISCV32;
+		extraMode = static_cast<cs_mode>(extraMode | CS_MODE_RISCVC);
+	}
+	else if (a.isSparc())
+	{
+		arch = CS_ARCH_SPARC;
+		// Capstone SPARC basic mode is 0. V9/64 is extra CS_MODE_V9.
+		basicMode = CS_MODE_LITTLE_ENDIAN;
+		if (a.getBitSize() == 64)
+		{
+			extraMode = static_cast<cs_mode>(extraMode | CS_MODE_V9);
+		}
+	}
+	else if (a.isSysz())
+	{
+		arch = CS_ARCH_SYSZ;
+		basicMode = CS_MODE_BIG_ENDIAN;
+		extraMode = CS_MODE_BIG_ENDIAN;
+	}
+	else if (a.isXcore())
+	{
+		arch = CS_ARCH_XCORE;
+		basicMode = CS_MODE_LITTLE_ENDIAN;
+		// Capstone XCore tests open with CS_MODE_BIG_ENDIAN for insn-word order.
+		extraMode = CS_MODE_BIG_ENDIAN;
+	}
 	else
 	{
 		throw std::runtime_error("Unsupported architecture.");
@@ -1296,6 +1325,18 @@ void Decoder::initJumpTargetsEhFrame()
 		arch = llvm::Triple::ppc64;
 	else if (a.isPpc())
 		arch = llvm::Triple::ppc;
+	else if (a.isRiscv() && a.getBitSize() == 64)
+		arch = llvm::Triple::riscv64;
+	else if (a.isRiscv())
+		arch = llvm::Triple::riscv32;
+	else if (a.isSparc() && a.getBitSize() == 64)
+		arch = llvm::Triple::sparcv9;
+	else if (a.isSparc())
+		arch = llvm::Triple::sparc;
+	else if (a.isSysz())
+		arch = llvm::Triple::systemz;
+	else if (a.isXcore())
+		arch = llvm::Triple::xcore;
 
 	if (arch == llvm::Triple::UnknownArch)
 	{

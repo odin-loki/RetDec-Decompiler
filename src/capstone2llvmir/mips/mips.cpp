@@ -1215,7 +1215,20 @@ void Capstone2LlvmIrTranslatorMips_impl::translateDiv(cs_insn* i, cs_mips* mi, l
 	}
 	else
 	{
-		EXPECT_IS_BINARY(i, mi, irb);
+		// Pre-R6 `div rs, rt` writes LO/HI. R6 (and MIPS32R6 mode) replaced
+		// HI/LO with `div rd, rs, rt` into a GPR. Same Capstone id; operand
+		// count is what distinguishes them.
+		EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
+
+		if (mi->op_count == 3)
+		{
+			std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+			op1 = narrowToWord(i, irb, op1);
+			op2 = narrowToWord(i, irb, op2);
+			op2 = generateSafeDivisor(op1, op2, /*isSigned=*/true, irb);
+			storeOp(mi->operands[0], irb.CreateSDiv(op1, op2), irb);
+			return;
+		}
 
 		std::tie(op0, op1) = loadOpBinary(mi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
 		op0 = narrowToWord(i, irb, op0);
@@ -1292,7 +1305,17 @@ llvm::Value* Capstone2LlvmIrTranslatorMips_impl::generateSafeDivisor(
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateDivu(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
-	EXPECT_IS_BINARY(i, mi, irb);
+	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
+
+	if (mi->op_count == 3)
+	{
+		std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+		op1 = narrowToWord(i, irb, op1);
+		op2 = narrowToWord(i, irb, op2);
+		op2 = generateSafeDivisor(op1, op2, /*isSigned=*/false, irb);
+		storeOp(mi->operands[0], irb.CreateUDiv(op1, op2), irb);
+		return;
+	}
 
 	std::tie(op0, op1) = loadOpBinary(mi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
 	op0 = narrowToWord(i, irb, op0);
@@ -1305,6 +1328,25 @@ void Capstone2LlvmIrTranslatorMips_impl::translateDivu(cs_insn* i, cs_mips* mi, 
 	storeRegister(MIPS_REG_LO, div, irb);
 	auto* rem = irb.CreateURem(op0, op1);
 	storeRegister(MIPS_REG_HI, rem, irb);
+}
+
+/**
+ * MIPS_INS_MOD, MIPS_INS_MODU, MIPS_INS_DMOD, MIPS_INS_DMODU
+ *
+ * R6 remainder into a GPR. Pre-R6 remainder lives in HI after DIV/DIVU.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMod(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
+
+	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+	op1 = narrowToWord(i, irb, op1);
+	op2 = narrowToWord(i, irb, op2);
+
+	bool isSigned = i->id == MIPS_INS_MOD || i->id == MIPS_INS_DMOD;
+	op2 = generateSafeDivisor(op1, op2, isSigned, irb);
+	auto* rem = isSigned ? irb.CreateSRem(op1, op2) : irb.CreateURem(op1, op2);
+	storeOp(mi->operands[0], rem, irb);
 }
 
 /**
@@ -1408,13 +1450,31 @@ void Capstone2LlvmIrTranslatorMips_impl::translateJ(cs_insn* i, cs_mips* mi, llv
 /**
  * MIPS_INS_JAL, MIPS_INS_JALR,
  * MIPS_INS_BAL
+ *
+ * `jal` / `bal` / `jalr rs` link into `$ra`. `jalr rd, rs` links into `rd`.
+ * The target is loaded before the link register is written so `jalr $ra`
+ * (uncommon, architecturally UNPREDICTABLE when rs == rd) still reads the
+ * old value rather than the return address just stored.
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateJal(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
-	EXPECT_IS_UNARY(i, mi, irb);
+	EXPECT_IS_UNARY_OR_BINARY(i, mi, irb);
 
-	storeRegister(MIPS_REG_RA, getNextNextInsnAddress(i), irb);
-	op0 = loadOpUnary(mi, irb);
+	uint32_t link = MIPS_REG_RA;
+	if (mi->op_count == 2)
+	{
+		if (mi->operands[0].type == MIPS_OP_REG)
+		{
+			link = mi->operands[0].reg;
+		}
+		op0 = loadOp(mi->operands[1], irb);
+	}
+	else
+	{
+		op0 = loadOpUnary(mi, irb);
+	}
+
+	storeRegister(link, getNextNextInsnAddress(i), irb);
 	generateCallFunctionCall(irb, op0);
 }
 
@@ -1924,10 +1984,15 @@ bool Capstone2LlvmIrTranslatorMips_impl::isWordOperation(cs_insn* i)
 	case MIPS_INS_ROTR:
 	case MIPS_INS_ROTRV:
 	case MIPS_INS_MUL:
+	case MIPS_INS_MULU:
+	case MIPS_INS_MUH:
+	case MIPS_INS_MUHU:
 	case MIPS_INS_MULT:
 	case MIPS_INS_MULTU:
 	case MIPS_INS_DIV:
 	case MIPS_INS_DIVU:
+	case MIPS_INS_MOD:
+	case MIPS_INS_MODU:
 	case MIPS_INS_CLZ:
 	case MIPS_INS_CLO: return true;
 	default: return false;
@@ -2460,7 +2525,12 @@ void Capstone2LlvmIrTranslatorMips_impl::translateMovz(cs_insn* i, cs_mips* mi, 
 }
 
 /**
- * MIPS_INS_MUL
+ * MIPS_INS_MUL, MIPS_INS_MULU, MIPS_INS_MUH, MIPS_INS_MUHU,
+ * MIPS_INS_DMUL, MIPS_INS_DMULU, MIPS_INS_DMUH, MIPS_INS_DMUHU
+ *
+ * Pre-R6 `mul` writes the low half of a word product to a GPR and leaves
+ * HI/LO UNPREDICTABLE. R6 keeps that low-half form and adds `muh` (high
+ * half) plus the unsigned pair; there is no HI/LO file in R6.
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateMul(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
@@ -2471,16 +2541,38 @@ void Capstone2LlvmIrTranslatorMips_impl::translateMul(cs_insn* i, cs_mips* mi, l
 	{
 		auto* mul = irb.CreateFMul(op1, op2);
 		storeOp(mi->operands[0], mul, irb);
+		return;
+	}
+
+	op1 = narrowToWord(i, irb, op1);
+	op2 = narrowToWord(i, irb, op2);
+
+	bool high = i->id == MIPS_INS_MUH || i->id == MIPS_INS_MUHU
+			|| i->id == MIPS_INS_DMUH || i->id == MIPS_INS_DMUHU;
+	bool isUnsigned = i->id == MIPS_INS_MULU || i->id == MIPS_INS_MUHU
+			|| i->id == MIPS_INS_DMULU || i->id == MIPS_INS_DMUHU;
+
+	unsigned half = op1->getType()->getIntegerBitWidth();
+	auto* wide = irb.getIntNTy(half * 2);
+	if (isUnsigned)
+	{
+		op1 = irb.CreateZExt(op1, wide);
+		op2 = irb.CreateZExt(op2, wide);
 	}
 	else
 	{
-		op1 = narrowToWord(i, irb, op1);
-		op2 = narrowToWord(i, irb, op2);
-		auto* mul = irb.CreateMul(op1, op2);
-		storeOp(mi->operands[0], mul, irb);
-		storeRegisterUnpredictable(MIPS_REG_HI, irb);
-		storeRegisterUnpredictable(MIPS_REG_LO, irb);
+		op1 = irb.CreateSExt(op1, wide);
+		op2 = irb.CreateSExt(op2, wide);
 	}
+
+	auto* mul = irb.CreateMul(op1, op2);
+	auto* halfTy = irb.getIntNTy(half);
+	llvm::Value* res = high
+			? irb.CreateTrunc(irb.CreateLShr(mul, half), halfTy)
+			: irb.CreateTrunc(mul, halfTy);
+	storeOp(mi->operands[0], res, irb);
+	storeRegisterUnpredictable(MIPS_REG_HI, irb);
+	storeRegisterUnpredictable(MIPS_REG_LO, irb);
 }
 
 /**

@@ -19,6 +19,12 @@ AbiMips::AbiMips(llvm::Module* m, Config* c) :
 	_id2regs.resize(MIPS_REG_ENDING, nullptr);
 	_regStackPointerId = MIPS_REG_SP;
 	_regZeroReg = MIPS_REG_ZERO;
+	_regFunctionReturnId = MIPS_REG_V0;
+
+	// O32 reserved / special GPRs (same ids PIC32 uses):
+	//   MIPS_REG_GP ($28)  PIC / small-data pointer
+	//   MIPS_REG_K0 ($26)  kernel / exception scratch
+	//   MIPS_REG_K1 ($27)  kernel / exception scratch
 
 	// system calls
 	_regSyscallId = MIPS_REG_V0;

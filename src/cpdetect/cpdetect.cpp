@@ -322,6 +322,22 @@ CompilerDetector::CompilerDetector(
 			}
 			break;
 
+		case Architecture::RISCV:
+			archs.insert(bitWidth == 64 ? "riscv64" : "riscv");
+			break;
+
+		case Architecture::SPARC:
+			archs.insert(bitWidth == 64 ? "sparc64" : "sparc");
+			break;
+
+		case Architecture::SYSZ:
+			archs.insert("s390x");
+			break;
+
+		case Architecture::XCORE:
+			archs.insert("xcore");
+			break;
+
 		default:
 			break;
 	}

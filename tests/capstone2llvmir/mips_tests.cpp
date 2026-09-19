@@ -7942,6 +7942,169 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CLZ_is_a_word_operation)
 }
 
 //
+// Production O32/N64 subset — 32-bit AND 64-bit cases.
+// Keystone macro-expands a written `div`/`divu`, so those use encodings.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DIV)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{MIPS_REG_2, 105},
+		{MIPS_REG_3, 10},
+	});
+
+	// 0x0043001a = div $2, $3
+	emulate_bin("1a 00 43 00");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_HI, 5},
+		{MIPS_REG_LO, 10},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DIV_is_a_word_operation)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x0000000180000000},
+		{MIPS_REG_4, 2},
+	});
+
+	// 0x0064001a = div $3, $4
+	emulate_bin("1a 00 64 00");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3, MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		// Word 0x80000000 / 2 = 0xc0000000, sign-extended.
+		{MIPS_REG_LO, 0xffffffffc0000000},
+		{MIPS_REG_HI, 0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_JALR_rd_rs)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{MIPS_REG_1, 0x4005dc},
+	});
+
+	emulate("jalr $2, $1", 0x4006f8);
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x4006f8 + 0x4 + 0x4},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCallFunction(), {0x4005dc}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_OR_is_a_doubleword_operation)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0xaabbccdd00000000},
+		{MIPS_REG_4, 0x0000000011223344},
+	});
+
+	emulate("or $2, $3, $4");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3, MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0xaabbccdd11223344},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_XOR_is_a_doubleword_operation)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0xaabbccdd11223344},
+		{MIPS_REG_4, 0xffffffff00000000},
+	});
+
+	emulate("xor $2, $3, $4");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3, MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x5544332211223344},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_NOR_is_a_doubleword_operation)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0xaabbccdd00000000},
+		{MIPS_REG_4, 0x0000000011223344},
+	});
+
+	emulate("nor $2, $3, $4");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3, MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x55443322eeddccbb},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SLT_is_a_doubleword_operation)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0xffffffffffffffff},
+		{MIPS_REG_4, 1},
+	});
+
+	emulate("slt $2, $3, $4");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3, MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 1},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SLTU_is_a_doubleword_operation)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0xffffffffffffffff},
+		{MIPS_REG_4, 1},
+	});
+
+	emulate("sltu $2, $3, $4");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3, MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
 // The big-endian fixture.
 //
 // lwl/lwr/swl/swr are the only instructions in this translator whose meaning

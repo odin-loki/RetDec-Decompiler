@@ -92,7 +92,8 @@ Neural inference may use llama.cpp CUDA when enabled at build time.
 
 Do not treat Docker Hub `imortek/retdec` or a default AppImage as the
 performance story (`C-DOCKER-HUB` unpublished; `C-APPIMAGE` opt-in). RISC-V
-and a dedicated C++ emitter are unimplemented (`C-ARCH-UNIMP`; `C-CXX-EMIT` withdrawn).
+integer lifting is wired (`C-ARCH-UNIMP` withdrawn); a dedicated C++ emitter
+is unimplemented (`C-CXX-EMIT` withdrawn).
 
 ## Roadmap
 

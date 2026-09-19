@@ -73,10 +73,10 @@ Default native extras:
   `RETDEC_NEURAL_REFINE`). See [NEURAL_REFINEMENT.md](NEURAL_REFINEMENT.md).
 
 Native CPU architectures: see [ARCHITECTURE_TARGETS.md](ARCHITECTURE_TARGETS.md).
-Production bar is x86 / x86-64. ARM / Thumb / MIPS / PowerPC have lifters and
-ABI tables. ARM64 has Capstone + `bin2llvmir` ABI init and is incomplete
-end-to-end. SPARC / SystemZ / XCore throw `GenericError`. RISC-V is not
-implemented (`-a` has no `riscv`).
+Integer/control-flow lifting is wired for x86 / x86-64, ARM / Thumb, ARM64,
+MIPS 32/64, PIC32, PowerPC 32/64, RISC-V 32/64, SPARC 32/64, SystemZ (64),
+and XCore (32). SIMD/FP/atomics still fall back to pseudo-asm where Capstone
+IDs are unmapped. **SASS is not Production** (cubin/fatbin probe, not `-a sass`).
 
 ---
 

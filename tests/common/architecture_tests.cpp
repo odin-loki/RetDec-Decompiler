@@ -116,6 +116,63 @@ TEST_F(ArchitectureTests, IsArchIsCaseInsensitiveContains)
 	EXPECT_TRUE( arch.isMips() );
 }
 
+TEST_F(ArchitectureTests, Arm64NameImplies64Bit)
+{
+	arch.setName("arm64");
+	EXPECT_TRUE(arch.isArm64());
+	EXPECT_FALSE(arch.isArm32());
+	EXPECT_EQ(64u, arch.getBitSize());
+
+	arch.setName("aarch64");
+	EXPECT_TRUE(arch.isArm64());
+	EXPECT_EQ(64u, arch.getBitSize());
+}
+
+TEST_F(ArchitectureTests, NewIsaQueryMethods)
+{
+	arch.setIsRiscv();
+	EXPECT_TRUE(arch.isRiscv());
+	EXPECT_FALSE(arch.isRiscv64());
+	EXPECT_EQ("riscv", arch.getName());
+
+	arch.setIsRiscv64();
+	EXPECT_TRUE(arch.isRiscv());
+	EXPECT_TRUE(arch.isRiscv64());
+	EXPECT_EQ(64u, arch.getBitSize());
+
+	arch.setIsSparc();
+	EXPECT_TRUE(arch.isSparc());
+	EXPECT_FALSE(arch.isSparc64());
+
+	arch.setIsSparc64();
+	EXPECT_TRUE(arch.isSparc64());
+	EXPECT_EQ(64u, arch.getBitSize());
+
+	arch.setIsSysz();
+	EXPECT_TRUE(arch.isSysz());
+	EXPECT_EQ(64u, arch.getBitSize());
+
+	arch.setIsXcore();
+	EXPECT_TRUE(arch.isXcore());
+	EXPECT_EQ(32u, arch.getBitSize());
+}
+
+TEST_F(ArchitectureTests, Cli64BitNames)
+{
+	arch.setName("riscv64");
+	EXPECT_TRUE(arch.isRiscv64());
+	arch.setName("sparc64");
+	EXPECT_TRUE(arch.isSparc64());
+	arch.setName("s390x");
+	EXPECT_TRUE(arch.isSysz());
+	arch.setName("x86-64");
+	EXPECT_TRUE(arch.isX86_64());
+	arch.setName("mips64");
+	EXPECT_TRUE(arch.isMips64());
+	arch.setName("powerpc64");
+	EXPECT_TRUE(arch.isPpc64());
+}
+
 } // namespace tests
 } // namespace common
 } // namespace retdec

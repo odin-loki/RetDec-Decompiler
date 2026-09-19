@@ -1629,6 +1629,14 @@ bool ElfFormat::getRelocationMask(unsigned relType, std::vector<std::uint8_t> &m
 			maps.push_back(&powerpcRelocationMap);
 			maps.push_back(&powerpc64RelocationMap);
 			break;
+		case EM_RISCV:
+		case EM_SPARC:
+		case EM_SPARC32PLUS:
+		case EM_SPARCV9:
+		case EM_S390:
+		case EM_XCORE:
+		case EM_CUDA:
+			break;
 		case EM_NONE:
 			if(isWiiPowerPc())
 			{
@@ -2787,6 +2795,19 @@ std::size_t ElfFormat::getBytesPerWord() const
 			return 4;
 		case EM_PPC64:
 			return 8;
+		case EM_RISCV:
+			return (elfClass == ELFCLASS64) ? 8 : 4;
+		case EM_SPARC:
+		case EM_SPARC32PLUS:
+			return 4;
+		case EM_SPARCV9:
+			return 8;
+		case EM_S390:
+			return (elfClass == ELFCLASS64) ? 8 : 4;
+		case EM_XCORE:
+			return 4;
+		case EM_CUDA:
+			return (elfClass == ELFCLASS64) ? 8 : 4;
 		case EM_NONE:
 			return isWiiPowerPc() ? 4 : 0;
 
@@ -2960,6 +2981,19 @@ Architecture ElfFormat::getTargetArchitecture() const
 		case EM_PPC:
 		case EM_PPC64:
 			return Architecture::POWERPC;
+		case EM_RISCV:
+			return Architecture::RISCV;
+		case EM_SPARC:
+		case EM_SPARC32PLUS:
+		case EM_SPARCV9:
+			return Architecture::SPARC;
+		case EM_S390:
+			return Architecture::SYSZ;
+		case EM_XCORE:
+			return Architecture::XCORE;
+		case EM_CUDA:
+			// NVIDIA cubin. Not a CPU Architecture enumerator.
+			return Architecture::UNKNOWN;
 		case EM_NONE:
 			return isWiiPowerPc() ? Architecture::POWERPC : Architecture::UNKNOWN;
 		default:

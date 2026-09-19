@@ -92,6 +92,12 @@ add_library(bin2llvmir STATIC
 	providers/abi/pic32.cpp
 	providers/abi/powerpc.cpp
 	providers/abi/powerpc64.cpp
+	providers/abi/riscv.cpp
+	providers/abi/riscv64.cpp
+	providers/abi/sparc.cpp
+	providers/abi/sparc64.cpp
+	providers/abi/sysz.cpp
+	providers/abi/xcore.cpp
 	providers/abi/x64.cpp
 	providers/abi/x86.cpp
 	providers/calling_convention/calling_convention.cpp

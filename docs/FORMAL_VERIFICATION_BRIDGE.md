@@ -47,7 +47,7 @@ harnesses state.
 | Decompiled C is semantically equal to the binary | **No.** CC-01 asks whether emitted C **compiles**. |
 | Differential neural gate executes decompiled C | **No.** `C-NEURAL-DIFF` withdrawn. |
 | Frama-C / WP / value analysis ships in-tree | **No.** No CMake target, no CI job, no `scripts/frama_c_prepare_stub.sh` in the tree. |
-| RISC-V or a C++ HLL writer is in the proved set | **No.** Unimplemented (`C-ARCH-UNIMP`; `C-CXX-EMIT` withdrawn). |
+| RISC-V or a C++ HLL writer is in the proved set | **No.** RISC-V lifting is wired (`C-ARCH-UNIMP` withdrawn); C++ HLL writer is unimplemented (`C-CXX-EMIT` withdrawn). |
 
 ---
 

@@ -12,6 +12,10 @@
 #include "capstone2llvmir/arm64/arm64_impl.h"
 #include "capstone2llvmir/mips/mips_impl.h"
 #include "capstone2llvmir/powerpc/powerpc_impl.h"
+#include "capstone2llvmir/riscv/riscv_impl.h"
+#include "capstone2llvmir/sparc/sparc_impl.h"
+#include "capstone2llvmir/sysz/sysz_impl.h"
+#include "capstone2llvmir/xcore/xcore_impl.h"
 #include "capstone2llvmir/x86/x86_impl.h"
 
 namespace retdec {
@@ -56,9 +60,20 @@ std::unique_ptr<Capstone2LlvmIrTranslator> Capstone2LlvmIrTranslator::createArch
 			if (basic == CS_MODE_64) return createPpc64(m, extra);
 			break;
 		}
+		case CS_ARCH_RISCV:
+		{
+			if (basic == CS_MODE_RISCV32) return createRiscv32(m, extra);
+			if (basic == CS_MODE_RISCV64) return createRiscv64(m, extra);
+			break;
+		}
 		case CS_ARCH_SPARC:
 		{
-			return createSparc(m, extra);
+			cs_mode e = extra;
+			if (basic == CS_MODE_64 || basic == CS_MODE_V9 || (extra & CS_MODE_V9))
+			{
+				e = static_cast<cs_mode>(e | CS_MODE_V9);
+			}
+			return createSparc(m, e);
 		}
 		case CS_ARCH_SYSZ:
 		{
@@ -169,28 +184,47 @@ std::unique_ptr<Capstone2LlvmIrTranslator> Capstone2LlvmIrTranslator::createPpcQ
 	return std::make_unique<Capstone2LlvmIrTranslatorPowerpc_impl>(m, CS_MODE_QPX, extra);
 }
 
+std::unique_ptr<Capstone2LlvmIrTranslator> Capstone2LlvmIrTranslator::createRiscv32(
+		llvm::Module* m,
+		cs_mode extra)
+{
+	return std::make_unique<Capstone2LlvmIrTranslatorRiscv_impl>(m, CS_MODE_RISCV32, extra);
+}
+
+std::unique_ptr<Capstone2LlvmIrTranslator> Capstone2LlvmIrTranslator::createRiscv64(
+		llvm::Module* m,
+		cs_mode extra)
+{
+	return std::make_unique<Capstone2LlvmIrTranslatorRiscv_impl>(m, CS_MODE_RISCV64, extra);
+}
+
 std::unique_ptr<Capstone2LlvmIrTranslator> Capstone2LlvmIrTranslator::createSparc(
 		llvm::Module* m,
 		cs_mode extra)
 {
-	throw GenericError("SPARC architecture is unimplemented.");
-	return nullptr;
+	// Capstone SPARC basic mode is 0. V9 lives in extra (CS_MODE_V9).
+	return std::make_unique<Capstone2LlvmIrTranslatorSparc_impl>(
+			m, CS_MODE_LITTLE_ENDIAN, extra);
 }
 
 std::unique_ptr<Capstone2LlvmIrTranslator> Capstone2LlvmIrTranslator::createSysz(
 		llvm::Module* m,
 		cs_mode extra)
 {
-	throw GenericError("SystemZ architecture is unimplemented.");
-	return nullptr;
+	return std::make_unique<Capstone2LlvmIrTranslatorSysz_impl>(
+			m,
+			CS_MODE_BIG_ENDIAN,
+			extra);
 }
 
 std::unique_ptr<Capstone2LlvmIrTranslator> Capstone2LlvmIrTranslator::createXcore(
 		llvm::Module* m,
 		cs_mode extra)
 {
-	throw GenericError("XCore architecture is unimplemented.");
-	return nullptr;
+	return std::make_unique<Capstone2LlvmIrTranslatorXcore_impl>(
+			m,
+			CS_MODE_LITTLE_ENDIAN,
+			extra);
 }
 
 } // namespace capstone2llvmir

@@ -15,6 +15,7 @@ What shipped and what maintainers still need:
 | [PLAN_COMPLETION.md](PLAN_COMPLETION.md) | Automation steps 1–26 plus 2.0.22 release/CI |
 | [NEXT_STEPS.md](NEXT_STEPS.md) | Optional follow-ups (not a second master plan) |
 | [REPRODUCIBILITY.md](REPRODUCIBILITY.md) | What the decompiler's output may not depend on |
+| [wire-sass.md](wire-sass.md) | NVIDIA SASS cubin/fatbin library; CLI/fileformat patches; **not Production** |
 | [UNFIXED_AUDIT_FINDINGS.md](UNFIXED_AUDIT_FINDINGS.md) | Audit log. Default-`.c` recompile is **216/216** (not 0/216). Remaining real findings are listed at the top of that file |
 | [backlog.md](backlog.md) | ID table (done / out of scope / optional) |
 | [D7_DECISION.md](D7_DECISION.md) | Specification-extraction positioning (matches README) |

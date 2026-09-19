@@ -174,6 +174,7 @@ class Capstone2LlvmIrTranslatorMips_impl :
 		void translateMovz(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateMul(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateMult(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
+		void translateMod(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateNeg(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateNegu(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateNmadd(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);

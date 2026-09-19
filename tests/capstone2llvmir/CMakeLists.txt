@@ -5,6 +5,10 @@ add_executable(tests-capstone2llvmir
 	exceptions_tests.cpp
 	mips_tests.cpp
 	powerpc_tests.cpp
+	riscv_tests.cpp
+	sparc_tests.cpp
+	sysz_tests.cpp
+	xcore_tests.cpp
 	x86_tests.cpp
 )
 

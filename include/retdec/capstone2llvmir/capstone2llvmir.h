@@ -27,6 +27,7 @@
 #include "retdec/capstone2llvmir/arm64/arm64_defs.h"
 #include "retdec/capstone2llvmir/mips/mips_defs.h"
 #include "retdec/capstone2llvmir/powerpc/powerpc_defs.h"
+#include "retdec/capstone2llvmir/riscv/riscv_defs.h"
 #include "retdec/capstone2llvmir/x86/x86_defs.h"
 
 namespace retdec {
@@ -218,6 +219,20 @@ class Capstone2LlvmIrTranslator
 		 * translator (with the specified mode) could not be created.
 		 */
 		static std::unique_ptr<Capstone2LlvmIrTranslator> createPpcQpx(
+				llvm::Module* m,
+				cs_mode extra = CS_MODE_LITTLE_ENDIAN);
+		/**
+		 * Create RV32I translator with basic mode @c CS_MODE_RISCV32,
+		 * and extra mode @c extra (e.g. @c CS_MODE_RISCVC).
+		 */
+		static std::unique_ptr<Capstone2LlvmIrTranslator> createRiscv32(
+				llvm::Module* m,
+				cs_mode extra = CS_MODE_LITTLE_ENDIAN);
+		/**
+		 * Create RV64I translator with basic mode @c CS_MODE_RISCV64,
+		 * and extra mode @c extra (e.g. @c CS_MODE_RISCVC).
+		 */
+		static std::unique_ptr<Capstone2LlvmIrTranslator> createRiscv64(
 				llvm::Module* m,
 				cs_mode extra = CS_MODE_LITTLE_ENDIAN);
 		/**

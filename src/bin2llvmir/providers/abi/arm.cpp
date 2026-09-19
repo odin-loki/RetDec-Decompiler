@@ -5,6 +5,8 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <string>
+
 #include "retdec/bin2llvmir/providers/abi/arm.h"
 
 using namespace llvm;
@@ -18,6 +20,7 @@ AbiArm::AbiArm(llvm::Module* m, Config* c) :
 	_regs.reserve(ARM_REG_ENDING);
 	_id2regs.resize(ARM_REG_ENDING, nullptr);
 	_regStackPointerId = ARM_REG_SP;
+	_regFunctionReturnId = ARM_REG_R0;
 
 	// system calls
 	_regSyscallId = ARM_REG_R7;
@@ -36,7 +39,9 @@ AbiArm::AbiArm(llvm::Module* m, Config* c) :
 bool AbiArm::isGeneralPurposeRegister(const llvm::Value* val) const
 {
 	uint32_t rid = getRegisterId(val);
-	return ARM_REG_R0 <= rid && rid <= ARM_REG_R12;
+	return (ARM_REG_R0 <= rid && rid <= ARM_REG_R12)
+			|| rid == ARM_REG_SP
+			|| rid == ARM_REG_LR;
 }
 
 bool AbiArm::isNopInstruction(cs_insn* insn)
@@ -45,15 +50,46 @@ bool AbiArm::isNopInstruction(cs_insn* insn)
 
 	// True NOP variants.
 	//
-	if (insn->id == ARM_INS_NOP)
+	if (insn->id == ARM_INS_NOP || insn->id == ARM_INS_YIELD)
 	{
 		return true;
 	}
-	else if (insn->id == ARM_INS_HINT && insnArm.op_count == 0)
+	if (insn->id == ARM_INS_HINT)
+	{
+		std::string m(insn->mnemonic);
+		return m == "nop" || m == "yield" || m == "hint";
+	}
+	// Classic A32 nop: andeq r0, r0, r0
+	//
+	if (insn->id == ARM_INS_AND
+			&& insnArm.cc == ARM_CC_EQ
+			&& insnArm.op_count >= 2)
+	{
+		bool allR0 = true;
+		for (unsigned n = 0; n < insnArm.op_count; ++n)
+		{
+			if (insnArm.operands[n].type != ARM_OP_REG
+					|| insnArm.operands[n].reg != ARM_REG_R0)
+			{
+				allR0 = false;
+				break;
+			}
+		}
+		if (allR0)
+		{
+			return true;
+		}
+	}
+	// mov rN, rN
+	//
+	if (insn->id == ARM_INS_MOV
+			&& insnArm.op_count == 2
+			&& insnArm.operands[0].type == ARM_OP_REG
+			&& insnArm.operands[1].type == ARM_OP_REG
+			&& insnArm.operands[0].reg == insnArm.operands[1].reg)
 	{
 		return true;
 	}
-
 
 	return false;
 }

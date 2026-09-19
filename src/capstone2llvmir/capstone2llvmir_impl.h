@@ -14,6 +14,10 @@
 #include "capstone2llvmir/llvmir_utils.h"
 #include "retdec/capstone2llvmir/capstone2llvmir.h"
 
+#include <capstone/sparc.h>
+#include <capstone/systemz.h>
+#include <capstone/xcore.h>
+
 namespace retdec {
 namespace capstone2llvmir {
 

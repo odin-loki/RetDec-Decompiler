@@ -49,6 +49,10 @@ enum class Arch {
     PowerPC,
     PowerPC64,
     RISC_V,
+    SPARC,
+    SPARC64,
+    SystemZ,
+    XCore,
 };
 
 enum class Endianness { Unknown, Little, Big };

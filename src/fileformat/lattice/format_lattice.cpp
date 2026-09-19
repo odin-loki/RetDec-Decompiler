@@ -205,6 +205,12 @@ static Arch elfMachineToArch(uint16_t machine)
 	case 0x14: return Arch::PowerPC;
 	case 0x15: return Arch::PowerPC64;
 	case 0xF3: return Arch::RISC_V;
+	case 0x02: return Arch::SPARC;
+	case 0x12: return Arch::SPARC; // EM_SPARC32PLUS
+	case 0x2B: return Arch::SPARC64;
+	case 0x16: return Arch::SystemZ;
+	case 0xCB: return Arch::XCore;
+	case 190:  return Arch::Unknown; // EM_CUDA — cubin, see sass_decode
 	default: return Arch::Unknown;
 	}
 }

@@ -39,6 +39,7 @@
 
 #include "retdec/bin2llvmir/providers/asm_instruction.h"
 #include "retdec/bin2llvmir/providers/config.h"
+#include "retdec/capstone2llvmir/arm/arm_defs.h"
 #include "retdec/utils/io/log.h"
 
 using namespace llvm;
@@ -61,7 +62,8 @@ void annotateThumbInterwork(CallInst* call, bool targetIsThumb) {
 
 /// Patch all BX/BLX call instructions in @a fn with interwork metadata.
 /// A BX/BLX instruction is identified by the "insn.id" metadata that the
-/// ARM lifter attaches (ARM_INS_BX = 14, ARM_INS_BLX = 13 in capstone numbering).
+/// ARM lifter attaches. IDs are Capstone 5.0.9 ARM_INS_* values -- not the
+/// Capstone 4 numbers (BX=14, BLX=13) this file used to hard-code.
 static void patchFunction(Function& fn, bin2llvmir::Config* config) {
     for (auto& bb : fn) {
         for (auto& inst : bb) {
@@ -75,10 +77,11 @@ static void patchFunction(Function& fn, bin2llvmir::Config* config) {
             if (!idCI) continue;
 
             uint64_t insnId = idCI->getZExtValue();
-            // capstone ARM_INS_BX = 14, ARM_INS_BLX = 13
-            constexpr uint64_t ARM_INS_BX  = 14;
-            constexpr uint64_t ARM_INS_BLX = 13;
-            if (insnId != ARM_INS_BX && insnId != ARM_INS_BLX) continue;
+            if (insnId != ARM_INS_BX && insnId != ARM_INS_BLX
+                    && insnId != ARM_INS_BXNS && insnId != ARM_INS_BLXNS)
+            {
+                continue;
+            }
 
             // Try to determine target address from the call's operand.
             // The target may be a constant (direct BLX #addr) or a register

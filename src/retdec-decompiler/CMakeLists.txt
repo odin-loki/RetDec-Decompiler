@@ -32,6 +32,7 @@ target_link_libraries(retdec-decompiler
 	retdec-py-emitter
 	retdec-lua-parser
 	retdec-wasm-parser
+	retdec-sass-decode
 )
 
 # Due to the implementation of the plugin system in LLVM, we have to link our

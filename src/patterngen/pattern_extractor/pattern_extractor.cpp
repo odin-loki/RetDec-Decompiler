@@ -512,6 +512,18 @@ std::string PatternExtractor::getArchAsString()
 		case Architecture::ARM:
 			return "ARM";
 
+		case Architecture::RISCV:
+			return "RISC-V";
+
+		case Architecture::SPARC:
+			return "SPARC";
+
+		case Architecture::SYSZ:
+			return "SystemZ";
+
+		case Architecture::XCORE:
+			return "XCore";
+
 		default:
 			return "unknown architecture";
 	}

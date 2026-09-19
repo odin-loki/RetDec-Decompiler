@@ -5071,12 +5071,10 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_USAT)
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, ANY},
+		{ARM_REG_R0, 255},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_usat"), {0x8, 0x5678}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -7794,6 +7792,547 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ISB_translates_to_a_fence)
 	emulate("isb");
 
 	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+//
+// Production-bar compiler subset: ADDW/SUBW, SDIV/UDIV, TBB/TBH, PC-relative
+// LDR, BX LR, extend-and-add, PKH, SSAT, SMULBB, NEG, IT, real machine bytes.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ADDW_r_r_i)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x1000},
+	});
+
+	emulate("addw r0, r1, #0x123");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x1123},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SUBW_r_r_i)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x1123},
+	});
+
+	emulate("subw r0, r1, #0x123");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x1000},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SDIV_r_r_r)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 20},
+		{ARM_REG_R2, 4},
+	});
+
+	emulate("sdiv r0, r1, r2");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 5},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SDIV_by_zero_is_zero)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 20},
+		{ARM_REG_R2, 0},
+	});
+
+	emulate("sdiv r0, r1, r2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SDIV_int_min_over_minus_one)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x80000000},
+		{ARM_REG_R2, 0xffffffff},
+	});
+
+	emulate("sdiv r0, r1, r2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x80000000},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UDIV_r_r_r)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 20},
+		{ARM_REG_R2, 4},
+	});
+
+	emulate("udiv r0, r1, r2");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 5},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UDIV_arm_bin)
+{
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 20},
+		{ARM_REG_R2, 4},
+	});
+
+	// A32 `udiv r0, r1, r2` = 0xE7310F12
+	emulate_bin("12 0f 31 e7");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 5},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SDIV_arm_bin)
+{
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 20},
+		{ARM_REG_R2, 4},
+	});
+
+	// A32 `sdiv r0, r1, r2` = 0xE7110F12
+	emulate_bin("12 0f 11 e7");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 5},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_TBB)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R0, 0x2000},
+		{ARM_REG_R1, 1},
+	});
+	setMemory({
+		{0x2001, 0x05_b},
+	});
+
+	emulate("tbb [r0, r1]", 0x1000);
+
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getBranchFunction(), {0x100e}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_TBB_bin)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R0, 0x2000},
+		{ARM_REG_R1, 1},
+	});
+	setMemory({
+		{0x2001, 0x05_b},
+	});
+
+	// Thumb-2 `tbb [r0, r1]` = 0xE8D0F001
+	emulate_bin("d0 e8 01 f0", 0x1000);
+
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getBranchFunction(), {0x100e}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_TBH)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R0, 0x2000},
+		{ARM_REG_R1, 1},
+	});
+	setMemory({
+		{0x2002, 0x0007_w},
+	});
+
+	emulate("tbh [r0, r1, lsl #1]", 0x1000);
+
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getBranchFunction(), {0x1012}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_TBH_bin)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R0, 0x2000},
+		{ARM_REG_R1, 1},
+	});
+	setMemory({
+		{0x2002, 0x0007_w},
+	});
+
+	// Thumb-2 `tbh [r0, r1, lsl #1]` = 0xE8D0F011
+	emulate_bin("d0 e8 11 f0", 0x1000);
+
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getBranchFunction(), {0x1012}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDR_arm_pc_relative)
+{
+	SKIP_MODE_THUMB;
+
+	setMemory({
+		{0x100c, 0x12345678_dw},
+	});
+
+	emulate("ldr r0, [pc, #4]", 0x1000);
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x12345678},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x100c});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDR_arm_pc_relative_bin)
+{
+	SKIP_MODE_THUMB;
+
+	setMemory({
+		{0x100c, 0x12345678_dw},
+	});
+
+	// A32 `ldr r0, [pc, #4]` = 0xE59F0004
+	emulate_bin("04 00 9f e5", 0x1000);
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x12345678},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDR_thumb_pc_relative)
+{
+	ONLY_MODE_THUMB;
+
+	setMemory({
+		{0x1008, 0x12345678_dw},
+	});
+
+	emulate("ldr r0, [pc, #4]", 0x1000);
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x12345678},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1008});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_BX_lr_is_a_return)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_LR, 0x110d8},
+	});
+
+	emulate("bx lr", 0x1107C);
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_LR});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getReturnFunction(), {0x110d8}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SXTAB)
+{
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R0, 10},
+		{ARM_REG_R1, 0xffffff80},
+	});
+
+	emulate("sxtab r2, r0, r1");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R0, ARM_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R2, 0xffffff8a},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SXTAH)
+{
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R0, 1},
+		{ARM_REG_R1, 0xffff8000},
+	});
+
+	emulate("sxtah r2, r0, r1");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R0, ARM_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R2, 0xffff8001},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UXTAB)
+{
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R0, 10},
+		{ARM_REG_R1, 0xffffff80},
+	});
+
+	emulate("uxtab r2, r0, r1");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R0, ARM_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R2, 10 + 0x80},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_PKHBT)
+{
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x11112222},
+		{ARM_REG_R2, 0x33334444},
+	});
+
+	emulate("pkhbt r0, r1, r2");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x33332222},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_PKHTB)
+{
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x11112222},
+		{ARM_REG_R2, 0x33334444},
+	});
+
+	emulate("pkhtb r0, r1, r2");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x11114444},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SSAT)
+{
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 200},
+	});
+
+	emulate("ssat r0, #8, r1");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 127},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_USAT_negative_saturates_to_zero)
+{
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0xffffffff},
+	});
+
+	emulate("usat r0, #8, r1");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SMULBB)
+{
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x00020003},
+		{ARM_REG_R2, 0x00040005},
+	});
+
+	emulate("smulbb r0, r1, r2");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 15},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SMLABB)
+{
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x00020003},
+		{ARM_REG_R2, 0x00040005},
+		{ARM_REG_R3, 10},
+	});
+
+	emulate("smlabb r0, r1, r2, r3");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2, ARM_REG_R3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 25},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_NEG)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 5},
+	});
+
+	emulate("negs r0, r1");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, static_cast<uint32_t>(-5)},
+		{ARM_REG_CPSR_N, true},
+		{ARM_REG_CPSR_Z, false},
+		{ARM_REG_CPSR_C, false},
+		{ARM_REG_CPSR_V, false},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_IT_then_addeq_when_z_is_set)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x10},
+		{ARM_REG_CPSR_Z, true},
+	});
+
+	emulate("it eq\naddeq r0, r1, #1");
+
+	EXPECT_EQ(0x11u, getRegisterValueUnsigned(ARM_REG_R0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_IT_then_addeq_when_z_is_clear)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R0, 0x20},
+		{ARM_REG_R1, 0x10},
+		{ARM_REG_CPSR_Z, false},
+	});
+
+	emulate("it eq\naddeq r0, r1, #1");
+
+	EXPECT_EQ(0x20u, getRegisterValueUnsigned(ARM_REG_R0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_BLX_register_is_annotated)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x110d8},
+	});
+
+	auto* f = emulate("blx r1", 0x1107C);
+
+	bool annotated = false;
+	for (llvm::inst_iterator I = llvm::inst_begin(f), E = llvm::inst_end(f); I != E; ++I)
+	{
+		if (auto* c = llvm::dyn_cast<llvm::CallInst>(&*I))
+		{
+			if (c->getMetadata("arm.thumb_call"))
+			{
+				annotated = true;
+			}
+		}
+	}
+	EXPECT_TRUE(annotated);
 }
 
 } // namespace tests

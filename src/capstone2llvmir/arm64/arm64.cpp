@@ -3176,26 +3176,25 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateStp(cs_insn* i, cs_arm64* ai,
 	op1 = loadOp(ai->operands[1], irb);
 
 	uint32_t baseR = ARM64_REG_INVALID;
-	llvm::Value* newDest = nullptr;
+	llvm::Value* wbAddr = nullptr;
 	auto* dest = generateGetOperandMemAddr(ai->operands[2], irb);
 	auto* registerSize = llvm::ConstantInt::get(getDefaultType(), getRegisterByteSize(ai->operands[0].reg));
 	storeOp(ai->operands[2], op0, irb);
+	auto* second = irb.CreateAdd(dest, registerSize);
+	storeIntPtr(irb, op1, second, op1->getType());
 	if (ai->op_count == 3)
 	{
-		newDest = irb.CreateAdd(dest, registerSize);
-		storeIntPtr(irb, op1, newDest, op1->getType());
-
+		// Pre-index / unsigned offset: write back the pair's base
+		// (dest already includes the signed displacement).
 		baseR = ai->operands[2].mem.base;
+		wbAddr = dest;
 	}
 	else if (ai->op_count == 4)
 	{
+		// Post-index: stores use the original base; write back base+imm.
 		auto* disp = llvm::ConstantInt::get(getDefaultType(), ai->operands[3].imm);
-		newDest    = irb.CreateAdd(dest, registerSize);
-		storeIntPtr(irb, op1, newDest, op1->getType());
-
 		baseR = ai->operands[2].mem.base;
-
-		newDest = irb.CreateAdd(dest, disp);
+		wbAddr = irb.CreateAdd(dest, disp);
 	}
 	else
 	{
@@ -3204,7 +3203,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateStp(cs_insn* i, cs_arm64* ai,
 
 	if (ai->writeback && baseR != ARM64_REG_INVALID)
 	{
-		storeRegister(baseR, newDest, irb);
+		storeRegister(baseR, wbAddr, irb);
 	}
 }
 

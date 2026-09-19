@@ -234,6 +234,16 @@ bool ProviderInitialization::runOnModule(Module& m)
 			case fileformat::Architecture::ARM: a.setIsArm(); break;
 			case fileformat::Architecture::POWERPC: a.setIsPpc(); break;
 			case fileformat::Architecture::MIPS: a.setIsMips(); break;
+			case fileformat::Architecture::RISCV:
+				if (a.getBitSize() == 64) a.setIsRiscv64();
+				else a.setIsRiscv();
+				break;
+			case fileformat::Architecture::SPARC:
+				if (a.getBitSize() == 64) a.setIsSparc64();
+				else a.setIsSparc();
+				break;
+			case fileformat::Architecture::SYSZ: a.setIsSysz(); break;
+			case fileformat::Architecture::XCORE: a.setIsXcore(); break;
 			default: break; // nothing
 		}
 	}

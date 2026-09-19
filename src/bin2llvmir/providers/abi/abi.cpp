@@ -10,8 +10,16 @@
 #include "retdec/bin2llvmir/providers/abi/arm.h"
 #include "retdec/bin2llvmir/providers/abi/arm64.h"
 #include "retdec/bin2llvmir/providers/abi/mips.h"
+#include "retdec/bin2llvmir/providers/abi/mips64.h"
 #include "retdec/bin2llvmir/providers/abi/ms_x64.h"
 #include "retdec/bin2llvmir/providers/abi/powerpc.h"
+#include "retdec/bin2llvmir/providers/abi/powerpc64.h"
+#include "retdec/bin2llvmir/providers/abi/riscv.h"
+#include "retdec/bin2llvmir/providers/abi/riscv64.h"
+#include "retdec/bin2llvmir/providers/abi/sparc.h"
+#include "retdec/bin2llvmir/providers/abi/sparc64.h"
+#include "retdec/bin2llvmir/providers/abi/sysz.h"
+#include "retdec/bin2llvmir/providers/abi/xcore.h"
 #include "retdec/bin2llvmir/providers/abi/x86.h"
 #include "retdec/bin2llvmir/providers/abi/x64.h"
 #include "retdec/bin2llvmir/providers/abi/pic32.h"
@@ -262,6 +270,36 @@ bool Abi::isPic32() const
 	return _config->getConfig().architecture.isPic32();
 }
 
+bool Abi::isRiscv() const
+{
+	return _config->getConfig().architecture.isRiscv();
+}
+
+bool Abi::isRiscv64() const
+{
+	return _config->getConfig().architecture.isRiscv64();
+}
+
+bool Abi::isSparc() const
+{
+	return _config->getConfig().architecture.isSparc();
+}
+
+bool Abi::isSparc64() const
+{
+	return _config->getConfig().architecture.isSparc64();
+}
+
+bool Abi::isSysz() const
+{
+	return _config->getConfig().architecture.isSysz();
+}
+
+bool Abi::isXcore() const
+{
+	return _config->getConfig().architecture.isXcore();
+}
+
 bool Abi::supportsCallingConvention(const CallingConvention::ID& cc)
 {
 	return getCallingConvention(cc) != nullptr;
@@ -321,6 +359,11 @@ Abi* AbiProvider::addAbi(
 		auto p = _module2abi.emplace(m, std::make_unique<AbiArm64>(m, c));
 		return p.first->second.get();
 	}
+	else if (c->getConfig().architecture.isMips64())
+	{
+		auto p = _module2abi.emplace(m, std::make_unique<AbiMips64>(m, c));
+		return p.first->second.get();
+	}
 	else if (c->getConfig().architecture.isMips())
 	{
 		auto p = _module2abi.emplace(m, std::make_unique<AbiMips>(m, c));
@@ -331,9 +374,44 @@ Abi* AbiProvider::addAbi(
 		auto p = _module2abi.emplace(m, std::make_unique<AbiPic32>(m, c));
 		return p.first->second.get();
 	}
+	else if (c->getConfig().architecture.isPpc64())
+	{
+		auto p = _module2abi.emplace(m, std::make_unique<AbiPowerpc64>(m, c));
+		return p.first->second.get();
+	}
 	else if (c->getConfig().architecture.isPpc())
 	{
 		auto p = _module2abi.emplace(m, std::make_unique<AbiPowerpc>(m, c));
+		return p.first->second.get();
+	}
+	else if (c->getConfig().architecture.isRiscv64())
+	{
+		auto p = _module2abi.emplace(m, std::make_unique<AbiRiscv64>(m, c));
+		return p.first->second.get();
+	}
+	else if (c->getConfig().architecture.isRiscv())
+	{
+		auto p = _module2abi.emplace(m, std::make_unique<AbiRiscv>(m, c));
+		return p.first->second.get();
+	}
+	else if (c->getConfig().architecture.isSparc64())
+	{
+		auto p = _module2abi.emplace(m, std::make_unique<AbiSparc64>(m, c));
+		return p.first->second.get();
+	}
+	else if (c->getConfig().architecture.isSparc())
+	{
+		auto p = _module2abi.emplace(m, std::make_unique<AbiSparc>(m, c));
+		return p.first->second.get();
+	}
+	else if (c->getConfig().architecture.isSysz())
+	{
+		auto p = _module2abi.emplace(m, std::make_unique<AbiSysz>(m, c));
+		return p.first->second.get();
+	}
+	else if (c->getConfig().architecture.isXcore())
+	{
+		auto p = _module2abi.emplace(m, std::make_unique<AbiXcore>(m, c));
 		return p.first->second.get();
 	}
 	else if (c->getConfig().architecture.isX86_64())

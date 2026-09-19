@@ -2714,6 +2714,10 @@ void FileFormat::dump(std::string& dumpFile)
 	case Architecture::ARM: sArch = "ARM"; break;
 	case Architecture::POWERPC: sArch = "PowerPC"; break;
 	case Architecture::MIPS: sArch = "MIPS"; break;
+	case Architecture::RISCV: sArch = "RISC-V"; break;
+	case Architecture::SPARC: sArch = "SPARC"; break;
+	case Architecture::SYSZ: sArch = "SystemZ"; break;
+	case Architecture::XCORE: sArch = "XCore"; break;
 	default: sArch = "unknown";
 	}
 

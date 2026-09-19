@@ -76,8 +76,13 @@ FileImage::FileImage(
 	if (ca.isX86()) arch = retdec::fileformat::Architecture::X86;
 	if (ca.isX86_64()) arch = retdec::fileformat::Architecture::X86_64;
 	if (ca.isArm32OrThumb()) arch = retdec::fileformat::Architecture::ARM;
+	if (ca.isArm64()) arch = retdec::fileformat::Architecture::ARM;
 	if (ca.isPpc()) arch = retdec::fileformat::Architecture::POWERPC;
 	if (ca.isMipsOrPic32()) arch = retdec::fileformat::Architecture::MIPS;
+	if (ca.isRiscv()) arch = retdec::fileformat::Architecture::RISCV;
+	if (ca.isSparc()) arch = retdec::fileformat::Architecture::SPARC;
+	if (ca.isSysz()) arch = retdec::fileformat::Architecture::SYSZ;
+	if (ca.isXcore()) arch = retdec::fileformat::Architecture::XCORE;
 
 	_image->getFileFormat()->initArchitecture(
 			arch,

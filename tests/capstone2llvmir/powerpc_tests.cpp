@@ -2366,6 +2366,197 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_RLWNM_by_zero_is_the_sourc
 }
 
 //
+// PPC_INS_RLDICL / RLDICR / RLDIMI and compiler aliases (ppc64 only).
+//
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_RLDICL_rotates_the_doubleword)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x0123456789abcdef},
+	});
+
+	emulate("rldicl 0, 1, 8, 0");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R0, 0x23456789abcdef01},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_RLDICL_clears_the_left)
+{
+	// `clrldi rA, rS, 32` is `rldicl rA, rS, 0, 32`: the 64-bit (uint32_t) cast.
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x0123456789abcdef},
+	});
+
+	emulate("rldicl 0, 1, 0, 32");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R0, 0x0000000089abcdef},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CLRLDI)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x0123456789abcdef},
+	});
+
+	emulate("clrldi 0, 1, 32");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R0, 0x0000000089abcdef},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_RLDICL_is_srdi)
+{
+	// `srdi rA, rS, 8` is `rldicl rA, rS, 56, 8`.
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x0123456789abcdef},
+	});
+
+	emulate("rldicl 0, 1, 56, 8");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R0, 0x000123456789abcd},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_ROTLDI)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x0123456789abcdef},
+	});
+
+	emulate("rotldi 0, 1, 8");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R0, 0x23456789abcdef01},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_RLDICR_is_sldi)
+{
+	// `sldi rA, rS, 8` is `rldicr rA, rS, 8, 55`.
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x0123456789abcdef},
+	});
+
+	emulate("rldicr 0, 1, 8, 55");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R0, 0x23456789abcdef00},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_SLDI)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x0123456789abcdef},
+	});
+
+	emulate("sldi 0, 1, 8");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R0, 0x23456789abcdef00},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_RLDIMI_inserts_the_low_word)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R0, 0xaaaaaaaaaaaaaaaa},
+		{PPC_REG_R1, 0x1111111122222222},
+	});
+
+	emulate("rldimi 0, 1, 0, 32");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R0, 0xaaaaaaaa22222222},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_ROTLD)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x0123456789abcdef},
+		{PPC_REG_R2, 8},
+	});
+
+	emulate("rotld 0, 1, 2");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1, PPC_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R0, 0x23456789abcdef01},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_RLDICL_dot_compares_the_register)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x8000000000000000},
+	});
+
+	emulate("rldicl. 0, 1, 0, 0");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R0, 0x8000000000000000},
+		{PPC_REG_CR0LT, true},
+		{PPC_REG_CR0GT, false},
+		{PPC_REG_CR0EQ, false},
+		{PPC_REG_CR0UN, false},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
 // The count at or past the width, the carry out of SUBFE, and the carry out
 // of SRAW. All three were confirmed from the code before being fixed; see
 // docs/internal/UNFIXED_AUDIT_FINDINGS.md, Batch AH.
@@ -5095,6 +5286,49 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CMPWI_lt_cr7)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CMPI_word)
+{
+	// Primary form cmpi BF, L, rA, SI. L=0 is a word compare, same as cmpwi.
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R0, 0x1111},
+	});
+
+	emulate("cmpi cr7, 0, 0, 0x2222");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_CR7LT, true},
+		{PPC_REG_CR7GT, false},
+		{PPC_REG_CR7EQ, false},
+		{PPC_REG_CR7UN, false},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CMPLI_word)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R0, 0xffff0000},
+	});
+
+	emulate("cmpli cr5, 0, 0, 0");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_CR5LT, false},
+		{PPC_REG_CR5GT, true},
+		{PPC_REG_CR5EQ, false},
+		{PPC_REG_CR5UN, false},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
 //
 // PPC_INS_CMPLD
 //
@@ -5491,6 +5725,43 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_B_uncond)
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_JUST_VALUES_CALLED({
 		{_translator->getBranchFunction(), {0x100004bc}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_BC_true)
+{
+	// Primary form: BO=12 (branch if CR bit true), BI=0 (CR0 LT).
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_CR0LT, true},
+	});
+
+	emulate("bc 12, 0, 0x4bc", 0x10000510);
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_CR0LT});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCondBranchFunction(), {true, 0x100004bc}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_BC_false)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_CR0LT, false},
+	});
+
+	emulate("bc 12, 0, 0x4bc", 0x10000510);
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_CR0LT});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCondBranchFunction(), {false, 0x100004bc}},
 	});
 }
 

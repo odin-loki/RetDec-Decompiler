@@ -9,7 +9,7 @@ are not interchangeable.
 | **CUDA host API recovery** | `ptx_decompile::CudaHostRecovery` (`cudaLaunchKernel`, `cudaMalloc`, …) | **No** (tests only) |
 | **OpenCL host API recovery** | `ptx_decompile::OclHostRecovery` (`clCreate*`, `clEnqueue*`, …) | **Yes** (log summary) |
 | **PTX text → CUDA-C** | `PtxParser` / `InstrLifter` | **No** (no CLI `.ptx`) |
-| **SASS machine code** | NVIDIA GPU ISA | **Not implemented** |
+| **SASS machine code** | NVIDIA GPU ISA | **No** (library only; not Production) |
 
 `src/cuda_accel/` and `src/opencl/` are parked research trees. They are
 **not linked** from `src/retdec`, default **OFF**, and must not be advertised
@@ -76,7 +76,12 @@ the decompiler on a GPU.
   when `RETDEC_OCL_HOST=0` or the module has no `cl*` API names. On a hit,
   `OclHostEmitter` prints a log summary; it does not rewrite `.c`.
 - **PTX parser/lifter** — CUDA-C strings from PTX text. No
-  `retdec-decompiler` input path for `.ptx` or cubin/SASS.
+  `retdec-decompiler` input path for `.ptx`.
+- **SASS / cubin / fatbin** — `src/sass_decode/` loads ELF `EM_CUDA` (190)
+  cubin and fatbin (`0xBA55ED50`), decodes a **documented SM_70/SM_80
+  subset**, and emits CUDA-C comments + a few operators. **Not** in
+  `decompile()`. **Not Production.** SASS is not in Capstone; `nvdisasm`
+  is not used. Integrator patches: [internal/wire-sass.md](internal/wire-sass.md).
 
 ## CPU-only (main decompile pipeline)
 
@@ -108,6 +113,7 @@ Binary input
 ## Related docs
 
 - [architecture.md](architecture.md)
-- [ARCHITECTURE_TARGETS.md](ARCHITECTURE_TARGETS.md) — SASS not implemented
+- [ARCHITECTURE_TARGETS.md](ARCHITECTURE_TARGETS.md) — SASS library, not Production
+- [internal/wire-sass.md](internal/wire-sass.md)
 - [BUILD_REFERENCE.md](BUILD_REFERENCE.md)
 - [NEURAL_REFINEMENT.md](NEURAL_REFINEMENT.md) — `n_gpu_layers` offload

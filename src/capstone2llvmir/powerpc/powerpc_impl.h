@@ -191,6 +191,7 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		void translateOris(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateRotateComplex5op(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateRotateWordMask(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateRotateDoubleMask(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateRotlw(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateShiftLeft(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateShiftRight(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);

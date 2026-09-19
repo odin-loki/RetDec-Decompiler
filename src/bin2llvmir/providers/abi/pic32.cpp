@@ -19,6 +19,12 @@ AbiPic32::AbiPic32(llvm::Module* m, Config* c) :
 	_id2regs.resize(MIPS_REG_ENDING, nullptr);
 	_regStackPointerId = MIPS_REG_SP;
 	_regZeroReg = MIPS_REG_ZERO;
+	_regFunctionReturnId = MIPS_REG_V0;
+
+	// Same O32 roles as AbiMips. XC32 interrupt code uses $k0/$k1 as
+	// scratch; $gp is the small-data pointer the decoder seeds from the
+	// last store to GP. There is no separate ABI field for these ids —
+	// they are ordinary GPRs in the Capstone register file.
 
 	// system calls
 	_regSyscallId = MIPS_REG_V0;
@@ -68,7 +74,7 @@ std::size_t AbiPic32::getTypeBitSize(llvm::Type* t) const
 		t = Type::getFloatTy(_module->getContext());
 	}
 
-	return Abi::getTypeByteSize(t);
+	return Abi::getTypeBitSize(t);
 }
 
 } // namespace bin2llvmir

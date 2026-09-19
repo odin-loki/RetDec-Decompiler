@@ -214,6 +214,13 @@ class Capstone2LlvmIrTranslatorArm_impl :
 		void translateUxtb(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateUxtb16(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateUxth(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+
+		void translateDiv(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateTbb(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translatePkh(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateSat(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateHalfwordMul(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void annotateBxBlxIfNeeded(cs_insn* i, cs_arm* ai, llvm::CallInst* call);
 };
 
 } // namespace capstone2llvmir

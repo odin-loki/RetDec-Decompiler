@@ -11,6 +11,7 @@
 #include <llvm/IR/Intrinsics.h>
 
 #include "capstone2llvmir/arm/arm_impl.h"
+#include "retdec/capstone2llvmir/arm/arm_thumb_interwork.h"
 
 namespace retdec {
 namespace capstone2llvmir {
@@ -95,7 +96,9 @@ void Capstone2LlvmIrTranslatorArm_impl::translateInstruction(
 
 		bool branchInsn = i->id == ARM_INS_B || i->id == ARM_INS_BX
 				|| i->id == ARM_INS_BL || i->id == ARM_INS_BLX
-				|| i->id == ARM_INS_CBZ || i->id == ARM_INS_CBNZ;
+				|| i->id == ARM_INS_BXNS || i->id == ARM_INS_BLXNS
+				|| i->id == ARM_INS_CBZ || i->id == ARM_INS_CBNZ
+				|| i->id == ARM_INS_TBB || i->id == ARM_INS_TBH;
 		if (ai->cc == ARM_CC_AL || ai->cc == ARM_CC_INVALID || branchInsn)
 		{
 			_inCondition = false;
@@ -1758,7 +1761,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateAnd(cs_insn* i, cs_arm* ai, llv
 }
 
 /**
- * ARM_INS_B, ARM_INS_BX (exchange instruction)
+ * ARM_INS_B, ARM_INS_BX, ARM_INS_BXNS (exchange instruction)
  */
 void Capstone2LlvmIrTranslatorArm_impl::translateB(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
 {
@@ -1768,23 +1771,25 @@ void Capstone2LlvmIrTranslatorArm_impl::translateB(cs_insn* i, cs_arm* ai, llvm:
 	bool isReturn = ai->operands[0].type == ARM_OP_REG
 			&& ai->operands[0].reg == ARM_REG_LR;
 
+	llvm::CallInst* call = nullptr;
 	if (ai->cc == ARM_CC_AL || ai->cc == ARM_CC_INVALID)
 	{
-		isReturn
+		call = isReturn
 			? generateReturnFunctionCall(irb, op0)
 			: generateBranchFunctionCall(irb, op0);
 	}
 	else
 	{
 		auto* cond = generateInsnConditionCode(irb, ai);
-		isReturn
+		call = isReturn
 			? generateCondReturnFunctionCall(irb, cond, op0)
 			: generateCondBranchFunctionCall(irb, cond, op0);
 	}
+	annotateBxBlxIfNeeded(i, ai, call);
 }
 
 /**
- * ARM_INS_BL, ARM_INS_BLX (exchange instruction)
+ * ARM_INS_BL, ARM_INS_BLX, ARM_INS_BLXNS (exchange instruction)
  */
 void Capstone2LlvmIrTranslatorArm_impl::translateBl(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
 {
@@ -1792,15 +1797,40 @@ void Capstone2LlvmIrTranslatorArm_impl::translateBl(cs_insn* i, cs_arm* ai, llvm
 
 	storeRegister(ARM_REG_LR, getNextInsnAddress(i), irb);
 	op0 = loadOpUnary(ai, irb);
+	llvm::CallInst* call = nullptr;
 	if (ai->cc == ARM_CC_AL || ai->cc == ARM_CC_INVALID)
 	{
-		generateCallFunctionCall(irb, op0);
+		call = generateCallFunctionCall(irb, op0);
 	}
 	else
 	{
 		auto* cond = generateInsnConditionCode(irb, ai);
-		generateCondBranchFunctionCall(irb, cond, op0);
+		call = generateCondCallFunctionCall(irb, cond, op0);
 	}
+	annotateBxBlxIfNeeded(i, ai, call);
+}
+
+void Capstone2LlvmIrTranslatorArm_impl::annotateBxBlxIfNeeded(
+		cs_insn* i,
+		cs_arm* ai,
+		llvm::CallInst* call)
+{
+	if (call == nullptr)
+	{
+		return;
+	}
+	if (i->id != ARM_INS_BX && i->id != ARM_INS_BLX
+			&& i->id != ARM_INS_BXNS && i->id != ARM_INS_BLXNS)
+	{
+		return;
+	}
+
+	bool targetIsThumb = true;
+	if (ai->op_count > 0 && ai->operands[0].type == ARM_OP_IMM)
+	{
+		targetIsThumb = isThumbAddress(static_cast<uint64_t>(ai->operands[0].imm));
+	}
+	annotateThumbInterwork(call, targetIsThumb);
 }
 
 /**
@@ -2306,23 +2336,73 @@ void Capstone2LlvmIrTranslatorArm_impl::translateSel(cs_insn* i, cs_arm* ai, llv
 }
 
 /**
- * ARM_INS_SXTB, ARM_INS_SXTH
+ * ARM_INS_SXTB, ARM_INS_SXTH, ARM_INS_SXTAB, ARM_INS_SXTAH,
+ * ARM_INS_SXTB16, ARM_INS_SXTAB16
  *
- * Sign-extend a byte or a halfword. The unsigned pair already had translators;
- * these did not, and `sxth` is 805 occurrences in the static corpus.
+ * Sign-extend a byte or a halfword, optionally adding Rn. The optional
+ * `, ror #n` is part of the Rm operand as Capstone reports it, so loadOp
+ * has already applied it.
  *
- * The optional `, ror #n` is part of the operand as Capstone reports it, so
- * loadOpBinaryOp1() has already applied it -- the same way translateUxtb()
- * relies on it.
+ * SXTB16 / SXTAB16 do the same independently in each halfword: bits [7:0]
+ * and [23:16], writing the two sign-extended 16-bit lanes.
  */
 void Capstone2LlvmIrTranslatorArm_impl::translateSxt(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
 {
-	EXPECT_IS_BINARY(i, ai, irb);
+	bool addRn = i->id == ARM_INS_SXTAB || i->id == ARM_INS_SXTAH || i->id == ARM_INS_SXTAB16;
+	bool parallel16 = i->id == ARM_INS_SXTB16 || i->id == ARM_INS_SXTAB16;
+	unsigned from = (i->id == ARM_INS_SXTH || i->id == ARM_INS_SXTAH) ? 16 : 8;
 
-	op1 = loadOpBinaryOp1(ai, irb);
-	unsigned from = i->id == ARM_INS_SXTB ? 8 : 16;
-	auto* narrow = irb.CreateTrunc(op1, irb.getIntNTy(from));
-	storeOp(ai->operands[0], irb.CreateSExt(narrow, getDefaultType()), irb);
+	if (addRn)
+	{
+		EXPECT_IS_BINARY_OR_TERNARY(i, ai, irb);
+	}
+	else
+	{
+		EXPECT_IS_BINARY(i, ai, irb);
+	}
+
+	auto* i32 = getDefaultType();
+	llvm::Value* rn = nullptr;
+	llvm::Value* rm = nullptr;
+	if (addRn)
+	{
+		std::tie(rn, rm) = loadOpBinaryOrTernaryOp1Op2(ai, irb, eOpConv::THROW);
+	}
+	else
+	{
+		rm = loadOpBinaryOp1(ai, irb);
+	}
+
+	if (parallel16)
+	{
+		auto* mask16 = llvm::ConstantInt::get(i32, 0xffff);
+		auto extractLane = [&](unsigned shift) {
+			llvm::Value* b = rm;
+			if (shift)
+			{
+				b = irb.CreateLShr(b, llvm::ConstantInt::get(i32, shift));
+			}
+			auto* n = irb.CreateTrunc(b, irb.getInt8Ty());
+			return irb.CreateAnd(irb.CreateSExt(n, i32), mask16);
+		};
+		llvm::Value* lo = extractLane(0);
+		llvm::Value* hi = extractLane(16);
+		if (rn)
+		{
+			lo = irb.CreateAnd(irb.CreateAdd(lo, irb.CreateAnd(rn, mask16)), mask16);
+			hi = irb.CreateAnd(irb.CreateAdd(hi, irb.CreateLShr(rn, llvm::ConstantInt::get(i32, 16))), mask16);
+		}
+		storeOp(ai->operands[0], irb.CreateOr(lo, irb.CreateShl(hi, llvm::ConstantInt::get(i32, 16))), irb);
+		return;
+	}
+
+	auto* narrow = irb.CreateTrunc(rm, irb.getIntNTy(from));
+	llvm::Value* ext = irb.CreateSExt(narrow, i32);
+	if (rn)
+	{
+		ext = irb.CreateAdd(rn, ext);
+	}
+	storeOp(ai->operands[0], ext, irb);
 }
 
 /**
@@ -2671,6 +2751,12 @@ void Capstone2LlvmIrTranslatorArm_impl::translateNop(cs_insn* i, cs_arm* ai, llv
  */
 void Capstone2LlvmIrTranslatorArm_impl::translateHint(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
 {
+	if (i->id == ARM_INS_WFI || i->id == ARM_INS_WFE
+			|| i->id == ARM_INS_SEV || i->id == ARM_INS_SEVL)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
 	std::string m(i->mnemonic);
 	if (m == "wfi" || m == "wfe" || m == "sev" || m == "sevl" || m == "dbg")
 	{
@@ -3530,7 +3616,12 @@ void Capstone2LlvmIrTranslatorArm_impl::translateSub(cs_insn* i, cs_arm* ai, llv
 {
 	EXPECT_IS_BINARY_OR_TERNARY(i, ai, irb);
 
-	if (i->id == ARM_INS_RSB)
+	if (i->id == ARM_INS_NEG)
+	{
+		op2 = loadOpBinaryOp1(ai, irb);
+		op1 = llvm::ConstantInt::get(op2->getType(), 0);
+	}
+	else if (i->id == ARM_INS_RSB)
 	{
 		std::tie(op2, op1) = loadOpBinaryOrTernaryOp1Op2(ai, irb, eOpConv::THROW);
 	}
@@ -3539,7 +3630,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateSub(cs_insn* i, cs_arm* ai, llv
 		std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(ai, irb, eOpConv::THROW);
 	}
 	auto* sub = irb.CreateSub(op1, op2);
-	if (ai->update_flags || i->id == ARM_INS_CMP)
+	if (ai->update_flags || i->id == ARM_INS_CMP || i->id == ARM_INS_SUBS || i->id == ARM_INS_NEG)
 	{
 		llvm::Value* zero = llvm::ConstantInt::get(sub->getType(), 0);
 
@@ -3638,15 +3729,34 @@ void Capstone2LlvmIrTranslatorArm_impl::translateUmull(cs_insn* i, cs_arm* ai, l
 }
 
 /**
- * ARM_INS_UXTAH
+ * ARM_INS_UXTAH, ARM_INS_UXTAB, ARM_INS_UXTAB16
+ *
+ * Zero-extend a halfword or byte of Rm (after the optional rotate Capstone
+ * already folded into the operand) and add Rn. UXTAB16 does that in each
+ * halfword independently.
  */
 void Capstone2LlvmIrTranslatorArm_impl::translateUxtah(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY_OR_TERNARY(i, ai, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(ai, irb, eOpConv::THROW);
-	op2 = irb.CreateZExtOrTrunc(op2, irb.getInt16Ty());
-	op2 = irb.CreateZExtOrTrunc(op2, irb.getInt32Ty());
+	auto* i32 = getDefaultType();
+
+	if (i->id == ARM_INS_UXTAB16)
+	{
+		auto* mask16 = llvm::ConstantInt::get(i32, 0xffff);
+		auto* mask8 = llvm::ConstantInt::get(i32, 0xff);
+		llvm::Value* lo = irb.CreateAnd(op2, mask8);
+		llvm::Value* hi = irb.CreateAnd(irb.CreateLShr(op2, llvm::ConstantInt::get(i32, 16)), mask8);
+		lo = irb.CreateAnd(irb.CreateAdd(lo, irb.CreateAnd(op1, mask16)), mask16);
+		hi = irb.CreateAnd(irb.CreateAdd(hi, irb.CreateLShr(op1, llvm::ConstantInt::get(i32, 16))), mask16);
+		storeOp(ai->operands[0], irb.CreateOr(lo, irb.CreateShl(hi, llvm::ConstantInt::get(i32, 16))), irb);
+		return;
+	}
+
+	unsigned from = i->id == ARM_INS_UXTAB ? 8 : 16;
+	op2 = irb.CreateZExtOrTrunc(op2, irb.getIntNTy(from));
+	op2 = irb.CreateZExtOrTrunc(op2, i32);
 	op0 = irb.CreateAdd(op1, op2);
 	storeOp(ai->operands[0], op0, irb);
 }
@@ -3685,6 +3795,226 @@ void Capstone2LlvmIrTranslatorArm_impl::translateUxth(cs_insn* i, cs_arm* ai, ll
 	op1 = loadOpBinaryOp1(ai, irb);
 	op1 = irb.CreateAnd(op1, 0x0000ffff);
 	storeOp(ai->operands[0], op1, irb);
+}
+
+/**
+ * ARM_INS_SDIV, ARM_INS_UDIV
+ *
+ * Compiler-used integer divide on ARMv7-A/R and Thumb-2. Division by zero
+ * and signed overflow (INT_MIN / -1) are architecturally UNPREDICTABLE;
+ * the translation uses the same defined answers as ARM64 so the IR never
+ * carries LLVM poison that later passes could delete.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateDiv(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, ai, irb);
+
+	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(ai, irb, eOpConv::THROW);
+	auto* ty = op1->getType();
+	auto* zero = llvm::ConstantInt::get(ty, 0);
+	auto* one = llvm::ConstantInt::get(ty, 1);
+	auto* divZero = irb.CreateICmpEQ(op2, zero);
+
+	llvm::Value* val = nullptr;
+	if (i->id == ARM_INS_UDIV)
+	{
+		auto* safe = irb.CreateSelect(divZero, one, op2);
+		val = irb.CreateSelect(divZero, zero, irb.CreateUDiv(op1, safe));
+	}
+	else
+	{
+		unsigned bits = llvm::cast<llvm::IntegerType>(ty)->getBitWidth();
+		auto* intMin = llvm::ConstantInt::get(ty, llvm::APInt::getSignedMinValue(bits));
+		auto* minusOne = llvm::ConstantInt::getSigned(ty, -1);
+		auto* overflow = irb.CreateAnd(irb.CreateICmpEQ(op1, intMin), irb.CreateICmpEQ(op2, minusOne));
+		auto* safe = irb.CreateSelect(irb.CreateOr(divZero, overflow), one, op2);
+		val = irb.CreateSelect(divZero, zero, irb.CreateSelect(overflow, intMin, irb.CreateSDiv(op1, safe)));
+	}
+	storeOp(ai->operands[0], val, irb);
+}
+
+/**
+ * ARM_INS_TBB, ARM_INS_TBH -- Thumb-2 table branch.
+ *
+ *     tbb [Rn, Rm]              PC = PC + 2 * ZeroExtend(MemU8[Rn+Rm])
+ *     tbh [Rn, Rm, lsl #1]      PC = PC + 2 * ZeroExtend(MemU16[Rn+(Rm<<1)])
+ *
+ * PC is the address of this instruction plus 4. Capstone reports a single
+ * memory operand; loadOp(..., lea=true) already applies the LSL #1 on TBH.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateTbb(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_UNARY(i, ai, irb);
+
+	if (ai->operands[0].type != ARM_OP_MEM)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* addr = loadOp(ai->operands[0], irb, nullptr, true);
+	auto* elemTy = i->id == ARM_INS_TBH ? irb.getInt16Ty() : irb.getInt8Ty();
+	auto* entry = irb.CreateZExt(loadIntPtr(irb, addr, elemTy), getDefaultType());
+	auto* disp = irb.CreateShl(entry, llvm::ConstantInt::get(entry->getType(), 1));
+	auto* target = irb.CreateAdd(getCurrentPc(i), disp);
+	generateBranchFunctionCall(irb, target);
+}
+
+/**
+ * ARM_INS_PKHBT, ARM_INS_PKHTB
+ *
+ * Pack the bottom half of one register with the top half of the other after
+ * the optional shift Capstone folds into Rm.
+ *
+ *     pkhbt rd, rn, rm{, lsl #n}   rd[15:0] = rn[15:0]; rd[31:16] = rm_shifted[31:16]
+ *     pkhtb rd, rn, rm{, asr #n}   rd[31:16] = rn[31:16]; rd[15:0] = rm_shifted[15:0]
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translatePkh(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, ai, irb);
+
+	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(ai, irb, eOpConv::THROW);
+	auto* i32 = getDefaultType();
+	auto* maskLo = llvm::ConstantInt::get(i32, 0x0000ffff);
+	auto* maskHi = llvm::ConstantInt::get(i32, 0xffff0000);
+	llvm::Value* res = i->id == ARM_INS_PKHTB
+			? irb.CreateOr(irb.CreateAnd(op1, maskHi), irb.CreateAnd(op2, maskLo))
+			: irb.CreateOr(irb.CreateAnd(op1, maskLo), irb.CreateAnd(op2, maskHi));
+	storeOp(ai->operands[0], res, irb);
+}
+
+/**
+ * ARM_INS_SSAT, ARM_INS_USAT
+ *
+ * Saturate a (possibly shifted) signed source to a signed or unsigned field
+ * of `sat` bits. Q is not modelled.
+ *
+ *     ssat rd, #sat, rn{, shift}   clamp to [-2^(sat-1), 2^(sat-1)-1], sat in 1..32
+ *     usat rd, #sat, rn{, shift}   clamp signed rn to [0, 2^sat-1], sat in 0..31
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateSat(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_EXPR(i, ai, irb, (ai->op_count >= 3));
+
+	if (ai->operands[1].type != ARM_OP_IMM)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	unsigned sat = static_cast<unsigned>(ai->operands[1].imm);
+	auto* src = loadOp(ai->operands[2], irb);
+	auto* ty = src->getType();
+	unsigned bits = llvm::cast<llvm::IntegerType>(ty)->getBitWidth();
+
+	if (i->id == ARM_INS_SSAT)
+	{
+		if (sat == 0 || sat > bits)
+		{
+			throwUnexpectedOperands(i);
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		if (sat == bits)
+		{
+			storeOp(ai->operands[0], src, irb);
+			return;
+		}
+		auto* minV = llvm::ConstantInt::getSigned(ty, -(int64_t(1) << (sat - 1)));
+		auto* maxV = llvm::ConstantInt::getSigned(ty, (int64_t(1) << (sat - 1)) - 1);
+		auto* res = irb.CreateSelect(
+				irb.CreateICmpSLT(src, minV),
+				minV,
+				irb.CreateSelect(irb.CreateICmpSGT(src, maxV), maxV, src));
+		storeOp(ai->operands[0], res, irb);
+		return;
+	}
+
+	if (sat > bits - 1)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	auto* zero = llvm::ConstantInt::get(ty, 0);
+	auto* maxV = llvm::ConstantInt::get(ty, sat == 0 ? 0 : ((uint64_t(1) << sat) - 1));
+	auto* nonNeg = irb.CreateSelect(irb.CreateICmpSLT(src, zero), zero, src);
+	auto* res = irb.CreateSelect(irb.CreateICmpUGT(nonNeg, maxV), maxV, nonNeg);
+	storeOp(ai->operands[0], res, irb);
+}
+
+/**
+ * 16-bit (and 32x16) signed multiply family the compiler emits for int16_t
+ * arithmetic: SMULBB/BT/TB/TT, SMLABB/BT/TB/TT, SMULWB/WT, SMLAWB/WT.
+ *
+ * Bottom/top of Rn and Rm are bits [15:0] / [31:16]. SMULW* multiplies the
+ * full 32-bit Rn by a 16-bit half of Rm and takes bits [47:16] of the 48-bit
+ * product (arithmetic shift of the 64-bit product by 16).
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateHalfwordMul(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	bool topN = false;
+	bool topM = false;
+	bool acc = false;
+	bool wide = false;
+	switch (i->id)
+	{
+		case ARM_INS_SMULBB: break;
+		case ARM_INS_SMULBT: topM = true; break;
+		case ARM_INS_SMULTB: topN = true; break;
+		case ARM_INS_SMULTT: topN = true; topM = true; break;
+		case ARM_INS_SMLABB: acc = true; break;
+		case ARM_INS_SMLABT: acc = true; topM = true; break;
+		case ARM_INS_SMLATB: acc = true; topN = true; break;
+		case ARM_INS_SMLATT: acc = true; topN = true; topM = true; break;
+		case ARM_INS_SMULWB: wide = true; break;
+		case ARM_INS_SMULWT: wide = true; topM = true; break;
+		case ARM_INS_SMLAWB: wide = true; acc = true; break;
+		case ARM_INS_SMLAWT: wide = true; acc = true; topM = true; break;
+		default:
+			throw GenericError("translateHalfwordMul(): unhandled instruction id");
+	}
+
+	if (acc)
+	{
+		EXPECT_IS_QUATERNARY(i, ai, irb);
+	}
+	else
+	{
+		EXPECT_IS_TERNARY(i, ai, irb);
+	}
+
+	auto* n = loadOp(ai->operands[1], irb);
+	auto* m = loadOp(ai->operands[2], irb);
+	auto* i32 = getDefaultType();
+	auto* i16 = irb.getInt16Ty();
+	auto extractHalf = [&](llvm::Value* v, bool top) {
+		if (top)
+		{
+			v = irb.CreateLShr(v, llvm::ConstantInt::get(i32, 16));
+		}
+		return irb.CreateSExt(irb.CreateTrunc(v, i16), i32);
+	};
+
+	llvm::Value* res = nullptr;
+	if (wide)
+	{
+		auto* i64 = irb.getInt64Ty();
+		auto* half = extractHalf(m, topM);
+		auto* prod = irb.CreateMul(irb.CreateSExt(n, i64), irb.CreateSExt(half, i64));
+		res = irb.CreateTrunc(irb.CreateAShr(prod, llvm::ConstantInt::get(i64, 16)), i32);
+	}
+	else
+	{
+		res = irb.CreateMul(extractHalf(n, topN), extractHalf(m, topM));
+	}
+	if (acc)
+	{
+		res = irb.CreateAdd(res, loadOp(ai->operands[3], irb));
+	}
+	storeOp(ai->operands[0], res, irb);
 }
 
 } // namespace capstone2llvmir

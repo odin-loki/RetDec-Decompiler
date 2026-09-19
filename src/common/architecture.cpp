@@ -22,6 +22,17 @@ const std::string ARCH_THUMB   = "thumb";
 const std::string ARCH_x86     = "x86";
 const std::string ARCH_PPC     = "powerpc";
 const std::string ARCH_PPC64   = "powerpc64";
+const std::string ARCH_RISCV   = "riscv";
+const std::string ARCH_RISCV64 = "riscv64";
+const std::string ARCH_SPARC   = "sparc";
+const std::string ARCH_SPARC64 = "sparc64";
+const std::string ARCH_SYSZ    = "sysz";
+const std::string ARCH_S390X   = "s390x";
+const std::string ARCH_SYSTEMZ = "systemz";
+const std::string ARCH_XCORE   = "xcore";
+const std::string ARCH_ARM64_CLI = "arm64";
+const std::string ARCH_X86_64  = "x86-64";
+const std::string ARCH_X86_64U = "x86_64";
 
 } // anonymous namespace
 
@@ -40,6 +51,12 @@ bool Architecture::isX86_32() const       { return isX86() && getBitSize() == 32
 bool Architecture::isX86_64() const       { return isX86() && getBitSize() == 64; }
 bool Architecture::isPpc() const          { return isArch(eArch::PPC); }
 bool Architecture::isPpc64() const        { return isPpc() && getBitSize() == 64; }
+bool Architecture::isRiscv() const        { return isArch(eArch::RISCV); }
+bool Architecture::isRiscv64() const      { return isRiscv() && getBitSize() == 64; }
+bool Architecture::isSparc() const        { return isArch(eArch::SPARC); }
+bool Architecture::isSparc64() const      { return isSparc() && getBitSize() == 64; }
+bool Architecture::isSysz() const         { return isArch(eArch::SYSZ); }
+bool Architecture::isXcore() const        { return isArch(eArch::XCORE); }
 bool Architecture::isKnown() const        { return !isUnknown(); }
 bool Architecture::isUnknown() const      { return isArch(eArch::UNKNOWN); }
 bool Architecture::isMips() const         { return isArch(eArch::MIPS); }
@@ -76,6 +93,12 @@ void Architecture::setIsArm32()          { setName(ARCH_ARM); setBitSize(32); }
 void Architecture::setIsArm64()          { setName(ARCH_ARM64); setBitSize(64); }
 void Architecture::setIsX86()            { setName(ARCH_x86); }
 void Architecture::setIsPpc()            { setName(ARCH_PPC); }
+void Architecture::setIsRiscv()          { setName(ARCH_RISCV); }
+void Architecture::setIsRiscv64()        { setName(ARCH_RISCV64); setBitSize(64); }
+void Architecture::setIsSparc()          { setName(ARCH_SPARC); }
+void Architecture::setIsSparc64()        { setName(ARCH_SPARC64); setBitSize(64); }
+void Architecture::setIsSysz()           { setName(ARCH_SYSZ); setBitSize(64); }
+void Architecture::setIsXcore()          { setName(ARCH_XCORE); setBitSize(32); }
 
 void Architecture::setIsEndianLittle()           { _endian = E_LITTLE; }
 void Architecture::setIsEndianBig()              { _endian = E_BIG; }
@@ -112,6 +135,10 @@ void Architecture::setArch()
 	else if (retdec::utils::containsCaseInsensitive(_name, ARCH_MIPS))
 	{
 		_arch = eArch::MIPS;
+		if (retdec::utils::containsCaseInsensitive(_name, ARCH_MIPS64))
+		{
+			_bitSize = 64;
+		}
 	}
 	else if (retdec::utils::containsCaseInsensitive(_name, ARCH_PIC32))
 	{
@@ -122,6 +149,13 @@ void Architecture::setArch()
 		_arch = eArch::ARM;
 		_thumbFlag = true;
 	}
+	else if (retdec::utils::containsCaseInsensitive(_name, ARCH_ARM64)
+			|| retdec::utils::containsCaseInsensitive(_name, ARCH_ARM64_CLI))
+	{
+		_arch = eArch::ARM;
+		_thumbFlag = false;
+		_bitSize = 64;
+	}
 	else if (retdec::utils::containsCaseInsensitive(_name, ARCH_ARM))
 	{
 		_arch = eArch::ARM;
@@ -130,10 +164,50 @@ void Architecture::setArch()
 	else if (retdec::utils::containsCaseInsensitive(_name, ARCH_x86))
 	{
 		_arch = eArch::X86;
+		if (retdec::utils::containsCaseInsensitive(_name, ARCH_X86_64)
+				|| retdec::utils::containsCaseInsensitive(_name, ARCH_X86_64U))
+		{
+			_bitSize = 64;
+		}
+	}
+	else if (retdec::utils::containsCaseInsensitive(_name, ARCH_PPC64))
+	{
+		_arch = eArch::PPC;
+		_bitSize = 64;
 	}
 	else if (retdec::utils::containsCaseInsensitive(_name, ARCH_PPC))
 	{
 		_arch = eArch::PPC;
+	}
+	else if (retdec::utils::containsCaseInsensitive(_name, ARCH_RISCV64))
+	{
+		_arch = eArch::RISCV;
+		_bitSize = 64;
+	}
+	else if (retdec::utils::containsCaseInsensitive(_name, ARCH_RISCV))
+	{
+		_arch = eArch::RISCV;
+	}
+	else if (retdec::utils::containsCaseInsensitive(_name, ARCH_SPARC64))
+	{
+		_arch = eArch::SPARC;
+		_bitSize = 64;
+	}
+	else if (retdec::utils::containsCaseInsensitive(_name, ARCH_SPARC))
+	{
+		_arch = eArch::SPARC;
+	}
+	else if (retdec::utils::containsCaseInsensitive(_name, ARCH_S390X)
+			|| retdec::utils::containsCaseInsensitive(_name, ARCH_SYSTEMZ)
+			|| retdec::utils::containsCaseInsensitive(_name, ARCH_SYSZ))
+	{
+		_arch = eArch::SYSZ;
+		_bitSize = 64;
+	}
+	else if (retdec::utils::containsCaseInsensitive(_name, ARCH_XCORE))
+	{
+		_arch = eArch::XCORE;
+		_bitSize = 32;
 	}
 }
 

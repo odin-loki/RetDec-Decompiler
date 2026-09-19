@@ -58,6 +58,8 @@ public:
 					arch = CS_ARCH_X86;
 				else if (_arch == "ppc")
 					arch = CS_ARCH_PPC;
+				else if (_arch == "riscv")
+					arch = CS_ARCH_RISCV;
 				else if (_arch == "sparc")
 					arch = CS_ARCH_SPARC;
 				else if (_arch == "sysz")
@@ -106,6 +108,10 @@ public:
 					basicMode = CS_MODE_MIPS32;
 				else if (_basicMode == "mips64")
 					basicMode = CS_MODE_MIPS64;
+				else if (_basicMode == "riscv32")
+					basicMode = CS_MODE_RISCV32;
+				else if (_basicMode == "riscv64")
+					basicMode = CS_MODE_RISCV64;
 				else
 					printHelpAndDie();
 			}
@@ -122,6 +128,8 @@ public:
 					extraMode = CS_MODE_MICRO;
 				else if (_extraMode == "v9")
 					extraMode = CS_MODE_V9;
+				else if (_extraMode == "riscvc")
+					extraMode = CS_MODE_RISCVC;
 				else if (_extraMode == "big")
 					extraMode = CS_MODE_BIG_ENDIAN;
 				else
@@ -169,6 +177,7 @@ public:
 		case CS_ARCH_MIPS: return CS_MODE_MIPS32; // CS_MODE_MIPS{32, 64, 32R6}
 		case CS_ARCH_X86: return CS_MODE_32;      // CS_MODE_{16, 32, 64}
 		case CS_ARCH_PPC: return CS_MODE_32;
+		case CS_ARCH_RISCV: return CS_MODE_RISCV32;
 		case CS_ARCH_SPARC: return CS_MODE_LITTLE_ENDIAN; // 0
 		case CS_ARCH_SYSZ: return CS_MODE_LITTLE_ENDIAN;
 		case CS_ARCH_XCORE: return CS_MODE_LITTLE_ENDIAN;
@@ -203,7 +212,7 @@ public:
 					   "\t-h|--help Show this help.\n"
 					   "\t--version Show RetDec version.\n"
 					   "\t-a name   Set architecture name.\n"
-					   "\t          Possible values: arm, arm64, mips, x86, ppc, sparc, sysz, xcore\n"
+					   "\t          Possible values: arm, arm64, mips, x86, ppc, riscv, sparc, sysz, xcore\n"
 					   "\t          Default value: x86.\n"
 					   "\t-b base   Base address in hexadecimal format (e.g. 0x1000).\n"
 					   "\t          Default value 0x1000.\n"
@@ -216,10 +225,10 @@ public:
 					   "\t          Most of the time, this is more convenient than -c option.\n"
 					   "\t-m mode   Capstone basic mode to use.\n"
 					   "\t          Possible values: arm, thumb, 16, 32, 64, mips3, mips32r6,\n"
-					   "\t          mips32, mips64\n"
+					   "\t          mips32, mips64, riscv32, riscv64\n"
 					   "\t          Default value: 32.\n"
 					   "\t-e mode   Capstone extra mode to use.\n"
-					   "\t          Possible values: little, big, micro, mclass, v8, v9.\n"
+					   "\t          Possible values: little, big, micro, mclass, v8, v9, riscvc.\n"
 					   "\t          Default value: little.\n"
 					   "\t-o out    Output file name where LLVM IR will be generated.\n"
 					   "\t          Default value: stdout\n";
@@ -270,6 +279,7 @@ ks_arch capstoneArchToKeystoneArch(cs_arch a)
 	case CS_ARCH_PPC: return KS_ARCH_PPC;
 	case CS_ARCH_SPARC: return KS_ARCH_SPARC;
 	case CS_ARCH_SYSZ: return KS_ARCH_SYSTEMZ;
+	case CS_ARCH_RISCV:
 	case CS_ARCH_XCORE:
 	case CS_ARCH_MAX:
 	case CS_ARCH_ALL:

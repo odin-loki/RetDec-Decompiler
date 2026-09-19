@@ -1906,6 +1906,12 @@ void ElfDetector::detectArchitecture()
 				result = "PowerPC";
 			}
 			break;
+		case EM_RISCV:
+			result = "RISC-V";
+			break;
+		case EM_XCORE:
+			result = "XMOS XCore";
+			break;
 		default:;
 	}
 	if(result.empty())

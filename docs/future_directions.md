@@ -163,16 +163,16 @@ not a free-choice list.
 |-------------|--------|-------|
 | x86-64 | **Production** | Primary native path |
 | x86-32 | **Production** | — |
-| ARM32 / Thumb | Partial | Lifter + ABI present; not the production e2e bar |
-| AArch64 | **Incomplete** | Capstone + some `bin2llvmir` init; not production e2e |
-| MIPS32/64 | Partial | — |
-| PowerPC 32/64 | Partial | — |
-| RISC-V (RV32I, RV64I) | **Not implemented** | LLVM backend exists; RetDec lifter missing |
+| ARM32 / Thumb | Production (integer) | Lifter + ABI; SIMD/FP may be pseudo-asm |
+| AArch64 | Production (integer) | Capstone + AAPCS64 ABI; `-a arm64` |
+| MIPS32/64 | Production (integer) | — |
+| PowerPC 32/64 | Production (integer) | — |
+| RISC-V (RV32I, RV64I) | Production (integer) | Capstone `CS_ARCH_RISCV`; F/D/A/M/CSR → pseudo-asm |
 | LoongArch | Research | — |
-| SPARC / SystemZ / XCore | **Not implemented** | Capstone dispatch throws `GenericError` |
+| SPARC / SystemZ / XCore | Production (integer) | SPARC V8/V9; SystemZ 64-only; XCore 32-only |
 | WASM (binary) | **Shipped (input-keyed)** | `.wasm` → WAT |
 | PTX (NVIDIA virtual ISA) | In-tree `src/ptx_decompile` | **Not** a general native output choice |
-| SASS (NVIDIA machine code) | Research | Generation-variant; `nvdisasm` as pre-processor only |
+| SASS (NVIDIA machine code) | Library, not Production | cubin/fatbin loader + SM_70/80 subset in `src/sass_decode/`; no nvdisasm; not CLI |
 | DXBC / DXIL (HLSL bytecode) | Future | — |
 | SPIR-V | Future | — |
 
@@ -225,8 +225,9 @@ This section only records directions that overlap the product.
 `RETDEC_ENABLE_CUDA_ACCEL` defaults OFF. Docs: [CUDA_CAPABILITIES.md](CUDA_CAPABILITIES.md).
 
 **PTX** as an *input* ISA is a separate, in-tree path (`src/ptx_decompile`).
-**SASS** remains research (`nvdisasm` pre-processor). Fat-binary / cubin PTX
-extraction is research.
+**SASS** has a cubin/fatbin loader and a documented opcode subset in
+`src/sass_decode/` (**not** Production, **not** in `decompile()`, no
+`nvdisasm`). See [internal/wire-sass.md](internal/wire-sass.md).
 
 ### Machine Learning Integration
 
@@ -272,6 +273,6 @@ automatically “done”.
 | 3 | RISC-V support | Not implemented |
 | 4 | Rust output language | Future |
 | 5 | AI-assisted variable naming | **Opt-in llama.cpp shipped**; quality/tuning open |
-| 6 | SASS decompilation (via nvdisasm) | Research |
+| 6 | SASS decompilation (no nvdisasm) | Library subset in `src/sass_decode/`; not CLI / not Production |
 | 7 | Cross-binary diff | Research (GUI Diff is same-session) |
 | 8 | Formal verification bridge | Research |

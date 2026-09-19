@@ -3,17 +3,18 @@
 Status of **native** decompilation targets as of Imortek **2.0.22**.
 Capstone dispatch and ABI tables live under `src/capstone2llvmir/` and
 `src/bin2llvmir/providers/abi/`. CLI `-a|--arch` accepts
-`mips|pic32|arm|thumb|arm64|powerpc|x86|x86-64` only
+`mips|mips64|pic32|arm|thumb|arm64|powerpc|powerpc64|x86|x86-64|riscv|riscv64|sparc|sparc64|sysz|s390x|xcore`
 (`src/retdec-decompiler/retdec-decompiler.cpp`).
 
 LLVM is pinned to **23.1.0** in `cmake/deps.cmake`
 (`llvmorg-23.1.0` / `llvm-project-23.1.0.src.tar.xz`). Upstream LLVM
 targets are not RetDec lifters.
 
-> **Honest status:** RISC-V, full ARM64, SASS, SPARC, SystemZ, and XCore are
-> **not** production decompilation targets today. Capstone `createSparc` /
-> `createSysz` / `createXcore` throw `GenericError`. There is no RISC-V
-> translator directory.
+> **Honest status:** Integer/control-flow lifting for the CPU ISAs below is
+> wired end-to-end (Capstone translator + ABI + decoder + ELF `e_machine` +
+> CLI). SIMD/FP/atomics still fall back to pseudo-asm where Capstone IDs
+> are unmapped. **SASS is not Production** — cubin/fatbin decode is a
+> documented opcode subset, not a Capstone architecture.
 
 ---
 
@@ -22,14 +23,15 @@ targets are not RetDec lifters.
 | Target | Status | Notes |
 |--------|--------|-------|
 | **x86 / x86-64** | Production | Default native path; Capstone + ABI + decoder coverage |
-| **ARM / Thumb / MIPS / PowerPC** | Partial | Lifter + ABI present (`arm/`, `mips/`, `powerpc/`); not the production e2e bar |
-| **PIC32** | Partial | Listed on `-a`; MIPS-family ABI (`pic32.cpp`) |
-| **ARM64** (AArch64) | Incomplete | `src/capstone2llvmir/arm64/` + `src/bin2llvmir/providers/abi/arm64.cpp`; not production-ready end-to-end |
-| **RISC-V** (RV32I / RV64I) | Not implemented | No `capstone2llvmir/riscv`, no `-a riscv`, no `EM_RISCV` wiring in `src/fileformat/` |
-| **SPARC** | **Not implemented** | `createArch(CS_ARCH_SPARC)` → `createSparc` throws `GenericError("SPARC architecture is unimplemented.")` |
-| **SystemZ** | **Not implemented** | `createSysz` throws `GenericError("SystemZ architecture is unimplemented.")` |
-| **XCore** | **Not implemented** | `createXcore` throws `GenericError("XCore architecture is unimplemented.")` |
-| **SASS** (NVIDIA GPU machine code) | Not implemented | No lifter. PTX **text** parser exists in `src/ptx_decompile/` and is **not** a CLI input |
+| **ARM / Thumb** | Production (integer) | `arm/` + Thumb interwork; 32-bit |
+| **ARM64** (AArch64) | Production (integer) | `arm64/` + AAPCS64 ABI; `-a arm64` sets 64-bit |
+| **MIPS 32/64 + PIC32** | Production (integer) | Delay slots; `AbiMips` / `AbiMips64` / `AbiPic32` |
+| **PowerPC 32/64** | Production (integer) | `AbiPowerpc` / `AbiPowerpc64` |
+| **RISC-V** (RV32I / RV64I) | Production (integer) | Capstone 5.0.9 `CS_ARCH_RISCV`; integer `C_*`; F/D/A/M/CSR → pseudo-asm |
+| **SPARC** V8 32 / V9 64 | Production (integer) | Capstone basic mode 0; V9 is `CS_MODE_V9`. Typical delay slot (annul not classified as likely) |
+| **SystemZ** | Production (integer, 64-bit) | s390x only. Capstone has no 31-bit / ESA-390 mode |
+| **XCore** | Production (integer, 32-bit) | XS1/XS2. No 64-bit Capstone mode |
+| **SASS** (NVIDIA GPU machine code) | Library + CLI probe, not Production | `src/sass_decode/` cubin/fatbin + SM_70/80 subset. **Not** a `-a` token. See [internal/wire-sass.md](internal/wire-sass.md) |
 
 Managed bytecode (JVM, DEX, CIL, CPython, Lua, WASM) is a separate
 dispatcher — [architecture.md](architecture.md) § Managed-Language Dispatch.
@@ -39,56 +41,32 @@ Those are not CPU ISA targets.
 
 ## RISC-V (RV32I / RV64I)
 
-### Current state
-
-- No `bin2llvmir` architecture module and no `src/capstone2llvmir/riscv/`.
-- No RetDec config preset or `-a riscv` / `-a riscv64`.
-- `src/fileformat/` has no `EM_RISCV` handling in this tree.
-- LLVM 23 includes a RISC-V backend; RetDec does not lift RISC-V machine
-  code through `bin2llvmir` → `llvmir2hll`.
-
-### Prerequisites (if scheduled)
-
-1. Capstone (or LLVM MC) insn → LLVM IR mapping for RV32/RV64.
-2. `bin2llvmir` register model and calling convention (RISC-V psABI).
-3. ELF `EM_RISCV` in fileformat / config.
-4. Tests: minimal RV64 ELFs under `tests/`.
-5. CLI `-a` token and docs.
-
-Suggested order: disassembly-only → lift to LLVM IR → C emission via
-existing llvmir2hll.
+- Translator: `src/capstone2llvmir/riscv/`
+- ABI: `AbiRiscv` / `AbiRiscv64` (psABI `a0`–`a7`)
+- CLI: `-a riscv` / `-a riscv64`
+- ELF: `EM_RISCV` (243)
+- Compressed integer `C_*` via extra `CS_MODE_RISCVC`. F/D/A/M/CSR unmapped.
 
 ---
 
 ## ARM64 (AArch64)
 
-### Current state
-
-- Capstone translator: `src/capstone2llvmir/arm64/` (`arm64.cpp`,
-  `arm64_init.cpp`, `arm64_fp_ext.cpp`).
-- ABI: `src/bin2llvmir/providers/abi/arm64.cpp` (`CC_ARM64`, X0–X7 args,
-  X8 syscall).
-- CLI: `-a arm64` is accepted.
-- End-to-end quality and coverage lag x86. Mach-O / PE ARM64 edge cases
-  remain open. Treat as **in progress**, not Tier-3 production.
-
-### Remaining work (not done)
-
-1. SIMD / atomics / BTI/PAC coverage in the lifter (may degrade).
-2. Windows ARM64 ABI variants vs AAPCS64.
-3. Regression corpus (Linux aarch64, iOS/macOS Mach-O) in CI smoke.
-4. Documented quality bar matching x86.
+- Capstone translator: `src/capstone2llvmir/arm64/`
+- ABI: `src/bin2llvmir/providers/abi/arm64.cpp`
+- CLI: `-a arm64` implies 64-bit (do not require a separate `-b 64`)
+- SIMD / atomics / BTI/PAC may still degrade to pseudo-asm
 
 ---
 
 ## SPARC, SystemZ, and XCore
 
-`Capstone2LlvmIrTranslator::createArch` has cases for `CS_ARCH_SPARC`,
-`CS_ARCH_SYSZ`, and `CS_ARCH_XCORE`. Those call `createSparc` /
-`createSysz` / `createXcore`, which **throw** `GenericError`. There are no
-implementation directories under `src/capstone2llvmir/`. Public header
-methods are retained (API); they do not produce a translator. `-a` does
-not list these names.
+`createSparc` / `createSysz` / `createXcore` construct the in-tree
+translators. Capstone support is **enabled** in `deps/capstone/CMakeLists.txt`
+(`CAPSTONE_SPARC_SUPPORT`, `CAPSTONE_SYSZ_SUPPORT`, `CAPSTONE_XCORE_SUPPORT`).
+
+- SPARC: `-a sparc` / `-a sparc64`; ELF `EM_SPARC` / `EM_SPARC32PLUS` / `EM_SPARCV9`
+- SystemZ: `-a sysz` / `-a s390x`; ELF `EM_S390`; 64-bit GPRs only
+- XCore: `-a xcore`; ELF `EM_XCORE`; 32-bit only
 
 ---
 
@@ -96,20 +74,16 @@ not list these names.
 
 ### Current state
 
-- No SASS lifter or emitter.
-- `src/ptx_decompile/` recovers **PTX text** and CUDA/OpenCL **host API**
-  patterns. PTX lifting is unit-tested and **not** a `retdec-decompiler`
-  input. `CudaHostRecovery` is **not** called from `decompile()`;
-  `OclHostRecovery` is. See [CUDA_CAPABILITIES.md](CUDA_CAPABILITIES.md).
+- `src/sass_decode/` loads standalone cubin (ELF `e_machine = 190` /
+  `EM_CUDA`) and fatbin (`FATBIN_MAGIC 0xBA55ED50`).
+- `retdec-decompiler` probes cubin/fatbin **before** the native LLVM
+  pipeline and writes CUDA-C subset output. **Not** `-a sass`.
+- `--bit-size 32|64` on that path is GPU pointer width; omitted → ELF class.
+- **Not Production.** No public bit-accurate SASS ISA. `nvdisasm` is not
+  called or bundled.
 
-### If SASS were pursued
-
-1. External `nvdisasm` (CUDA toolkit) — listing, not IR.
-2. SASS varies by SM generation; no stable cross-generation IR.
-3. Unlikely to share llvmir2hll.
-4. CUDA EULA constraints on redistributing `nvdisasm`.
-
-Do **not** claim SASS decompilation until a structured lift exists.
+Do **not** claim SASS Production until encodings are complete without
+nvdisasm and recovered kernels match the x86 quality bar.
 
 ---
 
@@ -121,7 +95,7 @@ Do **not** claim SASS decompilation until a structured lift exists.
 | `src/bin2llvmir/` | Instruction → LLVM IR + ABI |
 | `include/retdec/config/` | Architecture name, bitness, endian |
 | `src/fileformat/` | ELF/Mach-O/COFF machine detection |
-| `src/retdec-decompiler/` | `-a` allow-list |
+| `src/retdec-decompiler/` | `-a` allow-list + cubin probe |
 | `tests/decompiler/`, `tests/capstone2llvmir/` | Smoke + translator tests |
 | CI presets | `full-linux-release`, `full-windows-release` |
 

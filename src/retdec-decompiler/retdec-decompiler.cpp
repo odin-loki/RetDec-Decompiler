@@ -59,6 +59,8 @@
 #include "retdec/utils/thread_pool.h"
 #include "managed_decompiler.h"
 #include "output_lang.h"
+#include "retdec/sass_decode/cubin_loader.h"
+#include "retdec/sass_decode/sass_lifter.h"
 
 #include <rapidjson/document.h>
 #include <rapidjson/error/en.h>
@@ -305,6 +307,7 @@ public:
 
 	std::string mode = "bin";
 	uint64_t bitSize = 32;
+	bool bitSizeSpecified = false;
 	std::string arExtractPath;
 	std::string arName;
 	std::optional<uint64_t> arIdx;
@@ -457,6 +460,7 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 			{
 				throw std::runtime_error("");
 			}
+			bitSizeSpecified = true;
 		}
 		catch (const std::exception&)
 		{
@@ -466,8 +470,10 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 	else if (isParam(i, "-a", "--arch"))
 	{
 		auto a = getParamOrDie(i);
-		if (!(a == "mips" || a == "pic32" || a == "arm" || a == "thumb" || a == "arm64" || a == "powerpc" || a == "x86"
-			  || a == "x86-64"))
+		if (!(a == "mips" || a == "mips64" || a == "pic32" || a == "arm" || a == "thumb" || a == "arm64"
+			  || a == "powerpc" || a == "powerpc64" || a == "x86" || a == "x86-64" || a == "riscv"
+			  || a == "riscv64" || a == "sparc" || a == "sparc64" || a == "sysz" || a == "systemz"
+			  || a == "s390x" || a == "xcore"))
 		{
 			throw std::runtime_error("[-a|--arch] unknown architecture: " + a);
 		}
@@ -872,6 +878,7 @@ General arguments:
 	[-s|--silent] Turns off informative output of the decompilation.
 	[-f|--output-format OUTPUT_FORMAT] Output format [plain|json|json-human] (default: plain).
 	[--output-lang LANG] Target source language for native binaries [c|python|csharp|java|wat] (default: c). There is no dedicated C++ writer; use c. Managed inputs ignore this and use format-specific emitters.
+	Standalone NVIDIA cubin (ELF e_machine 190) and fatbin (magic 0xBA55ED50) are decoded by src/sass_decode (opcode subset, not Production). Not a -a architecture.
 	[--buildable] Write .h, _stubs.c, and .buildable.c next to output C (default: on).
 	[--no-buildable] Disable buildable sidecars (same as RETDEC_EMIT_BUILDABLE=0).
 	[-m|--mode MODE] Force the type of decompilation mode [bin|raw] (default: bin).
@@ -887,12 +894,13 @@ Selective decompilation arguments:
 	[--select-functions FUNCS] Specify a comma separated list of functions to decompile (example: fnc1,fnc2,fnc3).
 	[--select-decode-only] Decode only selected parts (functions/ranges). Faster decompilation, but worse results.
 Raw or Intel HEX decompilation arguments:
-	[-a|--arch ARCH] Specify target architecture [mips|pic32|arm|thumb|arm64|powerpc|x86|x86-64].
+	[-a|--arch ARCH] Specify target architecture [mips|mips64|pic32|arm|thumb|arm64|powerpc|powerpc64|x86|x86-64|riscv|riscv64|sparc|sparc64|sysz|s390x|xcore].
 	                 Required if it cannot be autodetected from the input (e.g. raw mode, Intel HEX).
 	[-e|--endian ENDIAN] Specify target endianness [little|big].
 	                     Required if it cannot be autodetected from the input (e.g. raw mode, Intel HEX).
 	[-b|--bit-size SIZE] Specify target bit size [16|32|64] (default: 32).
 	                     Required if it cannot be autodetected from the input (e.g. raw mode).
+	                     For NVIDIA cubin/fatbin this is GPU pointer width (32 or 64), not a -a architecture.
 	[--raw-section-vma ADDRESS] Virtual address where section created from the raw binary will be placed.
 	[--raw-entry-point ADDRESS] Entry point address used for raw binary (default: architecture dependent).
 Archive decompilation arguments:
@@ -1194,6 +1202,32 @@ int decompile(retdec::config::Config& config, ProgramOptions& po)
 			logUnknownManagedFormat(
 				managedProbeBytes.data(), managedProbeBytes.size(), config.parameters.getInputFile(), unknownLog);
 			Log::info() << unknownLog.str() << std::endl;
+		}
+
+		if (retdec::sass_decode::looksLikeFatbin(managedProbeBytes.data(), managedProbeBytes.size())
+			|| retdec::sass_decode::looksLikeCubin(managedProbeBytes.data(), managedProbeBytes.size()))
+		{
+			Log::phase("NVIDIA SASS cubin/fatbin decode (subset, not Capstone)");
+			retdec::sass_decode::SassConfig scfg;
+			if (po.bitSizeSpecified)
+			{
+				if (po.bitSize == 16)
+				{
+					Log::error() << "SASS GPU pointer width is 32 or 64, not 16." << std::endl;
+					return EXIT_FAILURE;
+				}
+				scfg.pointerBits = static_cast<uint32_t>(po.bitSize);
+			}
+			std::string cudaC = retdec::sass_decode::decompileCudaBinary(
+					managedProbeBytes.data(), managedProbeBytes.size(), scfg);
+			std::ofstream ofs(config.parameters.getOutputFile());
+			if (!ofs)
+			{
+				Log::error() << "Cannot write SASS output: " << config.parameters.getOutputFile() << std::endl;
+				return EXIT_FAILURE;
+			}
+			ofs << cudaC;
+			return EXIT_SUCCESS;
 		}
 	}
 

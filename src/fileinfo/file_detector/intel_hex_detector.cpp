@@ -101,6 +101,18 @@ void IntelHexDetector::detectArchitecture()
 		case Architecture::MIPS:
 			fileInfo.setTargetArchitecture("MIPS");
 			break;
+		case Architecture::RISCV:
+			fileInfo.setTargetArchitecture("RISC-V");
+			break;
+		case Architecture::SPARC:
+			fileInfo.setTargetArchitecture("SPARC");
+			break;
+		case Architecture::SYSZ:
+			fileInfo.setTargetArchitecture("SystemZ");
+			break;
+		case Architecture::XCORE:
+			fileInfo.setTargetArchitecture("XCore");
+			break;
 		case Architecture::UNKNOWN:
 		default:;
 	}

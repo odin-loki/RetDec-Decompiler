@@ -1526,7 +1526,6 @@ void Capstone2LlvmIrTranslatorArm64_impl::initializePseudoCallInstructionIDs()
 	{
 		ARM64_INS_BL,
 		ARM64_INS_BLR,
-		ARM64_INS_BR,
 	};
 
 	_returnInsnIds =
@@ -1538,6 +1537,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::initializePseudoCallInstructionIDs()
 	_branchInsnIds =
 	{
 		ARM64_INS_B,
+		ARM64_INS_BR,
 	};
 
 	_condBranchInsnIds =
@@ -1684,7 +1684,11 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorArm64_impl::*)(cs_insn* i, 
 		{ARM64_INS_BL, &Capstone2LlvmIrTranslatorArm64_impl::translateBl},
 		{ARM64_INS_BLR, &Capstone2LlvmIrTranslatorArm64_impl::translateBr},
 		{ARM64_INS_BR, &Capstone2LlvmIrTranslatorArm64_impl::translateBr},
-		{ARM64_INS_BRK, nullptr},
+		// Software interrupt / breakpoint: same pattern as ARM32 SVC —
+		// an opaque pseudo-call whose immediate is the operand. The
+		// SyscallFixer pass matches ARM64_INS_SVC by Capstone id, not by
+		// this IR shape; BRK is the AArch64 analogue of BKPT/INT3.
+		{ARM64_INS_BRK, &Capstone2LlvmIrTranslatorArm64_impl::translatePseudoAsmFncOp0},
 		{ARM64_INS_BSL, &Capstone2LlvmIrTranslatorArm64_impl::translateNeonBitSel},
 		{ARM64_INS_CBNZ, &Capstone2LlvmIrTranslatorArm64_impl::translateCbnz},
 		{ARM64_INS_CBZ, &Capstone2LlvmIrTranslatorArm64_impl::translateCbnz},
@@ -2138,7 +2142,7 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorArm64_impl::*)(cs_insn* i, 
 		{ARM64_INS_SUB, &Capstone2LlvmIrTranslatorArm64_impl::translateSub},
 		{ARM64_INS_SUBS, &Capstone2LlvmIrTranslatorArm64_impl::translateSub},
 		{ARM64_INS_SUQADD, nullptr},
-		{ARM64_INS_SVC, nullptr},
+		{ARM64_INS_SVC, &Capstone2LlvmIrTranslatorArm64_impl::translatePseudoAsmFncOp0},
 		{ARM64_INS_SYSL, nullptr},
 		{ARM64_INS_SYS, nullptr},
 		{ARM64_INS_TBL, nullptr},

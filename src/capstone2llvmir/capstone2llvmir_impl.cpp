@@ -2361,6 +2361,10 @@ template class Capstone2LlvmIrTranslator_impl<cs_arm64, cs_arm64_op>;
 template class Capstone2LlvmIrTranslator_impl<cs_mips, cs_mips_op>;
 template class Capstone2LlvmIrTranslator_impl<cs_ppc, cs_ppc_op>;
 template class Capstone2LlvmIrTranslator_impl<cs_x86, cs_x86_op>;
+template class Capstone2LlvmIrTranslator_impl<cs_riscv, cs_riscv_op>;
+template class Capstone2LlvmIrTranslator_impl<cs_sparc, cs_sparc_op>;
+template class Capstone2LlvmIrTranslator_impl<cs_sysz, cs_sysz_op>;
+template class Capstone2LlvmIrTranslator_impl<cs_xcore, cs_xcore_op>;
 
 } // namespace capstone2llvmir
 } // namespace retdec
