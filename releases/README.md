@@ -6,7 +6,7 @@ Install helpers live in git under `releases/linux/` and `releases/macos/`. Platf
 
 ## Current version
 
-See `VERSION` for the active package version and script paths. CMake `project(... VERSION 2.0.22)`.
+See `VERSION` for the active package version and script paths. CMake `project(... VERSION 2.0.24)`.
 
 | Platform | In git | On GitHub Releases |
 |----------|--------|-------------------|
@@ -40,8 +40,8 @@ NSIS `setup.exe` + portable zip. CI: `windows-latest`, `RETDEC_TESTS=OFF`, `CMAK
 **Install** (then put `bin` on PATH if you used the zip):
 
 ```powershell
-.\scripts\install-windows.ps1 -SetupExe dist\retdec-2.0.22-windows-x64-setup.exe
-curl.exe -fL -O https://github.com/odin-loki/RetDec-Decompiler/releases/download/v2.0.22/fib_smoke.exe
+.\scripts\install-windows.ps1 -SetupExe dist\retdec-2.0.24-windows-x64-setup.exe
+curl.exe -fL -O https://github.com/odin-loki/RetDec-Decompiler/releases/download/v2.0.24/fib_smoke.exe
 retdec-decompiler fib_smoke.exe -o fib.c
 ```
 
@@ -59,11 +59,11 @@ chmod +x scripts/build-all.sh scripts/build-linux-installer.sh
 **Install from a release tarball:**
 
 ```bash
-# Download retdec-2.0.22-linux-x64.tar.gz from GitHub Releases, then:
-tar xzf retdec-2.0.22-linux-x64.tar.gz
-cd retdec-2.0.22-linux-x64
+# Download retdec-2.0.24-linux-x64.tar.gz from GitHub Releases, then:
+tar xzf retdec-2.0.24-linux-x64.tar.gz
+cd retdec-2.0.24-linux-x64
 ./install.sh --user --add-path
-curl -fL -O https://github.com/odin-loki/RetDec-Decompiler/releases/download/v2.0.22/fib_smoke
+curl -fL -O https://github.com/odin-loki/RetDec-Decompiler/releases/download/v2.0.24/fib_smoke
 retdec-decompiler fib_smoke -o fib.c
 ```
 
@@ -85,9 +85,9 @@ cmake --build build/linux --target install
 **Install from a release tarball** (the archive’s own `install.sh`, not the loose GitHub asset named `install-macos.sh`):
 
 ```bash
-# Download retdec-2.0.22-macos-arm64.tar.gz from GitHub Releases, then:
-tar xzf retdec-2.0.22-macos-arm64.tar.gz
-cd retdec-2.0.22-macos-arm64
+# Download retdec-2.0.24-macos-arm64.tar.gz from GitHub Releases, then:
+tar xzf retdec-2.0.24-macos-arm64.tar.gz
+cd retdec-2.0.24-macos-arm64
 ./install.sh --user --add-path
 ```
 
@@ -102,7 +102,7 @@ removes `com.apple.quarantine` from what it installs; by hand that is
 
 CI workflow **`.github/workflows/release-installers.yml`** publishes all three platforms when you:
 
-1. **Tag a release:** `git tag v2.0.22 && git push origin v2.0.22`
+1. **Tag a release:** `git tag v2.0.24 && git push origin v2.0.24`
 2. **Manual dispatch:** Actions → *release-installers* → Run workflow
 
 After changing install/uninstall scripts locally, commit the updated `releases/linux/` and `releases/macos/` files.

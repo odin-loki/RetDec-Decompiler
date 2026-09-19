@@ -1,6 +1,6 @@
 # MASTER-UPGRADE-PLAN — automation completion status
 
-Last updated: **v2.0.22**. Historical plan text stays in
+Last updated: **v2.0.24**. Historical plan text stays in
 [MASTER-UPGRADE-PLAN.md](MASTER-UPGRADE-PLAN.md).
 
 ## Steps 1–26 (shippable product)

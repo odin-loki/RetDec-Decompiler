@@ -15,6 +15,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   GitHub Release still carries Unsloth `Qwen3.5-9B-Q4_K_M.gguf` as split
   parts (2 GB asset cap); `install.sh` joins them into
   `share/retdec/models/`.
+- Release-follow-up workflow fallback tags (`appimage-from-release`,
+  `docker-from-release`, `qt-lgpl-evidence`, `sign-release-sbom`,
+  `upload-sample-binary`) match `releases/VERSION` 2.0.24 so
+  `check_version_drift` passes.
 
 ## [2.0.23] — 2026-09-19
 

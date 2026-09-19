@@ -1,6 +1,6 @@
 # Neural refinement
 
-Imortek **2.0.22**. Offline, gated post-processing **after** deterministic
+Imortek **2.0.24**. Offline, gated post-processing **after** deterministic
 C emission. Not a decompiler pass and not GPU acceleration of lifting.
 
 ## Status

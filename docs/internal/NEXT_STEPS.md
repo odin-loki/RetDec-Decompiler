@@ -2,7 +2,7 @@
 
 **Read first:** [MAINTAINER_SCOPE.md](MAINTAINER_SCOPE.md).
 
-**v2.0.22** — automation steps 1–26 complete, GitHub Release ships Linux /
+**v2.0.24** — automation steps 1–26 complete, GitHub Release ships Linux /
 Windows / macOS, default-`.c` recompile is **216/216**. These are optional
 follow-ups, not a second master plan.
 

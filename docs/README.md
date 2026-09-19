@@ -1,6 +1,6 @@
 # RetDec documentation (in-tree)
 
-This directory contains **technical documentation** for building, operating, extending, and debugging RetDec Imortek **2.0.22**. It is aimed at **developers, packagers, and power users**. End-user feature marketing lives in the top-level [README.md](../README.md); day-to-day GUI usage is in [user_manual.md](user_manual.md).
+This directory contains **technical documentation** for building, operating, extending, and debugging RetDec Imortek **2.0.24**. It is aimed at **developers, packagers, and power users**. End-user feature marketing lives in the top-level [README.md](../README.md); day-to-day GUI usage is in [user_manual.md](user_manual.md).
 
 `CMakeLists.txt` requires **CMake 3.13**. [CMakePresets.json](../CMakePresets.json) requires **CMake 3.26**. CUDA acceleration (`RETDEC_ENABLE_CUDA_ACCEL`) defaults **OFF** and is not wired into the decompiler.
 
@@ -16,7 +16,7 @@ This directory contains **technical documentation** for building, operating, ext
 6. **[user_manual.md](user_manual.md)** — Qt GUI layout, settings, shortcuts, optional neural refine, macOS `RetDec.app`.
 7. **[CLAIMS.md](CLAIMS.md)** — claims register (status + verification). Do not invent F1 numbers.
 8. **[DUE_DILIGENCE.md](DUE_DILIGENCE.md)** — responses to Plan.md Part 2.
-9. **[../Plan.md](../Plan.md)** — historical August 2026 review (not the live ship checklist; bannered at v2.0.22).
+9. **[../Plan.md](../Plan.md)** — historical August 2026 review (not the live ship checklist; bannered at v2.0.24).
 10. **[developer_guide.md](developer_guide.md)** — Repository layout, code style, new pipeline stages, tests, plugins, profiling.
 11. **[architecture.md](architecture.md)** — Pipeline stages, libraries, managed-language dispatch.
 12. **[pipeline_stage_map.md](pipeline_stage_map.md)** — Stage names ↔ source directories.
@@ -32,16 +32,16 @@ This directory contains **technical documentation** for building, operating, ext
 | Document | Audience | Contents |
 |----------|----------|----------|
 | [../README.md](../README.md) | Everyone | Product positioning, measured results, features, build overview |
-| [../QUICKSTART.md](../QUICKSTART.md) | New users | Ten-minute decompile from v2.0.22 Release assets |
+| [../QUICKSTART.md](../QUICKSTART.md) | New users | Ten-minute decompile from v2.0.24 Release assets |
 | [../ROADMAP.md](../ROADMAP.md) | Buyers / planners | Public status (LLVM Track 2; packages; leftovers) |
-| [../CHANGELOG.md](../CHANGELOG.md) | Everyone | Version history; [2.0.22] is the current tag |
+| [../CHANGELOG.md](../CHANGELOG.md) | Everyone | Version history; [2.0.24] is the current tag |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | Contributors | Build, tests, CLA, PR style |
 | [../SECURITY.md](../SECURITY.md) | Operators / researchers | Vulnerability reporting; untrusted-input model |
 | [../CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) | Community | Contributor Covenant 2.1 |
 | [../CLA.md](../CLA.md) | Contributors | Outbound relicensing grant |
 | [../LICENSING_FAQ.md](../LICENSING_FAQ.md) | Procurement | Air-gap / AGPL vs commercial (`LEG-09`) |
 | [../LICENSE](../LICENSE) | Everyone | Dual AGPL-3.0+ / commercial pointer |
-| [../Plan.md](../Plan.md) | Maintainers | Historical August 2026 review; live status is README / CHANGELOG [2.0.22] |
+| [../Plan.md](../Plan.md) | Maintainers | Historical August 2026 review; live status is README / CHANGELOG [2.0.24] |
 
 ### Public technical docs (`docs/`)
 

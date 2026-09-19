@@ -1,17 +1,17 @@
 # RetDec Imortek — Specification Extraction Decompiler
 
-**Version 2.0.22.** Repo:
+**Version 2.0.24.** Repo:
 [odin-loki/RetDec-Decompiler](https://github.com/odin-loki/RetDec-Decompiler).
 Release tag
-[v2.0.22](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.0.22).
+[v2.0.24](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.0.24).
 
 **A specification-extraction tool that contains a decompiler** — algorithm
 recovery, semantic export, and offline neural refinement are the product;
 recovered C pseudocode is a supporting artefact, not the headline.
 
 Built on upstream [RetDec](https://github.com/avast/retdec) v5.0 (dormant since
-2022), this fork adds semantic library recovery, a Qt 6 GUI, optional offline
-neural refinement (llama.cpp via `RETDEC_ENABLE_LLAMACPP`), packaged Linux /
+2022), this fork adds semantic library recovery, a Qt 6 GUI, default-on offline
+neural refinement (llama.cpp; `RETDEC_NEURAL_REFINE=0` disables), packaged Linux /
 macOS / Windows installs, and structured algorithm/concurrency/serialisation
 detection no stock decompiler ships. Dual-licensed AGPL-3.0+ / commercial
 (Imortek).
@@ -205,7 +205,7 @@ refine uses `RETDEC_NEURAL_REFINE` and `RETDEC_NEURAL_MODEL` — there is no
 
 ## Maintainer scope
 
-**Shippable at v2.0.22** — measured results are in **Results** above. Stock
+**Shippable at v2.0.24** — measured results are in **Results** above. Stock
 RetDec 5.0 compare uses the published `remnux/retdec` image (official
 `retdec/retdec:v5.0` does not exist). CI gates name-blind ci-core
 `MIN_MEAN_F1=0.12` and full-corpus `MIN_MEAN_F1=0.05`; that is not product
@@ -280,7 +280,7 @@ same Unix presets apply (`CMakePresets.json` `_pathUnix`). CMake presets
 put the build tree under **`build/linux/`** or **`build/windows/`** (from `CMakePresets.json` `base`, by host OS).
 `ctest-macos` configures `full-linux-release` on `macos-latest` (**arm64**).
 A shippable **`RetDec.app`** is produced by `scripts/build-macos-installer.sh`
-and published as `retdec-2.0.22-macos-arm64.tar.gz` (ad-hoc signed, not
+and published as `retdec-2.0.24-macos-arm64.tar.gz` (ad-hoc signed, not
 notarised).
 The **`full-linux-*` presets require Qt 6** (same idea as the native Windows full build). CUDA acceleration is **opt-in** (`RETDEC_ENABLE_CUDA_ACCEL=OFF` by default). Install Qt dev packages first, for example on Ubuntu:
 
@@ -439,7 +439,7 @@ may still be building), keyless Sigstore bundles, and `fib_smoke` /
 `fib_smoke.exe`: [QUICKSTART.md](QUICKSTART.md). Linux AppImage is **opt-in**
 in `release-installers.yml` (`APPIMAGE` defaults off) and is often absent.
 `docker pull imortek/retdec` is not published. GHCR
-`ghcr.io/odin-loki/retdec:v2.0.22` may still return 401 until the package is
+`ghcr.io/odin-loki/retdec:v2.0.24` may still return 401 until the package is
 public.
 
 Do not install Avast's archived RetDec 5.0 binaries and expect this fork's
@@ -495,7 +495,7 @@ retdec-decompiler binary.elf -o output.c
 
 | Document | Description |
 |----------|-------------|
-| [QUICKSTART.md](QUICKSTART.md) | Ten-minute decompile from the v2.0.22 GitHub Release (Docker when published) |
+| [QUICKSTART.md](QUICKSTART.md) | Ten-minute decompile from the v2.0.24 GitHub Release (Docker when published) |
 | [docs/README.md](docs/README.md) | **Documentation hub** — reading order, CI, Docker, diagnostics env vars, WSL/Windows quick refs |
 | [docs/BUILD_REFERENCE.md](docs/BUILD_REFERENCE.md) | **Canonical build guide** — presets, `build/linux` vs `build/windows`, superbuild, install, testing, troubleshooting |
 | [docs/user_manual.md](docs/user_manual.md) | GUI walkthrough, panels, settings, export, keyboard shortcuts |

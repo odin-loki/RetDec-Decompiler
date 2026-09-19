@@ -1,7 +1,7 @@
 # Linux Install & Packaging
 
 This guide covers **building**, **packaging**, and **installing** RetDec on
-Linux (native or WSL). Version **2.0.22**. For the ten-minute download path see
+Linux (native or WSL). Version **2.0.24**. For the ten-minute download path see
 [QUICKSTART.md](../QUICKSTART.md). For the full preset matrix see
 [BUILD_REFERENCE.md](BUILD_REFERENCE.md). macOS packaging is
 [releases/README.md](../releases/README.md) and `scripts/build-macos-installer.sh`.
@@ -159,8 +159,8 @@ gem install --no-document fpm
 ### Interactive (recommended)
 
 ```bash
-tar xzf retdec-2.0.22-linux-x64.tar.gz
-cd retdec-2.0.22-linux-x64
+tar xzf retdec-2.0.24-linux-x64.tar.gz
+cd retdec-2.0.24-linux-x64
 ./install.sh
 ```
 
@@ -185,14 +185,14 @@ sudo ./install.sh --prefix /opt/retdec --add-path
 ### Wrapper script
 
 ```bash
-./scripts/install-linux.sh --user --add-path dist/retdec-2.0.22-linux-x64.tar.gz
+./scripts/install-linux.sh --user --add-path dist/retdec-2.0.24-linux-x64.tar.gz
 ```
 
 ### Run without installing
 
 ```bash
-tar xzf retdec-2.0.22-linux-x64.tar.gz
-cd retdec-2.0.22-linux-x64
+tar xzf retdec-2.0.24-linux-x64.tar.gz
+cd retdec-2.0.24-linux-x64
 export PATH="$(pwd)/bin:$PATH"
 retdec-decompiler --help
 retdec-gui   # needs display / Qt platform plugin
@@ -203,13 +203,13 @@ retdec-gui   # needs display / Qt platform plugin
 After `install.sh --add-path` (or exporting `PATH` to `<prefix>/bin`):
 
 ```bash
-curl -fL -O https://github.com/odin-loki/RetDec-Decompiler/releases/download/v2.0.22/fib_smoke
+curl -fL -O https://github.com/odin-loki/RetDec-Decompiler/releases/download/v2.0.24/fib_smoke
 retdec-decompiler fib_smoke -o fib.c
 ```
 
 `fib_smoke` is gcc -O1 of `tests/test_binaries/fib.c` (same flags as the
 `retdec-decompiler-fixture-fib` CMake target). The Release also has
-`retdec-2.0.22-linux-x64.tar.gz.sigstore.json` and `fib_smoke.sigstore.json`
+`retdec-2.0.24-linux-x64.tar.gz.sigstore.json` and `fib_smoke.sigstore.json`
 (keyless Sigstore). There is no Authenticode on Linux.
 
 ---
@@ -242,7 +242,7 @@ This removes the install tree and deletes matching `PATH` lines from
   [GitHub Releases](https://github.com/odin-loki/RetDec-Decompiler/releases).
   AppImage is optional (`appimage` dispatch input / `APPIMAGE` env, default off).
   Cosign writes `*.sigstore.json` next to the tarball.
-- Tag: `git tag v2.0.22 && git push origin v2.0.22`. `skip_build` defaults to
+- Tag: `git tag v2.0.24 && git push origin v2.0.24`. `skip_build` defaults to
   **false**; do not document uploading a local `dist/` as the release path.
 
 Local one-shot packaging:

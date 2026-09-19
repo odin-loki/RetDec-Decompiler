@@ -1,6 +1,6 @@
 # RetDec User Manual
 
-This manual describes the **Qt 6 GUI** (`retdec-gui`), its panels, settings, and common workflows for **RetDec Imortek 2.0.22**. For **building** from source, read [BUILD_REFERENCE.md](BUILD_REFERENCE.md) and the platform guides [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) / [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md). The top-level [README.md](../README.md) lists supported file formats and CLI examples.
+This manual describes the **Qt 6 GUI** (`retdec-gui`), its panels, settings, and common workflows for **RetDec Imortek 2.0.24**. For **building** from source, read [BUILD_REFERENCE.md](BUILD_REFERENCE.md) and the platform guides [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) / [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md). The top-level [README.md](../README.md) lists supported file formats and CLI examples.
 
 Decompilation in the GUI is the same `retdec-decompiler` subprocess as the CLI. Algorithm recovery, semantic export, and optional offline neural refinement are the product; recovered C is a supporting artefact.
 
@@ -20,18 +20,18 @@ Use 3.26+ if you configure with `cmake --preset …`. A raw `cmake -S . -B <dir>
 ### Installation from a GitHub Release
 
 Prebuilt trees are on
-[v2.0.22](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.0.22).
+[v2.0.24](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.0.24).
 See [../QUICKSTART.md](../QUICKSTART.md) for exact asset names.
 
 | Platform | What you get |
 |----------|----------------|
-| Linux x86_64 | `retdec-2.0.22-linux-x64.tar.gz` with `bin/retdec-gui` |
-| macOS arm64 | `retdec-2.0.22-macos-arm64.tar.gz` with **`RetDec.app`** plus `bin/` |
-| Windows | `retdec-2.0.22-windows-x64-setup.exe` (NSIS) and/or `retdec-2.0.22-windows-x64-portable.zip` |
+| Linux x86_64 | `retdec-2.0.24-linux-x64.tar.gz` with `bin/retdec-gui` |
+| macOS arm64 | `retdec-2.0.24-macos-arm64.tar.gz` with **`RetDec.app`** plus `bin/` |
+| Windows | `retdec-2.0.24-windows-x64-setup.exe` (NSIS) and/or `retdec-2.0.24-windows-x64-portable.zip` |
 
 macOS: the bundle is ad-hoc signed, **not notarised**. `install.sh` inside the tarball strips `com.apple.quarantine`. GitHub also uploads loose `install-macos.sh` so it does not collide with Linux `install.sh`. Launch with `open RetDec.app`.
 
-Linux AppImage (`retdec-2.0.22-x86_64.AppImage`) is **opt-in** in
+Linux AppImage (`retdec-2.0.24-x86_64.AppImage`) is **opt-in** in
 `release-installers.yml` (`APPIMAGE` defaults to `0`) and is often absent.
 
 ### Build from source (GUI presets)

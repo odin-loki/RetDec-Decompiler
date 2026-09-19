@@ -1,12 +1,12 @@
 # RetDec — Future Directions
 
-**v2.0.22 (2026-09).** This file is a roadmap, not a feature list.
+**v2.0.24 (2026-09).** This file is a roadmap, not a feature list.
 Shipped product claims live in [README.md](../README.md) and
 [docs/CLAIMS.md](CLAIMS.md). Dual licence: AGPL-3.0+ or commercial.
 
 ## How to read this
 
-| Kind | Meaning at v2.0.22 |
+| Kind | Meaning at v2.0.24 |
 |------|---------------------|
 | **Shipped** | Linux + macOS installers, Windows installer via GitHub Actions (`release-installers.yml`), Qt 6 GUI (`RetDec.app` on macOS), specification-extraction positioning, **buildable C default**, input-keyed outputs, optional llama.cpp (`RETDEC_ENABLE_LLAMACPP` / `RETDEC_NEURAL_REFINE`). |
 | **Measured, not product-quality** | Structural detectors exist (`src/container_detect`, `src/algo_recover`, `src/sort_detect`, …). Name-blind algorithm-recovery F1 on the 216-binary stand-in is **0.056**. Do not advertise 1.0. |
@@ -24,7 +24,7 @@ The three parts below are:
 
 > Recovering standard-library usage is the highest-leverage *research*
 > improvement available: STL appears in nearly every non-trivial C++ binary.
-> **v2.0.22 already ships structural detectors** as part of specification
+> **v2.0.24 already ships structural detectors** as part of specification
 > extraction. What is *not* shipped is product-quality, name-blind recovery
 > or guaranteed idiomatic `v.push_back()` emission.
 
@@ -154,7 +154,7 @@ claim Layer 3 as shipped.
 ## Part 2 — New Decompilation Targets
 
 Aligned with [ARCHITECTURE_TARGETS.md](ARCHITECTURE_TARGETS.md) and the
-v2.0.22 README. Native output is **C**. Other languages are **input-keyed**,
+v2.0.24 README. Native output is **C**. Other languages are **input-keyed**,
 not a free-choice list.
 
 ### Architecture Targets
@@ -254,7 +254,7 @@ diff, vulnerability pattern matching, and KLEE/angr integration are not.
 Type inference + structuring remain the suspected hot path. Treat wall-clock
 ratios vs stock RetDec in Docker as **unmeasured** when build types differ
 (Debug/WSL vs Release-in-Docker). Scale targets below are aspirations, not
-v2.0.22 measurements.
+v2.0.24 measurements.
 
 **Research optimisations:** PGO, LTO across experimental OpenCL (parked),
 parallel structuring, incremental per-function cache.
@@ -266,7 +266,7 @@ parallel structuring, incremental per-function cache.
 Ordered by impact-to-effort. Items already in tree are marked; they are not
 automatically “done”.
 
-| Priority | Feature | Status at v2.0.22 |
+| Priority | Feature | Status at v2.0.24 |
 |----------|---------|-------------------|
 | 1 | STL container recovery (vector, map, unordered_map) | Detectors shipped; name-blind quality open |
 | 2 | Sorting algorithm recovery (introsort, merge sort) | Detectors shipped; name-blind quality open |

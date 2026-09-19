@@ -1,15 +1,15 @@
 # Maintainer scope (honest)
 
-**v2.0.22.** This fork is shippable without a four-compiler toolchain farm or
+**v2.0.24.** This fork is shippable without a four-compiler toolchain farm or
 dual Windows/WSL Git. Docker is used **only** to pull a published stock RetDec
 image for the two-column DecompileBench table.
 
-GitHub Release assets (tag `v2.0.22`): Linux x64 tarball; macOS arm64 tarball
+GitHub Release assets (tag `v2.0.24`): Linux x64 tarball; macOS arm64 tarball
 plus `RetDec.app`; Windows NSIS `setup.exe` and portable zip from the
 `windows-installer` job (decoupled from the ubuntu `release` job so a queued
 Linux runner cannot block the Windows zip).
 
-## What is done (v2.0.22)
+## What is done (v2.0.24)
 
 - Algorithm recovery: name-blind **mean_f1_raw = 0.056** on the 216-binary
   stand-in corpus; stem-era 1.0 withdrawn

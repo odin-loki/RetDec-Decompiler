@@ -11,7 +11,7 @@ on:
       tag:
         description: Release tag whose Linux tarball is packed
         required: false
-        default: v2.0.22
+        default: v2.0.24
   push:
     branches: [main]
     paths:
@@ -58,7 +58,7 @@ jobs:
               exit 0
             fi
           else
-            TAG="v2.0.22"
+            TAG="v2.0.24"
           fi
           IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER}/retdec"
           mkdir -p /tmp/docker-runtime

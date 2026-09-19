@@ -1,7 +1,7 @@
 # RetDec public roadmap
 
-**Dated 2026-09-19.** Shipped facts match CHANGELOG [2.0.22] (2026-09-18)
-and `CMakeLists.txt` `VERSION 2.0.22`. This is a status note, not a calendar.
+**Dated 2026-09-19.** Shipped facts match CHANGELOG [2.0.24] (2026-09-18)
+and `CMakeLists.txt` `VERSION 2.0.24`. This is a status note, not a calendar.
 
 The internal register is [Plan.md](Plan.md). Claims status lives in
 [docs/CLAIMS.md](docs/CLAIMS.md). Research topics (not sprint work) are in
@@ -14,7 +14,7 @@ recovery, semantic export, and optional offline neural refinement are the
 product; recovered C is a supporting artefact. Built on Avast RetDec 5.0.
 Dual AGPL-3.0+ / commercial (Imortek). Repo:
 [odin-loki/RetDec-Decompiler](https://github.com/odin-loki/RetDec-Decompiler).
-Release tag [v2.0.22](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.0.22).
+Release tag [v2.0.24](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.0.24).
 
 ## LLVM
 
@@ -56,15 +56,15 @@ Stem-era F1 **0.95** / name-assisted **1.0** is not the product metric.
 This fork does **not** pursue the OSS-Fuzz paper corpus or four-compiler
 support regeneration.
 
-## Packages (v2.0.22)
+## Packages (v2.0.24)
 
 `release-installers.yml` builds **Windows + Linux + macOS**:
 
-- Linux `retdec-2.0.22-linux-x64.tar.gz` (+ `install.sh` / `uninstall.sh`)
-- macOS `retdec-2.0.22-macos-arm64.tar.gz` (`RetDec.app`; loose
+- Linux `retdec-2.0.24-linux-x64.tar.gz` (+ `install.sh` / `uninstall.sh`)
+- macOS `retdec-2.0.24-macos-arm64.tar.gz` (`RetDec.app`; loose
   `install-macos.sh` so it does not collide with Linux `install.sh`)
-- Windows `retdec-2.0.22-windows-x64-setup.exe` and
-  `retdec-2.0.22-windows-x64-portable.zip` (intended names; the Windows
+- Windows `retdec-2.0.24-windows-x64-setup.exe` and
+  `retdec-2.0.24-windows-x64-portable.zip` (intended names; the Windows
   job may still be running on a given tag)
 - Keyless Sigstore `.sigstore.json` next to those blobs; Authenticode is
   not applied

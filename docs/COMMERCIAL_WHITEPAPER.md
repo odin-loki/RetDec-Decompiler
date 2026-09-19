@@ -2,9 +2,9 @@
 
 **Commercial overview and technical summary**
 *For readers new to reverse engineering, binary analysis, and decompilation.*
-**Version 2.0.22** (`CMakeLists.txt`). Repo:
+**Version 2.0.24** (`CMakeLists.txt`). Repo:
 [odin-loki/RetDec-Decompiler](https://github.com/odin-loki/RetDec-Decompiler).
-Release tag [v2.0.22](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.0.22).
+Release tag [v2.0.24](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.0.24).
 
 This document must not outrun [CLAIMS.md](CLAIMS.md). Do not treat it as
 evidence of unpublished F1 or GPU-pipeline numbers.
@@ -73,7 +73,7 @@ Pseudocode quality is reported honestly via DecompileBench; parity with stock
 RetDec C output is expected and not marketed as the primary differentiator.
 See [docs/internal/D7_DECISION.md](internal/D7_DECISION.md).
 
-## What ships at 2.0.22
+## What ships at 2.0.24
 
 | Capability | Benefit |
 |------------|---------|

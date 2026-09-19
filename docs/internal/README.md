@@ -1,18 +1,18 @@
 # Internal docs
 
-Maintainer notes for **v2.0.22**. Start with **[MAINTAINER_SCOPE.md](MAINTAINER_SCOPE.md)**.
+Maintainer notes for **v2.0.24**. Start with **[MAINTAINER_SCOPE.md](MAINTAINER_SCOPE.md)**.
 
 Public product page: [../../README.md](../../README.md). Historical 18-part plan:
 [MASTER-UPGRADE-PLAN.md](MASTER-UPGRADE-PLAN.md) — not the live execution list.
 
-## Current (as of 2.0.22)
+## Current (as of 2.0.24)
 
 What shipped and what maintainers still need:
 
 | Doc | Role |
 |-----|------|
 | [MAINTAINER_SCOPE.md](MAINTAINER_SCOPE.md) | What we ship vs skip |
-| [PLAN_COMPLETION.md](PLAN_COMPLETION.md) | Automation steps 1–26 plus 2.0.22 release/CI |
+| [PLAN_COMPLETION.md](PLAN_COMPLETION.md) | Automation steps 1–26 plus 2.0.24 release/CI |
 | [NEXT_STEPS.md](NEXT_STEPS.md) | Optional follow-ups (not a second master plan) |
 | [REPRODUCIBILITY.md](REPRODUCIBILITY.md) | What the decompiler's output may not depend on |
 | [wire-sass.md](wire-sass.md) | NVIDIA SASS cubin/fatbin library; CLI/fileformat patches; **not Production** |
