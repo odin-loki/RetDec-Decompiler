@@ -48,6 +48,6 @@ if ($got -ne $Sha) {
 }
 
 Write-Host "[ok] $Dest"
+Write-Host "     refine is on by default; `$env:RETDEC_NEURAL_REFINE='0' disables"
 Write-Host "     `$env:RETDEC_NEURAL_MODEL='$Dest'"
-Write-Host "     `$env:RETDEC_NEURAL_REFINE='1'"
 Write-Host "     `$env:RETDEC_NEURAL_MODEL_SHA256='$Sha'"

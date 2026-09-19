@@ -12,7 +12,9 @@
 
 namespace retdec::neural {
 
-/// Run neural refinement tiers when RETDEC_NEURAL_REFINE is set and model path exists.
+/// Run neural refinement when a GGUF is available (default on).
+/// Set RETDEC_NEURAL_REFINE=0 to disable. RETDEC_NEURAL_MODEL overrides
+/// the shipped share/retdec/models/Qwen3.5-9B-Q4_K_M.gguf path.
 void maybeRefineDecompilerOutput(retdec::config::Config& config,
                                  std::string* outString);
 

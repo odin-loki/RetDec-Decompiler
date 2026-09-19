@@ -43,6 +43,6 @@ elif [ "$got" != "$SHA" ]; then
 fi
 
 echo "[ok] $DEST"
+echo "     refine is on by default; RETDEC_NEURAL_REFINE=0 disables"
 echo "     export RETDEC_NEURAL_MODEL=$DEST"
-echo "     export RETDEC_NEURAL_REFINE=1"
 echo "     export RETDEC_NEURAL_MODEL_SHA256=$SHA"

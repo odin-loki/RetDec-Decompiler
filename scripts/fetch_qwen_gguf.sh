@@ -14,7 +14,7 @@ mkdir -p "$DEST_DIR"
 print_exports() {
     echo "[ok] $1"
     echo "     export RETDEC_NEURAL_MODEL=$1"
-    echo "     export RETDEC_NEURAL_REFINE=1"
+    echo "     refine is on by default; RETDEC_NEURAL_REFINE=0 disables"
     echo "     export RETDEC_NEURAL_MODEL_SHA256=$SHA"
 }
 

@@ -1,4 +1,4 @@
-﻿version=2.0.23
+﻿version=2.0.24
 linux_install=releases/linux/install.sh
 linux_uninstall=releases/linux/uninstall.sh
 macos_install=releases/macos/install.sh

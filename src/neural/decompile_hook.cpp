@@ -7,8 +7,11 @@
 #include "retdec/common/object.h"
 #include "retdec/common/semantic_detection.h"
 #include "retdec/common/storage.h"
+#include "retdec/utils/binary_path.h"
+#include "retdec/utils/filesystem.h"
 
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <cmath>
 #include <cstdint>
@@ -39,10 +42,55 @@ bool envEnabled(const char* name)
 	return v && v[0] != '\0' && v[0] != '0';
 }
 
+bool envFalse(const char* v)
+{
+	if (!v || v[0] == '\0') return false;
+	if (v[0] == '0') return true;
+	std::string s(v);
+	for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+	return s == "false" || s == "off" || s == "no";
+}
+
+// Default on. RETDEC_NEURAL_REFINE=0/false/off/no disables.
+bool refineEnabled()
+{
+	const char* v = std::getenv("RETDEC_NEURAL_REFINE");
+	if (!v || v[0] == '\0') return true;
+	return !envFalse(v);
+}
+
+constexpr const char* kDefaultGgufName = "Qwen3.5-9B-Q4_K_M.gguf";
+
+bool ggufLooksPresent(const fs::path& p)
+{
+	std::error_code ec;
+	if (!fs::is_regular_file(p, ec)) return false;
+	return fs::file_size(p, ec) > 1000000000ull;
+}
+
 std::string modelPathFromEnv()
 {
-	const char* p = std::getenv("RETDEC_NEURAL_MODEL");
-	return p ? std::string(p) : std::string();
+	if (const char* p = std::getenv("RETDEC_NEURAL_MODEL"); p && p[0])
+		return std::string(p);
+
+	const fs::path binDir = retdec::utils::getThisBinaryDirectoryPath();
+	std::error_code cwdEc;
+	const fs::path cwd = fs::current_path(cwdEc);
+	const fs::path candidates[] = {
+		binDir / ".." / "share" / "retdec" / "models" / kDefaultGgufName,
+		binDir / "share" / "retdec" / "models" / kDefaultGgufName,
+		binDir / ".." / "models" / kDefaultGgufName,
+		cwdEc ? fs::path{} : cwd / "models" / kDefaultGgufName,
+	};
+	for (const auto& c : candidates)
+	{
+		if (c.empty()) continue;
+		std::error_code ec;
+		const fs::path n = fs::weakly_canonical(c, ec);
+		const fs::path& use = ec ? c : n;
+		if (ggufLooksPresent(use)) return use.string();
+	}
+	return {};
 }
 
 int envInt(const char* name, int fallback)
@@ -911,7 +959,7 @@ void maybeRefineDecompilerOutput(retdec::config::Config& config, std::string* ou
 		if (fileBuf.empty()) return;
 		outString = &fileBuf;
 	}
-	if (!envEnabled("RETDEC_NEURAL_REFINE")) return;
+	if (!refineEnabled()) return;
 
 #ifndef RETDEC_NEURAL_OFFLINE_ONLY
 	if (envEnabled("RETDEC_NO_NETWORK"))

@@ -71,7 +71,7 @@ option(RETDEC_ENABLE_UNPACKERTOOL "" OFF)
 option(RETDEC_ENABLE_UTILS "" OFF)
 option(RETDEC_ENABLE_CUDA_ACCEL "Build CUDA acceleration layer (CUDAContext, GPU analysis passes)" OFF)
 option(RETDEC_ENABLE_NEURAL "Build neural refinement library (mock inference; llama.cpp when enabled)" ON)
-option(RETDEC_ENABLE_LLAMACPP "Fetch and link llama.cpp for RETDEC_HAS_LLAMACPP backend" OFF)
+option(RETDEC_ENABLE_LLAMACPP "Fetch and link llama.cpp for RETDEC_HAS_LLAMACPP backend" ON)
 option(RETDEC_NEURAL_GPU_OFFLOAD "Pass GGML_CUDA=ON into llama.cpp ExternalProject (CPU default)" OFF)
 option(RETDEC_ENABLE_XSIMD "Fetch xsimd and vectorize confirmed-hot byte scans" OFF)
 option(RETDEC_ENABLE_LIEF "Build LIEF adapter for incremental fileformat migration (step 29)" OFF)
@@ -435,6 +435,7 @@ set_if_at_least_one_set(RETDEC_ENABLE_COMMON
 
 set_if_at_least_one_set(RETDEC_ENABLE_UTILS
 		RETDEC_ENABLE_ALL
+		RETDEC_ENABLE_NEURAL
 		RETDEC_ENABLE_AR_EXTRACTOR
 		RETDEC_ENABLE_AR_EXTRACTORTOOL
 		RETDEC_ENABLE_BIN2LLVMIR

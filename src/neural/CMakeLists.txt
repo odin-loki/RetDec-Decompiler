@@ -36,6 +36,8 @@ target_compile_definitions(retdec-neural PRIVATE RETDEC_HAS_TREE_SITTER)
 target_link_libraries(retdec-neural
     PUBLIC
         retdec::config
+    PRIVATE
+        retdec::utils
 )
 
 if(NOT TARGET OpenSSL::Crypto)

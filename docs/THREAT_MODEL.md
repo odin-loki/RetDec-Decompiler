@@ -89,9 +89,8 @@ out of tree. This document does not claim those signatures exist.
   `StripsCommentBodiesFromFunctionSource`). Identifiers and
   `semanticContextJson` are not stripped.
 
-Neural refinement itself is opt-in (`RETDEC_NEURAL_REFINE` + model path).
-Release installers link llama.cpp; inference still does not run until
-those env vars are set.
+Neural refinement itself is **on by default** when the shipped GGUF is
+present. Set `RETDEC_NEURAL_REFINE=0` to disable.
 
 ### Residual risks (neural)
 

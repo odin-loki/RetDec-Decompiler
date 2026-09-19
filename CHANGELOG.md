@@ -6,6 +6,16 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ## [Unreleased]
 
+## [2.0.24] — 2026-09-19
+
+### Changed
+
+- Neural refine is **on by default** when the shipped GGUF is present
+  (`RETDEC_ENABLE_LLAMACPP` default ON; `RETDEC_NEURAL_REFINE=0` disables).
+  GitHub Release still carries Unsloth `Qwen3.5-9B-Q4_K_M.gguf` as split
+  parts (2 GB asset cap); `install.sh` joins them into
+  `share/retdec/models/`.
+
 ## [2.0.23] — 2026-09-19
 
 ### Added

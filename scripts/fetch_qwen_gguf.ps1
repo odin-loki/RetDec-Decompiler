@@ -41,7 +41,7 @@ function Assert-Sha([string]$Path) {
 function Write-Exports([string]$Path) {
     Write-Host "[ok] $Path"
     Write-Host "     `$env:RETDEC_NEURAL_MODEL='$Path'"
-    Write-Host "     `$env:RETDEC_NEURAL_REFINE='1'"
+    Write-Host "     refine is on by default; `$env:RETDEC_NEURAL_REFINE='0' disables"
     Write-Host "     `$env:RETDEC_NEURAL_MODEL_SHA256='$Sha'"
 }
 

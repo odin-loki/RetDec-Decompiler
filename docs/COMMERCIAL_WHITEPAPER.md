@@ -81,7 +81,7 @@ See [docs/internal/D7_DECISION.md](internal/D7_DECISION.md).
 | **Input-keyed output** | Native binaries emit C. Managed formats emit that format’s language. Not a free-choice eleven-language native list. |
 | **Semantic recovery** | Post-pipeline detectors label containers, algorithms, crypto, concurrency, and serialisation in comments/JSON. They do not emit idiomatic C++. Name-blind F1 is 0.056. |
 | **GPU backends (experimental)** | CUDA (`cuda_accel`) and OpenCL exist in-tree, default-OFF, **unintegrated**, not a product feature. |
-| **On-device AI (opt-in)** | Optional GGUF via `RETDEC_NEURAL_REFINE` / `RETDEC_NEURAL_MODEL`. No `--model` flag. No `retdec-qwen3-runner`. |
+| **On-device AI (default on)** | llama.cpp + shipped Unsloth Qwen 3.5 9B Q4_K_M GGUF. `RETDEC_NEURAL_REFINE=0` disables. No `--model` flag. No `retdec-qwen3-runner`. |
 | **Qt 6 GUI** | Document tabs, docks, Call Graph, Type Hierarchy, Signature Studio, Diff, Binary browser, AI Assistant Tools window. macOS ships `RetDec.app`. |
 | **Plugins** | Example LLVM pass in `examples/decompiler_plugin/`. The decompiler CLI has no flag that loads a pass plugin. |
 | **Packages** | Linux x86_64 tarball; macOS arm64 tarball + `RetDec.app`; Windows NSIS + portable zip (intended names; a given CI run may still be building). Keyless Sigstore. AppImage opt-in only. |

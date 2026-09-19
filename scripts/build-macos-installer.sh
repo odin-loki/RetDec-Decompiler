@@ -181,6 +181,44 @@ if [[ -d "${PACKAGE_ROOT}/RetDec.app" ]]; then
 fi
 echo "$PREFIX" | $_sudo tee "${PREFIX}/.retdec-install-marker" >/dev/null
 
+_gguf_dest="${PREFIX}/share/retdec/models"
+_gguf_name="Qwen3.5-9B-Q4_K_M.gguf"
+_gguf_sha="03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8"
+$_sudo mkdir -p "${_gguf_dest}"
+if [[ ! -f "${_gguf_dest}/${_gguf_name}" ]]; then
+	_gguf_from=""
+	for _d in "${PACKAGE_ROOT}" "${PACKAGE_ROOT}/.." "${PWD}"; do
+		shopt -s nullglob
+		_parts=( "${_d}"/Qwen3.5-9B-Q4_K_M.gguf.part* )
+		shopt -u nullglob
+		if [[ ${#_parts[@]} -gt 0 ]]; then
+			_gguf_from="${_d}"
+			break
+		fi
+	done
+	if [[ -n "${_gguf_from}" ]]; then
+		echo "Joining GGUF from ${_gguf_from} into ${_gguf_dest}"
+		_tmp="$(mktemp)"
+		cat "${_gguf_from}"/Qwen3.5-9B-Q4_K_M.gguf.part* > "${_tmp}"
+		if command -v sha256sum >/dev/null 2>&1; then
+			_got="$(sha256sum "${_tmp}" | awk '{print $1}')"
+		else
+			_got="$(shasum -a 256 "${_tmp}" | awk '{print $1}')"
+		fi
+		if [[ "${_got}" != "${_gguf_sha}" ]]; then
+			echo "GGUF SHA-256 mismatch (got ${_got})" >&2
+			rm -f "${_tmp}"
+			exit 1
+		fi
+		$_sudo mv "${_tmp}" "${_gguf_dest}/${_gguf_name}"
+		echo "Installed ${_gguf_dest}/${_gguf_name}"
+	else
+		echo "Neural GGUF parts not found next to the package."
+		echo "  Download Qwen3.5-9B-Q4_K_M.gguf.partaa (and siblings) from the GitHub Release"
+		echo "  into this folder and re-run, or run scripts/join_qwen_gguf.sh"
+	fi
+fi
+
 # Gatekeeper. Failure here is not fatal: a package that was never quarantined
 # has no attribute to remove and xattr says so.
 if command -v xattr >/dev/null 2>&1; then

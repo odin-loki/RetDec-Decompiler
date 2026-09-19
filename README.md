@@ -153,8 +153,9 @@ Not in `decompile()`: `CudaHostRecovery` (tests only), `src/idiom_reconstruct/`,
 ### Offline neural refinement
 
 Optional verified, air-gapped refinement via **llama.cpp** and GGUF models.
-Release installers link llama.cpp; CTest does not. Enable at runtime with
-`RETDEC_NEURAL_REFINE=1` and `RETDEC_NEURAL_MODEL=/path/to/model.gguf`.
+Release installers link llama.cpp. Refine is **on by default** when
+`share/retdec/models/Qwen3.5-9B-Q4_K_M.gguf` is present (or
+`RETDEC_NEURAL_MODEL`). Disable with `RETDEC_NEURAL_REFINE=0`.
 The tested Unsloth `Qwen3.5-9B-Q4_K_M.gguf` SHA is in `support/models.json`;
 GitHub Release assets split it under the 2 GB file cap
 (`scripts/join_qwen_gguf.sh`).

@@ -2,7 +2,8 @@
 
 `models.json` is the SHA-256 allowlist checked when a GGUF is loaded
 (`RETDEC_NEURAL_REFINE=1` + `RETDEC_NEURAL_MODEL`). Verification is **on
-by default at load**. Neural stays off unless those env vars are set.
+by default at load**. Refine itself is **on by default** when the GGUF is
+present; set `RETDEC_NEURAL_REFINE=0` to disable.
 
 The shipped file pins Unsloth `Qwen3.5-9B-Q4_K_M.gguf`
 (`03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8`).

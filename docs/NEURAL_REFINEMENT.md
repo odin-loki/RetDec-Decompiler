@@ -5,24 +5,22 @@ C emission. Not a decompiler pass and not GPU acceleration of lifting.
 
 ## Status
 
-- `retdec::neural` with mock + optional llama.cpp (`RETDEC_ENABLE_LLAMACPP`).
+- `retdec::neural` with llama.cpp (`RETDEC_ENABLE_LLAMACPP`, default **ON**).
   Pin: **b10451** in `cmake/deps.cmake` (`llama.cpp` archive tag `b10451`).
-  Release installers (`release-installers.yml`) build with llama.cpp **ON**
-  (`RETDEC_ENABLE_NEURAL=ON`, `RETDEC_ENABLE_LLAMACPP=ON`, GPU offload
-  **OFF**). CTest jobs keep neural **OFF** and do not download the GGUF.
-- Runtime refine is a **separate switch** from the compile gate:
+  Release installers build with llama.cpp **ON** (GPU offload **OFF**).
+  CTest jobs keep neural **OFF** and do not download the GGUF.
+- Runtime refine is **on by default** when the shipped GGUF is present.
   - Build: `RETDEC_ENABLE_LLAMACPP` (fetch/link llama.cpp),
-    `RETDEC_ENABLE_NEURAL` (library; default ON, stub if llama.cpp OFF).
-  - Run: `RETDEC_NEURAL_REFINE=1` + `RETDEC_NEURAL_MODEL` (GGUF). Still
-    opt-in; linking llama.cpp does not run inference.
+    `RETDEC_ENABLE_NEURAL` (library; stub if llama.cpp OFF).
+  - Run: looks for `share/retdec/models/Qwen3.5-9B-Q4_K_M.gguf` (or
+    `RETDEC_NEURAL_MODEL`). Disable with `RETDEC_NEURAL_REFINE=0`.
 - **Shipped GGUF:** Unsloth `Qwen3.5-9B-Q4_K_M.gguf` (SHA-256
   `03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8`) is
   pinned in `support/models.json`. GitHub Release assets cap at 2 GB, so
   job `neural-gguf` (after the OS installer jobs) uploads 1900 MiB
-  `*.gguf.partaa` / `.partab` / … pieces. Join with
-  `scripts/join_qwen_gguf.sh` or `scripts/join_qwen_gguf.ps1`, or fetch
-  the whole file with `scripts/fetch_qwen_gguf.sh`. The weights are **not**
-  inside the Windows zip / Linux tarball / macOS tarball.
+  `*.gguf.partaa` / `.partab` / … pieces onto the **same Release**.
+  `install.sh` joins them into `share/retdec/models/` when the parts sit
+  next to the package. Or: `scripts/join_qwen_gguf.sh`.
 - **Compile gate is implemented:** `cc`/`gcc -fsyntax-only` (`src/neural/gates.cpp`).
   Skip with `RETDEC_NEURAL_SKIP_COMPILE_GATE=1`.
 - **Differential gate is not implemented:** `RETDEC_NEURAL_DIFF_GATE=1`
@@ -62,8 +60,8 @@ llama.cpp. CI default is OFF.
 
 **Runtime (decompiler / GUI child `QProcess` env):**
 
-- `RETDEC_NEURAL_REFINE=1`
-- `RETDEC_NEURAL_MODEL`
+- `RETDEC_NEURAL_REFINE` (default on; `0` / `false` / `off` disables)
+- `RETDEC_NEURAL_MODEL` (default: `share/retdec/models/Qwen3.5-9B-Q4_K_M.gguf`)
 - `RETDEC_NEURAL_MODEL_SHA256`
 - `RETDEC_NEURAL_CTX` (default 4096)
 - `RETDEC_NEURAL_MAX_TOKENS`
