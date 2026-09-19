@@ -5,6 +5,7 @@
  */
 
 #include "retdec/bin2llvmir/providers/abi/sparc.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 

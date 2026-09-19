@@ -6,6 +6,7 @@
 
 #include "retdec/bin2llvmir/providers/abi/riscv.h"
 #include "retdec/capstone2llvmir/riscv/riscv_defs.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 
