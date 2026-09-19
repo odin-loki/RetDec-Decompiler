@@ -16,6 +16,7 @@
 // identical definition in syscalls.h. Both belong to the translation unit, the
 // way the other fifteen bin2llvmir passes already spell them.
 #include "retdec/bin2llvmir/utils/debug.h"
+#include "capstone2llvmir/capstone6_compat.h"
 #define debug_enabled false
 
 namespace retdec {

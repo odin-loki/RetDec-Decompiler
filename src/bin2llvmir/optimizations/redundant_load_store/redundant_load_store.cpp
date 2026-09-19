@@ -39,6 +39,7 @@
 #include <llvm/IR/DataLayout.h>
 
 #include "retdec/bin2llvmir/optimizations/redundant_load_store/redundant_load_store.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 

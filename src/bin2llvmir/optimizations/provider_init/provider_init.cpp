@@ -25,6 +25,7 @@
 #include "retdec/cpdetect/cpdetect.h"
 #include "retdec/utils/string.h"
 #include "retdec/yaracpp/yara_detector.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 using namespace retdec::utils::io;

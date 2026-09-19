@@ -7,6 +7,7 @@
 
 #include "retdec/bin2llvmir/providers/calling_convention/x64/x64_microsoft.h"
 #include "retdec/capstone2llvmir/x86/x86.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 namespace retdec {
 namespace bin2llvmir {

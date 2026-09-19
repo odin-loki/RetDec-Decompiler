@@ -4,6 +4,7 @@
 #include "retdec/bin2llvmir/utils/ctypes2llvm.h"
 #include "retdec/ctypes/ctypes.h"
 #include "retdec/utils/string.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 

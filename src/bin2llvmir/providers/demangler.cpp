@@ -15,6 +15,7 @@
 #include "retdec/ctypes/function.h"
 #include "retdec/ctypes/function_type.h"
 #include "retdec/ctypesparser/type_config.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 

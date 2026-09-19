@@ -22,6 +22,7 @@
 #include <llvm/IR/PatternMatch.h>
 
 #include "retdec/bin2llvmir/optimizations/inst_opt/inst_opt_ext.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 using namespace llvm::PatternMatch;

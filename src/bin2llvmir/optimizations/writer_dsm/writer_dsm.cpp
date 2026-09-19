@@ -17,6 +17,7 @@
 #include "retdec/utils/string.h"
 #include "retdec/utils/time.h"
 #include "retdec/bin2llvmir/optimizations/writer_dsm/writer_dsm.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace retdec::common;
 using namespace retdec::utils;

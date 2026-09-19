@@ -20,6 +20,7 @@
 #include "retdec/bin2llvmir/providers/calling_convention/x86/x86_thiscall.h"
 #include "retdec/bin2llvmir/providers/calling_convention/x86/x86_watcom.h"
 #include "retdec/bin2llvmir/providers/calling_convention/x64/x64_conv.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 

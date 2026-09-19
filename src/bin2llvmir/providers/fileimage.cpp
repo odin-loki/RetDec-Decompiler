@@ -11,6 +11,7 @@
 #include "retdec/bin2llvmir/utils/ir_modifier.h"
 #include "retdec/loader/image_factory.h"
 #include "retdec/loader/loader/raw_data/raw_data_image.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 

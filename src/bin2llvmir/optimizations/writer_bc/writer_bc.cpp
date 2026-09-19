@@ -12,6 +12,7 @@
 
 #include "retdec/bin2llvmir/optimizations/writer_bc/writer_bc.h"
 #include "retdec/bin2llvmir/providers/config.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 

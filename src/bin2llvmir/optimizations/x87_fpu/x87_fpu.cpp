@@ -22,6 +22,7 @@
 #include "retdec/bin2llvmir/utils/ir_modifier.h"
 #include "retdec/bin2llvmir/utils/llvm.h"
 #include "retdec/capstone2llvmir/x86/x86.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 using namespace retdec::bin2llvmir::llvm_utils;

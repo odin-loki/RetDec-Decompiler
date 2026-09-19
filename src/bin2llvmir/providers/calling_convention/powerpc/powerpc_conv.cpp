@@ -9,6 +9,7 @@
 #include "retdec/bin2llvmir/providers/abi/abi.h"
 #include "retdec/bin2llvmir/providers/calling_convention/powerpc/powerpc_conv.h"
 #include "retdec/capstone2llvmir/powerpc/powerpc.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 namespace retdec {
 namespace bin2llvmir {

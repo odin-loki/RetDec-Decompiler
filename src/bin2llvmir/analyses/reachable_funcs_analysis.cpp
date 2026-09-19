@@ -10,6 +10,7 @@
 #include "retdec/utils/container.h"
 #include "retdec/bin2llvmir/analyses/indirectly_called_funcs_analysis.h"
 #include "retdec/bin2llvmir/analyses/reachable_funcs_analysis.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace retdec::utils;
 using namespace llvm;

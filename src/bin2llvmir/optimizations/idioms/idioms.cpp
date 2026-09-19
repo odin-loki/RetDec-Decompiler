@@ -13,6 +13,7 @@
 #include "retdec/bin2llvmir/optimizations/idioms/idioms_llvm.h"
 #include "retdec/bin2llvmir/optimizations/idioms/idioms_owatcom.h"
 #include "retdec/bin2llvmir/optimizations/idioms/idioms_vstudio.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 

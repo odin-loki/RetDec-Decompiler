@@ -16,6 +16,7 @@
 #define debug_enabled false
 #include "retdec/bin2llvmir/utils/ir_modifier.h"
 #include "retdec/bin2llvmir/utils/llvm.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace retdec::common;
 using namespace retdec::utils;

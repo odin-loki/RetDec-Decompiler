@@ -10,6 +10,7 @@
 
 #include "retdec/bin2llvmir/providers/abi/abi.h"
 #include "retdec/bin2llvmir/providers/calling_convention/arm64/arm64_conv.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 namespace retdec {
 namespace bin2llvmir {

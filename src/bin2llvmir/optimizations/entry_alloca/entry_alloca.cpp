@@ -37,6 +37,7 @@
 
 #include "retdec/bin2llvmir/optimizations/entry_alloca/entry_alloca.h"
 #include "retdec/bin2llvmir/utils/llvm.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 

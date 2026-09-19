@@ -8,6 +8,7 @@
 #include <deque>
 
 #include "retdec/bin2llvmir/optimizations/param_return/filter/ms_x64.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 

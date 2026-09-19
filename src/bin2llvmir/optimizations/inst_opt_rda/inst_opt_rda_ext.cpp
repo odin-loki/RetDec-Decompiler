@@ -40,6 +40,7 @@
 #include "retdec/bin2llvmir/providers/abi/abi.h"
 #include "retdec/bin2llvmir/utils/ir_modifier.h"
 #include "retdec/bin2llvmir/optimizations/inst_opt_rda/inst_opt_rda_ext.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 

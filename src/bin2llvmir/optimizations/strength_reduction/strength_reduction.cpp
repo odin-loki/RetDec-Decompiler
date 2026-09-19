@@ -37,6 +37,7 @@
 #include <llvm/Support/MathExtras.h>
 
 #include "retdec/bin2llvmir/optimizations/strength_reduction/strength_reduction.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 using namespace llvm::PatternMatch;

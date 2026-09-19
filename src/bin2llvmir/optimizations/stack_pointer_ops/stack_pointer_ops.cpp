@@ -16,6 +16,7 @@
 #include "retdec/utils/string.h"
 #include "retdec/bin2llvmir/optimizations/stack_pointer_ops/stack_pointer_ops.h"
 #include "retdec/bin2llvmir/utils/debug.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace retdec::utils;
 using namespace llvm;

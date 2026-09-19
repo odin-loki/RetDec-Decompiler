@@ -24,6 +24,7 @@
 #include "retdec/bin2llvmir/providers/abi/x64.h"
 #include "retdec/bin2llvmir/providers/abi/pic32.h"
 #include "retdec/bin2llvmir/utils/llvm.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 

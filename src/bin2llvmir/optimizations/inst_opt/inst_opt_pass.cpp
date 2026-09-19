@@ -11,6 +11,7 @@
 
 #include "retdec/bin2llvmir/optimizations/inst_opt/inst_opt_pass.h"
 #include "retdec/bin2llvmir/optimizations/inst_opt/inst_opt.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 

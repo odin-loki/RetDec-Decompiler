@@ -8,6 +8,7 @@
 #include <cassert>
 
 #include "retdec/bin2llvmir/utils/capstone.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 namespace retdec {
 namespace bin2llvmir {

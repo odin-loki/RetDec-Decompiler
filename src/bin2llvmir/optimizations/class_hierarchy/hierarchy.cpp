@@ -10,6 +10,7 @@
 #include "retdec/demangler/demangler.h"
 #include "retdec/bin2llvmir/optimizations/class_hierarchy/hierarchy.h"
 #include "retdec/bin2llvmir/providers/demangler.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 namespace retdec {
 namespace bin2llvmir {

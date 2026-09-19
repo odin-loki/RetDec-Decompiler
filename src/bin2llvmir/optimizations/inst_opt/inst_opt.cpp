@@ -14,6 +14,7 @@
 #include "retdec/bin2llvmir/optimizations/inst_opt/inst_opt.h"
 #include "retdec/bin2llvmir/utils/debug.h"
 #include "retdec/bin2llvmir/utils/llvm.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 using namespace PatternMatch;

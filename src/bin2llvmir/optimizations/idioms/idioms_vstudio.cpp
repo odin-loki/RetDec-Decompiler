@@ -8,6 +8,7 @@
 #include <llvm/IR/PatternMatch.h>
 
 #include "retdec/bin2llvmir/optimizations/idioms/idioms_vstudio.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 namespace retdec {
 namespace bin2llvmir {

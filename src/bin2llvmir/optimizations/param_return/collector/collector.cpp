@@ -14,6 +14,7 @@
 
 #include "retdec/bin2llvmir/optimizations/param_return/collector/collector.h"
 #include "retdec/bin2llvmir/optimizations/param_return/collector/pic32.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 

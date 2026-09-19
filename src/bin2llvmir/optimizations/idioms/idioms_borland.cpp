@@ -6,6 +6,7 @@
 */
 
 #include "retdec/bin2llvmir/optimizations/idioms/idioms_borland.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 namespace retdec {
 namespace bin2llvmir {

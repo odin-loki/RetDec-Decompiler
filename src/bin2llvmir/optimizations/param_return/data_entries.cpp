@@ -9,6 +9,7 @@
 
 #include "retdec/bin2llvmir/optimizations/param_return/data_entries.h"
 #include "retdec/bin2llvmir/providers/abi/abi.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 

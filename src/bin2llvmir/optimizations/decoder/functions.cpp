@@ -6,6 +6,7 @@
 */
 
 #include "retdec/bin2llvmir/optimizations/decoder/decoder.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace retdec::common;
 using namespace llvm;

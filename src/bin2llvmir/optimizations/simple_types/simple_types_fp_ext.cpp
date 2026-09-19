@@ -27,6 +27,7 @@
 #include <llvm/IR/Instructions.h>
 
 #include "retdec/bin2llvmir/optimizations/simple_types/simple_types_fp_ext.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 namespace retdec {
 namespace bin2llvmir {

@@ -41,6 +41,7 @@
 #include "retdec/bin2llvmir/providers/config.h"
 #include "retdec/bin2llvmir/optimizations/tail_calls/tail_calls.h"
 #include "retdec/utils/io/log.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 using namespace retdec::utils::io;

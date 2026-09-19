@@ -36,6 +36,7 @@
 #include "retdec/bin2llvmir/optimizations/unreachable_funcs/unreachable_funcs.h"
 #include "retdec/utils/container.h"
 #include "retdec/utils/io/log.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace retdec::utils;
 using namespace retdec::utils::io;

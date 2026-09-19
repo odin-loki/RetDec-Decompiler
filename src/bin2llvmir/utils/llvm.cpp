@@ -24,6 +24,7 @@
 #include "retdec/bin2llvmir/utils/llvm.h"
 #include "retdec/utils/conversion.h"
 #include "retdec/utils/string.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 

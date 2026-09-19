@@ -13,6 +13,7 @@
 
 #include "retdec/bin2llvmir/optimizations/select_functions/select_functions.h"
 #include "retdec/bin2llvmir/utils/debug.h"
+#include "capstone2llvmir/capstone6_compat.h"
 #define debug_enabled false
 
 using namespace llvm;

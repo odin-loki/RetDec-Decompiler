@@ -35,6 +35,7 @@
 #include <llvm/IR/Module.h>
 
 #include "retdec/bin2llvmir/optimizations/cond_branch_opt/cond_branch_opt_ext.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 using namespace llvm::PatternMatch;

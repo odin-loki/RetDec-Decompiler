@@ -33,6 +33,7 @@
 #include "retdec/bin2llvmir/optimizations/types_propagator/types_propagator.h"
 #include "retdec/bin2llvmir/providers/abi/abi.h"
 #include "retdec/bin2llvmir/providers/asm_instruction.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 using namespace retdec::utils::io;

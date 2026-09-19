@@ -21,6 +21,7 @@
 #include "retdec/utils/string.h"
 #include "retdec/bin2llvmir/providers/lti.h"
 #include "retdec/bin2llvmir/utils/ctypes2llvm.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 

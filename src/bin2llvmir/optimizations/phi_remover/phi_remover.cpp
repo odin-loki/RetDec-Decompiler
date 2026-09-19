@@ -27,6 +27,7 @@
 #include "retdec/bin2llvmir/optimizations/phi_remover/phi_remover.h"
 #include "retdec/bin2llvmir/providers/asm_instruction.h"
 #include "retdec/bin2llvmir/utils/llvm.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 namespace retdec {
 namespace bin2llvmir {

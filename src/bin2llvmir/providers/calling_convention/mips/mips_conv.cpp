@@ -10,6 +10,7 @@
 #include "retdec/bin2llvmir/providers/calling_convention/mips/mips_conv.h"
 #include "retdec/bin2llvmir/providers/calling_convention/mips/mips_psp.h"
 #include "retdec/capstone2llvmir/mips/mips.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 namespace retdec {
 namespace bin2llvmir {

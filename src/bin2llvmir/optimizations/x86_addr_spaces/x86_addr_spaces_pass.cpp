@@ -9,6 +9,7 @@
 
 #include "retdec/bin2llvmir/optimizations/x86_addr_spaces/x86_addr_spaces_pass.h"
 #include "retdec/bin2llvmir/optimizations/x86_addr_spaces/x86_addr_spaces.h"
+#include "capstone2llvmir/capstone6_compat.h"
 
 using namespace llvm;
 
