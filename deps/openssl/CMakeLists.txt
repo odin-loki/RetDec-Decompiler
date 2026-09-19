@@ -186,6 +186,17 @@ set_target_properties(OpenSSL::Crypto PROPERTIES
 	IMPORTED_LOCATION "${_RETDEC_OSSL_CRYPTO_LIB}"
 	INTERFACE_INCLUDE_DIRECTORIES "${RETDEC_OPENSSL_INSTALL_DIR}/include"
 )
+if(WIN32)
+	# Static libcrypto pulls CAPI (crypt32) and sockets (ws2_32). fileformat
+	# already linked these privately; retdec-gui via retdec-neural did not.
+	if(MINGW)
+		set(_RETDEC_OSSL_WIN_LIBS crypt32 ws2_32)
+	else()
+		set(_RETDEC_OSSL_WIN_LIBS Crypt32 ws2_32)
+	endif()
+	set_property(TARGET OpenSSL::Crypto APPEND PROPERTY
+		INTERFACE_LINK_LIBRARIES ${_RETDEC_OSSL_WIN_LIBS})
+endif()
 
 set(OPENSSL_ROOT_DIR    "${RETDEC_OPENSSL_INSTALL_DIR}" CACHE PATH     "RetDec bundled OpenSSL" FORCE)
 set(OPENSSL_INCLUDE_DIR "${RETDEC_OPENSSL_INSTALL_DIR}/include" CACHE PATH "" FORCE)
