@@ -18,6 +18,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   RISC-V Zbkb PACK/PACKH/PACKW; SPARC UMULXHI and TA/T; SystemZ VGBM/VLEI/
   VSCEF/VFEE. AES/SHA stay unmapped on every ISA including x86. SASS is still
   not Production — NVIDIA has not printed FMUL/FFMA/ISETP/SHL/SHR/LOP3.
+- Decoder uses Capstone 6 `CS_MODE_RISCV_C` so Linux/Windows installer
+  builds compile `decoder_init.cpp`. llama.cpp ExternalProject disables
+  Metal/BLAS on CPU-only packages and links Accelerate on macOS so
+  `retdec-gui` can resolve ggml backend symbols.
 
 ## [2.0.25] — 2026-09-19
 

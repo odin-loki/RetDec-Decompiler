@@ -10,6 +10,14 @@ else()
 	set(_RETDEC_LLAMA_GGML_CUDA OFF)
 endif()
 
+# llama.cpp defaults Metal and Apple BLAS on, then ggml-backend-reg.cpp
+# references ggml_backend_metal_reg / ggml_backend_blas_reg. Installer
+# builds are CPU-only (RETDEC_NEURAL_GPU_OFFLOAD=OFF) and never link those
+# static backends, so turn them off. ggml-cpu still uses Accelerate on
+# Apple; that is linked below.
+set(_RETDEC_LLAMA_GGML_METAL OFF)
+set(_RETDEC_LLAMA_GGML_BLAS OFF)
+
 if(LLAMACPP_LOCAL_DIR)
 	set(LLAMACPP_SOURCE_DIR "${LLAMACPP_LOCAL_DIR}")
 	set(_LLAMACPP_URL "")
@@ -54,6 +62,8 @@ ExternalProject_Add(llamacpp-project
 		-DLLAMA_CURL=OFF
 		-DBUILD_SHARED_LIBS=OFF
 		-DGGML_CUDA=${_RETDEC_LLAMA_GGML_CUDA}
+		-DGGML_METAL=${_RETDEC_LLAMA_GGML_METAL}
+		-DGGML_BLAS=${_RETDEC_LLAMA_GGML_BLAS}
 	BUILD_BYPRODUCTS ${_RETDEC_LLAMA_BYPRODUCTS}
 	INSTALL_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --target install
 )
@@ -87,6 +97,9 @@ if(UNIX)
 	if(OpenMP_CXX_FOUND)
 		list(APPEND _RETDEC_GGML_LIBS OpenMP::OpenMP_CXX)
 	endif()
+endif()
+if(APPLE)
+	list(APPEND _RETDEC_GGML_LIBS "-framework Accelerate")
 endif()
 set_target_properties(llama PROPERTIES
 	IMPORTED_LOCATION ${_RETDEC_LLAMA_LIB}

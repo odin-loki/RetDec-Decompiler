@@ -153,7 +153,7 @@ void Decoder::initTranslator()
 	{
 		arch = CS_ARCH_RISCV;
 		basicMode = a.isRiscv64() ? CS_MODE_RISCV64 : CS_MODE_RISCV32;
-		extraMode = static_cast<cs_mode>(extraMode | CS_MODE_RISCVC);
+		extraMode = static_cast<cs_mode>(extraMode | CS_MODE_RISCV_C);
 	}
 	else if (a.isSparc())
 	{
