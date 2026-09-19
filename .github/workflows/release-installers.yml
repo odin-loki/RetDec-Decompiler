@@ -88,7 +88,7 @@ jobs:
             "retdec-${{ steps.meta.outputs.version }}.cdx.json"
 
       - name: Create GitHub Release (draft)
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           name: RetDec Imortek ${{ steps.meta.outputs.version }}
@@ -304,7 +304,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "cosign zip failed" }
 
       - name: Upload Windows release assets
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           files: |
@@ -481,7 +481,7 @@ jobs:
             "dist/retdec-${ver}-linux-x64.tar.gz"
 
       - name: Upload Linux release assets
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ needs.release.outputs.tag }}
           files: |
@@ -494,7 +494,7 @@ jobs:
 
       - name: Upload Linux AppImage (optional)
         if: env.APPIMAGE == '1'
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ needs.release.outputs.tag }}
           files: dist/retdec-${{ needs.release.outputs.version }}-x86_64.AppImage
@@ -737,7 +737,7 @@ jobs:
           cp releases/macos/uninstall.sh dist/uninstall-macos.sh
 
       - name: Upload macOS release assets
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ needs.release.outputs.tag }}
           files: |
