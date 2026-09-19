@@ -582,6 +582,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   `ceilDiv(cand) == M`, `(twoNk + K - 1) / K`) did not build.
   Those operators are defined now.
 
+- `ctest-windows` corpus wrote 581 KiB of `api-ms-win-*` UTF-16
+  arrays and contained no `printf`: `/EXPORT:main` kept the UCRT.
+  Fixtures now link `/ENTRY:main /NODEFAULTLIB` with
+  `msvc_fixture_printf.c`. `decompiler_cli_diagnostics` was 180 s
+  of 60 s LLVM startups; the Windows timeout is 900 s.
+
 - `DEPS-01` (`scripts/ci/check_dependency_urls.py`): every `<NAME>_URL` in
   `cmake/deps.cmake` either holds more than one URL or points at a host where a
   single one is enough — a GitHub release asset or tag archive, which is

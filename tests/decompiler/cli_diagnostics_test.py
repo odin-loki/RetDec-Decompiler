@@ -19,6 +19,9 @@ import sys
 import tempfile
 
 TIMEOUT = 60
+if os.name == "nt":
+    # Debug MSVC LLVM init is slow; six cases at 60 s overran ctest's 180 s.
+    TIMEOUT = 120
 
 
 def run(argv):

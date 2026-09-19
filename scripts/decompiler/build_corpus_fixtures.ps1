@@ -31,7 +31,8 @@ function Compile-CSource {
 
     $cl = Get-Command cl -ErrorAction SilentlyContinue
     if ($cl) {
-        & cl /nologo /Od /Ob0 /Oi- /GS- /Oy- /guard:cf- /Fe:"$Dest" "$Src" /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO /EXPORT:main 2>$null
+        $stub = Join-Path $RepoRoot "tests\decompiler\msvc_fixture_printf.c"
+        & cl /nologo /Od /Ob0 /Oi- /GS- /Oy- /guard:cf- /Fe:"$Dest" "$Src" $stub /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO /ENTRY:main /NODEFAULTLIB /SUBSYSTEM:CONSOLE /EXPORT:main 2>$null
         if (Test-Path -LiteralPath $Dest) { return $true }
     }
     $gcc = Get-Command gcc -ErrorAction SilentlyContinue

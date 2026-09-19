@@ -80,17 +80,18 @@ set(_FIB_BIN "${CMAKE_CURRENT_BINARY_DIR}/fib_smoke${CMAKE_EXECUTABLE_SUFFIX}")
 
 # VS 2022+ defaults (CFG / CET / incremental) yield PEs whose .text the
 # decoder never starts: "Detected functions: 0" and ~10 KiB of CRT globals.
+# /EXPORT:main kept the UCRT; corpus_fib.c was then 581 KiB of api-ms-win-*
+# UTF-16 arrays and the keyword `printf` was absent. /ENTRY:main plus a
+# stub printf (msvc_fixture_printf.c) is the user program only.
 if(MSVC)
     set(_MSVC_FIXTURE_C /nologo /Od /Ob0 /Oi- /GS- /Oy- /guard:cf-)
-    # /ENTRY:main skips CRT startup and LNK2019s printf (__acrt_iob_func).
-    # /EXPORT:main keeps the CRT and puts `main` in the export table so
-    # MainDetection / UnreachableFuncs can root on the user function.
-    set(_MSVC_FIXTURE_LINK /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO /EXPORT:main)
+    set(_MSVC_PRINTF_STUB "${CMAKE_CURRENT_SOURCE_DIR}/msvc_fixture_printf.c")
+    set(_MSVC_FIXTURE_LINK /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO /ENTRY:main /NODEFAULTLIB /SUBSYSTEM:CONSOLE /EXPORT:main)
     add_custom_command(
         OUTPUT "${_FIB_BIN}"
-        COMMAND ${CMAKE_C_COMPILER} ${_MSVC_FIXTURE_C} "/Fe${_FIB_BIN}" "${_FIB_SRC}"
+        COMMAND ${CMAKE_C_COMPILER} ${_MSVC_FIXTURE_C} "/Fe${_FIB_BIN}" "${_FIB_SRC}" "${_MSVC_PRINTF_STUB}"
             ${_MSVC_FIXTURE_LINK}
-        DEPENDS "${_FIB_SRC}"
+        DEPENDS "${_FIB_SRC}" "${_MSVC_PRINTF_STUB}"
         COMMENT "Building fib_smoke test binary (MSVC)"
         VERBATIM
     )
@@ -119,9 +120,9 @@ foreach(_name IN LISTS _CORPUS_NATIVE_SOURCES)
     if(MSVC)
         add_custom_command(
             OUTPUT "${_bin}"
-            COMMAND ${CMAKE_C_COMPILER} ${_MSVC_FIXTURE_C} "/Fe${_bin}" "${_src}"
+            COMMAND ${CMAKE_C_COMPILER} ${_MSVC_FIXTURE_C} "/Fe${_bin}" "${_src}" "${_MSVC_PRINTF_STUB}"
                 ${_MSVC_FIXTURE_LINK}
-            DEPENDS "${_src}"
+            DEPENDS "${_src}" "${_MSVC_PRINTF_STUB}"
             COMMENT "Building corpus fixture ${_name} (MSVC)"
             VERBATIM
         )
@@ -228,6 +229,11 @@ set_tests_properties(decompiler_cli_diagnostics PROPERTIES
     TIMEOUT 180
     LABELS "decompiler;smoke;integration"
 )
+if(WIN32)
+    # Debug MSVC retdec-decompiler spends most of a minute bringing LLVM up,
+    # even for --help. Six cases at 60 s each overran the 180 s ctest cap.
+    set_tests_properties(decompiler_cli_diagnostics PROPERTIES TIMEOUT 900)
+endif()
 
 add_test(
     NAME decompiler_smoke_managed_formats
