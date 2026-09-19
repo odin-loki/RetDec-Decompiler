@@ -56,7 +56,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Seconds, and it catches a typo in a harness without waiting for the
       # solver job below.
@@ -81,7 +81,7 @@ jobs:
     timeout-minutes: 60
     needs: syntax
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The tag, not `latest`, and the tag is in the cache key.
       #
@@ -143,7 +143,7 @@ jobs:
     timeout-minutes: 360
     needs: syntax
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Cache the ESBMC release build
         id: esbmc-cache

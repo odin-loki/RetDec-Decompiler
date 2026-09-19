@@ -32,7 +32,7 @@ jobs:
       matrix:
         cxx: [g++, clang++]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # src/gui is 37 sources and 493 tests behind find_package(Qt6 REQUIRED),
       # so without these packages the gui suite skips itself and the GUI stays
@@ -62,7 +62,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Neither of these builds the pinned llvm-project -- that is a multi-hour
       # job the ctest workflows do.  They build the two parts of the tree that
@@ -271,7 +271,7 @@ jobs:
   capstone2llvmir:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install LLVM 20, gtest and cmake
         run: |
@@ -353,7 +353,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Qt6 for the gui suite
         run: |
