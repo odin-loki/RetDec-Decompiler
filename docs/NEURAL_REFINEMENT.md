@@ -7,11 +7,22 @@ C emission. Not a decompiler pass and not GPU acceleration of lifting.
 
 - `retdec::neural` with mock + optional llama.cpp (`RETDEC_ENABLE_LLAMACPP`).
   Pin: **b10451** in `cmake/deps.cmake` (`llama.cpp` archive tag `b10451`).
-  Default installers keep llama.cpp **OFF**.
+  Release installers (`release-installers.yml`) build with llama.cpp **ON**
+  (`RETDEC_ENABLE_NEURAL=ON`, `RETDEC_ENABLE_LLAMACPP=ON`, GPU offload
+  **OFF**). CTest jobs keep neural **OFF** and do not download the GGUF.
 - Runtime refine is a **separate switch** from the compile gate:
   - Build: `RETDEC_ENABLE_LLAMACPP` (fetch/link llama.cpp),
     `RETDEC_ENABLE_NEURAL` (library; default ON, stub if llama.cpp OFF).
-  - Run: `RETDEC_NEURAL_REFINE=1` + `RETDEC_NEURAL_MODEL` (GGUF).
+  - Run: `RETDEC_NEURAL_REFINE=1` + `RETDEC_NEURAL_MODEL` (GGUF). Still
+    opt-in; linking llama.cpp does not run inference.
+- **Shipped GGUF:** Unsloth `Qwen3.5-9B-Q4_K_M.gguf` (SHA-256
+  `03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8`) is
+  pinned in `support/models.json`. GitHub Release assets cap at 2 GB, so
+  job `neural-gguf` (after the OS installer jobs) uploads 1900 MiB
+  `*.gguf.partaa` / `.partab` / … pieces. Join with
+  `scripts/join_qwen_gguf.sh` or `scripts/join_qwen_gguf.ps1`, or fetch
+  the whole file with `scripts/fetch_qwen_gguf.sh`. The weights are **not**
+  inside the Windows zip / Linux tarball / macOS tarball.
 - **Compile gate is implemented:** `cc`/`gcc -fsyntax-only` (`src/neural/gates.cpp`).
   Skip with `RETDEC_NEURAL_SKIP_COMPILE_GATE=1`.
 - **Differential gate is not implemented:** `RETDEC_NEURAL_DIFF_GATE=1`

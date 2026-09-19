@@ -70,11 +70,13 @@ out of tree. This document does not claim those signatures exist.
 - If `RETDEC_NEURAL_DIFF_GATE` is set, the gate **warns and skips**.
   Runtime differential execution is treated as pass-without-run.
 - `RETDEC_NEURAL_SKIP_COMPILE_GATE` skips the compile-gate.
-- **N6 allowlist is fail-closed and empty.** Shipped `support/models.json`
-  is `{"models": []}`. SHA-256 is checked when
-  `RETDEC_NEURAL_MODEL_SHA256` is set, or when the filename matches the
-  pinned Qwen 3.5 Q4_K_M hint. Other GGUF paths are refused unless the
-  hash is in the allowlist or `RETDEC_NEURAL_ALLOW_UNVERIFIED=1`
+- **N6 allowlist is fail-closed.** Shipped `support/models.json` pins
+  Unsloth `Qwen3.5-9B-Q4_K_M.gguf`
+  (`03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8`).
+  SHA-256 is checked when `RETDEC_NEURAL_MODEL_SHA256` is set, or when
+  the filename matches the pinned Qwen 3.5 Q4_K_M hint. Other GGUF paths
+  are refused unless the hash is in the allowlist or
+  `RETDEC_NEURAL_ALLOW_UNVERIFIED=1`
   (`tests/neural/mock_test.cpp` `UnpinnedOtherGgufRefusedWithoutAllowlist`,
   `TextGgufLoadsWhenUnverified`). Env SHA alone is not enough against an
   empty allowlist (`EmptyAllowlistRefusesEvenWithMatchingEnvSha`).
@@ -87,15 +89,17 @@ out of tree. This document does not claim those signatures exist.
   `StripsCommentBodiesFromFunctionSource`). Identifiers and
   `semanticContextJson` are not stripped.
 
-Neural refinement itself is opt-in (`RETDEC_NEURAL_REFINE` + model path;
-llama.cpp is off in default installers).
+Neural refinement itself is opt-in (`RETDEC_NEURAL_REFINE` + model path).
+Release installers link llama.cpp; inference still does not run until
+those env vars are set.
 
 ### Residual risks (neural)
 
 - **Model poisoning.** Unpinned GGUF loads when
-  `RETDEC_NEURAL_ALLOW_UNVERIFIED=1` (SHA unset, empty allowlist). There
-  is no signed model manifest. Env pin + empty `models.json` still
-  refuses (`EmptyAllowlistRefusesEvenWithMatchingEnvSha`).
+  `RETDEC_NEURAL_ALLOW_UNVERIFIED=1`. There is no signed model manifest.
+  Env pin + an empty `models.json` still refuses
+  (`EmptyAllowlistRefusesEvenWithMatchingEnvSha`). The shipped allowlist
+  contains only the Unsloth Q4_K_M SHA.
 - **Sidecar / cache poisoning.** `writeSidecar` writes
   `{output}.refined.c` and `{output}.refinement-manifest.json` with no
   MAC. Optional `RETDEC_NEURAL_CACHE_DIR` stores `{key}.txt` and reuses
@@ -131,6 +135,8 @@ malicious sample can attempt memory corruption, huge allocations, or
 hostile rule/data interaction. Opening a file in the GUI is the same
 trust boundary as passing it to the CLI. The GUI child can write wherever
 the user can. Until S15 (sandboxed worker) exists, treat RetDec as an
-unsandboxed native analysis tool. N6 is fail-closed with an empty
-`support/models.json` (not a populated default-on allowlist). Release
-assets have Sigstore attestations and do **not** have Authenticode.
+unsandboxed native analysis tool. N6 is fail-closed: unknown GGUF hashes
+are refused; the shipped allowlist contains only the pinned Unsloth
+Qwen 3.5 Q4_K_M SHA. Release assets have Sigstore attestations and do
+**not** have Authenticode. The GGUF itself is split Release assets, not
+inside the OS installer archives.

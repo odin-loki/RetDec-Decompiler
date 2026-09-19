@@ -106,9 +106,12 @@ Native CPU lifting maturity (not the same as “file opens”):
 | Architecture | Maturity |
 |--------------|----------|
 | x86, x86-64 | Production |
-| ARM, Thumb, MIPS, PowerPC | Partial |
-| ARM64 | Incomplete |
-| SPARC, SystemZ, XCore, RISC-V | Not implemented |
+| ARM, Thumb, ARM64, MIPS (32/64), PIC32, PowerPC (32/64) | Production (integer / control-flow subset) |
+| RISC-V RV32I / RV64I (+ integer C) | Production (integer subset) |
+| SPARC V8 / V9 | Production (integer subset) |
+| SystemZ (s390x, 64-bit only) | Production (integer subset) |
+| XCore (32-bit only) | Production (integer subset) |
+| SASS (NVIDIA cubin/fatbin) | Subset library + CLI probe — **not** Production |
 
 Detail: [docs/ARCHITECTURE_TARGETS.md](docs/ARCHITECTURE_TARGETS.md).
 
@@ -125,8 +128,10 @@ Output is **input-keyed**, not a free-choice list of eleven languages.
 | JVM / DEX | Java-family managed path |
 | .NET CIL | C#-family managed path |
 
-F#, VB.NET, Kotlin, and CUDA-C emitters exist in-tree and are **not** wired as
-general native-pipeline targets. Do not treat them as shipped output choices.
+F#, VB.NET, Kotlin, and CUDA-C emitters exist in-tree. CUDA-C is used for
+standalone NVIDIA cubin/fatbin via `src/sass_decode` (opcode subset, **not**
+Production). F# / VB.NET / Kotlin are **not** wired as general native-pipeline
+targets.
 
 ### Semantic recovery
 
@@ -147,9 +152,12 @@ Not in `decompile()`: `CudaHostRecovery` (tests only), `src/idiom_reconstruct/`,
 
 ### Offline neural refinement
 
-Optional verified, air-gapped refinement via **llama.cpp** and GGUF models
-(build with `-DRETDEC_ENABLE_LLAMACPP=ON`). Enable at runtime with
+Optional verified, air-gapped refinement via **llama.cpp** and GGUF models.
+Release installers link llama.cpp; CTest does not. Enable at runtime with
 `RETDEC_NEURAL_REFINE=1` and `RETDEC_NEURAL_MODEL=/path/to/model.gguf`.
+The tested Unsloth `Qwen3.5-9B-Q4_K_M.gguf` SHA is in `support/models.json`;
+GitHub Release assets split it under the 2 GB file cap
+(`scripts/join_qwen_gguf.sh`).
 Deterministic decompiler output remains the auditable primary artefact.
 Neural edits: **compile** gate is `cc`/`gcc -fsyntax-only` (C is not executed);
 **structural** gate is active; **differential** gate is **not implemented**
@@ -504,7 +512,7 @@ retdec-decompiler binary.elf -o output.c
 | [docs/CUDA_CAPABILITIES.md](docs/CUDA_CAPABILITIES.md) | Experimental CUDA accel (default OFF, unintegrated) |
 | [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | Profiling and perf-nightly |
 | [docs/PROVENANCE.md](docs/PROVENANCE.md) | Upstream MIT + Imortek dual-licence record |
-| [docs/ARCHITECTURE_TARGETS.md](docs/ARCHITECTURE_TARGETS.md) | Native CPU maturity; SPARC/SystemZ/XCore unimplemented |
+| [docs/ARCHITECTURE_TARGETS.md](docs/ARCHITECTURE_TARGETS.md) | Native CPU integer/control-flow Production; SASS not Production |
 | [docs/INSTALL_LINUX.md](docs/INSTALL_LINUX.md) / [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md) | Published tarball / NSIS / zip |
 | [docs/COMMERCIAL_WHITEPAPER.md](docs/COMMERCIAL_WHITEPAPER.md) | Buyer overview (must not outrun [docs/CLAIMS.md](docs/CLAIMS.md)) |
 | [docs/FORMAL_VERIFICATION_BRIDGE.md](docs/FORMAL_VERIFICATION_BRIDGE.md) | Bridge from decompilation to verification |

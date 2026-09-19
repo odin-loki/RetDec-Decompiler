@@ -6,6 +6,19 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ## [Unreleased]
 
+## [2.0.23] — 2026-09-19
+
+### Added
+
+- Release installers link llama.cpp (`RETDEC_ENABLE_LLAMACPP=ON`) and ship
+  the Unsloth `Qwen3.5-9B-Q4_K_M.gguf` SHA in `support/models.json`. The
+  5.68 GB GGUF is attached to the GitHub Release as 1900 MiB split parts
+  by job `neural-gguf` (after Windows/Linux/macOS installer builds).
+  Runtime refine is still `RETDEC_NEURAL_REFINE=1` + `RETDEC_NEURAL_MODEL`.
+- Integer/control-flow Capstone translators, ABI, decoder, ELF `e_machine`,
+  and `-a` names for RISC-V, SPARC, SystemZ, and XCore (`C-ARCH-UNIMP`
+  withdrawn). SASS remains a cubin/fatbin probe, not Production.
+
 ### Changed
 
 - Public and maintainer documentation was walked against the 2.0.22 tree:

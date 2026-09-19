@@ -71,6 +71,15 @@ Paths are relative to the **repository root**. See [docs/BUILD_REFERENCE.md](../
 | `install-windows.ps1` | User-facing NSIS or copy-tree install (`-AddToPath`) |
 | `bundle-windows.sh` | Linux/WSL cross-compile bundle (same NSIS layout) |
 
+## Neural GGUF
+
+| Script | Role |
+|--------|------|
+| `join_qwen_gguf.sh` / `join_qwen_gguf.ps1` | Concatenate GitHub Release `Qwen3.5-9B-Q4_K_M.gguf.partaa`… parts and SHA-256-check |
+| `fetch_qwen_gguf.sh` / `fetch_qwen_gguf.ps1` | Download the Unsloth Q4_K_M GGUF from Hugging Face and SHA-256-check |
+| `run_neural_refine.sh` | Smoke wrapper (`RETDEC_NEURAL_REFINE`); needs a staged GGUF |
+| `download_model.sh` | Delegates to `fetch_qwen_gguf.sh` |
+
 ## Decompiler fixtures
 
 | Script | Role |

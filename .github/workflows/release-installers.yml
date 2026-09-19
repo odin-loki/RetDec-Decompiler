@@ -233,7 +233,9 @@ jobs:
           cmake --preset full-windows-release `
             -DRETDEC_ENABLE_CUDA_ACCEL=OFF `
             -DRETDEC_TESTS=OFF `
-            -DRETDEC_ENABLE_NEURAL=OFF `
+            -DRETDEC_ENABLE_NEURAL=ON `
+            -DRETDEC_ENABLE_LLAMACPP=ON `
+            -DRETDEC_NEURAL_GPU_OFFLOAD=OFF `
             -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF `
             -DRETDEC_ENABLE_RETDEC_DECOMPILER=ON `
             -DRETDEC_ENABLE_FILEINFO=ON
@@ -396,7 +398,9 @@ jobs:
           cmake --preset full-linux-release
           -DRETDEC_ENABLE_CUDA_ACCEL=OFF
           -DRETDEC_TESTS=OFF
-          -DRETDEC_ENABLE_NEURAL=OFF
+          -DRETDEC_ENABLE_NEURAL=ON
+          -DRETDEC_ENABLE_LLAMACPP=ON
+          -DRETDEC_NEURAL_GPU_OFFLOAD=OFF
           -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
           -DRETDEC_ENABLE_RETDEC_DECOMPILER=ON
           -DRETDEC_ENABLE_FILEINFO=ON
@@ -613,7 +617,9 @@ jobs:
           cmake --preset full-linux-release
           -DRETDEC_ENABLE_CUDA_ACCEL=OFF
           -DRETDEC_TESTS=OFF
-          -DRETDEC_ENABLE_NEURAL=OFF
+          -DRETDEC_ENABLE_NEURAL=ON
+          -DRETDEC_ENABLE_LLAMACPP=ON
+          -DRETDEC_NEURAL_GPU_OFFLOAD=OFF
           -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
           -DRETDEC_ENABLE_RETDEC_DECOMPILER=ON
           -DRETDEC_ENABLE_FILEINFO=ON
@@ -745,5 +751,56 @@ jobs:
             dist/retdec-${{ needs.release.outputs.version }}-macos-${{ steps.prebuilt.outputs.arch }}.tar.gz.sigstore.json
             dist/install-macos.sh
             dist/uninstall-macos.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Unsloth Qwen3.5-9B-Q4_K_M.gguf is 5.68 GB. GitHub Release assets cap at
+  # 2 GB per file, and stuffing the weights into the OS installers would blow
+  # runner disk. This job runs AFTER the three installer builds (test/build
+  # first, model last): download, SHA-256, split -b 1900M, attach parts.
+  neural-gguf:
+    needs: [release, windows-installer, linux-installer, macos-installer]
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download, verify, and split GGUF
+        run: |
+          set -euo pipefail
+          SHA="03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8"
+          URL="https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf"
+          mkdir -p dist
+          DEST="${RUNNER_TEMP}/Qwen3.5-9B-Q4_K_M.gguf"
+          curl -L --retry 5 --retry-delay 10 --continue-at - -o "$DEST" "$URL"
+          got="$(sha256sum "$DEST" | awk '{print $1}')"
+          if [ "$got" != "$SHA" ]; then
+            echo "SHA-256 mismatch: expected $SHA got $got"
+            exit 1
+          fi
+          # 1900 MiB < 2 GiB GitHub asset cap. Suffixes: partaa, partab, …
+          split -b 1900M "$DEST" dist/Qwen3.5-9B-Q4_K_M.gguf.part
+          rm -f "$DEST"
+          {
+            echo "# Reconstruct: bash scripts/join_qwen_gguf.sh"
+            echo "# Full GGUF SHA-256:"
+            echo "${SHA}  Qwen3.5-9B-Q4_K_M.gguf"
+            echo "# Parts:"
+            (cd dist && sha256sum Qwen3.5-9B-Q4_K_M.gguf.part*)
+          } > dist/Qwen3.5-9B-Q4_K_M.SHA256SUMS
+          ls -lh dist/Qwen3.5-9B-Q4_K_M.gguf.part* dist/Qwen3.5-9B-Q4_K_M.SHA256SUMS
+          chmod +x scripts/join_qwen_gguf.sh
+
+      - name: Upload GGUF parts to the Release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: ${{ needs.release.outputs.tag }}
+          files: |
+            dist/Qwen3.5-9B-Q4_K_M.gguf.part*
+            dist/Qwen3.5-9B-Q4_K_M.SHA256SUMS
+            scripts/join_qwen_gguf.sh
+            scripts/join_qwen_gguf.ps1
+            scripts/fetch_qwen_gguf.sh
+            scripts/fetch_qwen_gguf.ps1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

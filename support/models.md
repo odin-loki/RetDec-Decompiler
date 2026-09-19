@@ -4,8 +4,10 @@
 (`RETDEC_NEURAL_REFINE=1` + `RETDEC_NEURAL_MODEL`). Verification is **on
 by default at load**. Neural stays off unless those env vars are set.
 
-The shipped file starts as `"models": []`. An empty list (or a missing
-file) **refuses** every model. That is intentional.
+The shipped file pins Unsloth `Qwen3.5-9B-Q4_K_M.gguf`
+(`03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8`).
+An empty list (or a missing file) **refuses** every model. Unknown hashes
+are still refused.
 
 ## Adding a model
 
@@ -16,7 +18,7 @@ file) **refuses** every model. That is intentional.
 {
   "models": [
     {
-      "name": "Qwen3.5-9B-Instruct-Q4_K_M.gguf",
+      "name": "Qwen3.5-9B-Q4_K_M.gguf",
       "sha256": "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8"
     }
   ]
@@ -24,6 +26,23 @@ file) **refuses** every model. That is intentional.
 ```
 
 `name` is documentation only. Matching is by `sha256`.
+
+## Release assets
+
+The GGUF is **5.68 GB**. GitHub Release files are capped at 2 GB, so
+`release-installers.yml` job `neural-gguf` (after the OS installer builds)
+uploads `Qwen3.5-9B-Q4_K_M.gguf.partaa` / `.partab` / … plus
+`Qwen3.5-9B-Q4_K_M.SHA256SUMS`. It is **not** inside the Windows zip,
+Linux tarball, or macOS tarball.
+
+Reassemble, then point the decompiler at the file:
+
+```bash
+bash scripts/join_qwen_gguf.sh
+# or:  .\scripts\join_qwen_gguf.ps1
+# or download whole from Hugging Face:
+bash scripts/fetch_qwen_gguf.sh
+```
 
 ## Overrides (load path only)
 
