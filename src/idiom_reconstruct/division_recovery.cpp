@@ -146,6 +146,14 @@ struct u128 {
         uint64_t rem;
         return {_udiv128(hi, lo, b, &rem), 0};
     }
+	// ceilDiv is (twoNk + K - 1) / K with both sides u128. _udiv128 only
+	// takes a 64-bit divisor; every caller here has hi == 0.
+	u128 operator/(const u128& o) const
+	{
+		if (o.hi != 0 || o.lo == 0)
+			return {};
+		return *this / o.lo;
+	}
     u128 operator<<(int n) const {
         if (n <= 0)   return *this;
         if (n >= 128) return {};

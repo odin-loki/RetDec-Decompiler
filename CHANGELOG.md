@@ -577,9 +577,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 - The Windows Release installer failed to compile
   `src/idiom_reconstruct/division_recovery.cpp`: the MSVC `u128`
-  stand-in had `+` `*` `/` `<<` but not `-` or `==`, so
-  `verifyUnsigned` / `verifySigned` (`twoNk - 1`, `ceilDiv(cand) == M`)
-  did not build. Those operators are defined now.
+  stand-in had `+` `*` `/ uint64_t` `<<` but not `-`, `==`, or
+  `/ u128`, so `verifyUnsigned` / `verifySigned` (`twoNk - 1`,
+  `ceilDiv(cand) == M`, `(twoNk + K - 1) / K`) did not build.
+  Those operators are defined now.
 
 - `DEPS-01` (`scripts/ci/check_dependency_urls.py`): every `<NAME>_URL` in
   `cmake/deps.cmake` either holds more than one URL or points at a host where a
