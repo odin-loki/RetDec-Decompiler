@@ -97,7 +97,8 @@ TEST_P(Capstone2LlvmIrTranslatorSparcTests, delay_slot_control_transfers)
 	EXPECT_TRUE(_translator->hasDelaySlot(SPARC_INS_CALL));
 	EXPECT_EQ(1u, _translator->getDelaySlot(SPARC_INS_CALL));
 	EXPECT_TRUE(_translator->hasDelaySlot(SPARC_INS_JMPL));
-	EXPECT_TRUE(_translator->hasDelaySlot(SPARC_INS_JMP));
+	EXPECT_TRUE(_translator->hasDelaySlot(SPARC_INS_FB));
+	EXPECT_TRUE(_translator->hasDelaySlot(SPARC_INS_BR));
 	EXPECT_TRUE(_translator->hasDelaySlot(SPARC_INS_RETT));
 	EXPECT_TRUE(_translator->hasDelaySlot(SPARC_INS_RET));
 	EXPECT_TRUE(_translator->hasDelaySlot(SPARC_INS_RETL));
@@ -429,19 +430,9 @@ TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_CMP_equal_sets_Z)
 	emulate_bin("80 a0 40 02");
 
 	EXPECT_JUST_REGISTERS_LOADED({SPARC_REG_G1, SPARC_REG_G2});
-	if (GetParam() == CS_MODE_64)
-	{
-		EXPECT_JUST_REGISTERS_STORED({
-			{SPARC_REG_ICC, 0x4},
-			{SPARC_REG_XCC, 0x4},
-		});
-	}
-	else
-	{
-		EXPECT_JUST_REGISTERS_STORED({
-			{SPARC_REG_ICC, 0x4},
-		});
-	}
+	EXPECT_JUST_REGISTERS_STORED({
+		{SPARC_REG_ICC, GetParam() == CS_MODE_64 ? 0x44 : 0x4},
+	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();
 }
@@ -628,6 +619,196 @@ TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_REG_G0_is_zero)
 		{SPARC_REG_G2, 0x1234},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// SPARC_INS_SLL  sll %g1, 4, %g2   encoding 85 28 60 04
+//
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_SLL)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{SPARC_REG_G1, 0x10},
+	});
+
+	emulate_bin("85 28 60 04");
+
+	EXPECT_JUST_REGISTERS_LOADED({SPARC_REG_G1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{SPARC_REG_G2, 0x100},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// SPARC_INS_ANDN  andn %g1, %g2, %g3   encoding 86 28 40 02
+//
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_ANDN)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{SPARC_REG_G1, 0xff},
+		{SPARC_REG_G2, 0x0f},
+	});
+
+	emulate_bin("86 28 40 02");
+
+	EXPECT_JUST_REGISTERS_LOADED({SPARC_REG_G1, SPARC_REG_G2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{SPARC_REG_G3, 0xf0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// SPARC_INS_MULX  mulx %g1, %g2, %g3   encoding 86 48 40 02 (V9)
+//
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_MULX)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{SPARC_REG_G1, 0x10},
+		{SPARC_REG_G2, 0x20},
+	});
+
+	emulate_bin("86 48 40 02");
+
+	EXPECT_JUST_REGISTERS_LOADED({SPARC_REG_G1, SPARC_REG_G2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{SPARC_REG_G3, 0x200},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// SPARC_INS_FADDS  fadds %f0, %f1, %f2   encoding 85 a0 08 21
+//
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_FADDS)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{SPARC_REG_F0, 1.5f},
+		{SPARC_REG_F1, 2.25f},
+	});
+
+	emulate_bin("85 a0 08 21");
+
+	EXPECT_JUST_REGISTERS_LOADED({SPARC_REG_F0, SPARC_REG_F1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{SPARC_REG_F2, 3.75f},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// SPARC_INS_FADDD  faddd %f0, %f2, %f4   encoding 89 a0 08 42
+//
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_FADDD)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{SPARC_REG_D0, 1.5},
+		{SPARC_REG_D1, 2.25},
+	});
+
+	emulate_bin("89 a0 08 42");
+
+	EXPECT_JUST_REGISTERS_LOADED({SPARC_REG_D0, SPARC_REG_D1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{SPARC_REG_D2, 3.75},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// SPARC_INS_FCMPS  fcmps %f0, %f1   encoding 81 a8 0a 21  → fcc=1 (less)
+//
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_FCMPS)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{SPARC_REG_F0, 1.0f},
+		{SPARC_REG_F1, 2.0f},
+	});
+
+	emulate_bin("81 a8 0a 21");
+
+	EXPECT_JUST_REGISTERS_LOADED({SPARC_REG_F0, SPARC_REG_F1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{SPARC_REG_FCC0, 1},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ldf [%g1], %f0   encoding c1 00 60 00  (SPARC_INS_LD to an F register)
+// 1.5f = 0x3FC00000
+//
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_LD_f_ldf)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{SPARC_REG_G1, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x3FC00000u},
+	});
+
+	emulate_bin("c1 00 60 00");
+
+	EXPECT_JUST_REGISTERS_LOADED({SPARC_REG_G1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{SPARC_REG_F0, 1.5f},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// SPARC_INS_STD  std %g2, [%g1]   encoding c4 38 60 00
+// even word at addr, odd at addr+4.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_STD)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{SPARC_REG_G1, 0x1000},
+		{SPARC_REG_G2, 0xAABBCCDD},
+		{SPARC_REG_G3, 0x11223344},
+	});
+
+	emulate_bin("c4 38 60 00");
+
+	EXPECT_JUST_REGISTERS_LOADED({SPARC_REG_G1, SPARC_REG_G2, SPARC_REG_G3});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0xAABBCCDD11223344_qw},
+	});
 	EXPECT_NO_VALUE_CALLED();
 }
 

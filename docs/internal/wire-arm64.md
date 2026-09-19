@@ -1,6 +1,6 @@
 # ARM64 (AArch64) integrator notes
 
-64-bit only (`CS_ARCH_ARM64`, Capstone 5.0.9). AArch32 / Thumb is a different
+64-bit only (`CS_ARCH_ARM64`, Capstone 6.0.0-Alpha10). AArch32 / Thumb is a different
 front-end (`src/capstone2llvmir/arm/`). Do not edit `architecture.h`, the
 decoder, or the CLI: `-a arm64` and `Architecture::isArm64()` already exist.
 
@@ -77,20 +77,26 @@ AAPCS64: X18 may be treated as a GPR, variadic calls will look like they
 passed trailing args in Xn, and there is no home-area model. Integer
 leaf functions that only use X0–X7 / X29 / X30 / SP still recover.
 
-## Lifter coverage (integer compiler subset)
+## Lifter coverage (compiler AArch64, Capstone 6.0.0-Alpha10)
 
-Capstone 5.0.9 IDs. “Real IR” means LLVM `add`/`load`/`store`/`icmp`/…
-with **no** `__asm_*` barrier. SIMD/SVE stay pseudo-asm unless a lane
-translator already exists. PAC/BTI are modelled as the identity (NOP).
+`CS_ARCH_ARM64`. Capstone 6.x has no `ARM64_REG_Vn` token: **Qn is the 128-bit
+SIMD parent** (`i128`); Bn/Hn/Sn/Dn are nested views. `capstone6_compat.h`
+maps 5.x `ARM64_REG_Vn` and `ARM64_INS_BTI` onto `ARM64_REG_Qn` /
+`ARM64_INS_ALIAS_BTI`. “Real IR” means LLVM `add`/`fadd`/`load`/`store`/
+`atomicrmw`/`cmpxchg`/… with **no** `__asm_*` barrier. PAC/BTI are the
+identity (NOP). SVE/SME ids exist in the 6.x enum but have no dedicated
+translators here — unmapped ids become generic pseudo-asm; do not invent
+SVE tokens.
 
 | Group | Capstone IDs | IR | Notes |
 |-------|--------------|----|-------|
-| ADD / ADDS / CMN | `ADD`, `ADDS`, `CMN` | real | shifted-reg, imm (`LSL #0/#12`), extend (`UXT*`/`SXT*`) |
+| ADD / ADDS / CMN | `ADD`, `ADDS`, `CMN` | real | shifted-reg, imm (`LSL #0/#12`), extend (`UXT*`/`SXT*`); vector `ADD` is lane-wise |
 | SUB / SUBS / CMP | `SUB`, `SUBS`, `CMP` | real | same forms |
 | AND / ORR / EOR | `AND`, `ANDS`, `ORR`, `EOR`, `BIC`, `ORN`, `EON`, `TST` | real | shifted-reg and logical-imm |
 | MOV / MVN | `MOV`, `MVN`, `MOVZ`, `MOVN`, `MOVK` | real | `MOV` is often `ORR Xd, XZR, Xm` |
 | LDR / STR | `LDR`, `LDRB`, `LDRH`, `LDRSB`, `LDRSH`, `LDRSW`, `STR`, `STRB`, `STRH`, `LDUR*`, `STUR*`, `LDTR*`, `STTR*` | real | unsigned imm, signed unscaled, reg-offset, pre/post WB |
 | LDP / STP | `LDP`, `LDPSW`, `STP`, `LDNP`, `STNP` | real | compiler prologue `stp x29, x30, [sp, #-N]!` |
+| Exclusive | `LDXR`, `LDXRB`, `LDXRH`, `LDAXR*`, `STXR`, `STXRB`, `STXRH`, `STLXR*` | real | atomic load/store; STXR status is 0 (no exclusive-monitor model) |
 | B / B.cond | `B` | real | `cc` selects `__pseudo_branch` vs `__pseudo_cond_branch` |
 | BL | `BL` | real | writes X30, `__pseudo_call` |
 | BR | `BR` | real | `__pseudo_branch` (not a call; matches x86 `jmp`) |
@@ -100,15 +106,23 @@ translator already exists. PAC/BTI are modelled as the identity (NOP).
 | TBZ / TBNZ | `TBZ`, `TBNZ` | real | |
 | ADR / ADRP | `ADR`, `ADRP` | real | Capstone already folds PC + imm |
 | MUL / MADD / MSUB | `MUL`, `MADD`, `MSUB`, `MNEG` | real | Capstone reports `MUL` as its own id (alias of `MADD …, XZR`) |
+| Scalar FP | `FADD`, `FSUB`, `FMUL`, `FNMUL`, `FDIV`, `FCMP`, `FCVT`, `FMOV` (Sn/Dn) | real | Sn/Dn, `VAS` invalid |
+| SIMD lane FP | `FADD`, `FSUB`, `FMUL`, `FDIV` on `.2s`/`.4s`/`.2d` | real | `translateNeonFpLaneBinary`; `.8h`/`.4h` stay pseudo |
+| SIMD list | `LD1`, `ST1` | real | whole-register / D-form; lane and `LD2`–`LD4` stay nullptr |
+| LSE atomics | `LDADD*`, `LDCLR*`, `LDEOR*`, `LDSET*`, `LDSMAX*`, `LDSMIN*`, `LDUMAX*`, `LDUMIN*`, `SWP*`, `CAS`/`CASA`/`CASL`/`CASAL` (+ B/H) | real | `atomicrmw` / `cmpxchg` |
+| LSE pair-CAS | `CASP`, `CASPA`, `CASPL`, `CASPAL` | nullptr | LLVM `cmpxchg` is not a register pair |
 | SVC / BRK | `SVC`, `BRK` | `__asm_svc` / `__asm_brk` | same pattern as ARM32 `SVC`; SyscallFixer keys off `ARM64_INS_SVC` |
-| PAC / BTI / HINT / PRFM | `PACIASP`, `AUTIASP`, `BTI`, `HINT`, `NOP`, `PRFM`, … | nothing | decoder `isNopInstruction` agrees |
-| SIMD / SVE / AES / SHA / LSE pair-CAS | various | pseudo-asm or dedicated NEON helpers | not the integer production bar |
+| PAC / BTI / HINT / PRFM | `PACIASP`, `AUTIASP`, `BTI` (`ARM64_INS_ALIAS_BTI`), `HINT`, `NOP`, `PRFM`, … | nothing | decoder `isNopInstruction` agrees |
+| AES / SHA | `AESE`, `AESD`, `AESMC`, `AESIMC`, `SHA1*`, `SHA256*` | nullptr | crypto; not the compiler production bar |
+| FMLA / FMLS | `FMLA`, `FMLS` | nullptr | fused vector FMA; scalar `FMADD`/`FMSUB` are real |
+| SVE / SME | 6.x ids (`WHILELT`, `LD1W`, `FADDA`, …) | unmapped / generic pseudo | no invented SVE tokens |
 
 Shifts `LSL`/`LSR`/`ASR`/`ROR`, bitfield aliases `UBFX`/`SBFX`/`BFI`/…,
 `CSEL`/`CSET`/`CINC`, and `SXT*`/`UXT*` are also real IR (compiler
 integer, not listed in the must-lift table above). Canonical `UBFM` /
-`SBFM` / `BFM` stay `nullptr`: Capstone 5 reports the aliases on compiled
-code.
+`SBFM` / `BFM` stay `nullptr`: Capstone 6 still reports the aliases on compiled
+code. Integer NEON (`ADD`/`SUB`/`MUL` `.4s`, `EXT`, `BSL`, compares, permutes)
+already has a lane translator.
 
 ## Tests
 

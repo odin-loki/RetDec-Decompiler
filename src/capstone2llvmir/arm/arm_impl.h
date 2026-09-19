@@ -13,6 +13,27 @@
 #include "retdec/capstone2llvmir/arm/arm.h"
 #include "capstone2llvmir/capstone2llvmir_impl.h"
 
+// Capstone 6.x names the condition codes ARMCC_*; the 5.x ARM_CC_* tokens
+// exist only under CAPSTONE_ARM_COMPAT_HEADER, which this build does not set.
+#ifndef ARM_CC_AL
+#define ARM_CC_EQ ARMCC_EQ
+#define ARM_CC_NE ARMCC_NE
+#define ARM_CC_HS ARMCC_HS
+#define ARM_CC_LO ARMCC_LO
+#define ARM_CC_MI ARMCC_MI
+#define ARM_CC_PL ARMCC_PL
+#define ARM_CC_VS ARMCC_VS
+#define ARM_CC_VC ARMCC_VC
+#define ARM_CC_HI ARMCC_HI
+#define ARM_CC_LS ARMCC_LS
+#define ARM_CC_GE ARMCC_GE
+#define ARM_CC_LT ARMCC_LT
+#define ARM_CC_GT ARMCC_GT
+#define ARM_CC_LE ARMCC_LE
+#define ARM_CC_AL ARMCC_AL
+#define ARM_CC_INVALID ARMCC_Invalid
+#endif
+
 namespace retdec {
 namespace capstone2llvmir {
 
@@ -155,12 +176,27 @@ class Capstone2LlvmIrTranslatorArm_impl :
 		void translateAdc(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		static bool isFpRegister(uint32_t r);
 		static bool isSingleView(uint32_t r);
+		static bool isQuadView(uint32_t r);
+		static bool isNeonRegister(uint32_t r);
 		static uint32_t singleViewParent(uint32_t r, unsigned& offset);
+		static uint32_t quadViewLoD(uint32_t r);
 		llvm::Value* loadSingleView(uint32_t r, llvm::IRBuilder<>& irb);
 		llvm::StoreInst* storeSingleView(uint32_t r, llvm::Value* val, llvm::IRBuilder<>& irb);
+		llvm::Value* loadQuadView(uint32_t r, llvm::IRBuilder<>& irb);
+		llvm::Instruction* storeQuadView(uint32_t r, llvm::Value* val, llvm::IRBuilder<>& irb);
 		static bool isScalarVfp(cs_arm* ai);
+		bool insnWriteback() const;
 		llvm::Type* vfpTypeOfReg(uint32_t r, llvm::IRBuilder<>& irb);
 		llvm::Value* loadVfpOp(cs_arm_op& op, llvm::IRBuilder<>& irb, llvm::Type* ty);
+
+		static unsigned neonBitWidth(uint32_t r);
+		static unsigned vectorDataLaneBits(arm_vectordata_type vd, bool& isFp, bool& isSigned);
+		static int operandLane(const cs_arm_op& op);
+		llvm::Value* loadNeonBits(uint32_t r, llvm::IRBuilder<>& irb);
+		llvm::Instruction* storeNeonBits(uint32_t r, llvm::Value* bits, llvm::IRBuilder<>& irb);
+		llvm::Value* loadNeonVector(uint32_t r, unsigned laneBits, bool fp, llvm::IRBuilder<>& irb);
+		llvm::Instruction* storeNeonVector(uint32_t r, llvm::Value* vec, llvm::IRBuilder<>& irb);
+		bool neonBinaryRegs(cs_arm* ai, unsigned nRegs, unsigned& bits);
 
 		void translateVfpArithm(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateVfpCmp(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
@@ -170,6 +206,23 @@ class Capstone2LlvmIrTranslatorArm_impl :
 		void translateVfpMov(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateVfpUnary(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateVmrs(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateVmsr(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateVfpLdmStm(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateNeonArith(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateNeonLogic(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateNeonCmp(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateNeonShift(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateNeonDup(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateNeonExt(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateNeonSwp(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateNeonLdSt1(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateNeonRev(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateQadd(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateDualMul(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateUmaal(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateUsad8(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateSat16(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateSmmul(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 
 		void translateAdd(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateAnd(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);

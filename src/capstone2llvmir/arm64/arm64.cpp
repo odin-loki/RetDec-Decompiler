@@ -67,40 +67,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::generateDataLayout()
 
 void Capstone2LlvmIrTranslatorArm64_impl::generateRegisters()
 {
-	// FP&SIMD registers
-	createRegister(ARM64_REG_V0, _regLt);
-	createRegister(ARM64_REG_V1, _regLt);
-	createRegister(ARM64_REG_V2, _regLt);
-	createRegister(ARM64_REG_V3, _regLt);
-	createRegister(ARM64_REG_V4, _regLt);
-	createRegister(ARM64_REG_V5, _regLt);
-	createRegister(ARM64_REG_V6, _regLt);
-	createRegister(ARM64_REG_V7, _regLt);
-	createRegister(ARM64_REG_V8, _regLt);
-	createRegister(ARM64_REG_V9, _regLt);
-	createRegister(ARM64_REG_V10, _regLt);
-	createRegister(ARM64_REG_V11, _regLt);
-	createRegister(ARM64_REG_V12, _regLt);
-	createRegister(ARM64_REG_V13, _regLt);
-	createRegister(ARM64_REG_V14, _regLt);
-	createRegister(ARM64_REG_V15, _regLt);
-	createRegister(ARM64_REG_V16, _regLt);
-	createRegister(ARM64_REG_V17, _regLt);
-	createRegister(ARM64_REG_V18, _regLt);
-	createRegister(ARM64_REG_V19, _regLt);
-	createRegister(ARM64_REG_V20, _regLt);
-	createRegister(ARM64_REG_V21, _regLt);
-	createRegister(ARM64_REG_V22, _regLt);
-	createRegister(ARM64_REG_V23, _regLt);
-	createRegister(ARM64_REG_V24, _regLt);
-	createRegister(ARM64_REG_V25, _regLt);
-	createRegister(ARM64_REG_V26, _regLt);
-	createRegister(ARM64_REG_V27, _regLt);
-	createRegister(ARM64_REG_V28, _regLt);
-	createRegister(ARM64_REG_V29, _regLt);
-	createRegister(ARM64_REG_V30, _regLt);
-	createRegister(ARM64_REG_V31, _regLt);
-
+	// FP&SIMD registers. Capstone 6.x has no ARM64_REG_Vn; Qn is the 128-bit
+	// SIMD parent and Bn/Hn/Sn/Dn are nested views of the same bits.
 	createRegister(ARM64_REG_Q0, _regLt);
 	createRegister(ARM64_REG_Q1, _regLt);
 	createRegister(ARM64_REG_Q2, _regLt);
@@ -1312,7 +1280,9 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateSysRegMove(cs_insn* i, cs_arm
 		return;
 	}
 
-	auto* sysReg = getRegister(sysOp.sys);
+	// Capstone 6.x: the 5.x `.sys` union member is `sysop.reg.sysreg`.
+	auto sysId = static_cast<uint32_t>(sysOp.sysop.reg.sysreg);
+	auto* sysReg = getRegister(sysId);
 	if (sysReg == nullptr)
 	{
 		translatePseudoAsmGeneric(i, ai, irb);
@@ -1321,11 +1291,11 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateSysRegMove(cs_insn* i, cs_arm
 
 	if (read)
 	{
-		storeOp(gprOp, loadRegister(sysOp.sys, irb), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		storeOp(gprOp, loadRegister(sysId, irb), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 	}
 	else
 	{
-		storeRegister(sysOp.sys, loadOp(gprOp, irb), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		storeRegister(sysId, loadOp(gprOp, irb), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 	}
 }
 
@@ -1352,9 +1322,9 @@ static std::pair<unsigned, unsigned> vasLanes(arm64_vas vas)
 }
 
 /**
- * True if every operand in [0, n) is a plain V register with a modelled
- * arrangement of the same total width, and none of them is lane-indexed.
- * Writes that width, in bytes, through \p bytes.
+ * True if every operand in [0, n) is a SIMD register (Qn, or Dn with a
+ * 64-bit arrangement) with a modelled arrangement of the same total width,
+ * and none of them is lane-indexed. Writes that width, in bytes, through \p bytes.
  */
 bool Capstone2LlvmIrTranslatorArm64_impl::neonSameWidthRegs(cs_arm64* ai, unsigned n, unsigned& bytes)
 {
@@ -1520,7 +1490,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonCmp(cs_insn* i, cs_arm64*
 }
 
 /**
- * True if any operand of this instruction is a NEON V register.
+ * True if any operand of this instruction is a NEON SIMD register (Qn, or
+ * Dn with an arrangement).
  *
  * ifVectorGeneratePseudo() has this loop inline and acts on it by emitting a
  * pseudo-assembly call. The lane operations below are modelled, so the two
@@ -1684,6 +1655,57 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonLaneBinary(cs_insn* i, cs
 	case ARM64_INS_SMAXP: res = irb.CreateSelect(irb.CreateICmpSGT(a, b), a, b); break;
 	case ARM64_INS_SMIN:
 	case ARM64_INS_SMINP: res = irb.CreateSelect(irb.CreateICmpSLT(a, b), a, b); break;
+	default: translatePseudoAsmGeneric(i, ai, irb); return;
+	}
+
+	storeRegister(ai->operands[0].reg, irb.CreateBitCast(res, w), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * ARM64_INS_FADD, ARM64_INS_FSUB, ARM64_INS_FMUL, ARM64_INS_FDIV, ARM64_INS_FNMUL
+ *
+ * The NEON floating-point operations gcc/clang emit for auto-vectorized
+ * float/double arithmetic: `fadd v0.4s, v1.4s, v2.4s` is four IEEE adds,
+ * not a 128-bit integer add and not `__asm_fadd`.
+ *
+ * Only 32-bit (`.2s`/`.4s`) and 64-bit (`.2d`) lanes are modelled. Half-
+ * precision arrangements have no scalar FP type in this translator and stay
+ * on the pseudo-asm path. A 64-bit arrangement writes 64 bits and zeroes
+ * the upper half of Qn, which is what every D-form write does.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateNeonFpLaneBinary(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	unsigned bytes = 0;
+	if (ai->op_count != 3 || !neonSameWidthRegs(ai, 3, bytes))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto [laneBits, lanes] = vasLanes(ai->operands[0].vas);
+	if (laneBits != 32 && laneBits != 64)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* w = irb.getIntNTy(bytes * 8);
+	llvm::Type* elemTy = laneBits == 32
+						 ? static_cast<llvm::Type*>(irb.getFloatTy())
+						 : static_cast<llvm::Type*>(irb.getDoubleTy());
+	auto* vecTy = llvm::FixedVectorType::get(elemTy, lanes);
+
+	llvm::Value* a = irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(ai->operands[1].reg, irb), w), vecTy);
+	llvm::Value* b = irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(ai->operands[2].reg, irb), w), vecTy);
+
+	llvm::Value* res = nullptr;
+	switch (i->id)
+	{
+	case ARM64_INS_FADD: res = irb.CreateFAdd(a, b); break;
+	case ARM64_INS_FSUB: res = irb.CreateFSub(a, b); break;
+	case ARM64_INS_FMUL: res = irb.CreateFMul(a, b); break;
+	case ARM64_INS_FDIV: res = irb.CreateFDiv(a, b); break;
+	case ARM64_INS_FNMUL: res = irb.CreateFNeg(irb.CreateFMul(a, b)); break;
 	default: translatePseudoAsmGeneric(i, ai, irb); return;
 	}
 
@@ -2157,7 +2179,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonLoadStore(cs_insn* i, cs_
 
 	auto& memOp = ai->operands[ai->op_count - 1];
 	unsigned regs = ai->op_count - 1;
-	if (memOp.type != ARM64_OP_MEM || ai->writeback)
+	if (memOp.type != ARM64_OP_MEM || (i->detail && i->detail->writeback))
 	{
 		translatePseudoAsmGeneric(i, ai, irb);
 		return;
@@ -2539,7 +2561,17 @@ bool Capstone2LlvmIrTranslatorArm64_impl::isFPRegister(cs_arm64_op& op, bool onl
 
 bool Capstone2LlvmIrTranslatorArm64_impl::isVectorRegister(cs_arm64_op& op) const
 {
-	return op.type == ARM64_OP_REG && op.reg >= ARM64_REG_V0 && op.reg <= ARM64_REG_V31;
+	if (op.type != ARM64_OP_REG)
+	{
+		return false;
+	}
+	// Capstone 6.x dropped ARM64_REG_Vn; Qn is the 128-bit SIMD register.
+	if (op.reg >= ARM64_REG_Q0 && op.reg <= ARM64_REG_Q31)
+	{
+		return true;
+	}
+	// 64-bit NEON arrangements (`v0.8b`, `v0.2s`) may be reported as Dn.
+	return op.vas != ARM64_VAS_INVALID && op.reg >= ARM64_REG_D0 && op.reg <= ARM64_REG_D31;
 }
 
 uint8_t Capstone2LlvmIrTranslatorArm64_impl::getOperandAccess(cs_arm64_op& op)
@@ -3076,7 +3108,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateStr(cs_insn* i, cs_arm64* ai,
 		throw GenericError("STR: unsupported STR format");
 	}
 
-	if (ai->writeback && baseR != ARM64_REG_INVALID)
+	if (i->detail && i->detail->writeback && baseR != ARM64_REG_INVALID)
 	{
 		storeRegister(baseR, dest, irb);
 	}
@@ -3201,7 +3233,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateStp(cs_insn* i, cs_arm64* ai,
 		throw GenericError("STR: unsupported STP format");
 	}
 
-	if (ai->writeback && baseR != ARM64_REG_INVALID)
+	if (i->detail && i->detail->writeback && baseR != ARM64_REG_INVALID)
 	{
 		storeRegister(baseR, wbAddr, irb);
 	}
@@ -3339,7 +3371,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdr(cs_insn* i, cs_arm64* ai,
 		throw GenericError("Arm64: unsupported ldr format");
 	}
 
-	if (ai->writeback && baseR != ARM64_REG_INVALID)
+	if (i->detail && i->detail->writeback && baseR != ARM64_REG_INVALID)
 	{
 		storeRegister(baseR, dest, irb);
 	}
@@ -3425,7 +3457,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdp(cs_insn* i, cs_arm64* ai,
 		}
 	}
 
-	if (ai->writeback && baseR != ARM64_REG_INVALID)
+	if (i->detail && i->detail->writeback && baseR != ARM64_REG_INVALID)
 	{
 		storeRegister(baseR, dest, irb);
 	}
@@ -4412,9 +4444,10 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFAdd(cs_insn* i, cs_arm64* ai
 {
 	EXPECT_IS_TERNARY(i, ai, irb);
 
-	if (ifVectorGeneratePseudo(i, ai, irb))
+	if (hasVectorOperand(ai))
 	{
-	    return;
+		translateNeonFpLaneBinary(i, ai, irb);
+		return;
 	}
 
 	op1 = loadOp(ai->operands[1], irb);
@@ -4683,9 +4716,10 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFDiv(cs_insn* i, cs_arm64* ai
 {
 	EXPECT_IS_TERNARY(i, ai, irb);
 
-	if (ifVectorGeneratePseudo(i, ai, irb))
+	if (hasVectorOperand(ai))
 	{
-	    return;
+		translateNeonFpLaneBinary(i, ai, irb);
+		return;
 	}
 
 	op1 = loadOp(ai->operands[1], irb);
@@ -4837,9 +4871,10 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFMul(cs_insn* i, cs_arm64* ai
 {
 	EXPECT_IS_TERNARY(i, ai, irb);
 
-	if (ifVectorGeneratePseudo(i, ai, irb))
+	if (hasVectorOperand(ai))
 	{
-	    return;
+		translateNeonFpLaneBinary(i, ai, irb);
+		return;
 	}
 
 	op1 = loadOp(ai->operands[1], irb);
@@ -4880,9 +4915,10 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFSub(cs_insn* i, cs_arm64* ai
 {
 	EXPECT_IS_TERNARY(i, ai, irb);
 
-	if (ifVectorGeneratePseudo(i, ai, irb))
+	if (hasVectorOperand(ai))
 	{
-	    return;
+		translateNeonFpLaneBinary(i, ai, irb);
+		return;
 	}
 
 	op1 = loadOp(ai->operands[1], irb);

@@ -24,11 +24,12 @@ if(NOT CPUS GREATER 0)
 	set(CPUS 4)
 endif()
 
-set(RETDEC_OPENSSL_VERSION "3.2.6")
+set(RETDEC_OPENSSL_VERSION "3.5.8")
 set(RETDEC_OSSL_TARBALL "openssl-${RETDEC_OPENSSL_VERSION}.tar.gz")
 set(RETDEC_OSSL_URL "https://github.com/openssl/openssl/releases/download/openssl-${RETDEC_OPENSSL_VERSION}/${RETDEC_OSSL_TARBALL}")
-# Official GitHub release SHA256 for OpenSSL 3.2.6.
-set(RETDEC_OSSL_SHA256 "89681a9ddaa9ed7cf25ea8ef61338db805200bae47d00510490623547380c148")
+# Official GitHub release SHA256 for OpenSSL 3.5.8
+# (openssl-3.5.8.tar.gz.sha256; verified against the downloaded tarball).
+set(RETDEC_OSSL_SHA256 "a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2")
 
 set(RETDEC_OPENSSL_INSTALL_DIR "${EP_PREFIX}/openssl-install")
 # CMake 3.24+ may reject INTERFACE_INCLUDE_DIRECTORIES that do not exist yet;

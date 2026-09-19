@@ -25,26 +25,19 @@ include(ExternalProject)
 set(ZLIB_INSTALL_DIR "${EP_PREFIX}/zlib-install")
 file(MAKE_DIRECTORY "${ZLIB_INSTALL_DIR}/include")
 
-# zlib's CMake calls the static target `zlibstatic` on every platform, so the
-# file name is the platform's own decoration of that: libzlibstatic.a under
-# MinGW and GNU, zlibstatic.lib under MSVC. It was hardcoded to the MinGW
-# spelling while this was a MinGW-only directory.
-#
-# The `d` is zlib's, not CMake's. It sets the debug postfix on its own targets,
-# which beats the CMAKE_DEBUG_POSTFIX this passed in, so a Debug build installs
-# zlibstaticd.lib whatever we ask for. Measured, from the first Windows run
-# that got this far:
-#
-#     -- Installing: .../zlib-install/lib/zlibstaticd.lib
-#
-# ctest-windows configures full-windows-debug, so this is the build that name
-# has to be right for.
+# zlib 1.3.2 rewrote its CMake: the static target is still `zlibstatic`, but
+# OUTPUT_NAME is `z` on Unix and `zs` on WIN32. CMAKE_DEBUG_POSTFIX is `d` on
+# WIN32, so Debug installs zsd.lib / libzsd.a. Unix Debug stays libz.a.
+set(_zlib_output_name "z")
+if(WIN32)
+	set(_zlib_output_name "zs")
+endif()
 set(_zlib_postfix "")
-if(MSVC AND RETDEC_EP_CMAKE_BUILD_TYPE STREQUAL "Debug")
+if(WIN32 AND RETDEC_EP_CMAKE_BUILD_TYPE STREQUAL "Debug")
 	set(_zlib_postfix "d")
 endif()
 set(RETDEC_ZLIB_STATIC_LIB
-	"${ZLIB_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}zlibstatic${_zlib_postfix}${CMAKE_STATIC_LIBRARY_SUFFIX}")
+	"${ZLIB_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}${_zlib_output_name}${_zlib_postfix}${CMAKE_STATIC_LIBRARY_SUFFIX}")
 set(_RETDEC_ZLIB_EP "${CMAKE_BINARY_DIR}/external/zlib-ep")
 
 set(_ZLIB_CMAKE_EXTRA "")
@@ -92,7 +85,7 @@ ExternalProject_Add(retdec-zlib
 	# argument with a semicolon in it.
 	URL ${ZLIB_URL}
 	URL_HASH "SHA256=${ZLIB_ARCHIVE_SHA256}"
-	DOWNLOAD_NAME zlib-1.3.1.tar.gz
+	DOWNLOAD_NAME zlib-1.3.2.tar.gz
 	DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 	CMAKE_ARGS
 		-DCMAKE_INSTALL_PREFIX=${ZLIB_INSTALL_DIR}
@@ -102,7 +95,9 @@ ExternalProject_Add(retdec-zlib
 		-DCMAKE_BUILD_TYPE=${RETDEC_EP_CMAKE_BUILD_TYPE}
 		-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
 		"${CMAKE_C_COMPILER_OPTION}"
-		-DBUILD_SHARED_LIBS=OFF
+		-DZLIB_BUILD_SHARED=OFF
+		-DZLIB_BUILD_STATIC=ON
+		-DZLIB_BUILD_TESTING=OFF
 		-DCMAKE_POSITION_INDEPENDENT_CODE=${CMAKE_POSITION_INDEPENDENT_CODE}
 		-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY
 		${_ZLIB_CMAKE_EXTRA}

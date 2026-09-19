@@ -61,6 +61,10 @@ enum class SassOpcode
 	Fadd,
 	S2r,
 	Ldc,
+	ImadWide, ///< IMAD.WIDE — CUDA Binary Utilities 13.3 (`…7825`)
+	Shfl,     ///< SHFL.IDX — CUDA Binary Utilities 12.8.2 (`…f389`)
+	S2ur,     ///< S2UR — CUDA Binary Utilities 13.3 (`…79c3`)
+	Ldcu,     ///< LDCU — CUDA Binary Utilities 13.3 (`…77ac`)
 };
 
 const char* sassOpcodeName(SassOpcode op);

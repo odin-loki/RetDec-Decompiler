@@ -77,7 +77,7 @@ See [docs/internal/D7_DECISION.md](internal/D7_DECISION.md).
 
 | Capability | Benefit |
 |------------|---------|
-| **Broad input formats** | One toolchain for native binaries, WASM, JVM/DEX, .NET, Python, and Lua artifacts. Native CPU integer/control-flow lifting is Production for x86/x86-64, ARM/Thumb, ARM64, MIPS, PIC32, PowerPC, RISC-V, SPARC, SystemZ, and XCore. SIMD/FP may still be pseudo-asm. SASS is a cubin/fatbin probe, not Production. |
+| **Broad input formats** | One toolchain for native binaries, WASM, JVM/DEX, .NET, Python, and Lua artifacts. Native CPU lifting is Production for x86/x86-64, ARM/Thumb, ARM64, MIPS, PIC32, PowerPC, RISC-V, SPARC, SystemZ, and XCore (compiler integer, FP, and mapped SIMD/atomics). Leftover specialized IDs may still be pseudo-asm. SASS is a cubin/fatbin probe, not Production. |
 | **Input-keyed output** | Native binaries emit C. Managed formats emit that format’s language. Not a free-choice eleven-language native list. |
 | **Semantic recovery** | Post-pipeline detectors label containers, algorithms, crypto, concurrency, and serialisation in comments/JSON. They do not emit idiomatic C++. Name-blind F1 is 0.056. |
 | **GPU backends (experimental)** | CUDA (`cuda_accel`) and OpenCL exist in-tree, default-OFF, **unintegrated**, not a product feature. |

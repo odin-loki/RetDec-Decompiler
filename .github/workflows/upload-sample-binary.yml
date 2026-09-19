@@ -10,7 +10,7 @@ on:
       tag:
         description: Release tag to receive fib_smoke
         required: false
-        default: v2.0.24
+        default: v2.0.25
   push:
     branches: [main]
     paths:
@@ -53,7 +53,7 @@ jobs:
               exit 0
             fi
           else
-            TAG="v2.0.24"
+            TAG="v2.0.25"
           fi
           gcc -O1 -o /tmp/fib_smoke tests/test_binaries/fib.c
           test -x /tmp/fib_smoke
@@ -82,7 +82,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:
           arch: x64
 
@@ -106,7 +106,7 @@ jobs:
               exit 0
             }
           } else {
-            $env:TAG = "v2.0.24"
+            $env:TAG = "v2.0.25"
           }
           # Same MSVC flags as tests/decompiler/CMakeLists.txt retdec-decompiler-fixture-fib.
           cmd /c "cl /nologo /Od /Ob0 /Oi- /GS- /Oy- /guard:cf- /Fefib_smoke.exe tests\test_binaries\fib.c /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO /EXPORT:main"

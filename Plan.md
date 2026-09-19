@@ -1769,7 +1769,7 @@ Every figure in this document, with its source, for checking.
 | UBSan | **OFF** in `asan-ubsan` | `sanitizers.yml:46` |
 | `support/models.json` | `{"models": []}` | — |
 | HLL writers | 1 (`c_hll_writer.cpp`) | `src/llvmir2hll/hll/hll_writers/` |
-| Dependency pins | LLVM `avast/llvm@a776c2a`, Capstone 5.0.9, Keystone 0.9.2, OpenSSL 3.2.6, llama.cpp b10451, tree-sitter-c 0.24.2, support pkg 2019-03-08 | `cmake/deps.cmake` |
+| Dependency pins | LLVM `avast/llvm@a776c2a`, Capstone 5.0.9, Keystone 0.9.2, OpenSSL 3.5.8, llama.cpp b10451, tree-sitter-c 0.24.2, support pkg 2019-03-08 | `cmake/deps.cmake` |
 
 ## B.4 Corrections from earlier review parts
 

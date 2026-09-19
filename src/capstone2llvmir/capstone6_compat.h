@@ -1,0 +1,2920 @@
+/**
+ * @file src/capstone2llvmir/capstone6_compat.h
+ * @brief Private Capstone 5.x name aliases onto Capstone 6 enumerators.
+ * @copyright (c) 2026 Odin Loch trading as Imortek
+ *
+ * Each #define is emitted only when the 6.x token exists in the installed
+ * Capstone 6.0.0-Alpha10 headers. Include after Capstone headers.
+ */
+
+#ifndef CAPSTONE2LLVMIR_CAPSTONE6_COMPAT_H
+#define CAPSTONE2LLVMIR_CAPSTONE6_COMPAT_H
+
+/* 6.x type names: keep signatures matching installed structs/enums. */
+#ifndef arm64_extender
+#define arm64_extender aarch64_extender /* 6.x: aarch64_extender */
+#endif
+#ifndef sysz_cc
+#define sysz_cc systemz_cc /* 6.x: systemz_cc */
+#endif
+
+
+#ifndef ARM64_INS_AT
+#define ARM64_INS_AT ARM64_INS_ALIAS_AT /* 6.x: ARM64_INS_ALIAS_AT */
+#endif
+#ifndef ARM64_INS_AUTIASP
+#define ARM64_INS_AUTIASP ARM64_INS_ALIAS_AUTIASP /* 6.x: ARM64_INS_ALIAS_AUTIASP */
+#endif
+#ifndef ARM64_INS_AUTIAZ
+#define ARM64_INS_AUTIAZ ARM64_INS_ALIAS_AUTIAZ /* 6.x: ARM64_INS_ALIAS_AUTIAZ */
+#endif
+#ifndef ARM64_INS_AUTIBSP
+#define ARM64_INS_AUTIBSP ARM64_INS_ALIAS_AUTIBSP /* 6.x: ARM64_INS_ALIAS_AUTIBSP */
+#endif
+#ifndef ARM64_INS_BFI
+#define ARM64_INS_BFI ARM64_INS_ALIAS_BFI /* 6.x: ARM64_INS_ALIAS_BFI */
+#endif
+#ifndef ARM64_INS_BFXIL
+#define ARM64_INS_BFXIL ARM64_INS_ALIAS_BFXIL /* 6.x: ARM64_INS_ALIAS_BFXIL */
+#endif
+#ifndef ARM64_INS_BTI
+#define ARM64_INS_BTI ARM64_INS_ALIAS_BTI /* 6.x: ARM64_INS_ALIAS_BTI */
+#endif
+#ifndef ARM64_INS_CINC
+#define ARM64_INS_CINC ARM64_INS_ALIAS_CINC /* 6.x: ARM64_INS_ALIAS_CINC */
+#endif
+#ifndef ARM64_INS_CINV
+#define ARM64_INS_CINV ARM64_INS_ALIAS_CINV /* 6.x: ARM64_INS_ALIAS_CINV */
+#endif
+#ifndef ARM64_INS_CMN
+#define ARM64_INS_CMN ARM64_INS_ALIAS_CMN /* 6.x: ARM64_INS_ALIAS_CMN */
+#endif
+#ifndef ARM64_INS_CMP
+#define ARM64_INS_CMP ARM64_INS_ALIAS_CMP /* 6.x: ARM64_INS_ALIAS_CMP */
+#endif
+#ifndef ARM64_INS_CNEG
+#define ARM64_INS_CNEG ARM64_INS_ALIAS_CNEG /* 6.x: ARM64_INS_ALIAS_CNEG */
+#endif
+#ifndef ARM64_INS_CSET
+#define ARM64_INS_CSET ARM64_INS_ALIAS_CSET /* 6.x: ARM64_INS_ALIAS_CSET */
+#endif
+#ifndef ARM64_INS_CSETM
+#define ARM64_INS_CSETM ARM64_INS_ALIAS_CSETM /* 6.x: ARM64_INS_ALIAS_CSETM */
+#endif
+#ifndef ARM64_INS_DC
+#define ARM64_INS_DC ARM64_INS_ALIAS_DC /* 6.x: ARM64_INS_ALIAS_DC */
+#endif
+#ifndef ARM64_INS_IC
+#define ARM64_INS_IC ARM64_INS_ALIAS_IC /* 6.x: ARM64_INS_ALIAS_IC */
+#endif
+#ifndef ARM64_INS_MNEG
+#define ARM64_INS_MNEG ARM64_INS_ALIAS_MNEG /* 6.x: ARM64_INS_ALIAS_MNEG */
+#endif
+#ifndef ARM64_INS_MVN
+#define ARM64_INS_MVN ARM64_INS_ALIAS_MVN /* 6.x: ARM64_INS_ALIAS_MVN */
+#endif
+#ifndef ARM64_INS_NEGS
+#define ARM64_INS_NEGS ARM64_INS_ALIAS_NEGS /* 6.x: ARM64_INS_ALIAS_NEGS */
+#endif
+#ifndef ARM64_INS_NGC
+#define ARM64_INS_NGC ARM64_INS_ALIAS_NGC /* 6.x: ARM64_INS_ALIAS_NGC */
+#endif
+#ifndef ARM64_INS_NGCS
+#define ARM64_INS_NGCS ARM64_INS_ALIAS_NGCS /* 6.x: ARM64_INS_ALIAS_NGCS */
+#endif
+#ifndef ARM64_INS_NOP
+#define ARM64_INS_NOP ARM64_INS_ALIAS_NOP /* 6.x: ARM64_INS_ALIAS_NOP */
+#endif
+#ifndef ARM64_INS_PACIASP
+#define ARM64_INS_PACIASP ARM64_INS_ALIAS_PACIASP /* 6.x: ARM64_INS_ALIAS_PACIASP */
+#endif
+#ifndef ARM64_INS_PACIAZ
+#define ARM64_INS_PACIAZ ARM64_INS_ALIAS_PACIAZ /* 6.x: ARM64_INS_ALIAS_PACIAZ */
+#endif
+#ifndef ARM64_INS_PACIBSP
+#define ARM64_INS_PACIBSP ARM64_INS_ALIAS_PACIBSP /* 6.x: ARM64_INS_ALIAS_PACIBSP */
+#endif
+#ifndef ARM64_INS_SBFIZ
+#define ARM64_INS_SBFIZ ARM64_INS_ALIAS_SBFIZ /* 6.x: ARM64_INS_ALIAS_SBFIZ */
+#endif
+#ifndef ARM64_INS_SBFX
+#define ARM64_INS_SBFX ARM64_INS_ALIAS_SBFX /* 6.x: ARM64_INS_ALIAS_SBFX */
+#endif
+#ifndef ARM64_INS_SEV
+#define ARM64_INS_SEV ARM64_INS_ALIAS_SEV /* 6.x: ARM64_INS_ALIAS_SEV */
+#endif
+#ifndef ARM64_INS_SEVL
+#define ARM64_INS_SEVL ARM64_INS_ALIAS_SEVL /* 6.x: ARM64_INS_ALIAS_SEVL */
+#endif
+#ifndef ARM64_INS_SMNEGL
+#define ARM64_INS_SMNEGL ARM64_INS_ALIAS_SMNEGL /* 6.x: ARM64_INS_ALIAS_SMNEGL */
+#endif
+#ifndef ARM64_INS_TLBI
+#define ARM64_INS_TLBI ARM64_INS_ALIAS_TLBI /* 6.x: ARM64_INS_ALIAS_TLBI */
+#endif
+#ifndef ARM64_INS_TST
+#define ARM64_INS_TST ARM64_INS_ALIAS_TST /* 6.x: ARM64_INS_ALIAS_TST */
+#endif
+#ifndef ARM64_INS_UBFIZ
+#define ARM64_INS_UBFIZ ARM64_INS_ALIAS_UBFIZ /* 6.x: ARM64_INS_ALIAS_UBFIZ */
+#endif
+#ifndef ARM64_INS_UBFX
+#define ARM64_INS_UBFX ARM64_INS_ALIAS_UBFX /* 6.x: ARM64_INS_ALIAS_UBFX */
+#endif
+#ifndef ARM64_INS_UMNEGL
+#define ARM64_INS_UMNEGL ARM64_INS_ALIAS_UMNEGL /* 6.x: ARM64_INS_ALIAS_UMNEGL */
+#endif
+#ifndef ARM64_INS_WFE
+#define ARM64_INS_WFE ARM64_INS_ALIAS_WFE /* 6.x: ARM64_INS_ALIAS_WFE */
+#endif
+#ifndef ARM64_INS_WFI
+#define ARM64_INS_WFI ARM64_INS_ALIAS_WFI /* 6.x: ARM64_INS_ALIAS_WFI */
+#endif
+#ifndef ARM64_INS_XPACLRI
+#define ARM64_INS_XPACLRI ARM64_INS_ALIAS_XPACLRI /* 6.x: ARM64_INS_ALIAS_XPACLRI */
+#endif
+#ifndef ARM64_INS_YIELD
+#define ARM64_INS_YIELD ARM64_INS_ALIAS_YIELD /* 6.x: ARM64_INS_ALIAS_YIELD */
+#endif
+#ifndef ARM64_OP_BARRIER
+#define ARM64_OP_BARRIER ARM64_OP_DB /* 6.x: ARM64_OP_DB */
+#endif
+#ifndef ARM64_OP_PREFETCH
+#define ARM64_OP_PREFETCH ARM64_OP_PRFM /* 6.x: ARM64_OP_PRFM */
+#endif
+#ifndef ARM64_OP_PSTATE
+#define ARM64_OP_PSTATE ARM64_OP_PSTATEIMM0_15 /* 6.x: ARM64_OP_PSTATEIMM0_15 */
+#endif
+#ifndef ARM64_OP_SYS
+#define ARM64_OP_SYS ARM64_OP_SYSREG /* 6.x: ARM64_OP_SYSREG */
+#endif
+#ifndef ARM64_PSTATE_DAIFCLR
+#define ARM64_PSTATE_DAIFCLR ARM64_PSTATEIMM0_15_DAIFCLR /* 6.x: ARM64_PSTATEIMM0_15_DAIFCLR */
+#endif
+#ifndef ARM64_PSTATE_DAIFSET
+#define ARM64_PSTATE_DAIFSET ARM64_PSTATEIMM0_15_DAIFSET /* 6.x: ARM64_PSTATEIMM0_15_DAIFSET */
+#endif
+#ifndef ARM64_PSTATE_SPSEL
+#define ARM64_PSTATE_SPSEL ARM64_PSTATEIMM0_15_SPSEL /* 6.x: ARM64_PSTATEIMM0_15_SPSEL */
+#endif
+#ifndef ARM64_REG_V0
+#define ARM64_REG_V0 ARM64_REG_Q0 /* 6.x: ARM64_REG_Q0 */
+#endif
+#ifndef ARM64_REG_V1
+#define ARM64_REG_V1 ARM64_REG_Q1 /* 6.x: ARM64_REG_Q1 */
+#endif
+#ifndef ARM64_REG_V10
+#define ARM64_REG_V10 ARM64_REG_Q10 /* 6.x: ARM64_REG_Q10 */
+#endif
+#ifndef ARM64_REG_V11
+#define ARM64_REG_V11 ARM64_REG_Q11 /* 6.x: ARM64_REG_Q11 */
+#endif
+#ifndef ARM64_REG_V12
+#define ARM64_REG_V12 ARM64_REG_Q12 /* 6.x: ARM64_REG_Q12 */
+#endif
+#ifndef ARM64_REG_V13
+#define ARM64_REG_V13 ARM64_REG_Q13 /* 6.x: ARM64_REG_Q13 */
+#endif
+#ifndef ARM64_REG_V14
+#define ARM64_REG_V14 ARM64_REG_Q14 /* 6.x: ARM64_REG_Q14 */
+#endif
+#ifndef ARM64_REG_V15
+#define ARM64_REG_V15 ARM64_REG_Q15 /* 6.x: ARM64_REG_Q15 */
+#endif
+#ifndef ARM64_REG_V16
+#define ARM64_REG_V16 ARM64_REG_Q16 /* 6.x: ARM64_REG_Q16 */
+#endif
+#ifndef ARM64_REG_V17
+#define ARM64_REG_V17 ARM64_REG_Q17 /* 6.x: ARM64_REG_Q17 */
+#endif
+#ifndef ARM64_REG_V18
+#define ARM64_REG_V18 ARM64_REG_Q18 /* 6.x: ARM64_REG_Q18 */
+#endif
+#ifndef ARM64_REG_V19
+#define ARM64_REG_V19 ARM64_REG_Q19 /* 6.x: ARM64_REG_Q19 */
+#endif
+#ifndef ARM64_REG_V2
+#define ARM64_REG_V2 ARM64_REG_Q2 /* 6.x: ARM64_REG_Q2 */
+#endif
+#ifndef ARM64_REG_V20
+#define ARM64_REG_V20 ARM64_REG_Q20 /* 6.x: ARM64_REG_Q20 */
+#endif
+#ifndef ARM64_REG_V21
+#define ARM64_REG_V21 ARM64_REG_Q21 /* 6.x: ARM64_REG_Q21 */
+#endif
+#ifndef ARM64_REG_V22
+#define ARM64_REG_V22 ARM64_REG_Q22 /* 6.x: ARM64_REG_Q22 */
+#endif
+#ifndef ARM64_REG_V23
+#define ARM64_REG_V23 ARM64_REG_Q23 /* 6.x: ARM64_REG_Q23 */
+#endif
+#ifndef ARM64_REG_V24
+#define ARM64_REG_V24 ARM64_REG_Q24 /* 6.x: ARM64_REG_Q24 */
+#endif
+#ifndef ARM64_REG_V25
+#define ARM64_REG_V25 ARM64_REG_Q25 /* 6.x: ARM64_REG_Q25 */
+#endif
+#ifndef ARM64_REG_V26
+#define ARM64_REG_V26 ARM64_REG_Q26 /* 6.x: ARM64_REG_Q26 */
+#endif
+#ifndef ARM64_REG_V27
+#define ARM64_REG_V27 ARM64_REG_Q27 /* 6.x: ARM64_REG_Q27 */
+#endif
+#ifndef ARM64_REG_V28
+#define ARM64_REG_V28 ARM64_REG_Q28 /* 6.x: ARM64_REG_Q28 */
+#endif
+#ifndef ARM64_REG_V29
+#define ARM64_REG_V29 ARM64_REG_Q29 /* 6.x: ARM64_REG_Q29 */
+#endif
+#ifndef ARM64_REG_V3
+#define ARM64_REG_V3 ARM64_REG_Q3 /* 6.x: ARM64_REG_Q3 */
+#endif
+#ifndef ARM64_REG_V30
+#define ARM64_REG_V30 ARM64_REG_Q30 /* 6.x: ARM64_REG_Q30 */
+#endif
+#ifndef ARM64_REG_V31
+#define ARM64_REG_V31 ARM64_REG_Q31 /* 6.x: ARM64_REG_Q31 */
+#endif
+#ifndef ARM64_REG_V4
+#define ARM64_REG_V4 ARM64_REG_Q4 /* 6.x: ARM64_REG_Q4 */
+#endif
+#ifndef ARM64_REG_V5
+#define ARM64_REG_V5 ARM64_REG_Q5 /* 6.x: ARM64_REG_Q5 */
+#endif
+#ifndef ARM64_REG_V6
+#define ARM64_REG_V6 ARM64_REG_Q6 /* 6.x: ARM64_REG_Q6 */
+#endif
+#ifndef ARM64_REG_V7
+#define ARM64_REG_V7 ARM64_REG_Q7 /* 6.x: ARM64_REG_Q7 */
+#endif
+#ifndef ARM64_REG_V8
+#define ARM64_REG_V8 ARM64_REG_Q8 /* 6.x: ARM64_REG_Q8 */
+#endif
+#ifndef ARM64_REG_V9
+#define ARM64_REG_V9 ARM64_REG_Q9 /* 6.x: ARM64_REG_Q9 */
+#endif
+#ifndef ARM_INS_CSDB
+#define ARM_INS_CSDB ARM_INS_ALIAS_CSDB /* 6.x: ARM_INS_ALIAS_CSDB */
+#endif
+#ifndef ARM_INS_DFB
+#define ARM_INS_DFB ARM_INS_ALIAS_DFB /* 6.x: ARM_INS_ALIAS_DFB */
+#endif
+#ifndef ARM_INS_ESB
+#define ARM_INS_ESB ARM_INS_ALIAS_ESB /* 6.x: ARM_INS_ALIAS_ESB */
+#endif
+#ifndef ARM_INS_NOP
+#define ARM_INS_NOP ARM_INS_ALIAS_NOP /* 6.x: ARM_INS_ALIAS_NOP */
+#endif
+#ifndef ARM_INS_SEV
+#define ARM_INS_SEV ARM_INS_ALIAS_SEV /* 6.x: ARM_INS_ALIAS_SEV */
+#endif
+#ifndef ARM_INS_SEVL
+#define ARM_INS_SEVL ARM_INS_ALIAS_SEVL /* 6.x: ARM_INS_ALIAS_SEVL */
+#endif
+#ifndef ARM_INS_VPOP
+#define ARM_INS_VPOP ARM_INS_ALIAS_VPOP /* 6.x: ARM_INS_ALIAS_VPOP */
+#endif
+#ifndef ARM_INS_VPUSH
+#define ARM_INS_VPUSH ARM_INS_ALIAS_VPUSH /* 6.x: ARM_INS_ALIAS_VPUSH */
+#endif
+#ifndef ARM_INS_WFE
+#define ARM_INS_WFE ARM_INS_ALIAS_WFE /* 6.x: ARM_INS_ALIAS_WFE */
+#endif
+#ifndef ARM_INS_WFI
+#define ARM_INS_WFI ARM_INS_ALIAS_WFI /* 6.x: ARM_INS_ALIAS_WFI */
+#endif
+#ifndef ARM_INS_YIELD
+#define ARM_INS_YIELD ARM_INS_ALIAS_YIELD /* 6.x: ARM_INS_ALIAS_YIELD */
+#endif
+#ifndef ARM_SYSREG_APSR
+#define ARM_SYSREG_APSR ARM_MCLASSSYSREG_APSR /* 6.x: ARM_MCLASSSYSREG_APSR */
+#endif
+#ifndef ARM_SYSREG_APSR_G
+#define ARM_SYSREG_APSR_G ARM_MCLASSSYSREG_APSR_G /* 6.x: ARM_MCLASSSYSREG_APSR_G */
+#endif
+#ifndef ARM_SYSREG_APSR_NZCVQ
+#define ARM_SYSREG_APSR_NZCVQ ARM_MCLASSSYSREG_APSR_NZCVQ /* 6.x: ARM_MCLASSSYSREG_APSR_NZCVQ */
+#endif
+#ifndef ARM_SYSREG_APSR_NZCVQG
+#define ARM_SYSREG_APSR_NZCVQG ARM_MCLASSSYSREG_APSR_NZCVQG /* 6.x: ARM_MCLASSSYSREG_APSR_NZCVQG */
+#endif
+#ifndef ARM_SYSREG_BASEPRI
+#define ARM_SYSREG_BASEPRI ARM_MCLASSSYSREG_BASEPRI /* 6.x: ARM_MCLASSSYSREG_BASEPRI */
+#endif
+#ifndef ARM_SYSREG_BASEPRI_MAX
+#define ARM_SYSREG_BASEPRI_MAX ARM_MCLASSSYSREG_BASEPRI_MAX /* 6.x: ARM_MCLASSSYSREG_BASEPRI_MAX */
+#endif
+#ifndef ARM_SYSREG_CONTROL
+#define ARM_SYSREG_CONTROL ARM_MCLASSSYSREG_CONTROL /* 6.x: ARM_MCLASSSYSREG_CONTROL */
+#endif
+#ifndef ARM_SYSREG_EAPSR
+#define ARM_SYSREG_EAPSR ARM_MCLASSSYSREG_EAPSR /* 6.x: ARM_MCLASSSYSREG_EAPSR */
+#endif
+#ifndef ARM_SYSREG_EAPSR_G
+#define ARM_SYSREG_EAPSR_G ARM_MCLASSSYSREG_EAPSR_G /* 6.x: ARM_MCLASSSYSREG_EAPSR_G */
+#endif
+#ifndef ARM_SYSREG_EAPSR_NZCVQ
+#define ARM_SYSREG_EAPSR_NZCVQ ARM_MCLASSSYSREG_EAPSR_NZCVQ /* 6.x: ARM_MCLASSSYSREG_EAPSR_NZCVQ */
+#endif
+#ifndef ARM_SYSREG_EAPSR_NZCVQG
+#define ARM_SYSREG_EAPSR_NZCVQG ARM_MCLASSSYSREG_EAPSR_NZCVQG /* 6.x: ARM_MCLASSSYSREG_EAPSR_NZCVQG */
+#endif
+#ifndef ARM_SYSREG_EPSR
+#define ARM_SYSREG_EPSR ARM_MCLASSSYSREG_EPSR /* 6.x: ARM_MCLASSSYSREG_EPSR */
+#endif
+#ifndef ARM_SYSREG_FAULTMASK
+#define ARM_SYSREG_FAULTMASK ARM_MCLASSSYSREG_FAULTMASK /* 6.x: ARM_MCLASSSYSREG_FAULTMASK */
+#endif
+#ifndef ARM_SYSREG_IAPSR
+#define ARM_SYSREG_IAPSR ARM_MCLASSSYSREG_IAPSR /* 6.x: ARM_MCLASSSYSREG_IAPSR */
+#endif
+#ifndef ARM_SYSREG_IAPSR_G
+#define ARM_SYSREG_IAPSR_G ARM_MCLASSSYSREG_IAPSR_G /* 6.x: ARM_MCLASSSYSREG_IAPSR_G */
+#endif
+#ifndef ARM_SYSREG_IAPSR_NZCVQ
+#define ARM_SYSREG_IAPSR_NZCVQ ARM_MCLASSSYSREG_IAPSR_NZCVQ /* 6.x: ARM_MCLASSSYSREG_IAPSR_NZCVQ */
+#endif
+#ifndef ARM_SYSREG_IAPSR_NZCVQG
+#define ARM_SYSREG_IAPSR_NZCVQG ARM_MCLASSSYSREG_IAPSR_NZCVQG /* 6.x: ARM_MCLASSSYSREG_IAPSR_NZCVQG */
+#endif
+#ifndef ARM_SYSREG_IEPSR
+#define ARM_SYSREG_IEPSR ARM_MCLASSSYSREG_IEPSR /* 6.x: ARM_MCLASSSYSREG_IEPSR */
+#endif
+#ifndef ARM_SYSREG_IPSR
+#define ARM_SYSREG_IPSR ARM_MCLASSSYSREG_IPSR /* 6.x: ARM_MCLASSSYSREG_IPSR */
+#endif
+#ifndef ARM_SYSREG_MSP
+#define ARM_SYSREG_MSP ARM_MCLASSSYSREG_MSP /* 6.x: ARM_MCLASSSYSREG_MSP */
+#endif
+#ifndef ARM_SYSREG_PRIMASK
+#define ARM_SYSREG_PRIMASK ARM_MCLASSSYSREG_PRIMASK /* 6.x: ARM_MCLASSSYSREG_PRIMASK */
+#endif
+#ifndef ARM_SYSREG_PSP
+#define ARM_SYSREG_PSP ARM_MCLASSSYSREG_PSP /* 6.x: ARM_MCLASSSYSREG_PSP */
+#endif
+#ifndef ARM_SYSREG_XPSR
+#define ARM_SYSREG_XPSR ARM_MCLASSSYSREG_XPSR /* 6.x: ARM_MCLASSSYSREG_XPSR */
+#endif
+#ifndef ARM_SYSREG_XPSR_G
+#define ARM_SYSREG_XPSR_G ARM_MCLASSSYSREG_XPSR_G /* 6.x: ARM_MCLASSSYSREG_XPSR_G */
+#endif
+#ifndef ARM_SYSREG_XPSR_NZCVQ
+#define ARM_SYSREG_XPSR_NZCVQ ARM_MCLASSSYSREG_XPSR_NZCVQ /* 6.x: ARM_MCLASSSYSREG_XPSR_NZCVQ */
+#endif
+#ifndef ARM_SYSREG_XPSR_NZCVQG
+#define ARM_SYSREG_XPSR_NZCVQG ARM_MCLASSSYSREG_XPSR_NZCVQG /* 6.x: ARM_MCLASSSYSREG_XPSR_NZCVQG */
+#endif
+#ifndef MIPS_INS_ABSQ_S
+#define MIPS_INS_ABSQ_S MIPS_INS_ABSQ_S_W /* 6.x: MIPS_INS_ABSQ_S_W */
+#endif
+#ifndef MIPS_INS_ADDQH
+#define MIPS_INS_ADDQH MIPS_INS_ADDQH_W /* 6.x: MIPS_INS_ADDQH_W */
+#endif
+#ifndef MIPS_INS_ADDQH_R
+#define MIPS_INS_ADDQH_R MIPS_INS_ADDQH_R_W /* 6.x: MIPS_INS_ADDQH_R_W */
+#endif
+#ifndef MIPS_INS_ADDQ_S
+#define MIPS_INS_ADDQ_S MIPS_INS_ADDQ_S_W /* 6.x: MIPS_INS_ADDQ_S_W */
+#endif
+#ifndef MIPS_INS_ADDS_A
+#define MIPS_INS_ADDS_A MIPS_INS_ADDS_A_W /* 6.x: MIPS_INS_ADDS_A_W */
+#endif
+#ifndef MIPS_INS_ADDS_S
+#define MIPS_INS_ADDS_S MIPS_INS_ADDS_S_W /* 6.x: MIPS_INS_ADDS_S_W */
+#endif
+#ifndef MIPS_INS_ADDS_U
+#define MIPS_INS_ADDS_U MIPS_INS_ADDS_U_W /* 6.x: MIPS_INS_ADDS_U_W */
+#endif
+#ifndef MIPS_INS_ADDV
+#define MIPS_INS_ADDV MIPS_INS_ADDV_W /* 6.x: MIPS_INS_ADDV_W */
+#endif
+#ifndef MIPS_INS_ADDVI
+#define MIPS_INS_ADDVI MIPS_INS_ADDVI_W /* 6.x: MIPS_INS_ADDVI_W */
+#endif
+#ifndef MIPS_INS_ADD_A
+#define MIPS_INS_ADD_A MIPS_INS_ADD_A_W /* 6.x: MIPS_INS_ADD_A_W */
+#endif
+#ifndef MIPS_INS_ASUB_S
+#define MIPS_INS_ASUB_S MIPS_INS_ASUB_S_W /* 6.x: MIPS_INS_ASUB_S_W */
+#endif
+#ifndef MIPS_INS_ASUB_U
+#define MIPS_INS_ASUB_U MIPS_INS_ASUB_U_W /* 6.x: MIPS_INS_ASUB_U_W */
+#endif
+#ifndef MIPS_INS_AVER_S
+#define MIPS_INS_AVER_S MIPS_INS_AVER_S_W /* 6.x: MIPS_INS_AVER_S_W */
+#endif
+#ifndef MIPS_INS_AVER_U
+#define MIPS_INS_AVER_U MIPS_INS_AVER_U_W /* 6.x: MIPS_INS_AVER_U_W */
+#endif
+#ifndef MIPS_INS_AVE_S
+#define MIPS_INS_AVE_S MIPS_INS_AVE_S_W /* 6.x: MIPS_INS_AVE_S_W */
+#endif
+#ifndef MIPS_INS_AVE_U
+#define MIPS_INS_AVE_U MIPS_INS_AVE_U_W /* 6.x: MIPS_INS_AVE_U_W */
+#endif
+#ifndef MIPS_INS_BCLR
+#define MIPS_INS_BCLR MIPS_INS_BCLR_W /* 6.x: MIPS_INS_BCLR_W */
+#endif
+#ifndef MIPS_INS_BCLRI
+#define MIPS_INS_BCLRI MIPS_INS_BCLRI_W /* 6.x: MIPS_INS_BCLRI_W */
+#endif
+#ifndef MIPS_INS_BINSL
+#define MIPS_INS_BINSL MIPS_INS_BINSL_W /* 6.x: MIPS_INS_BINSL_W */
+#endif
+#ifndef MIPS_INS_BINSLI
+#define MIPS_INS_BINSLI MIPS_INS_BINSLI_W /* 6.x: MIPS_INS_BINSLI_W */
+#endif
+#ifndef MIPS_INS_BINSR
+#define MIPS_INS_BINSR MIPS_INS_BINSR_W /* 6.x: MIPS_INS_BINSR_W */
+#endif
+#ifndef MIPS_INS_BINSRI
+#define MIPS_INS_BINSRI MIPS_INS_BINSRI_W /* 6.x: MIPS_INS_BINSRI_W */
+#endif
+#ifndef MIPS_INS_BMNZI
+#define MIPS_INS_BMNZI MIPS_INS_BMNZI_B /* 6.x: MIPS_INS_BMNZI_B */
+#endif
+#ifndef MIPS_INS_BMZI
+#define MIPS_INS_BMZI MIPS_INS_BMZI_B /* 6.x: MIPS_INS_BMZI_B */
+#endif
+#ifndef MIPS_INS_BNEG
+#define MIPS_INS_BNEG MIPS_INS_BNEG_W /* 6.x: MIPS_INS_BNEG_W */
+#endif
+#ifndef MIPS_INS_BNEGI
+#define MIPS_INS_BNEGI MIPS_INS_BNEGI_W /* 6.x: MIPS_INS_BNEGI_W */
+#endif
+#ifndef MIPS_INS_BNZ
+#define MIPS_INS_BNZ MIPS_INS_BNZ_W /* 6.x: MIPS_INS_BNZ_W */
+#endif
+#ifndef MIPS_INS_BSELI
+#define MIPS_INS_BSELI MIPS_INS_BSELI_B /* 6.x: MIPS_INS_BSELI_B */
+#endif
+#ifndef MIPS_INS_BSET
+#define MIPS_INS_BSET MIPS_INS_BSET_W /* 6.x: MIPS_INS_BSET_W */
+#endif
+#ifndef MIPS_INS_BSETI
+#define MIPS_INS_BSETI MIPS_INS_BSETI_W /* 6.x: MIPS_INS_BSETI_W */
+#endif
+#ifndef MIPS_INS_BZ
+#define MIPS_INS_BZ MIPS_INS_BZ_W /* 6.x: MIPS_INS_BZ_W */
+#endif
+#ifndef MIPS_INS_CEQ
+#define MIPS_INS_CEQ MIPS_INS_CEQ_W /* 6.x: MIPS_INS_CEQ_W */
+#endif
+#ifndef MIPS_INS_CEQI
+#define MIPS_INS_CEQI MIPS_INS_CEQI_W /* 6.x: MIPS_INS_CEQI_W */
+#endif
+#ifndef MIPS_INS_CLASS
+#define MIPS_INS_CLASS MIPS_INS_CLASS_D /* 6.x: MIPS_INS_CLASS_D */
+#endif
+#ifndef MIPS_INS_CLEI_S
+#define MIPS_INS_CLEI_S MIPS_INS_CLEI_S_W /* 6.x: MIPS_INS_CLEI_S_W */
+#endif
+#ifndef MIPS_INS_CLEI_U
+#define MIPS_INS_CLEI_U MIPS_INS_CLEI_U_W /* 6.x: MIPS_INS_CLEI_U_W */
+#endif
+#ifndef MIPS_INS_CLE_S
+#define MIPS_INS_CLE_S MIPS_INS_CLE_S_W /* 6.x: MIPS_INS_CLE_S_W */
+#endif
+#ifndef MIPS_INS_CLE_U
+#define MIPS_INS_CLE_U MIPS_INS_CLE_U_W /* 6.x: MIPS_INS_CLE_U_W */
+#endif
+#ifndef MIPS_INS_CLTI_S
+#define MIPS_INS_CLTI_S MIPS_INS_CLTI_S_W /* 6.x: MIPS_INS_CLTI_S_W */
+#endif
+#ifndef MIPS_INS_CLTI_U
+#define MIPS_INS_CLTI_U MIPS_INS_CLTI_U_W /* 6.x: MIPS_INS_CLTI_U_W */
+#endif
+#ifndef MIPS_INS_CLT_S
+#define MIPS_INS_CLT_S MIPS_INS_CLT_S_W /* 6.x: MIPS_INS_CLT_S_W */
+#endif
+#ifndef MIPS_INS_CLT_U
+#define MIPS_INS_CLT_U MIPS_INS_CLT_U_W /* 6.x: MIPS_INS_CLT_U_W */
+#endif
+#ifndef MIPS_INS_COPY_S
+#define MIPS_INS_COPY_S MIPS_INS_COPY_S_W /* 6.x: MIPS_INS_COPY_S_W */
+#endif
+#ifndef MIPS_INS_COPY_U
+#define MIPS_INS_COPY_U MIPS_INS_COPY_U_W /* 6.x: MIPS_INS_COPY_U_W */
+#endif
+#ifndef MIPS_INS_DIV_U
+#define MIPS_INS_DIV_U MIPS_INS_DIV_U_W /* 6.x: MIPS_INS_DIV_U_W */
+#endif
+#ifndef MIPS_INS_DOTP_S
+#define MIPS_INS_DOTP_S MIPS_INS_DOTP_S_W /* 6.x: MIPS_INS_DOTP_S_W */
+#endif
+#ifndef MIPS_INS_DOTP_U
+#define MIPS_INS_DOTP_U MIPS_INS_DOTP_U_W /* 6.x: MIPS_INS_DOTP_U_W */
+#endif
+#ifndef MIPS_INS_DPADD_S
+#define MIPS_INS_DPADD_S MIPS_INS_DPADD_S_W /* 6.x: MIPS_INS_DPADD_S_W */
+#endif
+#ifndef MIPS_INS_DPADD_U
+#define MIPS_INS_DPADD_U MIPS_INS_DPADD_U_W /* 6.x: MIPS_INS_DPADD_U_W */
+#endif
+#ifndef MIPS_INS_DPSUB_S
+#define MIPS_INS_DPSUB_S MIPS_INS_DPSUB_S_W /* 6.x: MIPS_INS_DPSUB_S_W */
+#endif
+#ifndef MIPS_INS_DPSUB_U
+#define MIPS_INS_DPSUB_U MIPS_INS_DPSUB_U_W /* 6.x: MIPS_INS_DPSUB_U_W */
+#endif
+#ifndef MIPS_INS_EXTR
+#define MIPS_INS_EXTR MIPS_INS_EXTR_W /* 6.x: MIPS_INS_EXTR_W */
+#endif
+#ifndef MIPS_INS_EXTRV
+#define MIPS_INS_EXTRV MIPS_INS_EXTRV_W /* 6.x: MIPS_INS_EXTRV_W */
+#endif
+#ifndef MIPS_INS_EXTRV_R
+#define MIPS_INS_EXTRV_R MIPS_INS_EXTRV_R_W /* 6.x: MIPS_INS_EXTRV_R_W */
+#endif
+#ifndef MIPS_INS_EXTRV_RS
+#define MIPS_INS_EXTRV_RS MIPS_INS_EXTRV_RS_W /* 6.x: MIPS_INS_EXTRV_RS_W */
+#endif
+#ifndef MIPS_INS_EXTRV_S
+#define MIPS_INS_EXTRV_S MIPS_INS_EXTRV_S_H /* 6.x: MIPS_INS_EXTRV_S_H */
+#endif
+#ifndef MIPS_INS_EXTR_R
+#define MIPS_INS_EXTR_R MIPS_INS_EXTR_R_W /* 6.x: MIPS_INS_EXTR_R_W */
+#endif
+#ifndef MIPS_INS_EXTR_RS
+#define MIPS_INS_EXTR_RS MIPS_INS_EXTR_RS_W /* 6.x: MIPS_INS_EXTR_RS_W */
+#endif
+#ifndef MIPS_INS_EXTR_S
+#define MIPS_INS_EXTR_S MIPS_INS_EXTR_S_H /* 6.x: MIPS_INS_EXTR_S_H */
+#endif
+#ifndef MIPS_INS_FADD
+#define MIPS_INS_FADD MIPS_INS_FADD_W /* 6.x: MIPS_INS_FADD_W */
+#endif
+#ifndef MIPS_INS_FCAF
+#define MIPS_INS_FCAF MIPS_INS_FCAF_W /* 6.x: MIPS_INS_FCAF_W */
+#endif
+#ifndef MIPS_INS_FCEQ
+#define MIPS_INS_FCEQ MIPS_INS_FCEQ_W /* 6.x: MIPS_INS_FCEQ_W */
+#endif
+#ifndef MIPS_INS_FCLASS
+#define MIPS_INS_FCLASS MIPS_INS_FCLASS_W /* 6.x: MIPS_INS_FCLASS_W */
+#endif
+#ifndef MIPS_INS_FCLE
+#define MIPS_INS_FCLE MIPS_INS_FCLE_W /* 6.x: MIPS_INS_FCLE_W */
+#endif
+#ifndef MIPS_INS_FCLT
+#define MIPS_INS_FCLT MIPS_INS_FCLT_W /* 6.x: MIPS_INS_FCLT_W */
+#endif
+#ifndef MIPS_INS_FCNE
+#define MIPS_INS_FCNE MIPS_INS_FCNE_W /* 6.x: MIPS_INS_FCNE_W */
+#endif
+#ifndef MIPS_INS_FCOR
+#define MIPS_INS_FCOR MIPS_INS_FCOR_W /* 6.x: MIPS_INS_FCOR_W */
+#endif
+#ifndef MIPS_INS_FCUEQ
+#define MIPS_INS_FCUEQ MIPS_INS_FCUEQ_W /* 6.x: MIPS_INS_FCUEQ_W */
+#endif
+#ifndef MIPS_INS_FCULE
+#define MIPS_INS_FCULE MIPS_INS_FCULE_W /* 6.x: MIPS_INS_FCULE_W */
+#endif
+#ifndef MIPS_INS_FCULT
+#define MIPS_INS_FCULT MIPS_INS_FCULT_W /* 6.x: MIPS_INS_FCULT_W */
+#endif
+#ifndef MIPS_INS_FCUN
+#define MIPS_INS_FCUN MIPS_INS_FCUN_W /* 6.x: MIPS_INS_FCUN_W */
+#endif
+#ifndef MIPS_INS_FCUNE
+#define MIPS_INS_FCUNE MIPS_INS_FCUNE_W /* 6.x: MIPS_INS_FCUNE_W */
+#endif
+#ifndef MIPS_INS_FDIV
+#define MIPS_INS_FDIV MIPS_INS_FDIV_W /* 6.x: MIPS_INS_FDIV_W */
+#endif
+#ifndef MIPS_INS_FEXDO
+#define MIPS_INS_FEXDO MIPS_INS_FEXDO_W /* 6.x: MIPS_INS_FEXDO_W */
+#endif
+#ifndef MIPS_INS_FEXP2
+#define MIPS_INS_FEXP2 MIPS_INS_FEXP2_W /* 6.x: MIPS_INS_FEXP2_W */
+#endif
+#ifndef MIPS_INS_FEXUPL
+#define MIPS_INS_FEXUPL MIPS_INS_FEXUPL_W /* 6.x: MIPS_INS_FEXUPL_W */
+#endif
+#ifndef MIPS_INS_FEXUPR
+#define MIPS_INS_FEXUPR MIPS_INS_FEXUPR_W /* 6.x: MIPS_INS_FEXUPR_W */
+#endif
+#ifndef MIPS_INS_FFINT_S
+#define MIPS_INS_FFINT_S MIPS_INS_FFINT_S_W /* 6.x: MIPS_INS_FFINT_S_W */
+#endif
+#ifndef MIPS_INS_FFINT_U
+#define MIPS_INS_FFINT_U MIPS_INS_FFINT_U_W /* 6.x: MIPS_INS_FFINT_U_W */
+#endif
+#ifndef MIPS_INS_FFQL
+#define MIPS_INS_FFQL MIPS_INS_FFQL_W /* 6.x: MIPS_INS_FFQL_W */
+#endif
+#ifndef MIPS_INS_FFQR
+#define MIPS_INS_FFQR MIPS_INS_FFQR_W /* 6.x: MIPS_INS_FFQR_W */
+#endif
+#ifndef MIPS_INS_FILL
+#define MIPS_INS_FILL MIPS_INS_FILL_W /* 6.x: MIPS_INS_FILL_W */
+#endif
+#ifndef MIPS_INS_FLOG2
+#define MIPS_INS_FLOG2 MIPS_INS_FLOG2_W /* 6.x: MIPS_INS_FLOG2_W */
+#endif
+#ifndef MIPS_INS_FMADD
+#define MIPS_INS_FMADD MIPS_INS_FMADD_W /* 6.x: MIPS_INS_FMADD_W */
+#endif
+#ifndef MIPS_INS_FMAX
+#define MIPS_INS_FMAX MIPS_INS_FMAX_W /* 6.x: MIPS_INS_FMAX_W */
+#endif
+#ifndef MIPS_INS_FMAX_A
+#define MIPS_INS_FMAX_A MIPS_INS_FMAX_A_W /* 6.x: MIPS_INS_FMAX_A_W */
+#endif
+#ifndef MIPS_INS_FMIN
+#define MIPS_INS_FMIN MIPS_INS_FMIN_W /* 6.x: MIPS_INS_FMIN_W */
+#endif
+#ifndef MIPS_INS_FMIN_A
+#define MIPS_INS_FMIN_A MIPS_INS_FMIN_A_W /* 6.x: MIPS_INS_FMIN_A_W */
+#endif
+#ifndef MIPS_INS_FMSUB
+#define MIPS_INS_FMSUB MIPS_INS_FMSUB_W /* 6.x: MIPS_INS_FMSUB_W */
+#endif
+#ifndef MIPS_INS_FMUL
+#define MIPS_INS_FMUL MIPS_INS_FMUL_W /* 6.x: MIPS_INS_FMUL_W */
+#endif
+#ifndef MIPS_INS_FRCP
+#define MIPS_INS_FRCP MIPS_INS_FRCP_W /* 6.x: MIPS_INS_FRCP_W */
+#endif
+#ifndef MIPS_INS_FRINT
+#define MIPS_INS_FRINT MIPS_INS_FRINT_W /* 6.x: MIPS_INS_FRINT_W */
+#endif
+#ifndef MIPS_INS_FRSQRT
+#define MIPS_INS_FRSQRT MIPS_INS_FRSQRT_W /* 6.x: MIPS_INS_FRSQRT_W */
+#endif
+#ifndef MIPS_INS_FSAF
+#define MIPS_INS_FSAF MIPS_INS_FSAF_W /* 6.x: MIPS_INS_FSAF_W */
+#endif
+#ifndef MIPS_INS_FSEQ
+#define MIPS_INS_FSEQ MIPS_INS_FSEQ_W /* 6.x: MIPS_INS_FSEQ_W */
+#endif
+#ifndef MIPS_INS_FSLE
+#define MIPS_INS_FSLE MIPS_INS_FSLE_W /* 6.x: MIPS_INS_FSLE_W */
+#endif
+#ifndef MIPS_INS_FSLT
+#define MIPS_INS_FSLT MIPS_INS_FSLT_W /* 6.x: MIPS_INS_FSLT_W */
+#endif
+#ifndef MIPS_INS_FSNE
+#define MIPS_INS_FSNE MIPS_INS_FSNE_W /* 6.x: MIPS_INS_FSNE_W */
+#endif
+#ifndef MIPS_INS_FSOR
+#define MIPS_INS_FSOR MIPS_INS_FSOR_W /* 6.x: MIPS_INS_FSOR_W */
+#endif
+#ifndef MIPS_INS_FSQRT
+#define MIPS_INS_FSQRT MIPS_INS_FSQRT_W /* 6.x: MIPS_INS_FSQRT_W */
+#endif
+#ifndef MIPS_INS_FSUB
+#define MIPS_INS_FSUB MIPS_INS_FSUB_W /* 6.x: MIPS_INS_FSUB_W */
+#endif
+#ifndef MIPS_INS_FSUEQ
+#define MIPS_INS_FSUEQ MIPS_INS_FSUEQ_W /* 6.x: MIPS_INS_FSUEQ_W */
+#endif
+#ifndef MIPS_INS_FSULE
+#define MIPS_INS_FSULE MIPS_INS_FSULE_W /* 6.x: MIPS_INS_FSULE_W */
+#endif
+#ifndef MIPS_INS_FSULT
+#define MIPS_INS_FSULT MIPS_INS_FSULT_W /* 6.x: MIPS_INS_FSULT_W */
+#endif
+#ifndef MIPS_INS_FSUN
+#define MIPS_INS_FSUN MIPS_INS_FSUN_W /* 6.x: MIPS_INS_FSUN_W */
+#endif
+#ifndef MIPS_INS_FSUNE
+#define MIPS_INS_FSUNE MIPS_INS_FSUNE_W /* 6.x: MIPS_INS_FSUNE_W */
+#endif
+#ifndef MIPS_INS_FTINT_S
+#define MIPS_INS_FTINT_S MIPS_INS_FTINT_S_W /* 6.x: MIPS_INS_FTINT_S_W */
+#endif
+#ifndef MIPS_INS_FTINT_U
+#define MIPS_INS_FTINT_U MIPS_INS_FTINT_U_W /* 6.x: MIPS_INS_FTINT_U_W */
+#endif
+#ifndef MIPS_INS_FTQ
+#define MIPS_INS_FTQ MIPS_INS_FTQ_W /* 6.x: MIPS_INS_FTQ_W */
+#endif
+#ifndef MIPS_INS_FTRUNC_S
+#define MIPS_INS_FTRUNC_S MIPS_INS_FTRUNC_S_W /* 6.x: MIPS_INS_FTRUNC_S_W */
+#endif
+#ifndef MIPS_INS_FTRUNC_U
+#define MIPS_INS_FTRUNC_U MIPS_INS_FTRUNC_U_W /* 6.x: MIPS_INS_FTRUNC_U_W */
+#endif
+#ifndef MIPS_INS_HADD_S
+#define MIPS_INS_HADD_S MIPS_INS_HADD_S_W /* 6.x: MIPS_INS_HADD_S_W */
+#endif
+#ifndef MIPS_INS_HADD_U
+#define MIPS_INS_HADD_U MIPS_INS_HADD_U_W /* 6.x: MIPS_INS_HADD_U_W */
+#endif
+#ifndef MIPS_INS_HSUB_S
+#define MIPS_INS_HSUB_S MIPS_INS_HSUB_S_W /* 6.x: MIPS_INS_HSUB_S_W */
+#endif
+#ifndef MIPS_INS_HSUB_U
+#define MIPS_INS_HSUB_U MIPS_INS_HSUB_U_W /* 6.x: MIPS_INS_HSUB_U_W */
+#endif
+#ifndef MIPS_INS_ILVEV
+#define MIPS_INS_ILVEV MIPS_INS_ILVEV_W /* 6.x: MIPS_INS_ILVEV_W */
+#endif
+#ifndef MIPS_INS_ILVL
+#define MIPS_INS_ILVL MIPS_INS_ILVL_W /* 6.x: MIPS_INS_ILVL_W */
+#endif
+#ifndef MIPS_INS_ILVOD
+#define MIPS_INS_ILVOD MIPS_INS_ILVOD_W /* 6.x: MIPS_INS_ILVOD_W */
+#endif
+#ifndef MIPS_INS_ILVR
+#define MIPS_INS_ILVR MIPS_INS_ILVR_W /* 6.x: MIPS_INS_ILVR_W */
+#endif
+#ifndef MIPS_INS_INSERT
+#define MIPS_INS_INSERT MIPS_INS_INSERT_W /* 6.x: MIPS_INS_INSERT_W */
+#endif
+#ifndef MIPS_INS_INSVE
+#define MIPS_INS_INSVE MIPS_INS_INSVE_W /* 6.x: MIPS_INS_INSVE_W */
+#endif
+#ifndef MIPS_INS_LDI
+#define MIPS_INS_LDI MIPS_INS_LDI_W /* 6.x: MIPS_INS_LDI_W */
+#endif
+#ifndef MIPS_INS_MADDF
+#define MIPS_INS_MADDF MIPS_INS_MADDF_D /* 6.x: MIPS_INS_MADDF_D */
+#endif
+#ifndef MIPS_INS_MADDR_Q
+#define MIPS_INS_MADDR_Q MIPS_INS_MADDR_Q_W /* 6.x: MIPS_INS_MADDR_Q_W */
+#endif
+#ifndef MIPS_INS_MADDV
+#define MIPS_INS_MADDV MIPS_INS_MADDV_W /* 6.x: MIPS_INS_MADDV_W */
+#endif
+#ifndef MIPS_INS_MADD_Q
+#define MIPS_INS_MADD_Q MIPS_INS_MADD_Q_W /* 6.x: MIPS_INS_MADD_Q_W */
+#endif
+#ifndef MIPS_INS_MAX
+#define MIPS_INS_MAX MIPS_INS_MAX_D /* 6.x: MIPS_INS_MAX_D */
+#endif
+#ifndef MIPS_INS_MAXA
+#define MIPS_INS_MAXA MIPS_INS_MAXA_D /* 6.x: MIPS_INS_MAXA_D */
+#endif
+#ifndef MIPS_INS_MAXI_S
+#define MIPS_INS_MAXI_S MIPS_INS_MAXI_S_W /* 6.x: MIPS_INS_MAXI_S_W */
+#endif
+#ifndef MIPS_INS_MAXI_U
+#define MIPS_INS_MAXI_U MIPS_INS_MAXI_U_W /* 6.x: MIPS_INS_MAXI_U_W */
+#endif
+#ifndef MIPS_INS_MAX_A
+#define MIPS_INS_MAX_A MIPS_INS_MAX_A_W /* 6.x: MIPS_INS_MAX_A_W */
+#endif
+#ifndef MIPS_INS_MAX_U
+#define MIPS_INS_MAX_U MIPS_INS_MAX_U_W /* 6.x: MIPS_INS_MAX_U_W */
+#endif
+#ifndef MIPS_INS_MIN
+#define MIPS_INS_MIN MIPS_INS_MIN_D /* 6.x: MIPS_INS_MIN_D */
+#endif
+#ifndef MIPS_INS_MINA
+#define MIPS_INS_MINA MIPS_INS_MINA_D /* 6.x: MIPS_INS_MINA_D */
+#endif
+#ifndef MIPS_INS_MINI_S
+#define MIPS_INS_MINI_S MIPS_INS_MINI_S_W /* 6.x: MIPS_INS_MINI_S_W */
+#endif
+#ifndef MIPS_INS_MINI_U
+#define MIPS_INS_MINI_U MIPS_INS_MINI_U_W /* 6.x: MIPS_INS_MINI_U_W */
+#endif
+#ifndef MIPS_INS_MIN_A
+#define MIPS_INS_MIN_A MIPS_INS_MIN_A_W /* 6.x: MIPS_INS_MIN_A_W */
+#endif
+#ifndef MIPS_INS_MIN_U
+#define MIPS_INS_MIN_U MIPS_INS_MIN_U_W /* 6.x: MIPS_INS_MIN_U_W */
+#endif
+#ifndef MIPS_INS_MOD_S
+#define MIPS_INS_MOD_S MIPS_INS_MOD_S_W /* 6.x: MIPS_INS_MOD_S_W */
+#endif
+#ifndef MIPS_INS_MOD_U
+#define MIPS_INS_MOD_U MIPS_INS_MOD_U_W /* 6.x: MIPS_INS_MOD_U_W */
+#endif
+#ifndef MIPS_INS_MOV
+#define MIPS_INS_MOV MIPS_INS_MOV_D /* 6.x: MIPS_INS_MOV_D */
+#endif
+#ifndef MIPS_INS_MSUBF
+#define MIPS_INS_MSUBF MIPS_INS_MSUBF_D /* 6.x: MIPS_INS_MSUBF_D */
+#endif
+#ifndef MIPS_INS_MSUBR_Q
+#define MIPS_INS_MSUBR_Q MIPS_INS_MSUBR_Q_W /* 6.x: MIPS_INS_MSUBR_Q_W */
+#endif
+#ifndef MIPS_INS_MSUBV
+#define MIPS_INS_MSUBV MIPS_INS_MSUBV_W /* 6.x: MIPS_INS_MSUBV_W */
+#endif
+#ifndef MIPS_INS_MSUB_Q
+#define MIPS_INS_MSUB_Q MIPS_INS_MSUB_Q_W /* 6.x: MIPS_INS_MSUB_Q_W */
+#endif
+#ifndef MIPS_INS_MULQ_RS
+#define MIPS_INS_MULQ_RS MIPS_INS_MULQ_RS_W /* 6.x: MIPS_INS_MULQ_RS_W */
+#endif
+#ifndef MIPS_INS_MULQ_S
+#define MIPS_INS_MULQ_S MIPS_INS_MULQ_S_W /* 6.x: MIPS_INS_MULQ_S_W */
+#endif
+#ifndef MIPS_INS_MULR_Q
+#define MIPS_INS_MULR_Q MIPS_INS_MULR_Q_W /* 6.x: MIPS_INS_MULR_Q_W */
+#endif
+#ifndef MIPS_INS_MULV
+#define MIPS_INS_MULV MIPS_INS_MULV_W /* 6.x: MIPS_INS_MULV_W */
+#endif
+#ifndef MIPS_INS_MUL_Q
+#define MIPS_INS_MUL_Q MIPS_INS_MUL_Q_W /* 6.x: MIPS_INS_MUL_Q_W */
+#endif
+#ifndef MIPS_INS_NEGU
+#define MIPS_INS_NEGU MIPS_INS_ALIAS_NEGU /* 6.x: MIPS_INS_ALIAS_NEGU */
+#endif
+#ifndef MIPS_INS_NLOC
+#define MIPS_INS_NLOC MIPS_INS_NLOC_W /* 6.x: MIPS_INS_NLOC_W */
+#endif
+#ifndef MIPS_INS_NLZC
+#define MIPS_INS_NLZC MIPS_INS_NLZC_W /* 6.x: MIPS_INS_NLZC_W */
+#endif
+#ifndef MIPS_INS_NMADD
+#define MIPS_INS_NMADD MIPS_INS_NMADD_D /* 6.x: MIPS_INS_NMADD_D */
+#endif
+#ifndef MIPS_INS_NMSUB
+#define MIPS_INS_NMSUB MIPS_INS_NMSUB_D /* 6.x: MIPS_INS_NMSUB_D */
+#endif
+#ifndef MIPS_INS_NORI
+#define MIPS_INS_NORI MIPS_INS_NORI_B /* 6.x: MIPS_INS_NORI_B */
+#endif
+#ifndef MIPS_INS_PCKEV
+#define MIPS_INS_PCKEV MIPS_INS_PCKEV_W /* 6.x: MIPS_INS_PCKEV_W */
+#endif
+#ifndef MIPS_INS_PCKOD
+#define MIPS_INS_PCKOD MIPS_INS_PCKOD_W /* 6.x: MIPS_INS_PCKOD_W */
+#endif
+#ifndef MIPS_INS_PCNT
+#define MIPS_INS_PCNT MIPS_INS_PCNT_W /* 6.x: MIPS_INS_PCNT_W */
+#endif
+#ifndef MIPS_INS_RINT
+#define MIPS_INS_RINT MIPS_INS_RINT_D /* 6.x: MIPS_INS_RINT_D */
+#endif
+#ifndef MIPS_INS_SAT_S
+#define MIPS_INS_SAT_S MIPS_INS_SAT_S_W /* 6.x: MIPS_INS_SAT_S_W */
+#endif
+#ifndef MIPS_INS_SAT_U
+#define MIPS_INS_SAT_U MIPS_INS_SAT_U_W /* 6.x: MIPS_INS_SAT_U_W */
+#endif
+#ifndef MIPS_INS_SEL
+#define MIPS_INS_SEL MIPS_INS_SEL_D /* 6.x: MIPS_INS_SEL_D */
+#endif
+#ifndef MIPS_INS_SHF
+#define MIPS_INS_SHF MIPS_INS_SHF_W /* 6.x: MIPS_INS_SHF_W */
+#endif
+#ifndef MIPS_INS_SHLLV_S
+#define MIPS_INS_SHLLV_S MIPS_INS_SHLLV_S_W /* 6.x: MIPS_INS_SHLLV_S_W */
+#endif
+#ifndef MIPS_INS_SHLL_S
+#define MIPS_INS_SHLL_S MIPS_INS_SHLL_S_W /* 6.x: MIPS_INS_SHLL_S_W */
+#endif
+#ifndef MIPS_INS_SHRAV_R
+#define MIPS_INS_SHRAV_R MIPS_INS_SHRAV_R_W /* 6.x: MIPS_INS_SHRAV_R_W */
+#endif
+#ifndef MIPS_INS_SHRA_R
+#define MIPS_INS_SHRA_R MIPS_INS_SHRA_R_W /* 6.x: MIPS_INS_SHRA_R_W */
+#endif
+#ifndef MIPS_INS_SLD
+#define MIPS_INS_SLD MIPS_INS_SLD_W /* 6.x: MIPS_INS_SLD_W */
+#endif
+#ifndef MIPS_INS_SLDI
+#define MIPS_INS_SLDI MIPS_INS_SLDI_W /* 6.x: MIPS_INS_SLDI_W */
+#endif
+#ifndef MIPS_INS_SLLI
+#define MIPS_INS_SLLI MIPS_INS_SLLI_W /* 6.x: MIPS_INS_SLLI_W */
+#endif
+#ifndef MIPS_INS_SPLAT
+#define MIPS_INS_SPLAT MIPS_INS_SPLAT_W /* 6.x: MIPS_INS_SPLAT_W */
+#endif
+#ifndef MIPS_INS_SPLATI
+#define MIPS_INS_SPLATI MIPS_INS_SPLATI_W /* 6.x: MIPS_INS_SPLATI_W */
+#endif
+#ifndef MIPS_INS_SQRT
+#define MIPS_INS_SQRT MIPS_INS_SQRT_D /* 6.x: MIPS_INS_SQRT_D */
+#endif
+#ifndef MIPS_INS_SRAI
+#define MIPS_INS_SRAI MIPS_INS_SRAI_W /* 6.x: MIPS_INS_SRAI_W */
+#endif
+#ifndef MIPS_INS_SRAR
+#define MIPS_INS_SRAR MIPS_INS_SRAR_W /* 6.x: MIPS_INS_SRAR_W */
+#endif
+#ifndef MIPS_INS_SRARI
+#define MIPS_INS_SRARI MIPS_INS_SRARI_W /* 6.x: MIPS_INS_SRARI_W */
+#endif
+#ifndef MIPS_INS_SRLI
+#define MIPS_INS_SRLI MIPS_INS_SRLI_W /* 6.x: MIPS_INS_SRLI_W */
+#endif
+#ifndef MIPS_INS_SRLR
+#define MIPS_INS_SRLR MIPS_INS_SRLR_W /* 6.x: MIPS_INS_SRLR_W */
+#endif
+#ifndef MIPS_INS_SRLRI
+#define MIPS_INS_SRLRI MIPS_INS_SRLRI_W /* 6.x: MIPS_INS_SRLRI_W */
+#endif
+#ifndef MIPS_INS_ST
+#define MIPS_INS_ST MIPS_INS_ST_W /* 6.x: MIPS_INS_ST_W */
+#endif
+#ifndef MIPS_INS_SUBQH
+#define MIPS_INS_SUBQH MIPS_INS_SUBQH_W /* 6.x: MIPS_INS_SUBQH_W */
+#endif
+#ifndef MIPS_INS_SUBQH_R
+#define MIPS_INS_SUBQH_R MIPS_INS_SUBQH_R_W /* 6.x: MIPS_INS_SUBQH_R_W */
+#endif
+#ifndef MIPS_INS_SUBQ_S
+#define MIPS_INS_SUBQ_S MIPS_INS_SUBQ_S_W /* 6.x: MIPS_INS_SUBQ_S_W */
+#endif
+#ifndef MIPS_INS_SUBSUS_U
+#define MIPS_INS_SUBSUS_U MIPS_INS_SUBSUS_U_W /* 6.x: MIPS_INS_SUBSUS_U_W */
+#endif
+#ifndef MIPS_INS_SUBSUU_S
+#define MIPS_INS_SUBSUU_S MIPS_INS_SUBSUU_S_W /* 6.x: MIPS_INS_SUBSUU_S_W */
+#endif
+#ifndef MIPS_INS_SUBS_S
+#define MIPS_INS_SUBS_S MIPS_INS_SUBS_S_W /* 6.x: MIPS_INS_SUBS_S_W */
+#endif
+#ifndef MIPS_INS_SUBS_U
+#define MIPS_INS_SUBS_U MIPS_INS_SUBS_U_W /* 6.x: MIPS_INS_SUBS_U_W */
+#endif
+#ifndef MIPS_INS_SUBV
+#define MIPS_INS_SUBV MIPS_INS_SUBV_W /* 6.x: MIPS_INS_SUBV_W */
+#endif
+#ifndef MIPS_INS_SUBVI
+#define MIPS_INS_SUBVI MIPS_INS_SUBVI_W /* 6.x: MIPS_INS_SUBVI_W */
+#endif
+#ifndef MIPS_INS_VSHF
+#define MIPS_INS_VSHF MIPS_INS_VSHF_W /* 6.x: MIPS_INS_VSHF_W */
+#endif
+#ifndef MIPS_REG_0
+#define MIPS_REG_0 MIPS_REG_ZERO /* 6.x: MIPS_REG_ZERO */
+#endif
+#ifndef MIPS_REG_1
+#define MIPS_REG_1 MIPS_REG_AT /* 6.x: MIPS_REG_AT */
+#endif
+#ifndef MIPS_REG_10
+#define MIPS_REG_10 MIPS_REG_T2 /* 6.x: MIPS_REG_T2 */
+#endif
+#ifndef MIPS_REG_11
+#define MIPS_REG_11 MIPS_REG_T3 /* 6.x: MIPS_REG_T3 */
+#endif
+#ifndef MIPS_REG_12
+#define MIPS_REG_12 MIPS_REG_T4 /* 6.x: MIPS_REG_T4 */
+#endif
+#ifndef MIPS_REG_13
+#define MIPS_REG_13 MIPS_REG_T5 /* 6.x: MIPS_REG_T5 */
+#endif
+#ifndef MIPS_REG_14
+#define MIPS_REG_14 MIPS_REG_T6 /* 6.x: MIPS_REG_T6 */
+#endif
+#ifndef MIPS_REG_15
+#define MIPS_REG_15 MIPS_REG_T7 /* 6.x: MIPS_REG_T7 */
+#endif
+#ifndef MIPS_REG_16
+#define MIPS_REG_16 MIPS_REG_S0 /* 6.x: MIPS_REG_S0 */
+#endif
+#ifndef MIPS_REG_17
+#define MIPS_REG_17 MIPS_REG_S1 /* 6.x: MIPS_REG_S1 */
+#endif
+#ifndef MIPS_REG_18
+#define MIPS_REG_18 MIPS_REG_S2 /* 6.x: MIPS_REG_S2 */
+#endif
+#ifndef MIPS_REG_19
+#define MIPS_REG_19 MIPS_REG_S3 /* 6.x: MIPS_REG_S3 */
+#endif
+#ifndef MIPS_REG_2
+#define MIPS_REG_2 MIPS_REG_V0 /* 6.x: MIPS_REG_V0 */
+#endif
+#ifndef MIPS_REG_20
+#define MIPS_REG_20 MIPS_REG_S4 /* 6.x: MIPS_REG_S4 */
+#endif
+#ifndef MIPS_REG_21
+#define MIPS_REG_21 MIPS_REG_S5 /* 6.x: MIPS_REG_S5 */
+#endif
+#ifndef MIPS_REG_22
+#define MIPS_REG_22 MIPS_REG_S6 /* 6.x: MIPS_REG_S6 */
+#endif
+#ifndef MIPS_REG_23
+#define MIPS_REG_23 MIPS_REG_S7 /* 6.x: MIPS_REG_S7 */
+#endif
+#ifndef MIPS_REG_24
+#define MIPS_REG_24 MIPS_REG_T8 /* 6.x: MIPS_REG_T8 */
+#endif
+#ifndef MIPS_REG_25
+#define MIPS_REG_25 MIPS_REG_T9 /* 6.x: MIPS_REG_T9 */
+#endif
+#ifndef MIPS_REG_26
+#define MIPS_REG_26 MIPS_REG_K0 /* 6.x: MIPS_REG_K0 */
+#endif
+#ifndef MIPS_REG_27
+#define MIPS_REG_27 MIPS_REG_K1 /* 6.x: MIPS_REG_K1 */
+#endif
+#ifndef MIPS_REG_28
+#define MIPS_REG_28 MIPS_REG_GP /* 6.x: MIPS_REG_GP */
+#endif
+#ifndef MIPS_REG_29
+#define MIPS_REG_29 MIPS_REG_SP /* 6.x: MIPS_REG_SP */
+#endif
+#ifndef MIPS_REG_3
+#define MIPS_REG_3 MIPS_REG_V1 /* 6.x: MIPS_REG_V1 */
+#endif
+#ifndef MIPS_REG_30
+#define MIPS_REG_30 MIPS_REG_FP /* 6.x: MIPS_REG_FP */
+#endif
+#ifndef MIPS_REG_31
+#define MIPS_REG_31 MIPS_REG_RA /* 6.x: MIPS_REG_RA */
+#endif
+#ifndef MIPS_REG_4
+#define MIPS_REG_4 MIPS_REG_A0 /* 6.x: MIPS_REG_A0 */
+#endif
+#ifndef MIPS_REG_5
+#define MIPS_REG_5 MIPS_REG_A1 /* 6.x: MIPS_REG_A1 */
+#endif
+#ifndef MIPS_REG_6
+#define MIPS_REG_6 MIPS_REG_A2 /* 6.x: MIPS_REG_A2 */
+#endif
+#ifndef MIPS_REG_7
+#define MIPS_REG_7 MIPS_REG_A3 /* 6.x: MIPS_REG_A3 */
+#endif
+#ifndef MIPS_REG_8
+#define MIPS_REG_8 MIPS_REG_T0 /* 6.x: MIPS_REG_T0 */
+#endif
+#ifndef MIPS_REG_9
+#define MIPS_REG_9 MIPS_REG_T1 /* 6.x: MIPS_REG_T1 */
+#endif
+#ifndef PPC_BC_EQ
+#define PPC_BC_EQ PPC_PRED_EQ /* 6.x: PPC_PRED_EQ */
+#endif
+#ifndef PPC_BC_GE
+#define PPC_BC_GE PPC_PRED_GE /* 6.x: PPC_PRED_GE */
+#endif
+#ifndef PPC_BC_GT
+#define PPC_BC_GT PPC_PRED_GT /* 6.x: PPC_PRED_GT */
+#endif
+#ifndef PPC_BC_INVALID
+#define PPC_BC_INVALID PPC_PRED_INVALID /* 6.x: PPC_PRED_INVALID */
+#endif
+#ifndef PPC_BC_LE
+#define PPC_BC_LE PPC_PRED_LE /* 6.x: PPC_PRED_LE */
+#endif
+#ifndef PPC_BC_LT
+#define PPC_BC_LT PPC_PRED_LT /* 6.x: PPC_PRED_LT */
+#endif
+#ifndef PPC_BC_NE
+#define PPC_BC_NE PPC_PRED_NE /* 6.x: PPC_PRED_NE */
+#endif
+#ifndef PPC_BC_NS
+#define PPC_BC_NS PPC_PRED_NS /* 6.x: PPC_PRED_NS */
+#endif
+#ifndef PPC_BC_NU
+#define PPC_BC_NU PPC_PRED_NU /* 6.x: PPC_PRED_NU */
+#endif
+#ifndef PPC_BC_SO
+#define PPC_BC_SO PPC_PRED_SO /* 6.x: PPC_PRED_SO */
+#endif
+#ifndef PPC_BC_UN
+#define PPC_BC_UN PPC_PRED_UN /* 6.x: PPC_PRED_UN */
+#endif
+#ifndef PPC_CR_EQ
+#define PPC_CR_EQ PPC_PRED_EQ /* 6.x: PPC_PRED_EQ */
+#endif
+#ifndef PPC_CR_GT
+#define PPC_CR_GT PPC_PRED_GT /* 6.x: PPC_PRED_GT */
+#endif
+#ifndef PPC_CR_LT
+#define PPC_CR_LT PPC_PRED_LT /* 6.x: PPC_PRED_LT */
+#endif
+#ifndef PPC_CR_SO
+#define PPC_CR_SO PPC_PRED_SO /* 6.x: PPC_PRED_SO */
+#endif
+#ifndef PPC_INS_BDNZ
+#define PPC_INS_BDNZ PPC_INS_ALIAS_BDNZ /* 6.x: PPC_INS_ALIAS_BDNZ */
+#endif
+#ifndef PPC_INS_BDNZF
+#define PPC_INS_BDNZF PPC_INS_ALIAS_BDNZF /* 6.x: PPC_INS_ALIAS_BDNZF */
+#endif
+#ifndef PPC_INS_BDNZFA
+#define PPC_INS_BDNZFA PPC_INS_ALIAS_BDNZFA /* 6.x: PPC_INS_ALIAS_BDNZFA */
+#endif
+#ifndef PPC_INS_BDNZFL
+#define PPC_INS_BDNZFL PPC_INS_ALIAS_BDNZFL /* 6.x: PPC_INS_ALIAS_BDNZFL */
+#endif
+#ifndef PPC_INS_BDNZFLA
+#define PPC_INS_BDNZFLA PPC_INS_ALIAS_BDNZFLA /* 6.x: PPC_INS_ALIAS_BDNZFLA */
+#endif
+#ifndef PPC_INS_BDNZFLR
+#define PPC_INS_BDNZFLR PPC_INS_ALIAS_BDNZFLR /* 6.x: PPC_INS_ALIAS_BDNZFLR */
+#endif
+#ifndef PPC_INS_BDNZFLRL
+#define PPC_INS_BDNZFLRL PPC_INS_ALIAS_BDNZFLRL /* 6.x: PPC_INS_ALIAS_BDNZFLRL */
+#endif
+#ifndef PPC_INS_BDNZL
+#define PPC_INS_BDNZL PPC_INS_ALIAS_BDNZL /* 6.x: PPC_INS_ALIAS_BDNZL */
+#endif
+#ifndef PPC_INS_BDNZLA
+#define PPC_INS_BDNZLA PPC_INS_ALIAS_BDNZLA /* 6.x: PPC_INS_ALIAS_BDNZLA */
+#endif
+#ifndef PPC_INS_BDNZLR
+#define PPC_INS_BDNZLR PPC_INS_ALIAS_BDNZLR /* 6.x: PPC_INS_ALIAS_BDNZLR */
+#endif
+#ifndef PPC_INS_BDNZLRL
+#define PPC_INS_BDNZLRL PPC_INS_ALIAS_BDNZLRL /* 6.x: PPC_INS_ALIAS_BDNZLRL */
+#endif
+#ifndef PPC_INS_BDNZT
+#define PPC_INS_BDNZT PPC_INS_ALIAS_BDNZT /* 6.x: PPC_INS_ALIAS_BDNZT */
+#endif
+#ifndef PPC_INS_BDNZTA
+#define PPC_INS_BDNZTA PPC_INS_ALIAS_BDNZTA /* 6.x: PPC_INS_ALIAS_BDNZTA */
+#endif
+#ifndef PPC_INS_BDNZTL
+#define PPC_INS_BDNZTL PPC_INS_ALIAS_BDNZTL /* 6.x: PPC_INS_ALIAS_BDNZTL */
+#endif
+#ifndef PPC_INS_BDNZTLA
+#define PPC_INS_BDNZTLA PPC_INS_ALIAS_BDNZTLA /* 6.x: PPC_INS_ALIAS_BDNZTLA */
+#endif
+#ifndef PPC_INS_BDNZTLR
+#define PPC_INS_BDNZTLR PPC_INS_ALIAS_BDNZTLR /* 6.x: PPC_INS_ALIAS_BDNZTLR */
+#endif
+#ifndef PPC_INS_BDNZTLRL
+#define PPC_INS_BDNZTLRL PPC_INS_ALIAS_BDNZTLRL /* 6.x: PPC_INS_ALIAS_BDNZTLRL */
+#endif
+#ifndef PPC_INS_BDZ
+#define PPC_INS_BDZ PPC_INS_ALIAS_BDZ /* 6.x: PPC_INS_ALIAS_BDZ */
+#endif
+#ifndef PPC_INS_BDZF
+#define PPC_INS_BDZF PPC_INS_ALIAS_BDZF /* 6.x: PPC_INS_ALIAS_BDZF */
+#endif
+#ifndef PPC_INS_BDZFA
+#define PPC_INS_BDZFA PPC_INS_ALIAS_BDZFA /* 6.x: PPC_INS_ALIAS_BDZFA */
+#endif
+#ifndef PPC_INS_BDZFL
+#define PPC_INS_BDZFL PPC_INS_ALIAS_BDZFL /* 6.x: PPC_INS_ALIAS_BDZFL */
+#endif
+#ifndef PPC_INS_BDZFLA
+#define PPC_INS_BDZFLA PPC_INS_ALIAS_BDZFLA /* 6.x: PPC_INS_ALIAS_BDZFLA */
+#endif
+#ifndef PPC_INS_BDZFLR
+#define PPC_INS_BDZFLR PPC_INS_ALIAS_BDZFLR /* 6.x: PPC_INS_ALIAS_BDZFLR */
+#endif
+#ifndef PPC_INS_BDZFLRL
+#define PPC_INS_BDZFLRL PPC_INS_ALIAS_BDZFLRL /* 6.x: PPC_INS_ALIAS_BDZFLRL */
+#endif
+#ifndef PPC_INS_BDZL
+#define PPC_INS_BDZL PPC_INS_ALIAS_BDZL /* 6.x: PPC_INS_ALIAS_BDZL */
+#endif
+#ifndef PPC_INS_BDZLA
+#define PPC_INS_BDZLA PPC_INS_ALIAS_BDZLA /* 6.x: PPC_INS_ALIAS_BDZLA */
+#endif
+#ifndef PPC_INS_BDZLR
+#define PPC_INS_BDZLR PPC_INS_ALIAS_BDZLR /* 6.x: PPC_INS_ALIAS_BDZLR */
+#endif
+#ifndef PPC_INS_BDZLRL
+#define PPC_INS_BDZLRL PPC_INS_ALIAS_BDZLRL /* 6.x: PPC_INS_ALIAS_BDZLRL */
+#endif
+#ifndef PPC_INS_BDZT
+#define PPC_INS_BDZT PPC_INS_ALIAS_BDZT /* 6.x: PPC_INS_ALIAS_BDZT */
+#endif
+#ifndef PPC_INS_BDZTA
+#define PPC_INS_BDZTA PPC_INS_ALIAS_BDZTA /* 6.x: PPC_INS_ALIAS_BDZTA */
+#endif
+#ifndef PPC_INS_BDZTL
+#define PPC_INS_BDZTL PPC_INS_ALIAS_BDZTL /* 6.x: PPC_INS_ALIAS_BDZTL */
+#endif
+#ifndef PPC_INS_BDZTLA
+#define PPC_INS_BDZTLA PPC_INS_ALIAS_BDZTLA /* 6.x: PPC_INS_ALIAS_BDZTLA */
+#endif
+#ifndef PPC_INS_BDZTLR
+#define PPC_INS_BDZTLR PPC_INS_ALIAS_BDZTLR /* 6.x: PPC_INS_ALIAS_BDZTLR */
+#endif
+#ifndef PPC_INS_BDZTLRL
+#define PPC_INS_BDZTLRL PPC_INS_ALIAS_BDZTLRL /* 6.x: PPC_INS_ALIAS_BDZTLRL */
+#endif
+#ifndef PPC_INS_BEQ
+#define PPC_INS_BEQ PPC_INS_ALIAS_BEQ /* 6.x: PPC_INS_ALIAS_BEQ */
+#endif
+#ifndef PPC_INS_BEQA
+#define PPC_INS_BEQA PPC_INS_ALIAS_BEQA /* 6.x: PPC_INS_ALIAS_BEQA */
+#endif
+#ifndef PPC_INS_BEQCTR
+#define PPC_INS_BEQCTR PPC_INS_ALIAS_BEQCTR /* 6.x: PPC_INS_ALIAS_BEQCTR */
+#endif
+#ifndef PPC_INS_BEQCTRL
+#define PPC_INS_BEQCTRL PPC_INS_ALIAS_BEQCTRL /* 6.x: PPC_INS_ALIAS_BEQCTRL */
+#endif
+#ifndef PPC_INS_BEQL
+#define PPC_INS_BEQL PPC_INS_ALIAS_BEQL /* 6.x: PPC_INS_ALIAS_BEQL */
+#endif
+#ifndef PPC_INS_BEQLA
+#define PPC_INS_BEQLA PPC_INS_ALIAS_BEQLA /* 6.x: PPC_INS_ALIAS_BEQLA */
+#endif
+#ifndef PPC_INS_BEQLR
+#define PPC_INS_BEQLR PPC_INS_ALIAS_BEQLR /* 6.x: PPC_INS_ALIAS_BEQLR */
+#endif
+#ifndef PPC_INS_BEQLRL
+#define PPC_INS_BEQLRL PPC_INS_ALIAS_BEQLRL /* 6.x: PPC_INS_ALIAS_BEQLRL */
+#endif
+#ifndef PPC_INS_BF
+#define PPC_INS_BF PPC_INS_ALIAS_BF /* 6.x: PPC_INS_ALIAS_BF */
+#endif
+#ifndef PPC_INS_BFA
+#define PPC_INS_BFA PPC_INS_ALIAS_BFA /* 6.x: PPC_INS_ALIAS_BFA */
+#endif
+#ifndef PPC_INS_BFCTR
+#define PPC_INS_BFCTR PPC_INS_ALIAS_BFCTR /* 6.x: PPC_INS_ALIAS_BFCTR */
+#endif
+#ifndef PPC_INS_BFCTRL
+#define PPC_INS_BFCTRL PPC_INS_ALIAS_BFCTRL /* 6.x: PPC_INS_ALIAS_BFCTRL */
+#endif
+#ifndef PPC_INS_BFL
+#define PPC_INS_BFL PPC_INS_ALIAS_BFL /* 6.x: PPC_INS_ALIAS_BFL */
+#endif
+#ifndef PPC_INS_BFLA
+#define PPC_INS_BFLA PPC_INS_ALIAS_BFLA /* 6.x: PPC_INS_ALIAS_BFLA */
+#endif
+#ifndef PPC_INS_BFLR
+#define PPC_INS_BFLR PPC_INS_ALIAS_BFLR /* 6.x: PPC_INS_ALIAS_BFLR */
+#endif
+#ifndef PPC_INS_BFLRL
+#define PPC_INS_BFLRL PPC_INS_ALIAS_BFLRL /* 6.x: PPC_INS_ALIAS_BFLRL */
+#endif
+#ifndef PPC_INS_BGE
+#define PPC_INS_BGE PPC_INS_ALIAS_BGE /* 6.x: PPC_INS_ALIAS_BGE */
+#endif
+#ifndef PPC_INS_BGEA
+#define PPC_INS_BGEA PPC_INS_ALIAS_BGEA /* 6.x: PPC_INS_ALIAS_BGEA */
+#endif
+#ifndef PPC_INS_BGECTR
+#define PPC_INS_BGECTR PPC_INS_ALIAS_BGECTR /* 6.x: PPC_INS_ALIAS_BGECTR */
+#endif
+#ifndef PPC_INS_BGECTRL
+#define PPC_INS_BGECTRL PPC_INS_ALIAS_BGECTRL /* 6.x: PPC_INS_ALIAS_BGECTRL */
+#endif
+#ifndef PPC_INS_BGEL
+#define PPC_INS_BGEL PPC_INS_ALIAS_BGEL /* 6.x: PPC_INS_ALIAS_BGEL */
+#endif
+#ifndef PPC_INS_BGELA
+#define PPC_INS_BGELA PPC_INS_ALIAS_BGELA /* 6.x: PPC_INS_ALIAS_BGELA */
+#endif
+#ifndef PPC_INS_BGELR
+#define PPC_INS_BGELR PPC_INS_ALIAS_BGELR /* 6.x: PPC_INS_ALIAS_BGELR */
+#endif
+#ifndef PPC_INS_BGELRL
+#define PPC_INS_BGELRL PPC_INS_ALIAS_BGELRL /* 6.x: PPC_INS_ALIAS_BGELRL */
+#endif
+#ifndef PPC_INS_BGT
+#define PPC_INS_BGT PPC_INS_ALIAS_BGT /* 6.x: PPC_INS_ALIAS_BGT */
+#endif
+#ifndef PPC_INS_BGTA
+#define PPC_INS_BGTA PPC_INS_ALIAS_BGTA /* 6.x: PPC_INS_ALIAS_BGTA */
+#endif
+#ifndef PPC_INS_BGTCTR
+#define PPC_INS_BGTCTR PPC_INS_ALIAS_BGTCTR /* 6.x: PPC_INS_ALIAS_BGTCTR */
+#endif
+#ifndef PPC_INS_BGTCTRL
+#define PPC_INS_BGTCTRL PPC_INS_ALIAS_BGTCTRL /* 6.x: PPC_INS_ALIAS_BGTCTRL */
+#endif
+#ifndef PPC_INS_BGTL
+#define PPC_INS_BGTL PPC_INS_ALIAS_BGTL /* 6.x: PPC_INS_ALIAS_BGTL */
+#endif
+#ifndef PPC_INS_BGTLA
+#define PPC_INS_BGTLA PPC_INS_ALIAS_BGTLA /* 6.x: PPC_INS_ALIAS_BGTLA */
+#endif
+#ifndef PPC_INS_BGTLR
+#define PPC_INS_BGTLR PPC_INS_ALIAS_BGTLR /* 6.x: PPC_INS_ALIAS_BGTLR */
+#endif
+#ifndef PPC_INS_BGTLRL
+#define PPC_INS_BGTLRL PPC_INS_ALIAS_BGTLRL /* 6.x: PPC_INS_ALIAS_BGTLRL */
+#endif
+#ifndef PPC_INS_BLE
+#define PPC_INS_BLE PPC_INS_ALIAS_BLE /* 6.x: PPC_INS_ALIAS_BLE */
+#endif
+#ifndef PPC_INS_BLEA
+#define PPC_INS_BLEA PPC_INS_ALIAS_BLEA /* 6.x: PPC_INS_ALIAS_BLEA */
+#endif
+#ifndef PPC_INS_BLECTR
+#define PPC_INS_BLECTR PPC_INS_ALIAS_BLECTR /* 6.x: PPC_INS_ALIAS_BLECTR */
+#endif
+#ifndef PPC_INS_BLECTRL
+#define PPC_INS_BLECTRL PPC_INS_ALIAS_BLECTRL /* 6.x: PPC_INS_ALIAS_BLECTRL */
+#endif
+#ifndef PPC_INS_BLEL
+#define PPC_INS_BLEL PPC_INS_ALIAS_BLEL /* 6.x: PPC_INS_ALIAS_BLEL */
+#endif
+#ifndef PPC_INS_BLELA
+#define PPC_INS_BLELA PPC_INS_ALIAS_BLELA /* 6.x: PPC_INS_ALIAS_BLELA */
+#endif
+#ifndef PPC_INS_BLELR
+#define PPC_INS_BLELR PPC_INS_ALIAS_BLELR /* 6.x: PPC_INS_ALIAS_BLELR */
+#endif
+#ifndef PPC_INS_BLELRL
+#define PPC_INS_BLELRL PPC_INS_ALIAS_BLELRL /* 6.x: PPC_INS_ALIAS_BLELRL */
+#endif
+#ifndef PPC_INS_BLT
+#define PPC_INS_BLT PPC_INS_ALIAS_BLT /* 6.x: PPC_INS_ALIAS_BLT */
+#endif
+#ifndef PPC_INS_BLTA
+#define PPC_INS_BLTA PPC_INS_ALIAS_BLTA /* 6.x: PPC_INS_ALIAS_BLTA */
+#endif
+#ifndef PPC_INS_BLTCTR
+#define PPC_INS_BLTCTR PPC_INS_ALIAS_BLTCTR /* 6.x: PPC_INS_ALIAS_BLTCTR */
+#endif
+#ifndef PPC_INS_BLTCTRL
+#define PPC_INS_BLTCTRL PPC_INS_ALIAS_BLTCTRL /* 6.x: PPC_INS_ALIAS_BLTCTRL */
+#endif
+#ifndef PPC_INS_BLTL
+#define PPC_INS_BLTL PPC_INS_ALIAS_BLTL /* 6.x: PPC_INS_ALIAS_BLTL */
+#endif
+#ifndef PPC_INS_BLTLA
+#define PPC_INS_BLTLA PPC_INS_ALIAS_BLTLA /* 6.x: PPC_INS_ALIAS_BLTLA */
+#endif
+#ifndef PPC_INS_BLTLR
+#define PPC_INS_BLTLR PPC_INS_ALIAS_BLTLR /* 6.x: PPC_INS_ALIAS_BLTLR */
+#endif
+#ifndef PPC_INS_BLTLRL
+#define PPC_INS_BLTLRL PPC_INS_ALIAS_BLTLRL /* 6.x: PPC_INS_ALIAS_BLTLRL */
+#endif
+#ifndef PPC_INS_BNE
+#define PPC_INS_BNE PPC_INS_ALIAS_BNE /* 6.x: PPC_INS_ALIAS_BNE */
+#endif
+#ifndef PPC_INS_BNEA
+#define PPC_INS_BNEA PPC_INS_ALIAS_BNEA /* 6.x: PPC_INS_ALIAS_BNEA */
+#endif
+#ifndef PPC_INS_BNECTR
+#define PPC_INS_BNECTR PPC_INS_ALIAS_BNECTR /* 6.x: PPC_INS_ALIAS_BNECTR */
+#endif
+#ifndef PPC_INS_BNECTRL
+#define PPC_INS_BNECTRL PPC_INS_ALIAS_BNECTRL /* 6.x: PPC_INS_ALIAS_BNECTRL */
+#endif
+#ifndef PPC_INS_BNEL
+#define PPC_INS_BNEL PPC_INS_ALIAS_BNEL /* 6.x: PPC_INS_ALIAS_BNEL */
+#endif
+#ifndef PPC_INS_BNELA
+#define PPC_INS_BNELA PPC_INS_ALIAS_BNELA /* 6.x: PPC_INS_ALIAS_BNELA */
+#endif
+#ifndef PPC_INS_BNELR
+#define PPC_INS_BNELR PPC_INS_ALIAS_BNELR /* 6.x: PPC_INS_ALIAS_BNELR */
+#endif
+#ifndef PPC_INS_BNELRL
+#define PPC_INS_BNELRL PPC_INS_ALIAS_BNELRL /* 6.x: PPC_INS_ALIAS_BNELRL */
+#endif
+#ifndef PPC_INS_BNG
+#define PPC_INS_BNG PPC_INS_ALIAS_BNG /* 6.x: PPC_INS_ALIAS_BNG */
+#endif
+#ifndef PPC_INS_BNGA
+#define PPC_INS_BNGA PPC_INS_ALIAS_BNGA /* 6.x: PPC_INS_ALIAS_BNGA */
+#endif
+#ifndef PPC_INS_BNGCTR
+#define PPC_INS_BNGCTR PPC_INS_ALIAS_BNGCTR /* 6.x: PPC_INS_ALIAS_BNGCTR */
+#endif
+#ifndef PPC_INS_BNGCTRL
+#define PPC_INS_BNGCTRL PPC_INS_ALIAS_BNGCTRL /* 6.x: PPC_INS_ALIAS_BNGCTRL */
+#endif
+#ifndef PPC_INS_BNGL
+#define PPC_INS_BNGL PPC_INS_ALIAS_BNGL /* 6.x: PPC_INS_ALIAS_BNGL */
+#endif
+#ifndef PPC_INS_BNGLA
+#define PPC_INS_BNGLA PPC_INS_ALIAS_BNGLA /* 6.x: PPC_INS_ALIAS_BNGLA */
+#endif
+#ifndef PPC_INS_BNGLR
+#define PPC_INS_BNGLR PPC_INS_ALIAS_BNGLR /* 6.x: PPC_INS_ALIAS_BNGLR */
+#endif
+#ifndef PPC_INS_BNGLRL
+#define PPC_INS_BNGLRL PPC_INS_ALIAS_BNGLRL /* 6.x: PPC_INS_ALIAS_BNGLRL */
+#endif
+#ifndef PPC_INS_BNL
+#define PPC_INS_BNL PPC_INS_ALIAS_BNL /* 6.x: PPC_INS_ALIAS_BNL */
+#endif
+#ifndef PPC_INS_BNLA
+#define PPC_INS_BNLA PPC_INS_ALIAS_BNLA /* 6.x: PPC_INS_ALIAS_BNLA */
+#endif
+#ifndef PPC_INS_BNLCTR
+#define PPC_INS_BNLCTR PPC_INS_ALIAS_BNLCTR /* 6.x: PPC_INS_ALIAS_BNLCTR */
+#endif
+#ifndef PPC_INS_BNLCTRL
+#define PPC_INS_BNLCTRL PPC_INS_ALIAS_BNLCTRL /* 6.x: PPC_INS_ALIAS_BNLCTRL */
+#endif
+#ifndef PPC_INS_BNLL
+#define PPC_INS_BNLL PPC_INS_ALIAS_BNLL /* 6.x: PPC_INS_ALIAS_BNLL */
+#endif
+#ifndef PPC_INS_BNLLA
+#define PPC_INS_BNLLA PPC_INS_ALIAS_BNLLA /* 6.x: PPC_INS_ALIAS_BNLLA */
+#endif
+#ifndef PPC_INS_BNLLR
+#define PPC_INS_BNLLR PPC_INS_ALIAS_BNLLR /* 6.x: PPC_INS_ALIAS_BNLLR */
+#endif
+#ifndef PPC_INS_BNLLRL
+#define PPC_INS_BNLLRL PPC_INS_ALIAS_BNLLRL /* 6.x: PPC_INS_ALIAS_BNLLRL */
+#endif
+#ifndef PPC_INS_BNS
+#define PPC_INS_BNS PPC_INS_ALIAS_BNS /* 6.x: PPC_INS_ALIAS_BNS */
+#endif
+#ifndef PPC_INS_BNSA
+#define PPC_INS_BNSA PPC_INS_ALIAS_BNSA /* 6.x: PPC_INS_ALIAS_BNSA */
+#endif
+#ifndef PPC_INS_BNSCTR
+#define PPC_INS_BNSCTR PPC_INS_ALIAS_BNSCTR /* 6.x: PPC_INS_ALIAS_BNSCTR */
+#endif
+#ifndef PPC_INS_BNSCTRL
+#define PPC_INS_BNSCTRL PPC_INS_ALIAS_BNSCTRL /* 6.x: PPC_INS_ALIAS_BNSCTRL */
+#endif
+#ifndef PPC_INS_BNSL
+#define PPC_INS_BNSL PPC_INS_ALIAS_BNSL /* 6.x: PPC_INS_ALIAS_BNSL */
+#endif
+#ifndef PPC_INS_BNSLA
+#define PPC_INS_BNSLA PPC_INS_ALIAS_BNSLA /* 6.x: PPC_INS_ALIAS_BNSLA */
+#endif
+#ifndef PPC_INS_BNSLR
+#define PPC_INS_BNSLR PPC_INS_ALIAS_BNSLR /* 6.x: PPC_INS_ALIAS_BNSLR */
+#endif
+#ifndef PPC_INS_BNSLRL
+#define PPC_INS_BNSLRL PPC_INS_ALIAS_BNSLRL /* 6.x: PPC_INS_ALIAS_BNSLRL */
+#endif
+#ifndef PPC_INS_BNU
+#define PPC_INS_BNU PPC_INS_ALIAS_BNU /* 6.x: PPC_INS_ALIAS_BNU */
+#endif
+#ifndef PPC_INS_BNUA
+#define PPC_INS_BNUA PPC_INS_ALIAS_BNUA /* 6.x: PPC_INS_ALIAS_BNUA */
+#endif
+#ifndef PPC_INS_BNUCTR
+#define PPC_INS_BNUCTR PPC_INS_ALIAS_BNUCTR /* 6.x: PPC_INS_ALIAS_BNUCTR */
+#endif
+#ifndef PPC_INS_BNUCTRL
+#define PPC_INS_BNUCTRL PPC_INS_ALIAS_BNUCTRL /* 6.x: PPC_INS_ALIAS_BNUCTRL */
+#endif
+#ifndef PPC_INS_BNUL
+#define PPC_INS_BNUL PPC_INS_ALIAS_BNUL /* 6.x: PPC_INS_ALIAS_BNUL */
+#endif
+#ifndef PPC_INS_BNULA
+#define PPC_INS_BNULA PPC_INS_ALIAS_BNULA /* 6.x: PPC_INS_ALIAS_BNULA */
+#endif
+#ifndef PPC_INS_BNULR
+#define PPC_INS_BNULR PPC_INS_ALIAS_BNULR /* 6.x: PPC_INS_ALIAS_BNULR */
+#endif
+#ifndef PPC_INS_BNULRL
+#define PPC_INS_BNULRL PPC_INS_ALIAS_BNULRL /* 6.x: PPC_INS_ALIAS_BNULRL */
+#endif
+#ifndef PPC_INS_BSO
+#define PPC_INS_BSO PPC_INS_ALIAS_BSO /* 6.x: PPC_INS_ALIAS_BSO */
+#endif
+#ifndef PPC_INS_BSOA
+#define PPC_INS_BSOA PPC_INS_ALIAS_BSOA /* 6.x: PPC_INS_ALIAS_BSOA */
+#endif
+#ifndef PPC_INS_BSOCTR
+#define PPC_INS_BSOCTR PPC_INS_ALIAS_BSOCTR /* 6.x: PPC_INS_ALIAS_BSOCTR */
+#endif
+#ifndef PPC_INS_BSOCTRL
+#define PPC_INS_BSOCTRL PPC_INS_ALIAS_BSOCTRL /* 6.x: PPC_INS_ALIAS_BSOCTRL */
+#endif
+#ifndef PPC_INS_BSOL
+#define PPC_INS_BSOL PPC_INS_ALIAS_BSOL /* 6.x: PPC_INS_ALIAS_BSOL */
+#endif
+#ifndef PPC_INS_BSOLA
+#define PPC_INS_BSOLA PPC_INS_ALIAS_BSOLA /* 6.x: PPC_INS_ALIAS_BSOLA */
+#endif
+#ifndef PPC_INS_BSOLR
+#define PPC_INS_BSOLR PPC_INS_ALIAS_BSOLR /* 6.x: PPC_INS_ALIAS_BSOLR */
+#endif
+#ifndef PPC_INS_BSOLRL
+#define PPC_INS_BSOLRL PPC_INS_ALIAS_BSOLRL /* 6.x: PPC_INS_ALIAS_BSOLRL */
+#endif
+#ifndef PPC_INS_BT
+#define PPC_INS_BT PPC_INS_ALIAS_BT /* 6.x: PPC_INS_ALIAS_BT */
+#endif
+#ifndef PPC_INS_BTA
+#define PPC_INS_BTA PPC_INS_ALIAS_BTA /* 6.x: PPC_INS_ALIAS_BTA */
+#endif
+#ifndef PPC_INS_BTCTR
+#define PPC_INS_BTCTR PPC_INS_ALIAS_BTCTR /* 6.x: PPC_INS_ALIAS_BTCTR */
+#endif
+#ifndef PPC_INS_BTCTRL
+#define PPC_INS_BTCTRL PPC_INS_ALIAS_BTCTRL /* 6.x: PPC_INS_ALIAS_BTCTRL */
+#endif
+#ifndef PPC_INS_BTL
+#define PPC_INS_BTL PPC_INS_ALIAS_BTL /* 6.x: PPC_INS_ALIAS_BTL */
+#endif
+#ifndef PPC_INS_BTLA
+#define PPC_INS_BTLA PPC_INS_ALIAS_BTLA /* 6.x: PPC_INS_ALIAS_BTLA */
+#endif
+#ifndef PPC_INS_BTLR
+#define PPC_INS_BTLR PPC_INS_ALIAS_BTLR /* 6.x: PPC_INS_ALIAS_BTLR */
+#endif
+#ifndef PPC_INS_BTLRL
+#define PPC_INS_BTLRL PPC_INS_ALIAS_BTLRL /* 6.x: PPC_INS_ALIAS_BTLRL */
+#endif
+#ifndef PPC_INS_BUN
+#define PPC_INS_BUN PPC_INS_ALIAS_BUN /* 6.x: PPC_INS_ALIAS_BUN */
+#endif
+#ifndef PPC_INS_BUNA
+#define PPC_INS_BUNA PPC_INS_ALIAS_BUNA /* 6.x: PPC_INS_ALIAS_BUNA */
+#endif
+#ifndef PPC_INS_BUNCTR
+#define PPC_INS_BUNCTR PPC_INS_ALIAS_BUNCTR /* 6.x: PPC_INS_ALIAS_BUNCTR */
+#endif
+#ifndef PPC_INS_BUNCTRL
+#define PPC_INS_BUNCTRL PPC_INS_ALIAS_BUNCTRL /* 6.x: PPC_INS_ALIAS_BUNCTRL */
+#endif
+#ifndef PPC_INS_BUNL
+#define PPC_INS_BUNL PPC_INS_ALIAS_BUNL /* 6.x: PPC_INS_ALIAS_BUNL */
+#endif
+#ifndef PPC_INS_BUNLA
+#define PPC_INS_BUNLA PPC_INS_ALIAS_BUNLA /* 6.x: PPC_INS_ALIAS_BUNLA */
+#endif
+#ifndef PPC_INS_BUNLR
+#define PPC_INS_BUNLR PPC_INS_ALIAS_BUNLR /* 6.x: PPC_INS_ALIAS_BUNLR */
+#endif
+#ifndef PPC_INS_BUNLRL
+#define PPC_INS_BUNLRL PPC_INS_ALIAS_BUNLRL /* 6.x: PPC_INS_ALIAS_BUNLRL */
+#endif
+#ifndef PPC_INS_CLRLDI
+#define PPC_INS_CLRLDI PPC_INS_ALIAS_CLRLDI /* 6.x: PPC_INS_ALIAS_CLRLDI */
+#endif
+#ifndef PPC_INS_CLRLWI
+#define PPC_INS_CLRLWI PPC_INS_ALIAS_CLRLWI /* 6.x: PPC_INS_ALIAS_CLRLWI */
+#endif
+#ifndef PPC_INS_CMP
+#define PPC_INS_CMP PPC_INS_ALIAS_CMP /* 6.x: PPC_INS_ALIAS_CMP */
+#endif
+#ifndef PPC_INS_CMPI
+#define PPC_INS_CMPI PPC_INS_ALIAS_CMPI /* 6.x: PPC_INS_ALIAS_CMPI */
+#endif
+#ifndef PPC_INS_CMPL
+#define PPC_INS_CMPL PPC_INS_ALIAS_CMPL /* 6.x: PPC_INS_ALIAS_CMPL */
+#endif
+#ifndef PPC_INS_CMPLI
+#define PPC_INS_CMPLI PPC_INS_ALIAS_CMPLI /* 6.x: PPC_INS_ALIAS_CMPLI */
+#endif
+#ifndef PPC_INS_CRCLR
+#define PPC_INS_CRCLR PPC_INS_ALIAS_CRCLR /* 6.x: PPC_INS_ALIAS_CRCLR */
+#endif
+#ifndef PPC_INS_CRMOVE
+#define PPC_INS_CRMOVE PPC_INS_ALIAS_CRMOVE /* 6.x: PPC_INS_ALIAS_CRMOVE */
+#endif
+#ifndef PPC_INS_CRNOT
+#define PPC_INS_CRNOT PPC_INS_ALIAS_CRNOT /* 6.x: PPC_INS_ALIAS_CRNOT */
+#endif
+#ifndef PPC_INS_CRSET
+#define PPC_INS_CRSET PPC_INS_ALIAS_CRSET /* 6.x: PPC_INS_ALIAS_CRSET */
+#endif
+#ifndef PPC_INS_LWSYNC
+#define PPC_INS_LWSYNC PPC_INS_ALIAS_LWSYNC /* 6.x: PPC_INS_ALIAS_LWSYNC */
+#endif
+#ifndef PPC_INS_MFAMR
+#define PPC_INS_MFAMR PPC_INS_ALIAS_MFAMR /* 6.x: PPC_INS_ALIAS_MFAMR */
+#endif
+#ifndef PPC_INS_MFASR
+#define PPC_INS_MFASR PPC_INS_ALIAS_MFASR /* 6.x: PPC_INS_ALIAS_MFASR */
+#endif
+#ifndef PPC_INS_MFBR0
+#define PPC_INS_MFBR0 PPC_INS_ALIAS_MFBR0 /* 6.x: PPC_INS_ALIAS_MFBR0 */
+#endif
+#ifndef PPC_INS_MFBR1
+#define PPC_INS_MFBR1 PPC_INS_ALIAS_MFBR1 /* 6.x: PPC_INS_ALIAS_MFBR1 */
+#endif
+#ifndef PPC_INS_MFBR2
+#define PPC_INS_MFBR2 PPC_INS_ALIAS_MFBR2 /* 6.x: PPC_INS_ALIAS_MFBR2 */
+#endif
+#ifndef PPC_INS_MFBR3
+#define PPC_INS_MFBR3 PPC_INS_ALIAS_MFBR3 /* 6.x: PPC_INS_ALIAS_MFBR3 */
+#endif
+#ifndef PPC_INS_MFBR4
+#define PPC_INS_MFBR4 PPC_INS_ALIAS_MFBR4 /* 6.x: PPC_INS_ALIAS_MFBR4 */
+#endif
+#ifndef PPC_INS_MFBR5
+#define PPC_INS_MFBR5 PPC_INS_ALIAS_MFBR5 /* 6.x: PPC_INS_ALIAS_MFBR5 */
+#endif
+#ifndef PPC_INS_MFBR6
+#define PPC_INS_MFBR6 PPC_INS_ALIAS_MFBR6 /* 6.x: PPC_INS_ALIAS_MFBR6 */
+#endif
+#ifndef PPC_INS_MFBR7
+#define PPC_INS_MFBR7 PPC_INS_ALIAS_MFBR7 /* 6.x: PPC_INS_ALIAS_MFBR7 */
+#endif
+#ifndef PPC_INS_MFCFAR
+#define PPC_INS_MFCFAR PPC_INS_ALIAS_MFCFAR /* 6.x: PPC_INS_ALIAS_MFCFAR */
+#endif
+#ifndef PPC_INS_MFDAR
+#define PPC_INS_MFDAR PPC_INS_ALIAS_MFDAR /* 6.x: PPC_INS_ALIAS_MFDAR */
+#endif
+#ifndef PPC_INS_MFDBATL
+#define PPC_INS_MFDBATL PPC_INS_ALIAS_MFDBATL /* 6.x: PPC_INS_ALIAS_MFDBATL */
+#endif
+#ifndef PPC_INS_MFDBATU
+#define PPC_INS_MFDBATU PPC_INS_ALIAS_MFDBATU /* 6.x: PPC_INS_ALIAS_MFDBATU */
+#endif
+#ifndef PPC_INS_MFDCCR
+#define PPC_INS_MFDCCR PPC_INS_ALIAS_MFDCCR /* 6.x: PPC_INS_ALIAS_MFDCCR */
+#endif
+#ifndef PPC_INS_MFDEAR
+#define PPC_INS_MFDEAR PPC_INS_ALIAS_MFDEAR /* 6.x: PPC_INS_ALIAS_MFDEAR */
+#endif
+#ifndef PPC_INS_MFDSCR
+#define PPC_INS_MFDSCR PPC_INS_ALIAS_MFDSCR /* 6.x: PPC_INS_ALIAS_MFDSCR */
+#endif
+#ifndef PPC_INS_MFDSISR
+#define PPC_INS_MFDSISR PPC_INS_ALIAS_MFDSISR /* 6.x: PPC_INS_ALIAS_MFDSISR */
+#endif
+#ifndef PPC_INS_MFESR
+#define PPC_INS_MFESR PPC_INS_ALIAS_MFESR /* 6.x: PPC_INS_ALIAS_MFESR */
+#endif
+#ifndef PPC_INS_MFIBATL
+#define PPC_INS_MFIBATL PPC_INS_ALIAS_MFIBATL /* 6.x: PPC_INS_ALIAS_MFIBATL */
+#endif
+#ifndef PPC_INS_MFIBATU
+#define PPC_INS_MFIBATU PPC_INS_ALIAS_MFIBATU /* 6.x: PPC_INS_ALIAS_MFIBATU */
+#endif
+#ifndef PPC_INS_MFICCR
+#define PPC_INS_MFICCR PPC_INS_ALIAS_MFICCR /* 6.x: PPC_INS_ALIAS_MFICCR */
+#endif
+#ifndef PPC_INS_MFPID
+#define PPC_INS_MFPID PPC_INS_ALIAS_MFPID /* 6.x: PPC_INS_ALIAS_MFPID */
+#endif
+#ifndef PPC_INS_MFPVR
+#define PPC_INS_MFPVR PPC_INS_ALIAS_MFPVR /* 6.x: PPC_INS_ALIAS_MFPVR */
+#endif
+#ifndef PPC_INS_MFRTCL
+#define PPC_INS_MFRTCL PPC_INS_ALIAS_MFRTCL /* 6.x: PPC_INS_ALIAS_MFRTCL */
+#endif
+#ifndef PPC_INS_MFRTCU
+#define PPC_INS_MFRTCU PPC_INS_ALIAS_MFRTCU /* 6.x: PPC_INS_ALIAS_MFRTCU */
+#endif
+#ifndef PPC_INS_MFSPEFSCR
+#define PPC_INS_MFSPEFSCR PPC_INS_ALIAS_MFSPEFSCR /* 6.x: PPC_INS_ALIAS_MFSPEFSCR */
+#endif
+#ifndef PPC_INS_MFSRR2
+#define PPC_INS_MFSRR2 PPC_INS_ALIAS_MFSRR2 /* 6.x: PPC_INS_ALIAS_MFSRR2 */
+#endif
+#ifndef PPC_INS_MFSRR3
+#define PPC_INS_MFSRR3 PPC_INS_ALIAS_MFSRR3 /* 6.x: PPC_INS_ALIAS_MFSRR3 */
+#endif
+#ifndef PPC_INS_MFTBHI
+#define PPC_INS_MFTBHI PPC_INS_ALIAS_MFTBHI /* 6.x: PPC_INS_ALIAS_MFTBHI */
+#endif
+#ifndef PPC_INS_MFTBLO
+#define PPC_INS_MFTBLO PPC_INS_ALIAS_MFTBLO /* 6.x: PPC_INS_ALIAS_MFTBLO */
+#endif
+#ifndef PPC_INS_MFTBU
+#define PPC_INS_MFTBU PPC_INS_ALIAS_MFTBU /* 6.x: PPC_INS_ALIAS_MFTBU */
+#endif
+#ifndef PPC_INS_MFTCR
+#define PPC_INS_MFTCR PPC_INS_ALIAS_MFTCR /* 6.x: PPC_INS_ALIAS_MFTCR */
+#endif
+#ifndef PPC_INS_MFXER
+#define PPC_INS_MFXER PPC_INS_ALIAS_MFXER /* 6.x: PPC_INS_ALIAS_MFXER */
+#endif
+#ifndef PPC_INS_MR
+#define PPC_INS_MR PPC_INS_ALIAS_MR /* 6.x: PPC_INS_ALIAS_MR */
+#endif
+#ifndef PPC_INS_MTAMR
+#define PPC_INS_MTAMR PPC_INS_ALIAS_MTAMR /* 6.x: PPC_INS_ALIAS_MTAMR */
+#endif
+#ifndef PPC_INS_MTBR0
+#define PPC_INS_MTBR0 PPC_INS_ALIAS_MTBR0 /* 6.x: PPC_INS_ALIAS_MTBR0 */
+#endif
+#ifndef PPC_INS_MTBR1
+#define PPC_INS_MTBR1 PPC_INS_ALIAS_MTBR1 /* 6.x: PPC_INS_ALIAS_MTBR1 */
+#endif
+#ifndef PPC_INS_MTBR2
+#define PPC_INS_MTBR2 PPC_INS_ALIAS_MTBR2 /* 6.x: PPC_INS_ALIAS_MTBR2 */
+#endif
+#ifndef PPC_INS_MTBR3
+#define PPC_INS_MTBR3 PPC_INS_ALIAS_MTBR3 /* 6.x: PPC_INS_ALIAS_MTBR3 */
+#endif
+#ifndef PPC_INS_MTBR4
+#define PPC_INS_MTBR4 PPC_INS_ALIAS_MTBR4 /* 6.x: PPC_INS_ALIAS_MTBR4 */
+#endif
+#ifndef PPC_INS_MTBR5
+#define PPC_INS_MTBR5 PPC_INS_ALIAS_MTBR5 /* 6.x: PPC_INS_ALIAS_MTBR5 */
+#endif
+#ifndef PPC_INS_MTBR6
+#define PPC_INS_MTBR6 PPC_INS_ALIAS_MTBR6 /* 6.x: PPC_INS_ALIAS_MTBR6 */
+#endif
+#ifndef PPC_INS_MTBR7
+#define PPC_INS_MTBR7 PPC_INS_ALIAS_MTBR7 /* 6.x: PPC_INS_ALIAS_MTBR7 */
+#endif
+#ifndef PPC_INS_MTCFAR
+#define PPC_INS_MTCFAR PPC_INS_ALIAS_MTCFAR /* 6.x: PPC_INS_ALIAS_MTCFAR */
+#endif
+#ifndef PPC_INS_MTCR
+#define PPC_INS_MTCR PPC_INS_ALIAS_MTCR /* 6.x: PPC_INS_ALIAS_MTCR */
+#endif
+#ifndef PPC_INS_MTDAR
+#define PPC_INS_MTDAR PPC_INS_ALIAS_MTDAR /* 6.x: PPC_INS_ALIAS_MTDAR */
+#endif
+#ifndef PPC_INS_MTDBATL
+#define PPC_INS_MTDBATL PPC_INS_ALIAS_MTDBATL /* 6.x: PPC_INS_ALIAS_MTDBATL */
+#endif
+#ifndef PPC_INS_MTDBATU
+#define PPC_INS_MTDBATU PPC_INS_ALIAS_MTDBATU /* 6.x: PPC_INS_ALIAS_MTDBATU */
+#endif
+#ifndef PPC_INS_MTDCCR
+#define PPC_INS_MTDCCR PPC_INS_ALIAS_MTDCCR /* 6.x: PPC_INS_ALIAS_MTDCCR */
+#endif
+#ifndef PPC_INS_MTDEAR
+#define PPC_INS_MTDEAR PPC_INS_ALIAS_MTDEAR /* 6.x: PPC_INS_ALIAS_MTDEAR */
+#endif
+#ifndef PPC_INS_MTDSCR
+#define PPC_INS_MTDSCR PPC_INS_ALIAS_MTDSCR /* 6.x: PPC_INS_ALIAS_MTDSCR */
+#endif
+#ifndef PPC_INS_MTDSISR
+#define PPC_INS_MTDSISR PPC_INS_ALIAS_MTDSISR /* 6.x: PPC_INS_ALIAS_MTDSISR */
+#endif
+#ifndef PPC_INS_MTESR
+#define PPC_INS_MTESR PPC_INS_ALIAS_MTESR /* 6.x: PPC_INS_ALIAS_MTESR */
+#endif
+#ifndef PPC_INS_MTIBATL
+#define PPC_INS_MTIBATL PPC_INS_ALIAS_MTIBATL /* 6.x: PPC_INS_ALIAS_MTIBATL */
+#endif
+#ifndef PPC_INS_MTIBATU
+#define PPC_INS_MTIBATU PPC_INS_ALIAS_MTIBATU /* 6.x: PPC_INS_ALIAS_MTIBATU */
+#endif
+#ifndef PPC_INS_MTICCR
+#define PPC_INS_MTICCR PPC_INS_ALIAS_MTICCR /* 6.x: PPC_INS_ALIAS_MTICCR */
+#endif
+#ifndef PPC_INS_MTPID
+#define PPC_INS_MTPID PPC_INS_ALIAS_MTPID /* 6.x: PPC_INS_ALIAS_MTPID */
+#endif
+#ifndef PPC_INS_MTSPEFSCR
+#define PPC_INS_MTSPEFSCR PPC_INS_ALIAS_MTSPEFSCR /* 6.x: PPC_INS_ALIAS_MTSPEFSCR */
+#endif
+#ifndef PPC_INS_MTSRR2
+#define PPC_INS_MTSRR2 PPC_INS_ALIAS_MTSRR2 /* 6.x: PPC_INS_ALIAS_MTSRR2 */
+#endif
+#ifndef PPC_INS_MTSRR3
+#define PPC_INS_MTSRR3 PPC_INS_ALIAS_MTSRR3 /* 6.x: PPC_INS_ALIAS_MTSRR3 */
+#endif
+#ifndef PPC_INS_MTTBHI
+#define PPC_INS_MTTBHI PPC_INS_ALIAS_MTTBHI /* 6.x: PPC_INS_ALIAS_MTTBHI */
+#endif
+#ifndef PPC_INS_MTTBL
+#define PPC_INS_MTTBL PPC_INS_ALIAS_MTTBL /* 6.x: PPC_INS_ALIAS_MTTBL */
+#endif
+#ifndef PPC_INS_MTTBLO
+#define PPC_INS_MTTBLO PPC_INS_ALIAS_MTTBLO /* 6.x: PPC_INS_ALIAS_MTTBLO */
+#endif
+#ifndef PPC_INS_MTTBU
+#define PPC_INS_MTTBU PPC_INS_ALIAS_MTTBU /* 6.x: PPC_INS_ALIAS_MTTBU */
+#endif
+#ifndef PPC_INS_MTTCR
+#define PPC_INS_MTTCR PPC_INS_ALIAS_MTTCR /* 6.x: PPC_INS_ALIAS_MTTCR */
+#endif
+#ifndef PPC_INS_MTXER
+#define PPC_INS_MTXER PPC_INS_ALIAS_MTXER /* 6.x: PPC_INS_ALIAS_MTXER */
+#endif
+#ifndef PPC_INS_NOT
+#define PPC_INS_NOT PPC_INS_ALIAS_NOT /* 6.x: PPC_INS_ALIAS_NOT */
+#endif
+#ifndef PPC_INS_PTESYNC
+#define PPC_INS_PTESYNC PPC_INS_ALIAS_PTESYNC /* 6.x: PPC_INS_ALIAS_PTESYNC */
+#endif
+#ifndef PPC_INS_QVFAND
+#define PPC_INS_QVFAND PPC_INS_ALIAS_QVFAND /* 6.x: PPC_INS_ALIAS_QVFAND */
+#endif
+#ifndef PPC_INS_QVFANDC
+#define PPC_INS_QVFANDC PPC_INS_ALIAS_QVFANDC /* 6.x: PPC_INS_ALIAS_QVFANDC */
+#endif
+#ifndef PPC_INS_QVFCLR
+#define PPC_INS_QVFCLR PPC_INS_ALIAS_QVFCLR /* 6.x: PPC_INS_ALIAS_QVFCLR */
+#endif
+#ifndef PPC_INS_QVFCTFB
+#define PPC_INS_QVFCTFB PPC_INS_ALIAS_QVFCTFB /* 6.x: PPC_INS_ALIAS_QVFCTFB */
+#endif
+#ifndef PPC_INS_QVFEQU
+#define PPC_INS_QVFEQU PPC_INS_ALIAS_QVFEQU /* 6.x: PPC_INS_ALIAS_QVFEQU */
+#endif
+#ifndef PPC_INS_QVFNAND
+#define PPC_INS_QVFNAND PPC_INS_ALIAS_QVFNAND /* 6.x: PPC_INS_ALIAS_QVFNAND */
+#endif
+#ifndef PPC_INS_QVFNOR
+#define PPC_INS_QVFNOR PPC_INS_ALIAS_QVFNOR /* 6.x: PPC_INS_ALIAS_QVFNOR */
+#endif
+#ifndef PPC_INS_QVFNOT
+#define PPC_INS_QVFNOT PPC_INS_ALIAS_QVFNOT /* 6.x: PPC_INS_ALIAS_QVFNOT */
+#endif
+#ifndef PPC_INS_QVFOR
+#define PPC_INS_QVFOR PPC_INS_ALIAS_QVFOR /* 6.x: PPC_INS_ALIAS_QVFOR */
+#endif
+#ifndef PPC_INS_QVFORC
+#define PPC_INS_QVFORC PPC_INS_ALIAS_QVFORC /* 6.x: PPC_INS_ALIAS_QVFORC */
+#endif
+#ifndef PPC_INS_QVFSET
+#define PPC_INS_QVFSET PPC_INS_ALIAS_QVFSET /* 6.x: PPC_INS_ALIAS_QVFSET */
+#endif
+#ifndef PPC_INS_QVFXOR
+#define PPC_INS_QVFXOR PPC_INS_ALIAS_QVFXOR /* 6.x: PPC_INS_ALIAS_QVFXOR */
+#endif
+#ifndef PPC_INS_ROTLD
+#define PPC_INS_ROTLD PPC_INS_ALIAS_ROTLD /* 6.x: PPC_INS_ALIAS_ROTLD */
+#endif
+#ifndef PPC_INS_ROTLDI
+#define PPC_INS_ROTLDI PPC_INS_ALIAS_ROTLDI /* 6.x: PPC_INS_ALIAS_ROTLDI */
+#endif
+#ifndef PPC_INS_ROTLW
+#define PPC_INS_ROTLW PPC_INS_ALIAS_ROTLW /* 6.x: PPC_INS_ALIAS_ROTLW */
+#endif
+#ifndef PPC_INS_ROTLWI
+#define PPC_INS_ROTLWI PPC_INS_ALIAS_ROTLWI /* 6.x: PPC_INS_ALIAS_ROTLWI */
+#endif
+#ifndef PPC_INS_SUB
+#define PPC_INS_SUB PPC_INS_ALIAS_SUB /* 6.x: PPC_INS_ALIAS_SUB */
+#endif
+#ifndef PPC_INS_SUBC
+#define PPC_INS_SUBC PPC_INS_ALIAS_SUBC /* 6.x: PPC_INS_ALIAS_SUBC */
+#endif
+#ifndef PPC_INS_TDEQ
+#define PPC_INS_TDEQ PPC_INS_ALIAS_TDEQ /* 6.x: PPC_INS_ALIAS_TDEQ */
+#endif
+#ifndef PPC_INS_TDEQI
+#define PPC_INS_TDEQI PPC_INS_ALIAS_TDEQI /* 6.x: PPC_INS_ALIAS_TDEQI */
+#endif
+#ifndef PPC_INS_TDGT
+#define PPC_INS_TDGT PPC_INS_ALIAS_TDGT /* 6.x: PPC_INS_ALIAS_TDGT */
+#endif
+#ifndef PPC_INS_TDGTI
+#define PPC_INS_TDGTI PPC_INS_ALIAS_TDGTI /* 6.x: PPC_INS_ALIAS_TDGTI */
+#endif
+#ifndef PPC_INS_TDLGT
+#define PPC_INS_TDLGT PPC_INS_ALIAS_TDLGT /* 6.x: PPC_INS_ALIAS_TDLGT */
+#endif
+#ifndef PPC_INS_TDLGTI
+#define PPC_INS_TDLGTI PPC_INS_ALIAS_TDLGTI /* 6.x: PPC_INS_ALIAS_TDLGTI */
+#endif
+#ifndef PPC_INS_TDLLT
+#define PPC_INS_TDLLT PPC_INS_ALIAS_TDLLT /* 6.x: PPC_INS_ALIAS_TDLLT */
+#endif
+#ifndef PPC_INS_TDLLTI
+#define PPC_INS_TDLLTI PPC_INS_ALIAS_TDLLTI /* 6.x: PPC_INS_ALIAS_TDLLTI */
+#endif
+#ifndef PPC_INS_TDLT
+#define PPC_INS_TDLT PPC_INS_ALIAS_TDLT /* 6.x: PPC_INS_ALIAS_TDLT */
+#endif
+#ifndef PPC_INS_TDLTI
+#define PPC_INS_TDLTI PPC_INS_ALIAS_TDLTI /* 6.x: PPC_INS_ALIAS_TDLTI */
+#endif
+#ifndef PPC_INS_TDNE
+#define PPC_INS_TDNE PPC_INS_ALIAS_TDNE /* 6.x: PPC_INS_ALIAS_TDNE */
+#endif
+#ifndef PPC_INS_TDNEI
+#define PPC_INS_TDNEI PPC_INS_ALIAS_TDNEI /* 6.x: PPC_INS_ALIAS_TDNEI */
+#endif
+#ifndef PPC_INS_TDU
+#define PPC_INS_TDU PPC_INS_ALIAS_TDU /* 6.x: PPC_INS_ALIAS_TDU */
+#endif
+#ifndef PPC_INS_TDUI
+#define PPC_INS_TDUI PPC_INS_ALIAS_TDUI /* 6.x: PPC_INS_ALIAS_TDUI */
+#endif
+#ifndef PPC_INS_TLBREHI
+#define PPC_INS_TLBREHI PPC_INS_ALIAS_TLBREHI /* 6.x: PPC_INS_ALIAS_TLBREHI */
+#endif
+#ifndef PPC_INS_TLBRELO
+#define PPC_INS_TLBRELO PPC_INS_ALIAS_TLBRELO /* 6.x: PPC_INS_ALIAS_TLBRELO */
+#endif
+#ifndef PPC_INS_TLBWEHI
+#define PPC_INS_TLBWEHI PPC_INS_ALIAS_TLBWEHI /* 6.x: PPC_INS_ALIAS_TLBWEHI */
+#endif
+#ifndef PPC_INS_TLBWELO
+#define PPC_INS_TLBWELO PPC_INS_ALIAS_TLBWELO /* 6.x: PPC_INS_ALIAS_TLBWELO */
+#endif
+#ifndef PPC_INS_TWEQ
+#define PPC_INS_TWEQ PPC_INS_ALIAS_TWEQ /* 6.x: PPC_INS_ALIAS_TWEQ */
+#endif
+#ifndef PPC_INS_TWEQI
+#define PPC_INS_TWEQI PPC_INS_ALIAS_TWEQI /* 6.x: PPC_INS_ALIAS_TWEQI */
+#endif
+#ifndef PPC_INS_TWGT
+#define PPC_INS_TWGT PPC_INS_ALIAS_TWGT /* 6.x: PPC_INS_ALIAS_TWGT */
+#endif
+#ifndef PPC_INS_TWGTI
+#define PPC_INS_TWGTI PPC_INS_ALIAS_TWGTI /* 6.x: PPC_INS_ALIAS_TWGTI */
+#endif
+#ifndef PPC_INS_TWLGT
+#define PPC_INS_TWLGT PPC_INS_ALIAS_TWLGT /* 6.x: PPC_INS_ALIAS_TWLGT */
+#endif
+#ifndef PPC_INS_TWLGTI
+#define PPC_INS_TWLGTI PPC_INS_ALIAS_TWLGTI /* 6.x: PPC_INS_ALIAS_TWLGTI */
+#endif
+#ifndef PPC_INS_TWLLT
+#define PPC_INS_TWLLT PPC_INS_ALIAS_TWLLT /* 6.x: PPC_INS_ALIAS_TWLLT */
+#endif
+#ifndef PPC_INS_TWLLTI
+#define PPC_INS_TWLLTI PPC_INS_ALIAS_TWLLTI /* 6.x: PPC_INS_ALIAS_TWLLTI */
+#endif
+#ifndef PPC_INS_TWLT
+#define PPC_INS_TWLT PPC_INS_ALIAS_TWLT /* 6.x: PPC_INS_ALIAS_TWLT */
+#endif
+#ifndef PPC_INS_TWLTI
+#define PPC_INS_TWLTI PPC_INS_ALIAS_TWLTI /* 6.x: PPC_INS_ALIAS_TWLTI */
+#endif
+#ifndef PPC_INS_TWNE
+#define PPC_INS_TWNE PPC_INS_ALIAS_TWNE /* 6.x: PPC_INS_ALIAS_TWNE */
+#endif
+#ifndef PPC_INS_TWNEI
+#define PPC_INS_TWNEI PPC_INS_ALIAS_TWNEI /* 6.x: PPC_INS_ALIAS_TWNEI */
+#endif
+#ifndef PPC_INS_TWU
+#define PPC_INS_TWU PPC_INS_ALIAS_TWU /* 6.x: PPC_INS_ALIAS_TWU */
+#endif
+#ifndef PPC_INS_TWUI
+#define PPC_INS_TWUI PPC_INS_ALIAS_TWUI /* 6.x: PPC_INS_ALIAS_TWUI */
+#endif
+#ifndef PPC_INS_WAITIMPL
+#define PPC_INS_WAITIMPL PPC_INS_ALIAS_WAITIMPL /* 6.x: PPC_INS_ALIAS_WAITIMPL */
+#endif
+#ifndef PPC_INS_WAITRSV
+#define PPC_INS_WAITRSV PPC_INS_ALIAS_WAITRSV /* 6.x: PPC_INS_ALIAS_WAITRSV */
+#endif
+#ifndef PPC_INS_XNOP
+#define PPC_INS_XNOP PPC_INS_ALIAS_XNOP /* 6.x: PPC_INS_ALIAS_XNOP */
+#endif
+#ifndef PPC_INS_XVMOVDP
+#define PPC_INS_XVMOVDP PPC_INS_ALIAS_XVMOVDP /* 6.x: PPC_INS_ALIAS_XVMOVDP */
+#endif
+#ifndef PPC_INS_XVMOVSP
+#define PPC_INS_XVMOVSP PPC_INS_ALIAS_XVMOVSP /* 6.x: PPC_INS_ALIAS_XVMOVSP */
+#endif
+#ifndef PPC_INS_XXMRGHD
+#define PPC_INS_XXMRGHD PPC_INS_ALIAS_XXMRGHD /* 6.x: PPC_INS_ALIAS_XXMRGHD */
+#endif
+#ifndef PPC_INS_XXMRGLD
+#define PPC_INS_XXMRGLD PPC_INS_ALIAS_XXMRGLD /* 6.x: PPC_INS_ALIAS_XXMRGLD */
+#endif
+#ifndef PPC_INS_XXSPLTD
+#define PPC_INS_XXSPLTD PPC_INS_ALIAS_XXSPLTD /* 6.x: PPC_INS_ALIAS_XXSPLTD */
+#endif
+#ifndef PPC_INS_XXSWAPD
+#define PPC_INS_XXSWAPD PPC_INS_ALIAS_XXSWAPD /* 6.x: PPC_INS_ALIAS_XXSWAPD */
+#endif
+#ifndef PPC_REG_Q0
+#define PPC_REG_Q0 PPC_REG_QF0 /* 6.x: PPC_REG_QF0 */
+#endif
+#ifndef PPC_REG_Q1
+#define PPC_REG_Q1 PPC_REG_QF1 /* 6.x: PPC_REG_QF1 */
+#endif
+#ifndef PPC_REG_Q10
+#define PPC_REG_Q10 PPC_REG_QF10 /* 6.x: PPC_REG_QF10 */
+#endif
+#ifndef PPC_REG_Q11
+#define PPC_REG_Q11 PPC_REG_QF11 /* 6.x: PPC_REG_QF11 */
+#endif
+#ifndef PPC_REG_Q12
+#define PPC_REG_Q12 PPC_REG_QF12 /* 6.x: PPC_REG_QF12 */
+#endif
+#ifndef PPC_REG_Q13
+#define PPC_REG_Q13 PPC_REG_QF13 /* 6.x: PPC_REG_QF13 */
+#endif
+#ifndef PPC_REG_Q14
+#define PPC_REG_Q14 PPC_REG_QF14 /* 6.x: PPC_REG_QF14 */
+#endif
+#ifndef PPC_REG_Q15
+#define PPC_REG_Q15 PPC_REG_QF15 /* 6.x: PPC_REG_QF15 */
+#endif
+#ifndef PPC_REG_Q16
+#define PPC_REG_Q16 PPC_REG_QF16 /* 6.x: PPC_REG_QF16 */
+#endif
+#ifndef PPC_REG_Q17
+#define PPC_REG_Q17 PPC_REG_QF17 /* 6.x: PPC_REG_QF17 */
+#endif
+#ifndef PPC_REG_Q18
+#define PPC_REG_Q18 PPC_REG_QF18 /* 6.x: PPC_REG_QF18 */
+#endif
+#ifndef PPC_REG_Q19
+#define PPC_REG_Q19 PPC_REG_QF19 /* 6.x: PPC_REG_QF19 */
+#endif
+#ifndef PPC_REG_Q2
+#define PPC_REG_Q2 PPC_REG_QF2 /* 6.x: PPC_REG_QF2 */
+#endif
+#ifndef PPC_REG_Q20
+#define PPC_REG_Q20 PPC_REG_QF20 /* 6.x: PPC_REG_QF20 */
+#endif
+#ifndef PPC_REG_Q21
+#define PPC_REG_Q21 PPC_REG_QF21 /* 6.x: PPC_REG_QF21 */
+#endif
+#ifndef PPC_REG_Q22
+#define PPC_REG_Q22 PPC_REG_QF22 /* 6.x: PPC_REG_QF22 */
+#endif
+#ifndef PPC_REG_Q23
+#define PPC_REG_Q23 PPC_REG_QF23 /* 6.x: PPC_REG_QF23 */
+#endif
+#ifndef PPC_REG_Q24
+#define PPC_REG_Q24 PPC_REG_QF24 /* 6.x: PPC_REG_QF24 */
+#endif
+#ifndef PPC_REG_Q25
+#define PPC_REG_Q25 PPC_REG_QF25 /* 6.x: PPC_REG_QF25 */
+#endif
+#ifndef PPC_REG_Q26
+#define PPC_REG_Q26 PPC_REG_QF26 /* 6.x: PPC_REG_QF26 */
+#endif
+#ifndef PPC_REG_Q27
+#define PPC_REG_Q27 PPC_REG_QF27 /* 6.x: PPC_REG_QF27 */
+#endif
+#ifndef PPC_REG_Q28
+#define PPC_REG_Q28 PPC_REG_QF28 /* 6.x: PPC_REG_QF28 */
+#endif
+#ifndef PPC_REG_Q29
+#define PPC_REG_Q29 PPC_REG_QF29 /* 6.x: PPC_REG_QF29 */
+#endif
+#ifndef PPC_REG_Q3
+#define PPC_REG_Q3 PPC_REG_QF3 /* 6.x: PPC_REG_QF3 */
+#endif
+#ifndef PPC_REG_Q30
+#define PPC_REG_Q30 PPC_REG_QF30 /* 6.x: PPC_REG_QF30 */
+#endif
+#ifndef PPC_REG_Q31
+#define PPC_REG_Q31 PPC_REG_QF31 /* 6.x: PPC_REG_QF31 */
+#endif
+#ifndef PPC_REG_Q4
+#define PPC_REG_Q4 PPC_REG_QF4 /* 6.x: PPC_REG_QF4 */
+#endif
+#ifndef PPC_REG_Q5
+#define PPC_REG_Q5 PPC_REG_QF5 /* 6.x: PPC_REG_QF5 */
+#endif
+#ifndef PPC_REG_Q6
+#define PPC_REG_Q6 PPC_REG_QF6 /* 6.x: PPC_REG_QF6 */
+#endif
+#ifndef PPC_REG_Q7
+#define PPC_REG_Q7 PPC_REG_QF7 /* 6.x: PPC_REG_QF7 */
+#endif
+#ifndef PPC_REG_Q8
+#define PPC_REG_Q8 PPC_REG_QF8 /* 6.x: PPC_REG_QF8 */
+#endif
+#ifndef PPC_REG_Q9
+#define PPC_REG_Q9 PPC_REG_QF9 /* 6.x: PPC_REG_QF9 */
+#endif
+#ifndef RISCV_REG_A0
+#define RISCV_REG_A0 RISCV_REG_X10 /* 6.x: RISCV_REG_X10 */
+#endif
+#ifndef RISCV_REG_A1
+#define RISCV_REG_A1 RISCV_REG_X11 /* 6.x: RISCV_REG_X11 */
+#endif
+#ifndef RISCV_REG_A2
+#define RISCV_REG_A2 RISCV_REG_X12 /* 6.x: RISCV_REG_X12 */
+#endif
+#ifndef RISCV_REG_A3
+#define RISCV_REG_A3 RISCV_REG_X13 /* 6.x: RISCV_REG_X13 */
+#endif
+#ifndef RISCV_REG_A4
+#define RISCV_REG_A4 RISCV_REG_X14 /* 6.x: RISCV_REG_X14 */
+#endif
+#ifndef RISCV_REG_A5
+#define RISCV_REG_A5 RISCV_REG_X15 /* 6.x: RISCV_REG_X15 */
+#endif
+#ifndef RISCV_REG_A6
+#define RISCV_REG_A6 RISCV_REG_X16 /* 6.x: RISCV_REG_X16 */
+#endif
+#ifndef RISCV_REG_A7
+#define RISCV_REG_A7 RISCV_REG_X17 /* 6.x: RISCV_REG_X17 */
+#endif
+#ifndef RISCV_REG_F0_32
+#define RISCV_REG_F0_32 RISCV_REG_F0_F /* 6.x: RISCV_REG_F0_F */
+#endif
+#ifndef RISCV_REG_F0_64
+#define RISCV_REG_F0_64 RISCV_REG_F0_D /* 6.x: RISCV_REG_F0_D */
+#endif
+#ifndef RISCV_REG_F10_32
+#define RISCV_REG_F10_32 RISCV_REG_F10_F /* 6.x: RISCV_REG_F10_F */
+#endif
+#ifndef RISCV_REG_F10_64
+#define RISCV_REG_F10_64 RISCV_REG_F10_D /* 6.x: RISCV_REG_F10_D */
+#endif
+#ifndef RISCV_REG_F11_32
+#define RISCV_REG_F11_32 RISCV_REG_F11_F /* 6.x: RISCV_REG_F11_F */
+#endif
+#ifndef RISCV_REG_F11_64
+#define RISCV_REG_F11_64 RISCV_REG_F11_D /* 6.x: RISCV_REG_F11_D */
+#endif
+#ifndef RISCV_REG_F12_32
+#define RISCV_REG_F12_32 RISCV_REG_F12_F /* 6.x: RISCV_REG_F12_F */
+#endif
+#ifndef RISCV_REG_F12_64
+#define RISCV_REG_F12_64 RISCV_REG_F12_D /* 6.x: RISCV_REG_F12_D */
+#endif
+#ifndef RISCV_REG_F13_32
+#define RISCV_REG_F13_32 RISCV_REG_F13_F /* 6.x: RISCV_REG_F13_F */
+#endif
+#ifndef RISCV_REG_F13_64
+#define RISCV_REG_F13_64 RISCV_REG_F13_D /* 6.x: RISCV_REG_F13_D */
+#endif
+#ifndef RISCV_REG_F14_32
+#define RISCV_REG_F14_32 RISCV_REG_F14_F /* 6.x: RISCV_REG_F14_F */
+#endif
+#ifndef RISCV_REG_F14_64
+#define RISCV_REG_F14_64 RISCV_REG_F14_D /* 6.x: RISCV_REG_F14_D */
+#endif
+#ifndef RISCV_REG_F15_32
+#define RISCV_REG_F15_32 RISCV_REG_F15_F /* 6.x: RISCV_REG_F15_F */
+#endif
+#ifndef RISCV_REG_F15_64
+#define RISCV_REG_F15_64 RISCV_REG_F15_D /* 6.x: RISCV_REG_F15_D */
+#endif
+#ifndef RISCV_REG_F16_32
+#define RISCV_REG_F16_32 RISCV_REG_F16_F /* 6.x: RISCV_REG_F16_F */
+#endif
+#ifndef RISCV_REG_F16_64
+#define RISCV_REG_F16_64 RISCV_REG_F16_D /* 6.x: RISCV_REG_F16_D */
+#endif
+#ifndef RISCV_REG_F17_32
+#define RISCV_REG_F17_32 RISCV_REG_F17_F /* 6.x: RISCV_REG_F17_F */
+#endif
+#ifndef RISCV_REG_F17_64
+#define RISCV_REG_F17_64 RISCV_REG_F17_D /* 6.x: RISCV_REG_F17_D */
+#endif
+#ifndef RISCV_REG_F18_32
+#define RISCV_REG_F18_32 RISCV_REG_F18_F /* 6.x: RISCV_REG_F18_F */
+#endif
+#ifndef RISCV_REG_F18_64
+#define RISCV_REG_F18_64 RISCV_REG_F18_D /* 6.x: RISCV_REG_F18_D */
+#endif
+#ifndef RISCV_REG_F19_32
+#define RISCV_REG_F19_32 RISCV_REG_F19_F /* 6.x: RISCV_REG_F19_F */
+#endif
+#ifndef RISCV_REG_F19_64
+#define RISCV_REG_F19_64 RISCV_REG_F19_D /* 6.x: RISCV_REG_F19_D */
+#endif
+#ifndef RISCV_REG_F1_32
+#define RISCV_REG_F1_32 RISCV_REG_F1_F /* 6.x: RISCV_REG_F1_F */
+#endif
+#ifndef RISCV_REG_F1_64
+#define RISCV_REG_F1_64 RISCV_REG_F1_D /* 6.x: RISCV_REG_F1_D */
+#endif
+#ifndef RISCV_REG_F20_32
+#define RISCV_REG_F20_32 RISCV_REG_F20_F /* 6.x: RISCV_REG_F20_F */
+#endif
+#ifndef RISCV_REG_F20_64
+#define RISCV_REG_F20_64 RISCV_REG_F20_D /* 6.x: RISCV_REG_F20_D */
+#endif
+#ifndef RISCV_REG_F21_32
+#define RISCV_REG_F21_32 RISCV_REG_F21_F /* 6.x: RISCV_REG_F21_F */
+#endif
+#ifndef RISCV_REG_F21_64
+#define RISCV_REG_F21_64 RISCV_REG_F21_D /* 6.x: RISCV_REG_F21_D */
+#endif
+#ifndef RISCV_REG_F22_32
+#define RISCV_REG_F22_32 RISCV_REG_F22_F /* 6.x: RISCV_REG_F22_F */
+#endif
+#ifndef RISCV_REG_F22_64
+#define RISCV_REG_F22_64 RISCV_REG_F22_D /* 6.x: RISCV_REG_F22_D */
+#endif
+#ifndef RISCV_REG_F23_32
+#define RISCV_REG_F23_32 RISCV_REG_F23_F /* 6.x: RISCV_REG_F23_F */
+#endif
+#ifndef RISCV_REG_F23_64
+#define RISCV_REG_F23_64 RISCV_REG_F23_D /* 6.x: RISCV_REG_F23_D */
+#endif
+#ifndef RISCV_REG_F24_32
+#define RISCV_REG_F24_32 RISCV_REG_F24_F /* 6.x: RISCV_REG_F24_F */
+#endif
+#ifndef RISCV_REG_F24_64
+#define RISCV_REG_F24_64 RISCV_REG_F24_D /* 6.x: RISCV_REG_F24_D */
+#endif
+#ifndef RISCV_REG_F25_32
+#define RISCV_REG_F25_32 RISCV_REG_F25_F /* 6.x: RISCV_REG_F25_F */
+#endif
+#ifndef RISCV_REG_F25_64
+#define RISCV_REG_F25_64 RISCV_REG_F25_D /* 6.x: RISCV_REG_F25_D */
+#endif
+#ifndef RISCV_REG_F26_32
+#define RISCV_REG_F26_32 RISCV_REG_F26_F /* 6.x: RISCV_REG_F26_F */
+#endif
+#ifndef RISCV_REG_F26_64
+#define RISCV_REG_F26_64 RISCV_REG_F26_D /* 6.x: RISCV_REG_F26_D */
+#endif
+#ifndef RISCV_REG_F27_32
+#define RISCV_REG_F27_32 RISCV_REG_F27_F /* 6.x: RISCV_REG_F27_F */
+#endif
+#ifndef RISCV_REG_F27_64
+#define RISCV_REG_F27_64 RISCV_REG_F27_D /* 6.x: RISCV_REG_F27_D */
+#endif
+#ifndef RISCV_REG_F28_32
+#define RISCV_REG_F28_32 RISCV_REG_F28_F /* 6.x: RISCV_REG_F28_F */
+#endif
+#ifndef RISCV_REG_F28_64
+#define RISCV_REG_F28_64 RISCV_REG_F28_D /* 6.x: RISCV_REG_F28_D */
+#endif
+#ifndef RISCV_REG_F29_32
+#define RISCV_REG_F29_32 RISCV_REG_F29_F /* 6.x: RISCV_REG_F29_F */
+#endif
+#ifndef RISCV_REG_F29_64
+#define RISCV_REG_F29_64 RISCV_REG_F29_D /* 6.x: RISCV_REG_F29_D */
+#endif
+#ifndef RISCV_REG_F2_32
+#define RISCV_REG_F2_32 RISCV_REG_F2_F /* 6.x: RISCV_REG_F2_F */
+#endif
+#ifndef RISCV_REG_F2_64
+#define RISCV_REG_F2_64 RISCV_REG_F2_D /* 6.x: RISCV_REG_F2_D */
+#endif
+#ifndef RISCV_REG_F30_32
+#define RISCV_REG_F30_32 RISCV_REG_F30_F /* 6.x: RISCV_REG_F30_F */
+#endif
+#ifndef RISCV_REG_F30_64
+#define RISCV_REG_F30_64 RISCV_REG_F30_D /* 6.x: RISCV_REG_F30_D */
+#endif
+#ifndef RISCV_REG_F31_32
+#define RISCV_REG_F31_32 RISCV_REG_F31_F /* 6.x: RISCV_REG_F31_F */
+#endif
+#ifndef RISCV_REG_F31_64
+#define RISCV_REG_F31_64 RISCV_REG_F31_D /* 6.x: RISCV_REG_F31_D */
+#endif
+#ifndef RISCV_REG_F3_32
+#define RISCV_REG_F3_32 RISCV_REG_F3_F /* 6.x: RISCV_REG_F3_F */
+#endif
+#ifndef RISCV_REG_F3_64
+#define RISCV_REG_F3_64 RISCV_REG_F3_D /* 6.x: RISCV_REG_F3_D */
+#endif
+#ifndef RISCV_REG_F4_32
+#define RISCV_REG_F4_32 RISCV_REG_F4_F /* 6.x: RISCV_REG_F4_F */
+#endif
+#ifndef RISCV_REG_F4_64
+#define RISCV_REG_F4_64 RISCV_REG_F4_D /* 6.x: RISCV_REG_F4_D */
+#endif
+#ifndef RISCV_REG_F5_32
+#define RISCV_REG_F5_32 RISCV_REG_F5_F /* 6.x: RISCV_REG_F5_F */
+#endif
+#ifndef RISCV_REG_F5_64
+#define RISCV_REG_F5_64 RISCV_REG_F5_D /* 6.x: RISCV_REG_F5_D */
+#endif
+#ifndef RISCV_REG_F6_32
+#define RISCV_REG_F6_32 RISCV_REG_F6_F /* 6.x: RISCV_REG_F6_F */
+#endif
+#ifndef RISCV_REG_F6_64
+#define RISCV_REG_F6_64 RISCV_REG_F6_D /* 6.x: RISCV_REG_F6_D */
+#endif
+#ifndef RISCV_REG_F7_32
+#define RISCV_REG_F7_32 RISCV_REG_F7_F /* 6.x: RISCV_REG_F7_F */
+#endif
+#ifndef RISCV_REG_F7_64
+#define RISCV_REG_F7_64 RISCV_REG_F7_D /* 6.x: RISCV_REG_F7_D */
+#endif
+#ifndef RISCV_REG_F8_32
+#define RISCV_REG_F8_32 RISCV_REG_F8_F /* 6.x: RISCV_REG_F8_F */
+#endif
+#ifndef RISCV_REG_F8_64
+#define RISCV_REG_F8_64 RISCV_REG_F8_D /* 6.x: RISCV_REG_F8_D */
+#endif
+#ifndef RISCV_REG_F9_32
+#define RISCV_REG_F9_32 RISCV_REG_F9_F /* 6.x: RISCV_REG_F9_F */
+#endif
+#ifndef RISCV_REG_F9_64
+#define RISCV_REG_F9_64 RISCV_REG_F9_D /* 6.x: RISCV_REG_F9_D */
+#endif
+#ifndef RISCV_REG_RA
+#define RISCV_REG_RA RISCV_REG_X1 /* 6.x: RISCV_REG_X1 */
+#endif
+#ifndef RISCV_REG_SP
+#define RISCV_REG_SP RISCV_REG_X2 /* 6.x: RISCV_REG_X2 */
+#endif
+#ifndef SPARC_INS_BRGEZ
+#define SPARC_INS_BRGEZ SPARC_INS_ALIAS_BRGEZ /* 6.x: SPARC_INS_ALIAS_BRGEZ */
+#endif
+#ifndef SPARC_INS_BRGZ
+#define SPARC_INS_BRGZ SPARC_INS_ALIAS_BRGZ /* 6.x: SPARC_INS_ALIAS_BRGZ */
+#endif
+#ifndef SPARC_INS_BRLEZ
+#define SPARC_INS_BRLEZ SPARC_INS_ALIAS_BRLEZ /* 6.x: SPARC_INS_ALIAS_BRLEZ */
+#endif
+#ifndef SPARC_INS_BRLZ
+#define SPARC_INS_BRLZ SPARC_INS_ALIAS_BRLZ /* 6.x: SPARC_INS_ALIAS_BRLZ */
+#endif
+#ifndef SPARC_INS_BRNZ
+#define SPARC_INS_BRNZ SPARC_INS_ALIAS_BRNZ /* 6.x: SPARC_INS_ALIAS_BRNZ */
+#endif
+#ifndef SPARC_INS_BRZ
+#define SPARC_INS_BRZ SPARC_INS_ALIAS_BRZ /* 6.x: SPARC_INS_ALIAS_BRZ */
+#endif
+#ifndef SPARC_INS_CMP
+#define SPARC_INS_CMP SPARC_INS_ALIAS_CMP /* 6.x: SPARC_INS_ALIAS_CMP */
+#endif
+#ifndef SPARC_INS_RET
+#define SPARC_INS_RET SPARC_INS_ALIAS_RET /* 6.x: SPARC_INS_ALIAS_RET */
+#endif
+#ifndef SPARC_INS_RETL
+#define SPARC_INS_RETL SPARC_INS_ALIAS_RETL /* 6.x: SPARC_INS_ALIAS_RETL */
+#endif
+#ifndef SPARC_REG_XCC
+#define SPARC_REG_XCC SPARC_REG_ICC /* 6.x: SPARC_REG_ICC */
+#endif
+#ifndef SYSZ_REG_0
+#define SYSZ_REG_0 SYSZ_REG_R0D /* 6.x: SYSZ_REG_R0D */
+#endif
+#ifndef SYSZ_REG_1
+#define SYSZ_REG_1 SYSZ_REG_R1D /* 6.x: SYSZ_REG_R1D */
+#endif
+#ifndef SYSZ_REG_10
+#define SYSZ_REG_10 SYSZ_REG_R10D /* 6.x: SYSZ_REG_R10D */
+#endif
+#ifndef SYSZ_REG_11
+#define SYSZ_REG_11 SYSZ_REG_R11D /* 6.x: SYSZ_REG_R11D */
+#endif
+#ifndef SYSZ_REG_12
+#define SYSZ_REG_12 SYSZ_REG_R12D /* 6.x: SYSZ_REG_R12D */
+#endif
+#ifndef SYSZ_REG_13
+#define SYSZ_REG_13 SYSZ_REG_R13D /* 6.x: SYSZ_REG_R13D */
+#endif
+#ifndef SYSZ_REG_14
+#define SYSZ_REG_14 SYSZ_REG_R14D /* 6.x: SYSZ_REG_R14D */
+#endif
+#ifndef SYSZ_REG_15
+#define SYSZ_REG_15 SYSZ_REG_R15D /* 6.x: SYSZ_REG_R15D */
+#endif
+#ifndef SYSZ_REG_2
+#define SYSZ_REG_2 SYSZ_REG_R2D /* 6.x: SYSZ_REG_R2D */
+#endif
+#ifndef SYSZ_REG_3
+#define SYSZ_REG_3 SYSZ_REG_R3D /* 6.x: SYSZ_REG_R3D */
+#endif
+#ifndef SYSZ_REG_4
+#define SYSZ_REG_4 SYSZ_REG_R4D /* 6.x: SYSZ_REG_R4D */
+#endif
+#ifndef SYSZ_REG_5
+#define SYSZ_REG_5 SYSZ_REG_R5D /* 6.x: SYSZ_REG_R5D */
+#endif
+#ifndef SYSZ_REG_6
+#define SYSZ_REG_6 SYSZ_REG_R6D /* 6.x: SYSZ_REG_R6D */
+#endif
+#ifndef SYSZ_REG_7
+#define SYSZ_REG_7 SYSZ_REG_R7D /* 6.x: SYSZ_REG_R7D */
+#endif
+#ifndef SYSZ_REG_8
+#define SYSZ_REG_8 SYSZ_REG_R8D /* 6.x: SYSZ_REG_R8D */
+#endif
+#ifndef SYSZ_REG_9
+#define SYSZ_REG_9 SYSZ_REG_R9D /* 6.x: SYSZ_REG_R9D */
+#endif
+#ifndef SYSZ_REG_F0
+#define SYSZ_REG_F0 SYSZ_REG_F0D /* 6.x: SYSZ_REG_F0D */
+#endif
+#ifndef SYSZ_REG_F1
+#define SYSZ_REG_F1 SYSZ_REG_F1D /* 6.x: SYSZ_REG_F1D */
+#endif
+#ifndef SYSZ_REG_F10
+#define SYSZ_REG_F10 SYSZ_REG_F10D /* 6.x: SYSZ_REG_F10D */
+#endif
+#ifndef SYSZ_REG_F11
+#define SYSZ_REG_F11 SYSZ_REG_F11D /* 6.x: SYSZ_REG_F11D */
+#endif
+#ifndef SYSZ_REG_F12
+#define SYSZ_REG_F12 SYSZ_REG_F12D /* 6.x: SYSZ_REG_F12D */
+#endif
+#ifndef SYSZ_REG_F13
+#define SYSZ_REG_F13 SYSZ_REG_F13D /* 6.x: SYSZ_REG_F13D */
+#endif
+#ifndef SYSZ_REG_F14
+#define SYSZ_REG_F14 SYSZ_REG_F14D /* 6.x: SYSZ_REG_F14D */
+#endif
+#ifndef SYSZ_REG_F15
+#define SYSZ_REG_F15 SYSZ_REG_F15D /* 6.x: SYSZ_REG_F15D */
+#endif
+#ifndef SYSZ_REG_F16
+#define SYSZ_REG_F16 SYSZ_REG_F16D /* 6.x: SYSZ_REG_F16D */
+#endif
+#ifndef SYSZ_REG_F17
+#define SYSZ_REG_F17 SYSZ_REG_F17D /* 6.x: SYSZ_REG_F17D */
+#endif
+#ifndef SYSZ_REG_F18
+#define SYSZ_REG_F18 SYSZ_REG_F18D /* 6.x: SYSZ_REG_F18D */
+#endif
+#ifndef SYSZ_REG_F19
+#define SYSZ_REG_F19 SYSZ_REG_F19D /* 6.x: SYSZ_REG_F19D */
+#endif
+#ifndef SYSZ_REG_F2
+#define SYSZ_REG_F2 SYSZ_REG_F2D /* 6.x: SYSZ_REG_F2D */
+#endif
+#ifndef SYSZ_REG_F20
+#define SYSZ_REG_F20 SYSZ_REG_F20D /* 6.x: SYSZ_REG_F20D */
+#endif
+#ifndef SYSZ_REG_F21
+#define SYSZ_REG_F21 SYSZ_REG_F21D /* 6.x: SYSZ_REG_F21D */
+#endif
+#ifndef SYSZ_REG_F22
+#define SYSZ_REG_F22 SYSZ_REG_F22D /* 6.x: SYSZ_REG_F22D */
+#endif
+#ifndef SYSZ_REG_F23
+#define SYSZ_REG_F23 SYSZ_REG_F23D /* 6.x: SYSZ_REG_F23D */
+#endif
+#ifndef SYSZ_REG_F24
+#define SYSZ_REG_F24 SYSZ_REG_F24D /* 6.x: SYSZ_REG_F24D */
+#endif
+#ifndef SYSZ_REG_F25
+#define SYSZ_REG_F25 SYSZ_REG_F25D /* 6.x: SYSZ_REG_F25D */
+#endif
+#ifndef SYSZ_REG_F26
+#define SYSZ_REG_F26 SYSZ_REG_F26D /* 6.x: SYSZ_REG_F26D */
+#endif
+#ifndef SYSZ_REG_F27
+#define SYSZ_REG_F27 SYSZ_REG_F27D /* 6.x: SYSZ_REG_F27D */
+#endif
+#ifndef SYSZ_REG_F28
+#define SYSZ_REG_F28 SYSZ_REG_F28D /* 6.x: SYSZ_REG_F28D */
+#endif
+#ifndef SYSZ_REG_F29
+#define SYSZ_REG_F29 SYSZ_REG_F29D /* 6.x: SYSZ_REG_F29D */
+#endif
+#ifndef SYSZ_REG_F3
+#define SYSZ_REG_F3 SYSZ_REG_F3D /* 6.x: SYSZ_REG_F3D */
+#endif
+#ifndef SYSZ_REG_F30
+#define SYSZ_REG_F30 SYSZ_REG_F30D /* 6.x: SYSZ_REG_F30D */
+#endif
+#ifndef SYSZ_REG_F31
+#define SYSZ_REG_F31 SYSZ_REG_F31D /* 6.x: SYSZ_REG_F31D */
+#endif
+#ifndef SYSZ_REG_F4
+#define SYSZ_REG_F4 SYSZ_REG_F4D /* 6.x: SYSZ_REG_F4D */
+#endif
+#ifndef SYSZ_REG_F5
+#define SYSZ_REG_F5 SYSZ_REG_F5D /* 6.x: SYSZ_REG_F5D */
+#endif
+#ifndef SYSZ_REG_F6
+#define SYSZ_REG_F6 SYSZ_REG_F6D /* 6.x: SYSZ_REG_F6D */
+#endif
+#ifndef SYSZ_REG_F7
+#define SYSZ_REG_F7 SYSZ_REG_F7D /* 6.x: SYSZ_REG_F7D */
+#endif
+#ifndef SYSZ_REG_F8
+#define SYSZ_REG_F8 SYSZ_REG_F8D /* 6.x: SYSZ_REG_F8D */
+#endif
+#ifndef SYSZ_REG_F9
+#define SYSZ_REG_F9 SYSZ_REG_F9D /* 6.x: SYSZ_REG_F9D */
+#endif
+
+#ifndef RISCV_INS_AMOADD_D_AQ_RL
+#define RISCV_INS_AMOADD_D_AQ_RL RISCV_INS_AMOADD_D_AQRL /* 6.x: RISCV_INS_AMOADD_D_AQRL */
+#endif
+#ifndef RISCV_INS_AMOADD_W_AQ_RL
+#define RISCV_INS_AMOADD_W_AQ_RL RISCV_INS_AMOADD_W_AQRL /* 6.x: RISCV_INS_AMOADD_W_AQRL */
+#endif
+#ifndef RISCV_INS_AMOAND_D_AQ_RL
+#define RISCV_INS_AMOAND_D_AQ_RL RISCV_INS_AMOAND_D_AQRL /* 6.x: RISCV_INS_AMOAND_D_AQRL */
+#endif
+#ifndef RISCV_INS_AMOAND_W_AQ_RL
+#define RISCV_INS_AMOAND_W_AQ_RL RISCV_INS_AMOAND_W_AQRL /* 6.x: RISCV_INS_AMOAND_W_AQRL */
+#endif
+#ifndef RISCV_INS_AMOMAXU_D_AQ_RL
+#define RISCV_INS_AMOMAXU_D_AQ_RL RISCV_INS_AMOMAXU_D_AQRL /* 6.x: RISCV_INS_AMOMAXU_D_AQRL */
+#endif
+#ifndef RISCV_INS_AMOMAXU_W_AQ_RL
+#define RISCV_INS_AMOMAXU_W_AQ_RL RISCV_INS_AMOMAXU_W_AQRL /* 6.x: RISCV_INS_AMOMAXU_W_AQRL */
+#endif
+#ifndef RISCV_INS_AMOMAX_D_AQ_RL
+#define RISCV_INS_AMOMAX_D_AQ_RL RISCV_INS_AMOMAX_D_AQRL /* 6.x: RISCV_INS_AMOMAX_D_AQRL */
+#endif
+#ifndef RISCV_INS_AMOMAX_W_AQ_RL
+#define RISCV_INS_AMOMAX_W_AQ_RL RISCV_INS_AMOMAX_W_AQRL /* 6.x: RISCV_INS_AMOMAX_W_AQRL */
+#endif
+#ifndef RISCV_INS_AMOMINU_D_AQ_RL
+#define RISCV_INS_AMOMINU_D_AQ_RL RISCV_INS_AMOMINU_D_AQRL /* 6.x: RISCV_INS_AMOMINU_D_AQRL */
+#endif
+#ifndef RISCV_INS_AMOMINU_W_AQ_RL
+#define RISCV_INS_AMOMINU_W_AQ_RL RISCV_INS_AMOMINU_W_AQRL /* 6.x: RISCV_INS_AMOMINU_W_AQRL */
+#endif
+#ifndef RISCV_INS_AMOMIN_D_AQ_RL
+#define RISCV_INS_AMOMIN_D_AQ_RL RISCV_INS_AMOMIN_D_AQRL /* 6.x: RISCV_INS_AMOMIN_D_AQRL */
+#endif
+#ifndef RISCV_INS_AMOMIN_W_AQ_RL
+#define RISCV_INS_AMOMIN_W_AQ_RL RISCV_INS_AMOMIN_W_AQRL /* 6.x: RISCV_INS_AMOMIN_W_AQRL */
+#endif
+#ifndef RISCV_INS_AMOOR_D_AQ_RL
+#define RISCV_INS_AMOOR_D_AQ_RL RISCV_INS_AMOOR_D_AQRL /* 6.x: RISCV_INS_AMOOR_D_AQRL */
+#endif
+#ifndef RISCV_INS_AMOOR_W_AQ_RL
+#define RISCV_INS_AMOOR_W_AQ_RL RISCV_INS_AMOOR_W_AQRL /* 6.x: RISCV_INS_AMOOR_W_AQRL */
+#endif
+#ifndef RISCV_INS_AMOSWAP_D_AQ_RL
+#define RISCV_INS_AMOSWAP_D_AQ_RL RISCV_INS_AMOSWAP_D_AQRL /* 6.x: RISCV_INS_AMOSWAP_D_AQRL */
+#endif
+#ifndef RISCV_INS_AMOSWAP_W_AQ_RL
+#define RISCV_INS_AMOSWAP_W_AQ_RL RISCV_INS_AMOSWAP_W_AQRL /* 6.x: RISCV_INS_AMOSWAP_W_AQRL */
+#endif
+#ifndef RISCV_INS_AMOXOR_D_AQ_RL
+#define RISCV_INS_AMOXOR_D_AQ_RL RISCV_INS_AMOXOR_D_AQRL /* 6.x: RISCV_INS_AMOXOR_D_AQRL */
+#endif
+#ifndef RISCV_INS_AMOXOR_W_AQ_RL
+#define RISCV_INS_AMOXOR_W_AQ_RL RISCV_INS_AMOXOR_W_AQRL /* 6.x: RISCV_INS_AMOXOR_W_AQRL */
+#endif
+#ifndef RISCV_INS_LR_D_AQ_RL
+#define RISCV_INS_LR_D_AQ_RL RISCV_INS_LR_D_AQRL /* 6.x: RISCV_INS_LR_D_AQRL */
+#endif
+#ifndef RISCV_INS_LR_W_AQ_RL
+#define RISCV_INS_LR_W_AQ_RL RISCV_INS_LR_W_AQRL /* 6.x: RISCV_INS_LR_W_AQRL */
+#endif
+#ifndef RISCV_INS_SC_D_AQ_RL
+#define RISCV_INS_SC_D_AQ_RL RISCV_INS_SC_D_AQRL /* 6.x: RISCV_INS_SC_D_AQRL */
+#endif
+#ifndef RISCV_INS_SC_W_AQ_RL
+#define RISCV_INS_SC_W_AQ_RL RISCV_INS_SC_W_AQRL /* 6.x: RISCV_INS_SC_W_AQRL */
+#endif
+
+#ifndef ARM_SYSREG_R8_USR
+#define ARM_SYSREG_R8_USR ARM_BANKEDREG_R8_USR /* 6.x: ARM_BANKEDREG_R8_USR */
+#endif
+#ifndef ARM_SYSREG_R9_USR
+#define ARM_SYSREG_R9_USR ARM_BANKEDREG_R9_USR /* 6.x: ARM_BANKEDREG_R9_USR */
+#endif
+#ifndef ARM_SYSREG_R10_USR
+#define ARM_SYSREG_R10_USR ARM_BANKEDREG_R10_USR /* 6.x: ARM_BANKEDREG_R10_USR */
+#endif
+#ifndef ARM_SYSREG_R11_USR
+#define ARM_SYSREG_R11_USR ARM_BANKEDREG_R11_USR /* 6.x: ARM_BANKEDREG_R11_USR */
+#endif
+#ifndef ARM_SYSREG_R12_USR
+#define ARM_SYSREG_R12_USR ARM_BANKEDREG_R12_USR /* 6.x: ARM_BANKEDREG_R12_USR */
+#endif
+#ifndef ARM_SYSREG_SP_USR
+#define ARM_SYSREG_SP_USR ARM_BANKEDREG_SP_USR /* 6.x: ARM_BANKEDREG_SP_USR */
+#endif
+#ifndef ARM_SYSREG_LR_USR
+#define ARM_SYSREG_LR_USR ARM_BANKEDREG_LR_USR /* 6.x: ARM_BANKEDREG_LR_USR */
+#endif
+#ifndef ARM_SYSREG_R8_FIQ
+#define ARM_SYSREG_R8_FIQ ARM_BANKEDREG_R8_FIQ /* 6.x: ARM_BANKEDREG_R8_FIQ */
+#endif
+#ifndef ARM_SYSREG_R9_FIQ
+#define ARM_SYSREG_R9_FIQ ARM_BANKEDREG_R9_FIQ /* 6.x: ARM_BANKEDREG_R9_FIQ */
+#endif
+#ifndef ARM_SYSREG_R10_FIQ
+#define ARM_SYSREG_R10_FIQ ARM_BANKEDREG_R10_FIQ /* 6.x: ARM_BANKEDREG_R10_FIQ */
+#endif
+#ifndef ARM_SYSREG_R11_FIQ
+#define ARM_SYSREG_R11_FIQ ARM_BANKEDREG_R11_FIQ /* 6.x: ARM_BANKEDREG_R11_FIQ */
+#endif
+#ifndef ARM_SYSREG_R12_FIQ
+#define ARM_SYSREG_R12_FIQ ARM_BANKEDREG_R12_FIQ /* 6.x: ARM_BANKEDREG_R12_FIQ */
+#endif
+#ifndef ARM_SYSREG_SP_FIQ
+#define ARM_SYSREG_SP_FIQ ARM_BANKEDREG_SP_FIQ /* 6.x: ARM_BANKEDREG_SP_FIQ */
+#endif
+#ifndef ARM_SYSREG_LR_FIQ
+#define ARM_SYSREG_LR_FIQ ARM_BANKEDREG_LR_FIQ /* 6.x: ARM_BANKEDREG_LR_FIQ */
+#endif
+#ifndef ARM_SYSREG_LR_IRQ
+#define ARM_SYSREG_LR_IRQ ARM_BANKEDREG_LR_IRQ /* 6.x: ARM_BANKEDREG_LR_IRQ */
+#endif
+#ifndef ARM_SYSREG_SP_IRQ
+#define ARM_SYSREG_SP_IRQ ARM_BANKEDREG_SP_IRQ /* 6.x: ARM_BANKEDREG_SP_IRQ */
+#endif
+#ifndef ARM_SYSREG_LR_SVC
+#define ARM_SYSREG_LR_SVC ARM_BANKEDREG_LR_SVC /* 6.x: ARM_BANKEDREG_LR_SVC */
+#endif
+#ifndef ARM_SYSREG_SP_SVC
+#define ARM_SYSREG_SP_SVC ARM_BANKEDREG_SP_SVC /* 6.x: ARM_BANKEDREG_SP_SVC */
+#endif
+#ifndef ARM_SYSREG_LR_ABT
+#define ARM_SYSREG_LR_ABT ARM_BANKEDREG_LR_ABT /* 6.x: ARM_BANKEDREG_LR_ABT */
+#endif
+#ifndef ARM_SYSREG_SP_ABT
+#define ARM_SYSREG_SP_ABT ARM_BANKEDREG_SP_ABT /* 6.x: ARM_BANKEDREG_SP_ABT */
+#endif
+#ifndef ARM_SYSREG_LR_UND
+#define ARM_SYSREG_LR_UND ARM_BANKEDREG_LR_UND /* 6.x: ARM_BANKEDREG_LR_UND */
+#endif
+#ifndef ARM_SYSREG_SP_UND
+#define ARM_SYSREG_SP_UND ARM_BANKEDREG_SP_UND /* 6.x: ARM_BANKEDREG_SP_UND */
+#endif
+#ifndef ARM_SYSREG_LR_MON
+#define ARM_SYSREG_LR_MON ARM_BANKEDREG_LR_MON /* 6.x: ARM_BANKEDREG_LR_MON */
+#endif
+#ifndef ARM_SYSREG_SP_MON
+#define ARM_SYSREG_SP_MON ARM_BANKEDREG_SP_MON /* 6.x: ARM_BANKEDREG_SP_MON */
+#endif
+#ifndef ARM_SYSREG_ELR_HYP
+#define ARM_SYSREG_ELR_HYP ARM_BANKEDREG_ELR_HYP /* 6.x: ARM_BANKEDREG_ELR_HYP */
+#endif
+#ifndef ARM_SYSREG_SP_HYP
+#define ARM_SYSREG_SP_HYP ARM_BANKEDREG_SP_HYP /* 6.x: ARM_BANKEDREG_SP_HYP */
+#endif
+#ifndef ARM_SYSREG_SPSR_FIQ
+#define ARM_SYSREG_SPSR_FIQ ARM_BANKEDREG_SPSR_FIQ /* 6.x: ARM_BANKEDREG_SPSR_FIQ */
+#endif
+#ifndef ARM_SYSREG_SPSR_IRQ
+#define ARM_SYSREG_SPSR_IRQ ARM_BANKEDREG_SPSR_IRQ /* 6.x: ARM_BANKEDREG_SPSR_IRQ */
+#endif
+#ifndef ARM_SYSREG_SPSR_SVC
+#define ARM_SYSREG_SPSR_SVC ARM_BANKEDREG_SPSR_SVC /* 6.x: ARM_BANKEDREG_SPSR_SVC */
+#endif
+#ifndef ARM_SYSREG_SPSR_ABT
+#define ARM_SYSREG_SPSR_ABT ARM_BANKEDREG_SPSR_ABT /* 6.x: ARM_BANKEDREG_SPSR_ABT */
+#endif
+#ifndef ARM_SYSREG_SPSR_UND
+#define ARM_SYSREG_SPSR_UND ARM_BANKEDREG_SPSR_UND /* 6.x: ARM_BANKEDREG_SPSR_UND */
+#endif
+#ifndef ARM_SYSREG_SPSR_MON
+#define ARM_SYSREG_SPSR_MON ARM_BANKEDREG_SPSR_MON /* 6.x: ARM_BANKEDREG_SPSR_MON */
+#endif
+#ifndef ARM_SYSREG_SPSR_HYP
+#define ARM_SYSREG_SPSR_HYP ARM_BANKEDREG_SPSR_HYP /* 6.x: ARM_BANKEDREG_SPSR_HYP */
+#endif
+#ifndef ARM_CC_EQ
+#define ARM_CC_EQ ARMCC_EQ /* 6.x: ARMCC_EQ */
+#endif
+#ifndef ARM_CC_NE
+#define ARM_CC_NE ARMCC_NE /* 6.x: ARMCC_NE */
+#endif
+#ifndef ARM_CC_HS
+#define ARM_CC_HS ARMCC_HS /* 6.x: ARMCC_HS */
+#endif
+#ifndef ARM_CC_LO
+#define ARM_CC_LO ARMCC_LO /* 6.x: ARMCC_LO */
+#endif
+#ifndef ARM_CC_MI
+#define ARM_CC_MI ARMCC_MI /* 6.x: ARMCC_MI */
+#endif
+#ifndef ARM_CC_PL
+#define ARM_CC_PL ARMCC_PL /* 6.x: ARMCC_PL */
+#endif
+#ifndef ARM_CC_VS
+#define ARM_CC_VS ARMCC_VS /* 6.x: ARMCC_VS */
+#endif
+#ifndef ARM_CC_VC
+#define ARM_CC_VC ARMCC_VC /* 6.x: ARMCC_VC */
+#endif
+#ifndef ARM_CC_HI
+#define ARM_CC_HI ARMCC_HI /* 6.x: ARMCC_HI */
+#endif
+#ifndef ARM_CC_LS
+#define ARM_CC_LS ARMCC_LS /* 6.x: ARMCC_LS */
+#endif
+#ifndef ARM_CC_GE
+#define ARM_CC_GE ARMCC_GE /* 6.x: ARMCC_GE */
+#endif
+#ifndef ARM_CC_LT
+#define ARM_CC_LT ARMCC_LT /* 6.x: ARMCC_LT */
+#endif
+#ifndef ARM_CC_GT
+#define ARM_CC_GT ARMCC_GT /* 6.x: ARMCC_GT */
+#endif
+#ifndef ARM_CC_LE
+#define ARM_CC_LE ARMCC_LE /* 6.x: ARMCC_LE */
+#endif
+#ifndef ARM_CC_AL
+#define ARM_CC_AL ARMCC_AL /* 6.x: ARMCC_AL */
+#endif
+#ifndef ARM_CC_INVALID
+#define ARM_CC_INVALID ARMCC_Invalid /* 6.x: ARMCC_Invalid */
+#endif
+#ifndef CS_MODE_RISCVC
+#define CS_MODE_RISCVC CS_MODE_RISCV_C /* 6.x: CS_MODE_RISCV_C */
+#endif
+#ifndef SPARC_CC_INVALID
+#define SPARC_CC_INVALID SPARC_CC_UNDEF /* 6.x: SPARC_CC_UNDEF */
+#endif
+#ifndef ARM_SFT_RRX_REG
+#define ARM_SFT_RRX_REG ARM_SFT_RRX /* 6.x: ARM_SFT_RRX */
+#endif
+#ifndef AARCH64LAYOUT_VL_1B
+#define AARCH64LAYOUT_VL_1B AARCH64LAYOUT_VL_B /* 6.x: AARCH64LAYOUT_VL_B */
+#endif
+#ifndef AARCH64LAYOUT_VL_1H
+#define AARCH64LAYOUT_VL_1H AARCH64LAYOUT_VL_H /* 6.x: AARCH64LAYOUT_VL_H */
+#endif
+#ifndef ARM_INS_FCONSTD
+#define ARM_INS_FCONSTD ARM_INS_VMOV /* 6.x: ARM_INS_VMOV */
+#endif
+#ifndef ARM_INS_FCONSTS
+#define ARM_INS_FCONSTS ARM_INS_VMOV /* 6.x: ARM_INS_VMOV */
+#endif
+#ifndef ARM_INS_FMSTAT
+#define ARM_INS_FMSTAT ARM_INS_VMRS /* 6.x: ARM_INS_VMRS */
+#endif
+#ifndef ARM_INS_NEG
+#define ARM_INS_NEG ARM_INS_RSB /* 6.x: ARM_INS_RSB */
+#endif
+#ifndef PPC_INS_MSYNC
+#define PPC_INS_MSYNC PPC_INS_SYNC /* 6.x: PPC_INS_SYNC */
+#endif
+#ifndef MIPS_REG_HI
+#define MIPS_REG_HI MIPS_REG_HI0 /* 6.x: MIPS_REG_HI0 */
+#endif
+#ifndef MIPS_REG_LO
+#define MIPS_REG_LO MIPS_REG_LO0 /* 6.x: MIPS_REG_LO0 */
+#endif
+#ifndef MIPS_REG_CC0
+#define MIPS_REG_CC0 MIPS_REG_FCC0 /* 6.x: MIPS_REG_FCC0 */
+#endif
+#ifndef MIPS_REG_CC1
+#define MIPS_REG_CC1 MIPS_REG_FCC1 /* 6.x: MIPS_REG_FCC1 */
+#endif
+#ifndef MIPS_REG_CC2
+#define MIPS_REG_CC2 MIPS_REG_FCC2 /* 6.x: MIPS_REG_FCC2 */
+#endif
+#ifndef MIPS_REG_CC3
+#define MIPS_REG_CC3 MIPS_REG_FCC3 /* 6.x: MIPS_REG_FCC3 */
+#endif
+#ifndef MIPS_REG_CC4
+#define MIPS_REG_CC4 MIPS_REG_FCC4 /* 6.x: MIPS_REG_FCC4 */
+#endif
+#ifndef MIPS_REG_CC5
+#define MIPS_REG_CC5 MIPS_REG_FCC5 /* 6.x: MIPS_REG_FCC5 */
+#endif
+#ifndef MIPS_REG_CC6
+#define MIPS_REG_CC6 MIPS_REG_FCC6 /* 6.x: MIPS_REG_FCC6 */
+#endif
+#ifndef MIPS_REG_CC7
+#define MIPS_REG_CC7 MIPS_REG_FCC7 /* 6.x: MIPS_REG_FCC7 */
+#endif
+#ifndef PPC_REG_VS0
+#define PPC_REG_VS0 PPC_REG_VSL0 /* 6.x: PPC_REG_VSL0 */
+#endif
+#ifndef PPC_REG_VS1
+#define PPC_REG_VS1 PPC_REG_VSL1 /* 6.x: PPC_REG_VSL1 */
+#endif
+#ifndef PPC_REG_VS2
+#define PPC_REG_VS2 PPC_REG_VSL2 /* 6.x: PPC_REG_VSL2 */
+#endif
+#ifndef PPC_REG_VS3
+#define PPC_REG_VS3 PPC_REG_VSL3 /* 6.x: PPC_REG_VSL3 */
+#endif
+#ifndef PPC_REG_VS4
+#define PPC_REG_VS4 PPC_REG_VSL4 /* 6.x: PPC_REG_VSL4 */
+#endif
+#ifndef PPC_REG_VS5
+#define PPC_REG_VS5 PPC_REG_VSL5 /* 6.x: PPC_REG_VSL5 */
+#endif
+#ifndef PPC_REG_VS6
+#define PPC_REG_VS6 PPC_REG_VSL6 /* 6.x: PPC_REG_VSL6 */
+#endif
+#ifndef PPC_REG_VS7
+#define PPC_REG_VS7 PPC_REG_VSL7 /* 6.x: PPC_REG_VSL7 */
+#endif
+#ifndef PPC_REG_VS8
+#define PPC_REG_VS8 PPC_REG_VSL8 /* 6.x: PPC_REG_VSL8 */
+#endif
+#ifndef PPC_REG_VS9
+#define PPC_REG_VS9 PPC_REG_VSL9 /* 6.x: PPC_REG_VSL9 */
+#endif
+#ifndef PPC_REG_VS10
+#define PPC_REG_VS10 PPC_REG_VSL10 /* 6.x: PPC_REG_VSL10 */
+#endif
+#ifndef PPC_REG_VS11
+#define PPC_REG_VS11 PPC_REG_VSL11 /* 6.x: PPC_REG_VSL11 */
+#endif
+#ifndef PPC_REG_VS12
+#define PPC_REG_VS12 PPC_REG_VSL12 /* 6.x: PPC_REG_VSL12 */
+#endif
+#ifndef PPC_REG_VS13
+#define PPC_REG_VS13 PPC_REG_VSL13 /* 6.x: PPC_REG_VSL13 */
+#endif
+#ifndef PPC_REG_VS14
+#define PPC_REG_VS14 PPC_REG_VSL14 /* 6.x: PPC_REG_VSL14 */
+#endif
+#ifndef PPC_REG_VS15
+#define PPC_REG_VS15 PPC_REG_VSL15 /* 6.x: PPC_REG_VSL15 */
+#endif
+#ifndef PPC_REG_VS16
+#define PPC_REG_VS16 PPC_REG_VSL16 /* 6.x: PPC_REG_VSL16 */
+#endif
+#ifndef PPC_REG_VS17
+#define PPC_REG_VS17 PPC_REG_VSL17 /* 6.x: PPC_REG_VSL17 */
+#endif
+#ifndef PPC_REG_VS18
+#define PPC_REG_VS18 PPC_REG_VSL18 /* 6.x: PPC_REG_VSL18 */
+#endif
+#ifndef PPC_REG_VS19
+#define PPC_REG_VS19 PPC_REG_VSL19 /* 6.x: PPC_REG_VSL19 */
+#endif
+#ifndef PPC_REG_VS20
+#define PPC_REG_VS20 PPC_REG_VSL20 /* 6.x: PPC_REG_VSL20 */
+#endif
+#ifndef PPC_REG_VS21
+#define PPC_REG_VS21 PPC_REG_VSL21 /* 6.x: PPC_REG_VSL21 */
+#endif
+#ifndef PPC_REG_VS22
+#define PPC_REG_VS22 PPC_REG_VSL22 /* 6.x: PPC_REG_VSL22 */
+#endif
+#ifndef PPC_REG_VS23
+#define PPC_REG_VS23 PPC_REG_VSL23 /* 6.x: PPC_REG_VSL23 */
+#endif
+#ifndef PPC_REG_VS24
+#define PPC_REG_VS24 PPC_REG_VSL24 /* 6.x: PPC_REG_VSL24 */
+#endif
+#ifndef PPC_REG_VS25
+#define PPC_REG_VS25 PPC_REG_VSL25 /* 6.x: PPC_REG_VSL25 */
+#endif
+#ifndef PPC_REG_VS26
+#define PPC_REG_VS26 PPC_REG_VSL26 /* 6.x: PPC_REG_VSL26 */
+#endif
+#ifndef PPC_REG_VS27
+#define PPC_REG_VS27 PPC_REG_VSL27 /* 6.x: PPC_REG_VSL27 */
+#endif
+#ifndef PPC_REG_VS28
+#define PPC_REG_VS28 PPC_REG_VSL28 /* 6.x: PPC_REG_VSL28 */
+#endif
+#ifndef PPC_REG_VS29
+#define PPC_REG_VS29 PPC_REG_VSL29 /* 6.x: PPC_REG_VSL29 */
+#endif
+#ifndef PPC_REG_VS30
+#define PPC_REG_VS30 PPC_REG_VSL30 /* 6.x: PPC_REG_VSL30 */
+#endif
+#ifndef PPC_REG_VS31
+#define PPC_REG_VS31 PPC_REG_VSL31 /* 6.x: PPC_REG_VSL31 */
+#endif
+#ifndef PPC_REG_VS32
+#define PPC_REG_VS32 PPC_REG_VSX32 /* 6.x: PPC_REG_VSX32 */
+#endif
+#ifndef PPC_REG_VS33
+#define PPC_REG_VS33 PPC_REG_VSX33 /* 6.x: PPC_REG_VSX33 */
+#endif
+#ifndef PPC_REG_VS34
+#define PPC_REG_VS34 PPC_REG_VSX34 /* 6.x: PPC_REG_VSX34 */
+#endif
+#ifndef PPC_REG_VS35
+#define PPC_REG_VS35 PPC_REG_VSX35 /* 6.x: PPC_REG_VSX35 */
+#endif
+#ifndef PPC_REG_VS36
+#define PPC_REG_VS36 PPC_REG_VSX36 /* 6.x: PPC_REG_VSX36 */
+#endif
+#ifndef PPC_REG_VS37
+#define PPC_REG_VS37 PPC_REG_VSX37 /* 6.x: PPC_REG_VSX37 */
+#endif
+#ifndef PPC_REG_VS38
+#define PPC_REG_VS38 PPC_REG_VSX38 /* 6.x: PPC_REG_VSX38 */
+#endif
+#ifndef PPC_REG_VS39
+#define PPC_REG_VS39 PPC_REG_VSX39 /* 6.x: PPC_REG_VSX39 */
+#endif
+#ifndef PPC_REG_VS40
+#define PPC_REG_VS40 PPC_REG_VSX40 /* 6.x: PPC_REG_VSX40 */
+#endif
+#ifndef PPC_REG_VS41
+#define PPC_REG_VS41 PPC_REG_VSX41 /* 6.x: PPC_REG_VSX41 */
+#endif
+#ifndef PPC_REG_VS42
+#define PPC_REG_VS42 PPC_REG_VSX42 /* 6.x: PPC_REG_VSX42 */
+#endif
+#ifndef PPC_REG_VS43
+#define PPC_REG_VS43 PPC_REG_VSX43 /* 6.x: PPC_REG_VSX43 */
+#endif
+#ifndef PPC_REG_VS44
+#define PPC_REG_VS44 PPC_REG_VSX44 /* 6.x: PPC_REG_VSX44 */
+#endif
+#ifndef PPC_REG_VS45
+#define PPC_REG_VS45 PPC_REG_VSX45 /* 6.x: PPC_REG_VSX45 */
+#endif
+#ifndef PPC_REG_VS46
+#define PPC_REG_VS46 PPC_REG_VSX46 /* 6.x: PPC_REG_VSX46 */
+#endif
+#ifndef PPC_REG_VS47
+#define PPC_REG_VS47 PPC_REG_VSX47 /* 6.x: PPC_REG_VSX47 */
+#endif
+#ifndef PPC_REG_VS48
+#define PPC_REG_VS48 PPC_REG_VSX48 /* 6.x: PPC_REG_VSX48 */
+#endif
+#ifndef PPC_REG_VS49
+#define PPC_REG_VS49 PPC_REG_VSX49 /* 6.x: PPC_REG_VSX49 */
+#endif
+#ifndef PPC_REG_VS50
+#define PPC_REG_VS50 PPC_REG_VSX50 /* 6.x: PPC_REG_VSX50 */
+#endif
+#ifndef PPC_REG_VS51
+#define PPC_REG_VS51 PPC_REG_VSX51 /* 6.x: PPC_REG_VSX51 */
+#endif
+#ifndef PPC_REG_VS52
+#define PPC_REG_VS52 PPC_REG_VSX52 /* 6.x: PPC_REG_VSX52 */
+#endif
+#ifndef PPC_REG_VS53
+#define PPC_REG_VS53 PPC_REG_VSX53 /* 6.x: PPC_REG_VSX53 */
+#endif
+#ifndef PPC_REG_VS54
+#define PPC_REG_VS54 PPC_REG_VSX54 /* 6.x: PPC_REG_VSX54 */
+#endif
+#ifndef PPC_REG_VS55
+#define PPC_REG_VS55 PPC_REG_VSX55 /* 6.x: PPC_REG_VSX55 */
+#endif
+#ifndef PPC_REG_VS56
+#define PPC_REG_VS56 PPC_REG_VSX56 /* 6.x: PPC_REG_VSX56 */
+#endif
+#ifndef PPC_REG_VS57
+#define PPC_REG_VS57 PPC_REG_VSX57 /* 6.x: PPC_REG_VSX57 */
+#endif
+#ifndef PPC_REG_VS58
+#define PPC_REG_VS58 PPC_REG_VSX58 /* 6.x: PPC_REG_VSX58 */
+#endif
+#ifndef PPC_REG_VS59
+#define PPC_REG_VS59 PPC_REG_VSX59 /* 6.x: PPC_REG_VSX59 */
+#endif
+#ifndef PPC_REG_VS60
+#define PPC_REG_VS60 PPC_REG_VSX60 /* 6.x: PPC_REG_VSX60 */
+#endif
+#ifndef PPC_REG_VS61
+#define PPC_REG_VS61 PPC_REG_VSX61 /* 6.x: PPC_REG_VSX61 */
+#endif
+#ifndef PPC_REG_VS62
+#define PPC_REG_VS62 PPC_REG_VSX62 /* 6.x: PPC_REG_VSX62 */
+#endif
+#ifndef PPC_REG_VS63
+#define PPC_REG_VS63 PPC_REG_VSX63 /* 6.x: PPC_REG_VSX63 */
+#endif
+#ifndef ARM_SYSREG_SPSR_C
+#define ARM_SYSREG_SPSR_C ARM_FIELD_SPSR_C /* 6.x: ARM_FIELD_SPSR_C */
+#endif
+#ifndef ARM_SYSREG_SPSR_X
+#define ARM_SYSREG_SPSR_X ARM_FIELD_SPSR_X /* 6.x: ARM_FIELD_SPSR_X */
+#endif
+#ifndef ARM_SYSREG_SPSR_S
+#define ARM_SYSREG_SPSR_S ARM_FIELD_SPSR_S /* 6.x: ARM_FIELD_SPSR_S */
+#endif
+#ifndef ARM_SYSREG_SPSR_F
+#define ARM_SYSREG_SPSR_F ARM_FIELD_SPSR_F /* 6.x: ARM_FIELD_SPSR_F */
+#endif
+#ifndef ARM_SYSREG_CPSR_C
+#define ARM_SYSREG_CPSR_C ARM_FIELD_CPSR_C /* 6.x: ARM_FIELD_CPSR_C */
+#endif
+#ifndef ARM_SYSREG_CPSR_X
+#define ARM_SYSREG_CPSR_X ARM_FIELD_CPSR_X /* 6.x: ARM_FIELD_CPSR_X */
+#endif
+#ifndef ARM_SYSREG_CPSR_S
+#define ARM_SYSREG_CPSR_S ARM_FIELD_CPSR_S /* 6.x: ARM_FIELD_CPSR_S */
+#endif
+#ifndef ARM_SYSREG_CPSR_F
+#define ARM_SYSREG_CPSR_F ARM_FIELD_CPSR_F /* 6.x: ARM_FIELD_CPSR_F */
+#endif
+
+#endif /* CAPSTONE2LLVMIR_CAPSTONE6_COMPAT_H */

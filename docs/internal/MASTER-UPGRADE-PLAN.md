@@ -99,7 +99,7 @@ You have ~6,800 tests that nothing triggers.
 | yaramod | commit `aa06dd4` | v4.8.1 |
 | Keystone | commit `d7ba8e3` | — |
 | googletest | commit `90a443f` | current release |
-| OpenSSL | 3.2.6 | current-ish |
+| OpenSSL | 3.5.8 | current (3.5 LTS) |
 | zlib | 1.3.1 | current |
 | retdec-support | `2019-03-08` package | unchanged upstream |
 

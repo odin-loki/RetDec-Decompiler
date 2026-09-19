@@ -1,11 +1,11 @@
-# Wire RISC-V (Capstone 5.0.9)
+# Wire RISC-V (Capstone 6.0.0-Alpha10)
 
-**Capstone RISC-V exists.** Pinned Capstone 5.0.9 (`cmake/deps.cmake`) defines:
+**Capstone RISC-V exists.** Pinned Capstone 6.0.0-Alpha10 (`cmake/deps.cmake`) defines:
 
 - `CS_ARCH_RISCV`
 - `CS_MODE_RISCV32` (`1 << 0`, same value as `CS_MODE_32`)
 - `CS_MODE_RISCV64` (`1 << 1`, same value as `CS_MODE_64`)
-- `CS_MODE_RISCVC` (`1 << 2`)
+- `CS_MODE_RISCVC` (`1 << 2`; Capstone 6 name `CS_MODE_RISCV_C`, aliased in `capstone6_compat.h`)
 - Header `include/capstone/riscv.h` (`riscv_insn`, `riscv_reg`, `cs_riscv`)
 
 Do not invent enum values. Include `<capstone/riscv.h>` (already done via `riscv_defs.h`).
@@ -16,9 +16,15 @@ These files are already in the tree. **Do not apply this document’s shared pat
 
 Capstone 5.0.9 **does not expand** compressed encodings to I IDs. `RISCV_printInst` has `uncompressInst` commented out (`TODO: RISCV compressed instructions`). C instructions arrive as `RISCV_INS_C_*`.
 
-The translator **does** lift integer `C_*` IDs (`C_ADD`, `C_ADDI`, `C_MV`, `C_LI`, `C_LUI`, `C_J`, `C_JAL`, `C_JR`, `C_JALR`, `C_BEQZ`, `C_BNEZ`, `C_LW`/`C_SW`/`C_LD`/`C_SD` and SP variants, `C_*W`, `C_NOP`). Decoding them requires extra mode `CS_MODE_RISCVC`.
+The translator **does** lift integer `C_*` IDs (`C_ADD`, `C_ADDI`, `C_MV`, `C_LI`, `C_LUI`, `C_J`, `C_JAL`, `C_JR`, `C_JALR`, `C_BEQZ`, `C_BNEZ`, `C_LW`/`C_SW`/`C_LD`/`C_SD` and SP variants, `C_*W`, `C_NOP`, `C_MUL`). Decoding them requires extra mode `CS_MODE_RISCVC`.
 
-**F and D** (`FADD_S`, `FLD`, `C_FLW`, …) are mapped to `nullptr` → pseudo-asm. Same for A (AMO/LR/SC), M (`MUL`/`DIV`), and CSR.
+**F and D** (`FADD_S`/`FADD_D`, `FSUB_*`, `FMUL_*`, `FDIV_*`, `FLW`/`FSW`/`FLD`/`FSD`, `FCVT_*`, `FEQ`/`FLT`/`FLE`, compressed `C_FLW`/`C_FSW`/`C_FLD`/`C_FSD` and SP variants) lift to LLVM float/double. Rounding-mode field on `cs_riscv` is ignored.
+
+**M** (`MUL`/`MULH`/`MULHSU`/`MULHU`/`MULW`/`C_MUL`, `DIV`/`DIVU`/`REM`/`REMU` and W variants) lift to `mul`/`sdiv`/`udiv`/`srem`/`urem`. Division by zero and signed overflow use the RISC-V-defined results (not LLVM UB).
+
+**A** (`AMOADD`/`AMOAND`/`AMOOR`/`AMOXOR`/`AMOSWAP` W/D with aq/rl/`aqrl`, `LR`/`SC` W/D) lift to `atomicrmw` / atomic load+store (same exclusive-monitor omission as ARM LDXR/STXR in this tree). `AMOMAX`/`AMOMIN` (signed/unsigned) stay `nullptr`.
+
+**CSR** (`CSRRW`/`CSRRS`/`CSRRC` and immediates): Capstone `RISCV_OP_CSR` encodings that map to a Capstone register (`FFLAGS`/`FRM`/`VL`/`VTYPE`/`VLENB`/`VXSAT`/`VXRM`) or a well-known `RISCV_SYSREG_*` (cycle/time/instret, sstatus/sie/…, mstatus/misa/…/mhartid) become load/store of that LLVM global. `FCSR` is composed from `FFLAGS|FRM` because encoding `0x3` collides with `RISCV_REG_SSP`. Unknown encodings stay named `__asm_*`. CSR numbers are never invented.
 
 ## Extra required patches (not in the original list, but the tree will not link without them)
 
@@ -413,9 +419,9 @@ Lifted (RV32I / RV64I + integer C aliases):
 |---|---|
 | `LUI`, `C_LUI` | `translateLui` |
 | `AUIPC` | `translateAuipc` |
-| `JAL`, `C_J`, `C_JAL` | `translateJal` |
-| `JALR`, `C_JR`, `C_JALR` | `translateJalr` |
-| `BEQ` `BNE` `BLT` `BGE` `BLTU` `BGEU`, `C_BEQZ` `C_BNEZ` | `translateBranch` |
+| `JAL`, `C_J`, `C_JAL`, `ALIAS_J`, `ALIAS_JAL` | `translateJal` |
+| `JALR`, `C_JR`, `C_JALR`, `ALIAS_JR`, `ALIAS_JALR`, `ALIAS_RET` | `translateJalr` |
+| `BEQ` `BNE` `BLT` `BGE` `BLTU` `BGEU`, `C_BEQZ` `C_BNEZ`, `ALIAS_BEQZ`/`BNEZ`/`BLEZ`/`BGEZ`/`BLTZ`/`BGTZ` | `translateBranch` |
 | `LB` `LBU` `LH` `LHU` `LW` `LWU` `LD`, `C_LW` `C_LWSP` `C_LD` `C_LDSP` | `translateLoad` |
 | `SB` `SH` `SW` `SD`, `C_SW` `C_SWSP` `C_SD` `C_SDSP` | `translateStore` |
 | `ADD` `ADDI`, `C_ADD` `C_ADDI` `C_ADDI16SP` `C_ADDI4SPN` | `translateAdd` |
@@ -433,9 +439,22 @@ Lifted (RV32I / RV64I + integer C aliases):
 | `C_MV` | `translateMv` |
 | `ECALL` | `translateEcall` (`__pseudo_call` to `pc+size`) |
 | `FENCE` `FENCE_I` `FENCE_TSO` | `translateFence` |
-| `EBREAK` `C_EBREAK` `C_NOP` `UNIMP` `C_UNIMP` | `translateNop` |
+| `EBREAK` `C_EBREAK` `C_NOP` `UNIMP` `C_UNIMP` `ALIAS_NOP` | `translateNop` |
+| `MUL` `MULH` `MULHSU` `MULHU` `MULW` `C_MUL` | `translateMul` (`mul`, high half via 2×XLEN) |
+| `DIV` `DIVU` `REM` `REMU` `DIVW` `DIVUW` `REMW` `REMUW` | `translateDiv` (defined /0 and `INT_MIN/-1`) |
+| `FADD_S/D` `FSUB_S/D` `FMUL_S/D` `FDIV_S/D` | `translateFpArith` |
+| `FLW` `FLD` `C_FLW` `C_FLWSP` `C_FLD` `C_FLDSP` | `translateFpLoad` |
+| `FSW` `FSD` `C_FSW` `C_FSWSP` `C_FSD` `C_FSDSP` | `translateFpStore` |
+| `FCVT_{S,D}_{W,WU,L,LU}` and reverse, `FCVT_S_D` `FCVT_D_S` | `translateFcvt` |
+| `FEQ_S/D` `FLT_S/D` `FLE_S/D` | `translateFcmp` |
+| `AMOADD/AND/OR/XOR/SWAP` W/D + aq/rl/aqrl | `translateAmo` (`atomicrmw`) |
+| `LR_W/D` + aq/rl/aqrl | `translateLr` (atomic load) |
+| `SC_W/D` + aq/rl/aqrl | `translateSc` (atomic store, `rd=0`) |
+| `CSRRW` `CSRRS` `CSRRC` `CSRRWI` `CSRRSI` `CSRRCI`, `ALIAS_CSRR`/`CSRW`/`CSRS`/`CSRC`/`CSRWI`/`CSRSI`/`CSRCI`, `ALIAS_FRFLAGS`/`FSFLAGS`/`FRRM`/`FSRM`/`FRCSR`/`FSCSR`, `ALIAS_RDCYCLE`/`RDTIME`/`RDINSTRET` (+H) | `translateCsr` |
 
-`nullptr` (pseudo-asm): all A-extension AMOs / LR / SC; all F/D including compressed FP; all M (`MUL`/`DIV`/`REM`); CSR; `MRET`/`SRET`/`URET`/`WFI`/`SFENCE_VMA`.
+`nullptr` (pseudo-asm): `AMOMAX`/`AMOMIN` (signed/unsigned) W/D + aq/rl; `FMADD`/`FMSUB`/`FNMADD`/`FNMSUB`; `FSQRT`; `FSGNJ*`; `FMIN`/`FMAX`; `FCLASS`; `FMV_*`; half-precision `*_H`; `MRET`/`SRET`/`WFI`/`SFENCE_VMA`. Capstone 6.0.0-Alpha10 has no `RISCV_INS_URET`.
+
+Capstone 6 auto-sync reports `id=ADDI/JAL/CSRRS` with `alias_id=ALIAS_NOP/JAL/FRFLAGS` and often alias operand layouts. The translator prefers `_i2fm[alias_id]`, requests `CS_OPT_DETAIL_REAL`, and treats control-flow IMM as an effective address unless `need_effective_addr` is set. Decoding F/D/A encodings requires extra `CS_MODE_RISCV_FD` and `CS_MODE_RISCV_A` (in addition to `CS_MODE_RISCVC`).
 
 ## ABI (psABI)
 
@@ -447,4 +466,4 @@ Lifted (RV32I / RV64I + integer C aliases):
 
 ## Tests
 
-`tests/capstone2llvmir/riscv_tests.cpp` uses `emulate_bin()` hex sequences (Keystone has no RISC-V). Instantiated for `CS_MODE_RISCV32` and `CS_MODE_RISCV64`. They call `createRiscv32` / `createRiscv64` and will not compile until the named ctors are wired.
+`tests/capstone2llvmir/riscv_tests.cpp` uses `emulate_bin()` hex sequences (Keystone has no RISC-V). Instantiated for `CS_MODE_RISCV32` and `CS_MODE_RISCV64`. Named ctors are called with extra `CS_MODE_RISCVC | CS_MODE_RISCV_FD | CS_MODE_RISCV_A` so Capstone 6 actually decodes compressed, float, and AMO encodings. Coverage includes integer RV32I/RV64I plus `MUL`/`DIV`, `FADD.S`/`FLW`/`FSW`/`C.FLW`, `AMOADD.W`/`LR.W`/`SC.W`, and `CSRRS`/`CSRRW` of `fflags`.

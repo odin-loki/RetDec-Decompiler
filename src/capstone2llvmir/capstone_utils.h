@@ -12,6 +12,7 @@
 #include <string>
 
 #include <capstone/capstone.h>
+#include "capstone2llvmir/capstone6_compat.h"
 
 namespace retdec {
 namespace capstone2llvmir {

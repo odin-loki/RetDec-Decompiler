@@ -9,7 +9,7 @@ on:
       tag:
         description: Release tag whose Linux tarball is wrapped
         required: false
-        default: v2.0.24
+        default: v2.0.25
   push:
     branches: [main]
     paths:
@@ -52,7 +52,7 @@ jobs:
               exit 0
             fi
           else
-            TAG="v2.0.24"
+            TAG="v2.0.25"
           fi
           NAME="retdec-${TAG#v}-x86_64.AppImage"
           if gh release view "${TAG}" --json assets --jq '.assets[].name' | grep -qx "${NAME}"; then

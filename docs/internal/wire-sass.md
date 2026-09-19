@@ -9,12 +9,20 @@ Implemented today:
 
 | Piece | Path | Wired into `decompile()`? |
 |-------|------|---------------------------|
-| cubin ELF loader (`e_machine == 190`) | `src/sass_decode/cubin_loader.cpp` | **No** |
-| fatbin header + payload scan | same | **No** |
-| SM_70/SM_80 subset decoder | `src/sass_decode/sass_decoder.cpp` | **No** |
-| CUDA-C subset + PTX fallback | `src/sass_decode/sass_lifter.cpp` | **No** |
+| cubin ELF loader (`e_machine == 190`) | `src/sass_decode/cubin_loader.cpp` | CLI probe only (not Capstone) |
+| fatbin header + payload scan | same | CLI probe only |
+| SM_70/SM_80 subset decoder | `src/sass_decode/sass_decoder.cpp` | CLI probe only |
+| CUDA-C subset + PTX fallback | `src/sass_decode/sass_lifter.cpp` | CLI probe only |
 | unit tests | `tests/sass_decode/` | n/a (ctest) |
 | CMake library + tests | `src/CMakeLists.txt`, `tests/CMakeLists.txt` | yes (build) |
+
+Decoded opcode bytes are **only** those NVIDIA printed (low 8 bits of word0).
+Newly lifted: **IMAD.WIDE** (`0x25`), **SHFL** (`0x89`), **S2UR** (`0xc3`), **LDCU** (`0xac`).
+Already lifted: EXIT, NOP, BRA, IMAD, MOV, LDG, STG, IADD3, FADD, S2R, LDC.
+
+**Still missing** for nvcc `-O1` kernels (ISA-table mnemonics, **no** printed
+encoding word — not invented): **FMUL, FFMA, ISETP, SHL, SHR, LOP3**, plus
+FSETP, MUFU, LEA, BRA displacement, S2R/S2UR SR selector. **Not Production.**
 
 32 vs 64 is **GPU pointer width** (`SassConfig::pointerBits` / ELF class),
 not a CPU `-a` token. Do **not** add `-a sass` / `-a sass32` unless a later
@@ -33,7 +41,11 @@ Capstone.
   `FATBIN_FLAG_64BIT`). Per-member records after that header are NVIDIA
   **internal**; the loader scans for ELF/PTX instead of inventing them.
 - Opcode bytes — NVIDIA-printed encodings in CUDA Binary Utilities 12.8.2
-  PDF and 13.3 HTML (EXIT `…794d`, NOP `…7918`, IADD3 `…7210`, …).
+  PDF and 13.3 HTML (EXIT `…794d`, NOP `…7918`, IADD3 `…7210`, IMAD `…7624` /
+  `…7c24`, IMAD.WIDE `…7825`, MOV `…7a02`, LDG `…7381`/`…7981`, STG `…7386`/
+  `…7986`, FADD `…7221`, S2R `…7919`, LDC `…7b82`, SHFL `…f389`, S2UR `…79c3`,
+  LDCU `…77ac`, BRA `…7947`). FMUL/FFMA/ISETP/SHL/SHR/LOP3 have **no** printed
+  word in those listings.
 - Pre-Volta 8-byte EXIT — CUDA Binary Utilities 9.1 (`0x8000000000001de7`).
 
 `fileinfo` already pretty-prints `EM_CUDA` in
@@ -277,13 +289,15 @@ Do not mark that smoke as Production.
    NVIDIA compression is not a public ISA.
 5. **Fatbin member directory** after `fatBinaryHeader` is NVIDIA-internal.
 6. **Host-embedded** `.nv_fatbin` in x86/ARM PE/ELF is not scanned.
-7. **CLI / fileformat / `decompile()`** are unwired (this file).
-8. **Quality bar:** even a wired subset lift is comments + a handful of
-   C operators, not recovered CUDA kernels at x86 Production quality.
+7. **fileformat `Architecture::CUDA`** is still absent (correct). CLI cubin/fatbin
+   probe exists in `retdec-decompiler.cpp`; it is not a `-a` token.
+8. **Compiler ops without printed encodings:** FMUL, FFMA, ISETP, SHL, SHR, LOP3
+   stay `Unknown` (hex comments). Do not invent bytes.
+9. **Quality bar:** the subset lift is comments + a handful of C operators, not
+   recovered CUDA kernels at x86 Production quality.
 
-Until (7) is applied, e2e decode→C is a **library call**, not
-`retdec-decompiler`. Until (1) is solved without nvdisasm, Production is
-the wrong word even after (7).
+Until (1) is solved without nvdisasm, Production is the wrong word. nvcc `-O1`
+integer+FP kernels need FMUL/FFMA/ISETP/LOP3/SHF encodings NVIDIA has not printed.
 
 ---
 

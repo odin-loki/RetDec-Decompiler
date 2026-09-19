@@ -11514,6 +11514,197 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_BRK_imm)
 	});
 }
 
+//
+// Compiler-used AArch64 production encodings (Capstone 6.x).
+//
+// Keystone 0.9.2 cannot assemble LSE, BTI, or some later SIMD forms, so these
+// go in as little-endian AArch64 words. Each encoding was checked against
+// Capstone 6.0.0-Alpha10. Scalar FP / LD1 / LSE already had Keystone or bin
+// coverage; these pin that the same IDs still decode and that vector FADD is
+// real IR rather than __asm_fadd.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FADD_s_s_s_bin)
+{
+	setRegisters({
+		{ARM64_REG_S1, 100.5_f32},
+		{ARM64_REG_S2, 3.141592_f32},
+	});
+
+	emulate_bin("20 28 22 1e"); // fadd s0, s1, s2
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_S0, 103.641594_f32},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FMUL_s_s_s_bin)
+{
+	setRegisters({
+		{ARM64_REG_S1, 2.0_f32},
+		{ARM64_REG_S2, 4.0_f32},
+	});
+
+	emulate_bin("20 08 22 1e"); // fmul s0, s1, s2
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_S0, 8.0_f32},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FDIV_s_s_s_bin)
+{
+	setRegisters({
+		{ARM64_REG_S1, 8.0_f32},
+		{ARM64_REG_S2, 2.0_f32},
+	});
+
+	emulate_bin("20 18 22 1e"); // fdiv s0, s1, s2
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_S0, 4.0_f32},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCMP_s_s_eq_bin)
+{
+	setRegisters({
+		{ARM64_REG_S0, 1.0_f32},
+		{ARM64_REG_S1, 1.0_f32},
+	});
+
+	emulate_bin("00 20 21 1e"); // fcmp s0, s1
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_CPSR_N, false},
+		{ARM64_REG_CPSR_Z, true},
+		{ARM64_REG_CPSR_C, true},
+		{ARM64_REG_CPSR_V, false},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCVT_d_s_bin)
+{
+	setRegisters({
+		{ARM64_REG_S1, 2.0_f32},
+	});
+
+	emulate_bin("20 c0 22 1e"); // fcvt d0, s1
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_D0, 2.0_f64},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FMOV_s_s_bin)
+{
+	setRegisters({
+		{ARM64_REG_S1, 3.141592_f32},
+	});
+
+	emulate_bin("20 40 20 1e"); // fmov s0, s1
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_S0, 3.141592_f32},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FADD_vector_4s_bin)
+{
+	// fadd v0.4s, v1.4s, v2.4s -- four IEEE single adds, not __asm_fadd.
+	// Lane bits: 1.0, 2.0, 3.0, 4.0  +  1.0, 1.0, 1.0, 1.0  =  2.0, 3.0, 4.0, 5.0
+	setV(ARM64_REG_V1, 0x4080000040400000ULL, 0x400000003f800000ULL);
+	setV(ARM64_REG_V2, 0x3f8000003f800000ULL, 0x3f8000003f800000ULL);
+
+	emulate_bin("20 d4 22 4e"); // fadd v0.4s, v1.4s, v2.4s
+
+	EXPECT_EQ(0x4040000040000000ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x40a0000040800000ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LD1_16b_bin)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0x1000},
+	});
+	setMemoryValue128(0x1000, 0x1122334455667788ULL, 0x99aabbccddeeff00ULL);
+
+	emulate_bin("00 70 40 4c"); // ld1 {v0.16b}, [x0]
+
+	EXPECT_EQ(0x99aabbccddeeff00ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x1122334455667788ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ST1_16b_bin)
+{
+	setV(ARM64_REG_V0, 0x1122334455667788ULL, 0x99aabbccddeeff00ULL);
+	setRegisters({
+		{ARM64_REG_X0, 0x1000},
+	});
+
+	emulate_bin("00 70 00 4c"); // st1 {v0.16b}, [x0]
+
+	llvm::APInt bits = _emulator->getMemoryValue(0x1000).IntVal;
+	if (bits.getBitWidth() < 128)
+	{
+		bits = bits.zext(128);
+	}
+	EXPECT_EQ(0x99aabbccddeeff00ULL, bits.trunc(64).getZExtValue());
+	EXPECT_EQ(0x1122334455667788ULL, bits.lshr(64).trunc(64).getZExtValue());
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LDXR_bin)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x123456789abcdef0_qw},
+	});
+
+	emulate_bin("20 7c 5f c8"); // ldxr x0, [x1]
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0x123456789abcdef0},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_STXR_bin)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0x123456789abcdef0},
+		{ARM64_REG_X1, 0x1000},
+	});
+
+	emulate_bin("20 7c 02 c8"); // stxr w2, x0, [x1]
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_W2, 0},
+	});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0x123456789abcdef0_qw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

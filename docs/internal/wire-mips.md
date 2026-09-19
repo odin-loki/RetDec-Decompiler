@@ -14,7 +14,7 @@ are **not** modelled (see microMIPS below).
 
 | Target | Status | Notes |
 |--------|--------|-------|
-| **MIPS 32-bit (O32)** | **Production** | `CS_MODE_MIPS32`. Word ALU, loads/stores, branches/jumps with delay slots, `MULT`/`DIV`+`MFLO`/`MFHI`, `SYSCALL` as pseudo-call. |
+| **MIPS 32-bit (O32)** | **Production** | `CS_MODE_MIPS32`. Word ALU, loads/stores, branches/jumps with delay slots, `MULT`/`DIV`+`MFLO`/`MFHI`, COP1 FPU, `SYSCALL` as pseudo-call. |
 | **MIPS 64-bit (N64)** | **Production** | `CS_MODE_MIPS64`. Same subset; word ops sign-extend into 64-bit GPRs; `LD`/`SD` and `D*`-prefixed doubleword ALU. |
 | **PIC32** | **Production (ISA)** | Same MIPS32 translator. ABI in `pic32.cpp` matches `mips.cpp` for SP/zero/V0/A0–A3 plus GP/K0/K1 roles. **microMIPS firmware is a gap**, not a fake translation. |
 
@@ -40,6 +40,17 @@ Integer / memory / control that a compiler emits for O32/N64:
 - Control: `BEQ`/`BNE`/`B`, `J`/`JAL`/`JR`/`JALR` (including `jalr rd, rs`)
 - Multiply/divide: `MULT`/`MULTU`/`DIV`/`DIVU` + `MFLO`/`MFHI` (pre-R6);
   R6 GPR `MUL`/`MULU`/`MUH`/`MUHU`/`DIV`/`DIVU`/`MOD`/`MODU`
+- COP1 FPU (Capstone 6 split ids, not the old collapsed `MIPS_INS_C` /
+  `MIPS_INS_CVT`): `ADD_S`/`ADD_D`/`FADD_D`, `SUB_S`/`SUB_D`/`FSUB_D`,
+  `MUL_S`/`MUL_D`/`FMUL_D`, `DIV_S`/`DIV_D`/`FDIV_D`, `ABS_S`/`ABS_D`,
+  `NEG_S`/`NEG_D`, `SQRT_S`/`SQRT_D`, `MOV_S`/`MOV_D`, `LWC1`/`LDC1`/
+  `SWC1`/`SDC1`, all 16 `C_*.S`/`C_*.D` (and `ALIAS_C_*`), `CVT_*`,
+  `TRUNC`/`ROUND`/`CEIL`/`FLOOR` `_W/_L` `_S/_D`, `MFC1`/`MTC1`/`MFHC1`/
+  `MTHC1`, `RECIP_S`/`D`, `RSQRT_S`/`D`
+- MSA bitwise used by compilers: `AND_V`/`OR_V`/`XOR_V`/`NOR_V` as i128
+  when Capstone reports those ids. Default `createMips32` does not enable
+  an MSA extra mode, so many MSA encodings still fall through to
+  `__asm_*` (same as `ORI_B`).
 - `SYSCALL` → existing pseudo-assembly call
 
 Delay slots: `getDelaySlot()` / `hasDelaySlotLikely()` in `mips.cpp`. The
@@ -92,16 +103,25 @@ operand layout and delay-slot rules.
 
 ## Out of production scope
 
-- MSA (`W0`–`W31`): routed to pseudo-assembly when a W register appears
+- MSA beyond 128-bit bitwise (`AND_V`/`OR_V`/`XOR_V`/`NOR_V`): `LD_B`/
+  `ST_B`, `ADDV_*`, `ORI_B`, FP MSA (`FADD_W`, …) stay on pseudo-assembly
+  when a W register appears
 - DSP / COP0 / TLB / `MFC0` / `CACHE`
 - Unaligned `LWL`/`LWR`/`SWL`/`SWR` **are** modelled (including endianness);
   they are beyond the O32/N64 compiler subset listed above but already lifted
-- FP is modelled for common COP1 ops; not the Production bar
+- FPU control word `CFC1`/`CTC1` (FCSR); R6 `SEL`/`CLASS`; paired-single
+  `ADD_PS`
 
 ---
 
 ## Tests
 
+Capstone 6 reports paired doubles as `D0`–`D15`, 64-bit FPRs as `D0_64`–
+`D31_64`, and N64 GPRs as `ZERO_64` / `AT_64` / …. The translator folds
+those onto `F0`–`F31` and the named 32-bit GPR ids before load/store.
+
 `tests/capstone2llvmir/mips_tests.cpp` is instantiated for `CS_MODE_MIPS32`
 and `CS_MODE_MIPS64`. A big-endian fixture covers `LWL`/`LWR`/`SWL`/`SWR` only.
-R6 encodings are not in the suite (Capstone 5.0.9 feature-bit quirk above).
+Integer `div`/`divu` go in as encodings (`emulate_bin`); Keystone expands the
+mnemonic. R6 encodings are not in the suite (Capstone 5.0.9 feature-bit quirk
+above; Capstone 6 split ids are mapped).

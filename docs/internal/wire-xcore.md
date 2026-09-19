@@ -1,6 +1,6 @@
 # Wire XCore into `createXcore`
 
-**There is no 64-bit XCore.** The XS1/XS2 ISA is 32-bit. Capstone 5.0.9
+**There is no 64-bit XCore.** The XS1/XS2 ISA is 32-bit. Capstone 6.0.0-Alpha10
 `CS_ARCH_XCORE` has no `CS_MODE_64` / `CS_MODE_XCORE_64`. Do not invent one.
 `getArchByteSize()` is 4. Capstone’s own tests open the engine with
 `CS_MODE_BIG_ENDIAN` for 16-bit instruction-word byte order; data memory is
@@ -17,6 +17,43 @@ Sources already in the tree:
 - `src/bin2llvmir/providers/abi/xcore.cpp`
 
 CMake already lists the translator, tests, and ABI sources.
+
+## Production integer / control-flow map
+
+`_i2fm` lists every Capstone 6.0.0-Alpha10 `XCORE_INS_*` (from the installed
+`capstone/xcore.h`). Mapped IDs emit real LLVM IR. Hardware I/O stays
+`nullptr` → pseudo-asm.
+
+### Mapped (LLVM IR)
+
+| Group | IDs |
+|---|---|
+| Integer ALU | `ADD`, `SUB`, `AND`, `ANDNOT`, `OR`, `XOR`, `NOT`, `NEG`, `MUL`, `SHL`, `SHR`, `ASHR`, `EQ`, `LSS`, `LSU`, `CLZ`, `BITREV`, `BYTEREV`, `MKMSK`, `SEXT`, `ZEXT` |
+| Divide / rem | `DIVS`, `DIVU`, `REMS`, `REMU` (zero and `INT_MIN/-1` are defined, not poison) |
+| Long / MAC / CRC | `LADD`, `LSUB`, `LMUL`, `LDIVU`, `MACCS`, `MACCU`, `CRC32`, `CRC8` |
+| Address / stack | `LDC`, `LDAW`, `LDA16`, `LDAP`, `LDW`, `LD16S`, `LD8U`, `STW`, `ST16`, `ST8`, `ENTSP`, `EXTSP`, `EXTDP`, `RETSP`, `KENTSP`, `KRESTSP`, `DENTSP`, `DRESTSP` |
+| Control flow | `BU`, `BAU`, `BRU`, `BF`, `BT`, `BL`, `BLA`, `BLAT`, `DCALL`, `DRET`, `KCALL`, `KRET`, `ECALLF`, `ECALLT` |
+| Thread status / GPRs | `GET` (reg←reg), `SET` (reg←reg), `GETSR`, `SETSR`, `CLRSR`, `SSYNC` (nop) |
+
+### Remaining gaps (`nullptr`)
+
+Channel, event, thread, and resource ops have no sequential integer model:
+
+`CHKCT`, `CLRE`, `CLRPT`, `DGETREG`, `EDU`, `EEF`, `EET`, `EEU`, `ENDIN`,
+`FREER`, `FREET`, `GETD`, `GETN`, `GETR`, `GETST`, `GETTS`, `INCT`, `INIT`,
+`INPW`, `INSHR`, `INT`, `IN`, `MJOIN`, `MSYNC`, `OUTCT`, `OUTPW`, `OUTSHR`,
+`OUTT`, `OUT`, `PEEK`, `SETCLK`, `SETC`, `SETD`, `SETEV`, `SETN`, `SETPSC`,
+`SETPT`, `SETRDY`, `SETTW`, `SETV`, `SYNCR`, `TESTCT`, `TESTLCL`, `TESTWCT`,
+`TSETMR`, `START`, `WAITEF`, `WAITET`, `WAITEU`.
+
+`GET`/`SET` of `ps[reg]` (processor state memory) also fall back to
+pseudo-asm; only register-to-register forms are lifted.
+
+Capstone’s XCore printer often leaves a trailing `XCORE_OP_MEM` in
+`operands[op_count]` without incrementing `op_count`. Load/store/LDAW/LDA16
+treat that extra MEM as a real operand. `SETSP`/`SETDP`/`SETCP` print the
+destination as a literal; the translator uses `regs_write` (and the printed
+`sp`/`dp`/`cp` token) for the dest.
 
 ## Exact replacement: `src/capstone2llvmir/capstone2llvmir.cpp`
 

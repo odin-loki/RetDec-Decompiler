@@ -6,6 +6,19 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ## [Unreleased]
 
+## [2.0.25] — 2026-09-19
+
+### Changed
+
+- Capstone pin **6.0.0-Alpha10** with a private `capstone6_compat.h` for
+  5.x token names. Compiler integer/FP/mapped SIMD/atomics lift for ARM,
+  ARM64, MIPS, PowerPC, RISC-V (M/F/D/A/CSR), SPARC, SystemZ, and XCore.
+  SASS cubin/fatbin remains a documented subset, not Production, not `-a sass`.
+- Bundled OpenSSL 3.2.6 → **3.5.8** LTS. Googletest 1.18.0, zlib 1.3.2,
+  llama.cpp v0.4.1, xsimd 14.3.0, tree-sitter 0.27.0.
+- MSVC decompiler fixtures compile with `/D_NO_CRT_STDIO_INLINE` so
+  `fib_smoke.exe` does not hit LNK2005 `printf` vs UCRT header inlines.
+
 ## [2.0.24] — 2026-09-19
 
 ### Changed

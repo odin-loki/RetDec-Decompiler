@@ -17,6 +17,7 @@
 #include <capstone/sparc.h>
 #include <capstone/systemz.h>
 #include <capstone/xcore.h>
+#include "capstone2llvmir/capstone6_compat.h"
 
 namespace retdec {
 namespace capstone2llvmir {

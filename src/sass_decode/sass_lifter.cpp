@@ -113,7 +113,13 @@ std::string liftInstr(const SassInstr& in, uint32_t pointerBits)
 		break;
 	case SassOpcode::Imad:
 		os << g << regName(in.dest) << " = " << regName(in.src0) << " * " << regName(in.src1) << " + "
-		   << regName(in.src2) << ";";
+		   << regName(in.src2) << "; /* IMAD */";
+		break;
+	case SassOpcode::ImadWide:
+		// NVIDIA 13.3 listing: IMAD.WIDE R2, R9, 0x4, R2 (32x32->64 pointer scale).
+		// src1 field may be a small immediate; register vs imm is not a public bitfield.
+		os << g << regName(in.dest) << " = " << regName(in.src0) << " * " << unsigned(in.src1) << "u + "
+		   << regName(in.src2) << "; /* IMAD.WIDE 32x32->64; src1 printed as field bits */";
 		break;
 	case SassOpcode::Mov:
 		os << g << regName(in.dest) << " = " << regName(in.src0) << "; /* MOV */";
@@ -130,8 +136,18 @@ std::string liftInstr(const SassInstr& in, uint32_t pointerBits)
 		os << g << regName(in.dest)
 		   << " = threadIdx.x; /* S2R; SR selector bits are not in NVIDIA ISA docs */";
 		break;
+	case SassOpcode::S2ur:
+		os << g << regName(in.dest)
+		   << " = blockIdx.x; /* S2UR; SR selector bits are not in NVIDIA ISA docs */";
+		break;
 	case SassOpcode::Ldc:
 		os << g << regName(in.dest) << " = /* LDC constant */ 0;";
+		break;
+	case SassOpcode::Ldcu:
+		os << g << regName(in.dest) << " = /* LDCU uniform constant */ 0;";
+		break;
+	case SassOpcode::Shfl:
+		os << g << "; /* SHFL.IDX warp shuffle; lane/src forms are not in NVIDIA ISA docs */";
 		break;
 	default:
 		os << "/* UNKNOWN */";

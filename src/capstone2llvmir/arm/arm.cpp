@@ -6,8 +6,11 @@
  */
 
 #include <cmath>
+#include <cstdint>
 #include <iomanip>
 
+#include <llvm/IR/Constants.h>
+#include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Intrinsics.h>
 
 #include "capstone2llvmir/arm/arm_impl.h"
@@ -15,6 +18,43 @@
 
 namespace retdec {
 namespace capstone2llvmir {
+
+namespace {
+
+// Capstone 6.x keeps the real encoding id (MOV/LDM/HINT) and puts the
+// assembler mnemonic in alias_id. Translators that switch on mnemonic must
+// see both.
+bool armIsId(const cs_insn* i, unsigned id)
+{
+	return i->id == id || (i->is_alias && static_cast<unsigned>(i->alias_id) == id);
+}
+
+bool armCcUncond(const cs_arm* ai)
+{
+	return ai->cc == ARM_CC_AL || ai->cc == ARM_CC_INVALID
+			|| ai->cc == ARMCC_UNDEF;
+}
+
+void armDropPredOperands(cs_arm* ai)
+{
+	uint8_t w = 0;
+	for (uint8_t r = 0; r < ai->op_count; ++r)
+	{
+		auto t = ai->operands[r].type;
+		if (t == ARM_OP_PRED || t == ARM_OP_VPRED_R || t == ARM_OP_VPRED_N)
+		{
+			continue;
+		}
+		if (w != r)
+		{
+			ai->operands[w] = ai->operands[r];
+		}
+		++w;
+	}
+	ai->op_count = w;
+}
+
+} // namespace
 
 Capstone2LlvmIrTranslatorArm_impl::Capstone2LlvmIrTranslatorArm_impl(
 		llvm::Module* m,
@@ -88,18 +128,31 @@ void Capstone2LlvmIrTranslatorArm_impl::translateInstruction(
 
 	cs_detail* d = i->detail;
 	cs_arm* ai = &d->arm;
+	armDropPredOperands(ai);
 
-	auto fIt = _i2fm.find(i->id);
+	// Capstone 6 keeps the real id (MOV/HINT) and puts lsl/nop/pop in
+	// alias_id. Prefer a dedicated alias translator.
+	std::size_t id = i->id;
+	if (i->is_alias)
+	{
+		auto aIt = _i2fm.find(static_cast<std::size_t>(i->alias_id));
+		if (aIt != _i2fm.end() && aIt->second != nullptr)
+		{
+			id = static_cast<std::size_t>(i->alias_id);
+		}
+	}
+
+	auto fIt = _i2fm.find(id);
 	if (fIt != _i2fm.end() && fIt->second != nullptr)
 	{
 		auto f = fIt->second;
 
-		bool branchInsn = i->id == ARM_INS_B || i->id == ARM_INS_BX
-				|| i->id == ARM_INS_BL || i->id == ARM_INS_BLX
-				|| i->id == ARM_INS_BXNS || i->id == ARM_INS_BLXNS
-				|| i->id == ARM_INS_CBZ || i->id == ARM_INS_CBNZ
-				|| i->id == ARM_INS_TBB || i->id == ARM_INS_TBH;
-		if (ai->cc == ARM_CC_AL || ai->cc == ARM_CC_INVALID || branchInsn)
+		bool branchInsn = armIsId(i, ARM_INS_B) || armIsId(i, ARM_INS_BX)
+				|| armIsId(i, ARM_INS_BL) || armIsId(i, ARM_INS_BLX)
+				|| armIsId(i, ARM_INS_BXNS) || armIsId(i, ARM_INS_BLXNS)
+				|| armIsId(i, ARM_INS_CBZ) || armIsId(i, ARM_INS_CBNZ)
+				|| armIsId(i, ARM_INS_TBB) || armIsId(i, ARM_INS_TBH);
+		if (armCcUncond(ai) || branchInsn)
 		{
 			_inCondition = false;
 			(this->*f)(i, ai, irb);
@@ -118,7 +171,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateInstruction(
 	{
 		throwUnhandledInstructions(i);
 
-		if (ai->cc == ARM_CC_AL || ai->cc == ARM_CC_INVALID)
+		if (armCcUncond(ai))
 		{
 			_inCondition = false;
 			translatePseudoAsmGeneric(i, ai, irb);
@@ -196,14 +249,32 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::getCurrentPc(cs_insn* i)
  * width. And an ARM sub-register write MERGES -- writing s0 leaves s1 alone --
  * where every ARM64 sub-register write zeroes the rest.
  *
- * Q registers are not handled here. Every translator in this file already
- * sends an operand on a Q register to pseudo-assembly, so nothing reads those
- * globals; composing them from D pairs belongs with whatever first models a
- * NEON instruction.
+ * Qn is D(2n):D(2n+1). NEON reads and writes the D pair, not the unused f128
+ * global; the same merge rule as an S write applies at 64-bit granularity.
  */
 bool Capstone2LlvmIrTranslatorArm_impl::isSingleView(uint32_t r)
 {
 	return r >= ARM_REG_S0 && r <= ARM_REG_S31;
+}
+
+bool Capstone2LlvmIrTranslatorArm_impl::isQuadView(uint32_t r)
+{
+	return r >= ARM_REG_Q0 && r <= ARM_REG_Q15;
+}
+
+uint32_t Capstone2LlvmIrTranslatorArm_impl::quadViewLoD(uint32_t r)
+{
+	return ARM_REG_D0 + 2 * (r - ARM_REG_Q0);
+}
+
+bool Capstone2LlvmIrTranslatorArm_impl::isNeonRegister(uint32_t r)
+{
+	return isFpRegister(r) || isQuadView(r);
+}
+
+bool Capstone2LlvmIrTranslatorArm_impl::insnWriteback() const
+{
+	return _insn && _insn->detail && _insn->detail->writeback;
 }
 
 /// The D register an S register is half of, and which half.
@@ -264,6 +335,28 @@ Capstone2LlvmIrTranslatorArm_impl::storeSingleView(uint32_t r, llvm::Value* val,
 	return s;
 }
 
+llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadQuadView(uint32_t r, llvm::IRBuilder<>& irb)
+{
+	uint32_t lo = quadViewLoD(r);
+	auto* i64 = irb.getInt64Ty();
+	auto* i128 = irb.getIntNTy(128);
+	auto* loB = irb.CreateZExt(irb.CreateBitCast(loadRegister(lo, irb), i64), i128);
+	auto* hiB = irb.CreateZExt(irb.CreateBitCast(loadRegister(lo + 1, irb), i64), i128);
+	auto* bits = irb.CreateOr(loB, irb.CreateShl(hiB, llvm::ConstantInt::get(i128, 64)));
+	return irb.CreateBitCast(bits, llvm::Type::getFP128Ty(_module->getContext()));
+}
+
+llvm::Instruction* Capstone2LlvmIrTranslatorArm_impl::storeQuadView(uint32_t r, llvm::Value* val, llvm::IRBuilder<>& irb)
+{
+	uint32_t lo = quadViewLoD(r);
+	auto* i64 = irb.getInt64Ty();
+	auto* i128 = irb.getIntNTy(128);
+	auto* bits = generateTypeConversion(irb, val, i128, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	storeRegister(lo, irb.CreateTrunc(bits, i64), irb, eOpConv::FPCAST_OR_BITCAST);
+	return storeRegister(
+		lo + 1, irb.CreateTrunc(irb.CreateLShr(bits, llvm::ConstantInt::get(i128, 64)), i64), irb, eOpConv::FPCAST_OR_BITCAST);
+}
+
 llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadRegister(
 		uint32_t r,
 		llvm::IRBuilder<>& irb,
@@ -283,6 +376,11 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadRegister(
 	if (isSingleView(r))
 	{
 		return generateTypeConversion(irb, loadSingleView(r, irb), dstType, ct);
+	}
+
+	if (isQuadView(r))
+	{
+		return generateTypeConversion(irb, loadQuadView(r, irb), dstType, ct);
 	}
 
 	llvm::Value* llvmReg = getRegister(r);
@@ -361,11 +459,6 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadMemIndexTerm(cs_arm_op& op, 
 	}
 	auto* ty = llvm::cast<llvm::IntegerType>(idx->getType());
 	unsigned w = ty->getBitWidth();
-
-	if (op.mem.lshift > 0 && op.mem.lshift < w)
-	{
-		idx = irb.CreateShl(idx, llvm::ConstantInt::get(ty, op.mem.lshift));
-	}
 
 	unsigned k = op.shift.value;
 	switch (op.shift.type)
@@ -459,7 +552,6 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::generateOperandShift(
 			return generateShiftRor(irb, val, n);
 		}
 		case ARM_SFT_RRX:
-		case ARM_SFT_RRX_REG:
 		{
 			return generateShiftRrx(irb, val, n);
 		}
@@ -785,6 +877,8 @@ bool Capstone2LlvmIrTranslatorArm_impl::isScalarVfp(cs_arm* ai)
 	{
 		return false;
 	}
+	bool sawD = false;
+	bool sawS = false;
 	for (unsigned j = 0; j < ai->op_count; ++j)
 	{
 		auto& op = ai->operands[j];
@@ -792,15 +886,25 @@ bool Capstone2LlvmIrTranslatorArm_impl::isScalarVfp(cs_arm* ai)
 		{
 			continue;
 		}
-		if (op.reg >= ARM_REG_Q0 && op.reg <= ARM_REG_Q15)
+		if (isQuadView(op.reg) || op.vector_index >= 0 || op.neon_lane >= 0)
 		{
 			return false;
 		}
-		if (op.vector_index >= 0)
+		if (op.reg >= ARM_REG_D0 && op.reg <= ARM_REG_D31)
 		{
-			return false;
+			sawD = true;
+		}
+		if (op.reg >= ARM_REG_S0 && op.reg <= ARM_REG_S31)
+		{
+			sawS = true;
 		}
 	}
+	// vadd.f32 on D registers is NEON 2xf32, not a scalar f64 add.
+	if (sawD && ai->vector_data == ARM_VECTORDATA_F32)
+	{
+		return false;
+	}
+	(void)sawS;
 	return true;
 }
 
@@ -822,6 +926,133 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadVfpOp(cs_arm_op& op, llvm::I
 {
 	auto* v = loadOp(op, irb, ty);
 	return generateTypeConversion(irb, v, ty, eOpConv::FPCAST_OR_BITCAST);
+}
+
+unsigned Capstone2LlvmIrTranslatorArm_impl::neonBitWidth(uint32_t r)
+{
+	if (isQuadView(r))
+	{
+		return 128u;
+	}
+	if (r >= ARM_REG_S0 && r <= ARM_REG_S31)
+	{
+		return 32u;
+	}
+	return 64u;
+}
+
+unsigned Capstone2LlvmIrTranslatorArm_impl::vectorDataLaneBits(arm_vectordata_type vd, bool& isFp, bool& isSigned)
+{
+	isFp = false;
+	isSigned = false;
+	switch (vd)
+	{
+	case ARM_VECTORDATA_I8:
+	case ARM_VECTORDATA_U8: return 8;
+	case ARM_VECTORDATA_S8: isSigned = true; return 8;
+	case ARM_VECTORDATA_I16:
+	case ARM_VECTORDATA_U16: return 16;
+	case ARM_VECTORDATA_S16: isSigned = true; return 16;
+	case ARM_VECTORDATA_I32:
+	case ARM_VECTORDATA_U32: return 32;
+	case ARM_VECTORDATA_S32: isSigned = true; return 32;
+	case ARM_VECTORDATA_I64:
+	case ARM_VECTORDATA_U64: return 64;
+	case ARM_VECTORDATA_S64: isSigned = true; return 64;
+	case ARM_VECTORDATA_F16: isFp = true; return 16;
+	case ARM_VECTORDATA_F32: isFp = true; return 32;
+	case ARM_VECTORDATA_F64: isFp = true; return 64;
+	default: return 0;
+	}
+}
+
+int Capstone2LlvmIrTranslatorArm_impl::operandLane(const cs_arm_op& op)
+{
+	if (op.vector_index >= 0)
+	{
+		return op.vector_index;
+	}
+	return op.neon_lane;
+}
+
+llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadNeonBits(uint32_t r, llvm::IRBuilder<>& irb)
+{
+	if (isQuadView(r))
+	{
+		auto* i128 = irb.getIntNTy(128);
+		return generateTypeConversion(irb, loadQuadView(r, irb), i128, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	}
+	auto* w = irb.getIntNTy(neonBitWidth(r));
+	return generateTypeConversion(irb, loadRegister(r, irb), w, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+llvm::Instruction* Capstone2LlvmIrTranslatorArm_impl::storeNeonBits(uint32_t r, llvm::Value* bits, llvm::IRBuilder<>& irb)
+{
+	if (isQuadView(r))
+	{
+		return storeQuadView(r, bits, irb);
+	}
+	return storeRegister(r, bits, irb, eOpConv::FPCAST_OR_BITCAST);
+}
+
+llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadNeonVector(
+	uint32_t r, unsigned laneBits, bool fp, llvm::IRBuilder<>& irb)
+{
+	unsigned width = neonBitWidth(r);
+	unsigned lanes = laneBits ? width / laneBits : 0;
+	if (lanes == 0 || width % laneBits != 0)
+	{
+		return llvm::UndefValue::get(irb.getIntNTy(width));
+	}
+	llvm::Type* elem = nullptr;
+	if (fp && laneBits == 64)
+	{
+		elem = irb.getDoubleTy();
+	}
+	else if (fp && laneBits == 32)
+	{
+		elem = irb.getFloatTy();
+	}
+	else
+	{
+		elem = irb.getIntNTy(laneBits);
+	}
+	auto* vecTy = llvm::FixedVectorType::get(elem, lanes);
+	return irb.CreateBitCast(loadNeonBits(r, irb), vecTy);
+}
+
+llvm::Instruction*
+Capstone2LlvmIrTranslatorArm_impl::storeNeonVector(uint32_t r, llvm::Value* vec, llvm::IRBuilder<>& irb)
+{
+	auto* w = irb.getIntNTy(neonBitWidth(r));
+	return storeNeonBits(r, irb.CreateBitCast(vec, w), irb);
+}
+
+bool Capstone2LlvmIrTranslatorArm_impl::neonBinaryRegs(cs_arm* ai, unsigned nRegs, unsigned& bits)
+{
+	bits = 0;
+	if (ai->op_count < nRegs)
+	{
+		return false;
+	}
+	for (unsigned j = 0; j < nRegs; ++j)
+	{
+		if (ai->operands[j].type != ARM_OP_REG || !isNeonRegister(ai->operands[j].reg)
+			|| operandLane(ai->operands[j]) >= 0)
+		{
+			return false;
+		}
+		unsigned w = neonBitWidth(ai->operands[j].reg);
+		if (bits == 0)
+		{
+			bits = w;
+		}
+		else if (bits != w)
+		{
+			return false;
+		}
+	}
+	return bits != 0;
 }
 
 /**
@@ -858,27 +1089,32 @@ void Capstone2LlvmIrTranslatorArm_impl::translateVfpArithm(cs_insn* i, cs_arm* a
 {
 	EXPECT_IS_TERNARY(i, ai, irb);
 
-	if (!isScalarVfp(ai) || !isFpRegister(ai->operands[0].reg))
+	if (isScalarVfp(ai) && isFpRegister(ai->operands[0].reg))
+	{
+		auto* ty = vfpTypeOfReg(ai->operands[0].reg, irb);
+		op1 = loadVfpOp(ai->operands[1], irb, ty);
+		op2 = loadVfpOp(ai->operands[2], irb, ty);
+
+		llvm::Value* val = nullptr;
+		switch (i->id)
+		{
+		case ARM_INS_VADD: val = irb.CreateFAdd(op1, op2); break;
+		case ARM_INS_VSUB: val = irb.CreateFSub(op1, op2); break;
+		case ARM_INS_VMUL: val = irb.CreateFMul(op1, op2); break;
+		case ARM_INS_VDIV: val = irb.CreateFDiv(op1, op2); break;
+		case ARM_INS_VNMUL: val = irb.CreateFNeg(irb.CreateFMul(op1, op2)); break;
+		default: return;
+		}
+		storeOp(ai->operands[0], val, irb, eOpConv::FPCAST_OR_BITCAST);
+		return;
+	}
+
+	if (i->id == ARM_INS_VDIV || i->id == ARM_INS_VNMUL)
 	{
 		translatePseudoAsmGeneric(i, ai, irb);
 		return;
 	}
-
-	auto* ty = vfpTypeOfReg(ai->operands[0].reg, irb);
-	op1 = loadVfpOp(ai->operands[1], irb, ty);
-	op2 = loadVfpOp(ai->operands[2], irb, ty);
-
-	llvm::Value* val = nullptr;
-	switch (i->id)
-	{
-	case ARM_INS_VADD: val = irb.CreateFAdd(op1, op2); break;
-	case ARM_INS_VSUB: val = irb.CreateFSub(op1, op2); break;
-	case ARM_INS_VMUL: val = irb.CreateFMul(op1, op2); break;
-	case ARM_INS_VDIV: val = irb.CreateFDiv(op1, op2); break;
-	case ARM_INS_VNMUL: val = irb.CreateFNeg(irb.CreateFMul(op1, op2)); break;
-	default: return;
-	}
-	storeOp(ai->operands[0], val, irb, eOpConv::FPCAST_OR_BITCAST);
+	translateNeonArith(i, ai, irb);
 }
 
 /**
@@ -888,28 +1124,64 @@ void Capstone2LlvmIrTranslatorArm_impl::translateVfpUnary(cs_insn* i, cs_arm* ai
 {
 	EXPECT_IS_BINARY(i, ai, irb);
 
-	if (!isScalarVfp(ai) || !isFpRegister(ai->operands[0].reg))
+	if (isScalarVfp(ai) && isFpRegister(ai->operands[0].reg))
+	{
+		auto* ty = vfpTypeOfReg(ai->operands[0].reg, irb);
+		op1 = loadVfpOp(ai->operands[1], irb, ty);
+
+		llvm::Value* val = nullptr;
+		switch (i->id)
+		{
+		case ARM_INS_VNEG: val = irb.CreateFNeg(op1); break;
+		case ARM_INS_VABS:
+			val = irb.CreateCall(llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::fabs, ty), {op1});
+			break;
+		case ARM_INS_VSQRT:
+			val = irb.CreateCall(llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::sqrt, ty), {op1});
+			break;
+		default: return;
+		}
+		storeOp(ai->operands[0], val, irb, eOpConv::FPCAST_OR_BITCAST);
+		return;
+	}
+
+	if (i->id == ARM_INS_VSQRT)
 	{
 		translatePseudoAsmGeneric(i, ai, irb);
 		return;
 	}
 
-	auto* ty = vfpTypeOfReg(ai->operands[0].reg, irb);
-	op1 = loadVfpOp(ai->operands[1], irb, ty);
-
-	llvm::Value* val = nullptr;
-	switch (i->id)
+	unsigned bits = 0;
+	bool isFp = false, isSigned = false;
+	unsigned laneBits = vectorDataLaneBits(ai->vector_data, isFp, isSigned);
+	if (ai->op_count != 2 || !neonBinaryRegs(ai, 2, bits) || laneBits == 0 || bits % laneBits != 0)
 	{
-	case ARM_INS_VNEG: val = irb.CreateFNeg(op1); break;
-	case ARM_INS_VABS:
-		val = irb.CreateCall(llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::fabs, ty), {op1});
-		break;
-	case ARM_INS_VSQRT:
-		val = irb.CreateCall(llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::sqrt, ty), {op1});
-		break;
-	default: return;
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
 	}
-	storeOp(ai->operands[0], val, irb, eOpConv::FPCAST_OR_BITCAST);
+
+	llvm::Value* v = loadNeonVector(ai->operands[1].reg, laneBits, isFp, irb);
+	auto* vecTy = llvm::cast<llvm::FixedVectorType>(v->getType());
+	unsigned lanes = vecTy->getNumElements();
+	llvm::Value* res = llvm::PoisonValue::get(vecTy);
+	for (uint64_t k = 0; k < lanes; ++k)
+	{
+		llvm::Value* e = irb.CreateExtractElement(v, k);
+		llvm::Value* o = nullptr;
+		if (i->id == ARM_INS_VNEG)
+		{
+			o = isFp ? irb.CreateFNeg(e) : irb.CreateNeg(e);
+		}
+		else
+		{
+			o = isFp ? irb.CreateCall(
+						  llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::fabs, e->getType()), {e})
+					 : irb.CreateSelect(
+						   irb.CreateICmpSLT(e, llvm::ConstantInt::get(e->getType(), 0)), irb.CreateNeg(e), e);
+		}
+		res = irb.CreateInsertElement(res, o, k);
+	}
+	storeNeonVector(ai->operands[0].reg, res, irb);
 }
 
 /**
@@ -924,28 +1196,54 @@ void Capstone2LlvmIrTranslatorArm_impl::translateVfpMla(cs_insn* i, cs_arm* ai, 
 {
 	EXPECT_IS_TERNARY(i, ai, irb);
 
-	if (!isScalarVfp(ai) || !isFpRegister(ai->operands[0].reg))
+	if (isScalarVfp(ai) && isFpRegister(ai->operands[0].reg))
+	{
+		auto* ty = vfpTypeOfReg(ai->operands[0].reg, irb);
+		auto* acc = loadVfpOp(ai->operands[0], irb, ty);
+		op1 = loadVfpOp(ai->operands[1], irb, ty);
+		op2 = loadVfpOp(ai->operands[2], irb, ty);
+
+		bool negProduct =
+			(i->id == ARM_INS_VMLS || i->id == ARM_INS_VFMS || i->id == ARM_INS_VNMLA || i->id == ARM_INS_VFNMA);
+		bool negAcc =
+			(i->id == ARM_INS_VNMLA || i->id == ARM_INS_VNMLS || i->id == ARM_INS_VFNMA || i->id == ARM_INS_VFNMS);
+
+		auto* fma = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::fma, ty);
+		llvm::Value* a = negProduct ? irb.CreateFNeg(op1) : op1;
+		llvm::Value* c = negAcc ? irb.CreateFNeg(acc) : acc;
+		llvm::Value* val = irb.CreateCall(fma, {a, op2, c});
+
+		storeOp(ai->operands[0], val, irb, eOpConv::FPCAST_OR_BITCAST);
+		return;
+	}
+
+	unsigned bits = 0;
+	bool isFp = false, isSigned = false;
+	unsigned laneBits = vectorDataLaneBits(ai->vector_data, isFp, isSigned);
+	if (!neonBinaryRegs(ai, 3, bits) || laneBits == 0 || bits % laneBits != 0)
 	{
 		translatePseudoAsmGeneric(i, ai, irb);
 		return;
 	}
 
-	auto* ty = vfpTypeOfReg(ai->operands[0].reg, irb);
-	auto* acc = loadVfpOp(ai->operands[0], irb, ty);
-	op1 = loadVfpOp(ai->operands[1], irb, ty);
-	op2 = loadVfpOp(ai->operands[2], irb, ty);
-
-	bool negProduct =
-		(i->id == ARM_INS_VMLS || i->id == ARM_INS_VFMS || i->id == ARM_INS_VNMLA || i->id == ARM_INS_VFNMA);
-	bool negAcc =
-		(i->id == ARM_INS_VNMLA || i->id == ARM_INS_VNMLS || i->id == ARM_INS_VFNMA || i->id == ARM_INS_VFNMS);
-
-	auto* fma = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::fma, ty);
-	llvm::Value* a = negProduct ? irb.CreateFNeg(op1) : op1;
-	llvm::Value* c = negAcc ? irb.CreateFNeg(acc) : acc;
-	llvm::Value* val = irb.CreateCall(fma, {a, op2, c});
-
-	storeOp(ai->operands[0], val, irb, eOpConv::FPCAST_OR_BITCAST);
+	llvm::Value* acc = loadNeonVector(ai->operands[0].reg, laneBits, isFp, irb);
+	llvm::Value* a = loadNeonVector(ai->operands[1].reg, laneBits, isFp, irb);
+	llvm::Value* b = loadNeonVector(ai->operands[2].reg, laneBits, isFp, irb);
+	auto* vecTy = llvm::cast<llvm::FixedVectorType>(acc->getType());
+	unsigned lanes = vecTy->getNumElements();
+	bool sub = (i->id == ARM_INS_VMLS || i->id == ARM_INS_VFMS);
+	llvm::Value* res = llvm::PoisonValue::get(vecTy);
+	for (uint64_t k = 0; k < lanes; ++k)
+	{
+		llvm::Value* ea = irb.CreateExtractElement(acc, k);
+		llvm::Value* e1 = irb.CreateExtractElement(a, k);
+		llvm::Value* e2 = irb.CreateExtractElement(b, k);
+		llvm::Value* prod = isFp ? irb.CreateFMul(e1, e2) : irb.CreateMul(e1, e2);
+		llvm::Value* o = isFp ? (sub ? irb.CreateFSub(ea, prod) : irb.CreateFAdd(ea, prod))
+							  : (sub ? irb.CreateSub(ea, prod) : irb.CreateAdd(ea, prod));
+		res = irb.CreateInsertElement(res, o, k);
+	}
+	storeNeonVector(ai->operands[0].reg, res, irb);
 }
 
 /**
@@ -1165,6 +1463,61 @@ void Capstone2LlvmIrTranslatorArm_impl::translateVfpCvt(cs_insn* i, cs_arm* ai, 
  */
 void Capstone2LlvmIrTranslatorArm_impl::translateVfpMov(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
 {
+	if (ai->op_count == 2 && ai->operands[0].type == ARM_OP_REG && ai->operands[1].type == ARM_OP_REG)
+	{
+		int dstLane = operandLane(ai->operands[0]);
+		int srcLane = operandLane(ai->operands[1]);
+		bool dstN = isNeonRegister(ai->operands[0].reg);
+		bool srcN = isNeonRegister(ai->operands[1].reg);
+		if (dstLane >= 0 || srcLane >= 0)
+		{
+			bool isFp = false, isSigned = false;
+			unsigned laneBits = vectorDataLaneBits(ai->vector_data, isFp, isSigned);
+			if (laneBits == 0)
+			{
+				laneBits = 32;
+			}
+			if (dstN && dstLane >= 0 && !srcN)
+			{
+				llvm::Value* v = loadNeonVector(ai->operands[0].reg, laneBits, false, irb);
+				auto* laneTy = llvm::cast<llvm::VectorType>(v->getType())->getElementType();
+				auto* ins = irb.CreateZExtOrTrunc(loadOp(ai->operands[1], irb), laneTy);
+				storeNeonVector(ai->operands[0].reg, irb.CreateInsertElement(v, ins, static_cast<uint64_t>(dstLane)), irb);
+				return;
+			}
+			if (srcN && srcLane >= 0 && !dstN)
+			{
+				llvm::Value* v = loadNeonVector(ai->operands[1].reg, laneBits, false, irb);
+				auto* lane = irb.CreateExtractElement(v, static_cast<uint64_t>(srcLane));
+				storeOp(ai->operands[0], irb.CreateZExtOrTrunc(lane, getDefaultType()), irb);
+				return;
+			}
+			if (dstN && srcN && srcLane >= 0 && dstLane < 0)
+			{
+				llvm::Value* srcV = loadNeonVector(ai->operands[1].reg, laneBits, false, irb);
+				llvm::Value* lane = irb.CreateExtractElement(srcV, static_cast<uint64_t>(srcLane));
+				llvm::Value* dstV = loadNeonVector(ai->operands[0].reg, laneBits, false, irb);
+				storeNeonVector(ai->operands[0].reg, irb.CreateInsertElement(dstV, lane, static_cast<uint64_t>(0)), irb);
+				return;
+			}
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		if (dstN && srcN)
+		{
+			unsigned dw = neonBitWidth(ai->operands[0].reg);
+			unsigned sw = neonBitWidth(ai->operands[1].reg);
+			auto* bits = loadNeonBits(ai->operands[1].reg, irb);
+			if (dw != sw)
+			{
+				auto* dt = irb.getIntNTy(dw);
+				bits = dw > sw ? irb.CreateZExt(bits, dt) : irb.CreateTrunc(bits, dt);
+			}
+			storeNeonBits(ai->operands[0].reg, bits, irb);
+			return;
+		}
+	}
+
 	if (!isScalarVfp(ai))
 	{
 		translatePseudoAsmGeneric(i, ai, irb);
@@ -1278,14 +1631,6 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadOp(
 			auto* idxR = loadRegister(op.mem.index, irb);
 			if (idxR)
 			{
-				if (op.mem.lshift > 0)
-				{
-					auto* lshift = llvm::ConstantInt::get(
-							idxR->getType(),
-							op.mem.lshift);
-					idxR = irb.CreateShl(idxR, lshift);
-				}
-
 				// The sign of a register offset is op.subtracted, NOT
 				// mem.scale. arm.h documents scale as 1 or -1, but this
 				// capstone never writes -1 for ARM: disassembling
@@ -1293,19 +1638,31 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadOp(
 				// so does every other negated-index form. So this branch was
 				// dead and the minus sign was dropped -- `ldr r0, [r1, -r2]`
 				// loaded from r1 + r2.
-				//
-				// NOT applied to the displacement: for `ldr r0, [r1, #-4]`
-				// capstone reports disp = -4 and subtracted = 0, so the sign
-				// is already there and negating again would undo it. Both
-				// measured against the bundled capstone.
 				if (op.subtracted)
 				{
 					idxR = irb.CreateNeg(idxR);
 				}
 
 				// If there is a shift in memory operand, it is applied to
-				// the index register.
+				// the index register. Capstone 6.x has no mem.lshift; the
+				// amount lives in op.shift.
 				idxR = generateOperandShift(irb, op, idxR);
+			}
+			else if (op.subtracted && disp)
+			{
+				// Capstone 6.x reports `ldr r0, [r1, #-8]` as disp=+8 and
+				// subtracted=1 (5.x wrote disp=-8). Apply the minus here
+				// only when there is no index register, so a negative disp
+				// that already carries the sign is left alone.
+				disp = irb.CreateNeg(disp);
+			}
+
+			// Capstone 6.x: post-indexed writeback still puts the offset
+			// in the MEM operand; the access itself is through the raw base.
+			if (!lea && _insn && _insn->detail && _insn->detail->arm.post_index)
+			{
+				disp = nullptr;
+				idxR = nullptr;
 			}
 
 			llvm::Value* addr = nullptr;
@@ -1387,6 +1744,11 @@ llvm::Instruction* Capstone2LlvmIrTranslatorArm_impl::storeRegister(
 		return storeSingleView(r, val, irb);
 	}
 
+	if (isQuadView(r))
+	{
+		return storeQuadView(r, val, irb);
+	}
+
 	auto* llvmReg = getRegister(r);
 	if (llvmReg == nullptr)
 	{
@@ -1454,14 +1816,6 @@ llvm::Instruction* Capstone2LlvmIrTranslatorArm_impl::storeOp(
 			auto* idxR = loadRegister(op.mem.index, irb);
 			if (idxR)
 			{
-				if (op.mem.lshift >= 0)
-				{
-					auto* lshift = llvm::ConstantInt::get(
-							idxR->getType(),
-							op.mem.lshift);
-					idxR = irb.CreateShl(idxR, lshift);
-				}
-
 				// The sign of a register offset is op.subtracted, NOT
 				// mem.scale. arm.h documents scale as 1 or -1, but this
 				// capstone never writes -1 for ARM: disassembling
@@ -1469,11 +1823,6 @@ llvm::Instruction* Capstone2LlvmIrTranslatorArm_impl::storeOp(
 				// so does every other negated-index form. So this branch was
 				// dead and the minus sign was dropped -- `ldr r0, [r1, -r2]`
 				// loaded from r1 + r2.
-				//
-				// NOT applied to the displacement: for `ldr r0, [r1, #-4]`
-				// capstone reports disp = -4 and subtracted = 0, so the sign
-				// is already there and negating again would undo it. Both
-				// measured against the bundled capstone.
 				if (op.subtracted)
 				{
 					idxR = irb.CreateNeg(idxR);
@@ -1482,6 +1831,16 @@ llvm::Instruction* Capstone2LlvmIrTranslatorArm_impl::storeOp(
 				// If there is a shift in memory operand, it is applied to
 				// the index register.
 				idxR = generateOperandShift(irb, op, idxR);
+			}
+			else if (op.subtracted && disp)
+			{
+				disp = irb.CreateNeg(disp);
+			}
+
+			if (_insn && _insn->detail && _insn->detail->arm.post_index)
+			{
+				disp = nullptr;
+				idxR = nullptr;
 			}
 
 			llvm::Value* addr = nullptr;
@@ -1639,9 +1998,10 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::generateInsnConditionCode(
 		}
 		case ARM_CC_AL:
 		case ARM_CC_INVALID:
+		case ARMCC_UNDEF:
 		default:
 		{
-			throw GenericError("should not be possible");
+			return irb.getTrue();
 		}
 	}
 }
@@ -1664,8 +2024,8 @@ uint8_t Capstone2LlvmIrTranslatorArm_impl::getOperandAccess(cs_arm_op& op)
 
 /**
  * ARM_INS_ADC
- * TODO: Castone sets update_flags==true even when "adc", not "adcs".
- * Check once more and report as bug.
+ * Capstone 5.x set update_flags on ADC without S (a decoder quirk).
+ * Capstone 6.x reports the architectural S bit, so ADC no longer writes NZCV.
  */
 void Capstone2LlvmIrTranslatorArm_impl::translateAdc(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
 {
@@ -1772,7 +2132,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateB(cs_insn* i, cs_arm* ai, llvm:
 			&& ai->operands[0].reg == ARM_REG_LR;
 
 	llvm::CallInst* call = nullptr;
-	if (ai->cc == ARM_CC_AL || ai->cc == ARM_CC_INVALID)
+	if (armCcUncond(ai))
 	{
 		call = isReturn
 			? generateReturnFunctionCall(irb, op0)
@@ -1798,7 +2158,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateBl(cs_insn* i, cs_arm* ai, llvm
 	storeRegister(ARM_REG_LR, getNextInsnAddress(i), irb);
 	op0 = loadOpUnary(ai, irb);
 	llvm::CallInst* call = nullptr;
-	if (ai->cc == ARM_CC_AL || ai->cc == ARM_CC_INVALID)
+	if (armCcUncond(ai))
 	{
 		call = generateCallFunctionCall(irb, op0);
 	}
@@ -1819,8 +2179,8 @@ void Capstone2LlvmIrTranslatorArm_impl::annotateBxBlxIfNeeded(
 	{
 		return;
 	}
-	if (i->id != ARM_INS_BX && i->id != ARM_INS_BLX
-			&& i->id != ARM_INS_BXNS && i->id != ARM_INS_BLXNS)
+	if (!armIsId(i, ARM_INS_BX) && !armIsId(i, ARM_INS_BLX)
+			&& !armIsId(i, ARM_INS_BXNS) && !armIsId(i, ARM_INS_BLXNS))
 	{
 		return;
 	}
@@ -1842,7 +2202,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateCbnz(cs_insn* i, cs_arm* ai, ll
 
 	std::tie(op0, op1) = loadOpBinary(ai, irb, eOpConv::NOTHING);
 	auto* cond = irb.CreateICmpNE(op0, llvm::ConstantInt::get(op0->getType(), 0));
-	if (ai->cc != ARM_CC_AL && ai->cc != ARM_CC_INVALID)
+	if (!armCcUncond(ai))
 	{
 		cond = irb.CreateAnd(cond, generateInsnConditionCode(irb, ai));
 	}
@@ -1858,7 +2218,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateCbz(cs_insn* i, cs_arm* ai, llv
 
 	std::tie(op0, op1) = loadOpBinary(ai, irb, eOpConv::NOTHING);
 	auto* cond = irb.CreateICmpEQ(op0, llvm::ConstantInt::get(op0->getType(), 0));
-	if (ai->cc != ARM_CC_AL && ai->cc != ARM_CC_INVALID)
+	if (!armCcUncond(ai))
 	{
 		cond = irb.CreateAnd(cond, generateInsnConditionCode(irb, ai));
 	}
@@ -2607,11 +2967,14 @@ void Capstone2LlvmIrTranslatorArm_impl::translateShifts(cs_insn* i, cs_arm* ai, 
 	EXPECT_IS_BINARY_OR_TERNARY(i, ai, irb);
 
 	// We expect 2nd operand to have shift/rotate set -> loadOp() will take
-	// care of shift/rotate computation.
+	// care of shift/rotate computation. Capstone 6.x alias form of
+	// `lsl r0, r1, #16` is 3 operands AND a shift on operand 1; applying
+	// both would shift twice.
 	//
-	if (ai->op_count == 2 && ai->operands[1].shift.type != ARM_SFT_INVALID)
+	if ((ai->op_count == 2 || ai->op_count == 3)
+			&& ai->operands[1].shift.type != ARM_SFT_INVALID)
 	{
-		op1 = loadOpBinaryOp1(ai, irb);
+		op1 = loadOp(ai->operands[1], irb);
 	}
 	// We expect that 3rd operand is a shift/rotate value, and 2nd operand
 	// does not have shift type set - ARM_SFT_INVALID.
@@ -2625,17 +2988,30 @@ void Capstone2LlvmIrTranslatorArm_impl::translateShifts(cs_insn* i, cs_arm* ai, 
 	{
 		std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(ai, irb, eOpConv::THROW);
 
-		switch (i->id)
+		unsigned sid = i->is_alias ? static_cast<unsigned>(i->alias_id) : i->id;
+		if (sid == ARM_INS_ASR || sid == ARM_INS_ALIAS_ASR)
 		{
-			case ARM_INS_ASR: op1 = generateShiftAsr(irb, op1, op2); break;
-			case ARM_INS_LSL: op1 = generateShiftLsl(irb, op1, op2); break;
-			case ARM_INS_LSR: op1 = generateShiftLsr(irb, op1, op2); break;
-			case ARM_INS_ROR: op1 = generateShiftRor(irb, op1, op2); break;
-			case ARM_INS_RRX: op1 = generateShiftRrx(irb, op1, op2); break;
-			default:
-			{
-				throw GenericError("unhandled insn ID");
-			}
+			op1 = generateShiftAsr(irb, op1, op2);
+		}
+		else if (sid == ARM_INS_LSL || sid == ARM_INS_ALIAS_LSL)
+		{
+			op1 = generateShiftLsl(irb, op1, op2);
+		}
+		else if (sid == ARM_INS_LSR || sid == ARM_INS_ALIAS_LSR)
+		{
+			op1 = generateShiftLsr(irb, op1, op2);
+		}
+		else if (sid == ARM_INS_ROR || sid == ARM_INS_ALIAS_ROR)
+		{
+			op1 = generateShiftRor(irb, op1, op2);
+		}
+		else if (sid == ARM_INS_RRX || sid == ARM_INS_ALIAS_RRX)
+		{
+			op1 = generateShiftRrx(irb, op1, op2);
+		}
+		else
+		{
+			throw GenericError("unhandled insn ID");
 		}
 	}
 
@@ -2685,21 +3061,13 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMovw(cs_insn* i, cs_arm* ai, ll
 {
 	EXPECT_IS_BINARY(i, ai, irb);
 
-	// TODO: It looks like on THUMB, result is overwritten -- investigate.
-	// Add/Fix THUMB unit tests.
-	if (_basicMode == CS_MODE_THUMB)
-	{
-		op1 = loadOpBinaryOp1(ai, irb);
-		op1 = irb.CreateZExtOrTrunc(op1, irb.getInt32Ty());
-		storeOp(ai->operands[0], op1, irb);
-	}
-	else
-	{
-		std::tie(op0, op1) = loadOpBinary(ai, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
-		op0 = irb.CreateAnd(op0, 0xffff0000);
-		op0 = irb.CreateOr(op0, op1);
-		storeOp(ai->operands[0], op0, irb);
-	}
+	// MOVW is architecturally Rd = ZeroExtend(imm16). Capstone 5.x ARM-mode
+	// decode used to look like MOVT-of-the-low-half (keep bits 31:16); 6.x
+	// reports a plain 16-bit immediate and the historical tests expect a
+	// full overwrite on both ARM and Thumb.
+	op1 = loadOpBinaryOp1(ai, irb);
+	op1 = irb.CreateZExtOrTrunc(op1, irb.getInt32Ty());
+	storeOp(ai->operands[0], op1, irb);
 }
 
 /**
@@ -2814,11 +3182,16 @@ void Capstone2LlvmIrTranslatorArm_impl::translateVfpPushPop(cs_insn* i, cs_arm* 
 		}
 	}
 
-	bool load = i->id == ARM_INS_VPOP;
+	bool load = armIsId(i, ARM_INS_VPOP);
 	auto* elem = vfpTypeOfReg(ai->operands[0].reg, irb);
 	uint64_t sz = elem->isDoubleTy() ? 8 : 4;
 
+	auto* spTy = getDefaultType();
 	auto* sp = loadRegister(ARM_REG_SP, irb);
+	if (sp && !sp->getType()->isIntegerTy())
+	{
+		sp = generateTypeConversion(irb, sp, spTy, eOpConv::FPCAST_OR_BITCAST);
+	}
 	auto* total = llvm::ConstantInt::get(sp->getType(), sz * ai->op_count);
 	// VPUSH writes below the old SP; VPOP reads from it.
 	auto* base = load ? sp : irb.CreateSub(sp, total);
@@ -2923,8 +3296,21 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLdmStm(cs_insn* i, cs_arm* ai, 
 	auto sz = getArchByteSize();
 	auto* ty = getDefaultType();
 
+	bool isPop = armIsId(i, ARM_INS_POP) || armIsId(i, ARM_INS_ALIAS_POP)
+			|| armIsId(i, ARM_INS_ALIAS_POPW);
+	bool isPush = armIsId(i, ARM_INS_PUSH) || armIsId(i, ARM_INS_ALIAS_PUSH)
+			|| armIsId(i, ARM_INS_ALIAS_PUSHW);
+	bool isLdm = armIsId(i, ARM_INS_LDM) || armIsId(i, ARM_INS_ALIAS_LDM);
+	bool isLdmib = armIsId(i, ARM_INS_LDMIB);
+	bool isLdmda = armIsId(i, ARM_INS_LDMDA);
+	bool isLdmdb = armIsId(i, ARM_INS_LDMDB);
+	bool isStm = armIsId(i, ARM_INS_STM);
+	bool isStmib = armIsId(i, ARM_INS_STMIB);
+	bool isStmda = armIsId(i, ARM_INS_STMDA);
+	bool isStmdb = armIsId(i, ARM_INS_STMDB);
+
 	unsigned opStart = 0;
-	if (i->id == ARM_INS_POP || i->id == ARM_INS_PUSH)
+	if (isPop || isPush)
 	{
 		op0 = loadRegister(ARM_REG_SP, irb);
 		opStart = 0;
@@ -2935,13 +3321,10 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLdmStm(cs_insn* i, cs_arm* ai, 
 		opStart = 1;
 	}
 
-	bool increment = i->id == ARM_INS_LDM || i->id == ARM_INS_LDMIB || i->id == ARM_INS_POP
-			|| i->id == ARM_INS_STM || i->id == ARM_INS_STMIB;
-	bool after = i->id == ARM_INS_LDM || i->id == ARM_INS_LDMDA || i->id == ARM_INS_POP
-			|| i->id == ARM_INS_STM || i->id == ARM_INS_STMDA;
+	bool increment = isLdm || isLdmib || isPop || isStm || isStmib;
+	bool after = isLdm || isLdmda || isPop || isStm || isStmda;
 	bool before = !after;
-	bool load = i->id == ARM_INS_LDM || i->id == ARM_INS_LDMIB || i->id == ARM_INS_LDMDA
-			|| i->id == ARM_INS_LDMDB || i->id == ARM_INS_POP;
+	bool load = isLdm || isLdmib || isLdmda || isLdmdb || isPop;
 
 	llvm::Value* incDec = op0;
 	llvm::Value* finalIncDec = op0;
@@ -2951,7 +3334,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLdmStm(cs_insn* i, cs_arm* ai, 
 
 	for (unsigned j = opStart; j < ai->op_count; ++j)
 	{
-		uint64_t c = i->id == ARM_INS_PUSH || i->id == ARM_INS_STMDB
+		uint64_t c = isPush || isStmdb
 				? sz * (ai->op_count - j)
 				: sz * (j-opStart+1);
 
@@ -3002,7 +3385,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLdmStm(cs_insn* i, cs_arm* ai, 
 			}
 		}
 
-		if (i->id == ARM_INS_PUSH || i->id == ARM_INS_STMDB)
+		if (isPush || isStmdb)
 		{
 			if (finalIncDec == op0)
 			{
@@ -3015,11 +3398,11 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLdmStm(cs_insn* i, cs_arm* ai, 
 		}
 	}
 
-	if (i->id == ARM_INS_POP || i->id == ARM_INS_PUSH)
+	if (isPop || isPush)
 	{
 		storeRegister(ARM_REG_SP, finalIncDec, irb);
 	}
-	else if (ai->writeback)
+	else if (insnWriteback())
 	{
 		storeOp(ai->operands[0], finalIncDec, irb);
 	}
@@ -3166,6 +3549,9 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLdr(cs_insn* i, cs_arm* ai, llv
 		if (auto disp = ai->operands[1].mem.disp)
 		{
 			idx = llvm::ConstantInt::getSigned(getDefaultType(), disp);
+			// Capstone 6.x reports `ldr r0, [r1, #-8]!` as disp=+8 and
+			// subtracted=1 (5.x wrote disp=-8).
+			subtract = ai->operands[1].subtracted;
 		}
 		else if (ai->operands[1].mem.index != ARM_REG_INVALID)
 		{
@@ -3212,7 +3598,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLdr(cs_insn* i, cs_arm* ai, llv
 			: irb.CreateZExtOrTrunc(op1, irb.getInt32Ty());
 
 	llvm::Value* v = nullptr;
-	if (ai->writeback && idx && baseR != ARM_REG_INVALID)
+	if (insnWriteback() && idx && baseR != ARM_REG_INVALID)
 	{
 		auto* b = loadRegister(baseR, irb);
 		v = subtract
@@ -3253,6 +3639,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLdrd(cs_insn* i, cs_arm* ai, ll
 		if (auto disp = ai->operands[2].mem.disp)
 		{
 			idx = llvm::ConstantInt::getSigned(getDefaultType(), disp);
+			subtract = ai->operands[2].subtracted;
 		}
 		else if (ai->operands[2].mem.index != ARM_REG_INVALID)
 		{
@@ -3287,7 +3674,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLdrd(cs_insn* i, cs_arm* ai, ll
 	auto* hi = irb.CreateTrunc(irb.CreateLShr(op1, 32), irb.getInt32Ty());
 
 	llvm::Value* v = nullptr;
-	if (ai->writeback && idx && baseR != ARM_REG_INVALID)
+	if (insnWriteback() && idx && baseR != ARM_REG_INVALID)
 	{
 		auto* b = loadRegister(baseR, irb);
 		v = subtract
@@ -3425,6 +3812,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateStr(cs_insn* i, cs_arm* ai, llv
 			if (auto disp = ai->operands[2].mem.disp)
 			{
 				idx = llvm::ConstantInt::getSigned(getDefaultType(), disp);
+				subtract = ai->operands[2].subtracted;
 			}
 			else if (ai->operands[2].mem.index != ARM_REG_INVALID)
 			{
@@ -3467,6 +3855,9 @@ void Capstone2LlvmIrTranslatorArm_impl::translateStr(cs_insn* i, cs_arm* ai, llv
 		if (auto disp = ai->operands[1].mem.disp)
 		{
 			idx = llvm::ConstantInt::getSigned(getDefaultType(), disp);
+			// Capstone 6.x reports `ldr r0, [r1, #-8]!` as disp=+8 and
+			// subtracted=1 (5.x wrote disp=-8).
+			subtract = ai->operands[1].subtracted;
 		}
 		else if (ai->operands[1].mem.index != ARM_REG_INVALID)
 		{
@@ -3486,7 +3877,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateStr(cs_insn* i, cs_arm* ai, llv
 		throw GenericError("unhandled STRD format");
 	}
 
-	if (ai->writeback && idx && baseR != ARM_REG_INVALID)
+	if (insnWriteback() && idx && baseR != ARM_REG_INVALID)
 	{
 		auto* b = loadRegister(baseR, irb);
 		auto* v = subtract
@@ -3616,12 +4007,26 @@ void Capstone2LlvmIrTranslatorArm_impl::translateSub(cs_insn* i, cs_arm* ai, llv
 {
 	EXPECT_IS_BINARY_OR_TERNARY(i, ai, irb);
 
-	if (i->id == ARM_INS_NEG)
+	// Capstone 6.x: ARM_INS_NEG is the same enumerator as ARM_INS_RSB.
+	// Only the two-operand `neg` alias (alias_id or RSB with 2 ops) is
+	// `rd = 0 - rm`. CMP/SUB are also two-operand and must not take this path.
+	bool isNeg = false;
+#ifdef ARM_INS_ALIAS_NEG
+	isNeg = i->is_alias
+			&& static_cast<unsigned>(i->alias_id) == static_cast<unsigned>(ARM_INS_ALIAS_NEG);
+#endif
+	if (!isNeg && ai->op_count == 2 && i->id == ARM_INS_RSB
+			&& i->id != ARM_INS_CMP && i->id != ARM_INS_SUB
+			&& i->id != ARM_INS_SUBS)
+	{
+		isNeg = true;
+	}
+	if (isNeg)
 	{
 		op2 = loadOpBinaryOp1(ai, irb);
 		op1 = llvm::ConstantInt::get(op2->getType(), 0);
 	}
-	else if (i->id == ARM_INS_RSB)
+	else if (armIsId(i, ARM_INS_RSB))
 	{
 		std::tie(op2, op1) = loadOpBinaryOrTernaryOp1Op2(ai, irb, eOpConv::THROW);
 	}
@@ -3630,7 +4035,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateSub(cs_insn* i, cs_arm* ai, llv
 		std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(ai, irb, eOpConv::THROW);
 	}
 	auto* sub = irb.CreateSub(op1, op2);
-	if (ai->update_flags || i->id == ARM_INS_CMP || i->id == ARM_INS_SUBS || i->id == ARM_INS_NEG)
+	if (ai->update_flags || i->id == ARM_INS_CMP || i->id == ARM_INS_SUBS || isNeg)
 	{
 		llvm::Value* zero = llvm::ConstantInt::get(sub->getType(), 0);
 
@@ -3816,7 +4221,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateDiv(cs_insn* i, cs_arm* ai, llv
 	auto* divZero = irb.CreateICmpEQ(op2, zero);
 
 	llvm::Value* val = nullptr;
-	if (i->id == ARM_INS_UDIV)
+	if (armIsId(i, ARM_INS_UDIV))
 	{
 		auto* safe = irb.CreateSelect(divZero, one, op2);
 		val = irb.CreateSelect(divZero, zero, irb.CreateUDiv(op1, safe));
@@ -4015,6 +4420,732 @@ void Capstone2LlvmIrTranslatorArm_impl::translateHalfwordMul(cs_insn* i, cs_arm*
 		res = irb.CreateAdd(res, loadOp(ai->operands[3], irb));
 	}
 	storeOp(ai->operands[0], res, irb);
+}
+
+void Capstone2LlvmIrTranslatorArm_impl::translateNeonArith(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	unsigned bits = 0;
+	bool isFp = false, isSigned = false;
+	unsigned laneBits = vectorDataLaneBits(ai->vector_data, isFp, isSigned);
+	if (ai->op_count != 3 || !neonBinaryRegs(ai, 3, bits) || laneBits == 0 || bits % laneBits != 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	llvm::Value* a = loadNeonVector(ai->operands[1].reg, laneBits, isFp, irb);
+	llvm::Value* b = loadNeonVector(ai->operands[2].reg, laneBits, isFp, irb);
+	auto* vecTy = llvm::cast<llvm::FixedVectorType>(a->getType());
+	unsigned lanes = vecTy->getNumElements();
+	llvm::Value* res = llvm::PoisonValue::get(vecTy);
+	for (uint64_t k = 0; k < lanes; ++k)
+	{
+		llvm::Value* ea = irb.CreateExtractElement(a, k);
+		llvm::Value* eb = irb.CreateExtractElement(b, k);
+		llvm::Value* o = nullptr;
+		switch (i->id)
+		{
+		case ARM_INS_VADD: o = isFp ? irb.CreateFAdd(ea, eb) : irb.CreateAdd(ea, eb); break;
+		case ARM_INS_VSUB: o = isFp ? irb.CreateFSub(ea, eb) : irb.CreateSub(ea, eb); break;
+		case ARM_INS_VMUL: o = isFp ? irb.CreateFMul(ea, eb) : irb.CreateMul(ea, eb); break;
+		case ARM_INS_VMAX:
+			o = isFp ? irb.CreateSelect(irb.CreateFCmpOGT(ea, eb), ea, eb)
+					 : irb.CreateSelect(isSigned ? irb.CreateICmpSGT(ea, eb) : irb.CreateICmpUGT(ea, eb), ea, eb);
+			break;
+		case ARM_INS_VMIN:
+			o = isFp ? irb.CreateSelect(irb.CreateFCmpOLT(ea, eb), ea, eb)
+					 : irb.CreateSelect(isSigned ? irb.CreateICmpSLT(ea, eb) : irb.CreateICmpULT(ea, eb), ea, eb);
+			break;
+		default: translatePseudoAsmGeneric(i, ai, irb); return;
+		}
+		res = irb.CreateInsertElement(res, o, k);
+	}
+	storeNeonVector(ai->operands[0].reg, res, irb);
+}
+
+void Capstone2LlvmIrTranslatorArm_impl::translateNeonLogic(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	unsigned bits = 0;
+	unsigned n = (i->id == ARM_INS_VMVN) ? 2 : (i->id == ARM_INS_VBSL || i->id == ARM_INS_VBIT || i->id == ARM_INS_VBIF)
+												   ? 3
+												   : 3;
+	if (i->id == ARM_INS_VMVN)
+	{
+		if (ai->op_count != 2 || !neonBinaryRegs(ai, 2, bits))
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		storeNeonBits(ai->operands[0].reg, irb.CreateNot(loadNeonBits(ai->operands[1].reg, irb)), irb);
+		return;
+	}
+
+	if (ai->op_count != 3 || !neonBinaryRegs(ai, 3, bits))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* a = loadNeonBits(ai->operands[1].reg, irb);
+	auto* b = loadNeonBits(ai->operands[2].reg, irb);
+	llvm::Value* r = nullptr;
+	switch (i->id)
+	{
+	case ARM_INS_VAND: r = irb.CreateAnd(a, b); break;
+	case ARM_INS_VEOR: r = irb.CreateXor(a, b); break;
+	case ARM_INS_VORR: r = irb.CreateOr(a, b); break;
+	case ARM_INS_VBIC: r = irb.CreateAnd(a, irb.CreateNot(b)); break;
+	case ARM_INS_VORN: r = irb.CreateOr(a, irb.CreateNot(b)); break;
+	case ARM_INS_VBSL:
+	{
+		auto* dest = loadNeonBits(ai->operands[0].reg, irb);
+		r = irb.CreateOr(irb.CreateAnd(a, dest), irb.CreateAnd(b, irb.CreateNot(dest)));
+		break;
+	}
+	case ARM_INS_VBIT:
+	{
+		auto* dest = loadNeonBits(ai->operands[0].reg, irb);
+		r = irb.CreateOr(irb.CreateAnd(a, b), irb.CreateAnd(dest, irb.CreateNot(b)));
+		break;
+	}
+	case ARM_INS_VBIF:
+	{
+		auto* dest = loadNeonBits(ai->operands[0].reg, irb);
+		r = irb.CreateOr(irb.CreateAnd(dest, b), irb.CreateAnd(a, irb.CreateNot(b)));
+		break;
+	}
+	default: translatePseudoAsmGeneric(i, ai, irb); return;
+	}
+	storeNeonBits(ai->operands[0].reg, r, irb);
+	(void)n;
+}
+
+void Capstone2LlvmIrTranslatorArm_impl::translateNeonCmp(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	unsigned bits = 0;
+	bool isFp = false, isSigned = false;
+	unsigned laneBits = vectorDataLaneBits(ai->vector_data, isFp, isSigned);
+	bool immZero = ai->op_count == 3 && (ai->operands[2].type == ARM_OP_IMM || ai->operands[2].type == ARM_OP_FP);
+	if (laneBits == 0 || !neonBinaryRegs(ai, immZero ? 2 : 3, bits) || bits % laneBits != 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	llvm::Value* a = loadNeonVector(ai->operands[1].reg, laneBits, isFp, irb);
+	auto* vecTy = llvm::cast<llvm::FixedVectorType>(a->getType());
+	unsigned lanes = vecTy->getNumElements();
+	llvm::Value* b = immZero ? llvm::Constant::getNullValue(vecTy)
+							 : loadNeonVector(ai->operands[2].reg, laneBits, isFp, irb);
+	auto* iLane = irb.getIntNTy(laneBits);
+	auto* iVec = llvm::FixedVectorType::get(iLane, lanes);
+	llvm::Value* res = llvm::PoisonValue::get(iVec);
+	for (uint64_t k = 0; k < lanes; ++k)
+	{
+		llvm::Value* ea = irb.CreateExtractElement(a, k);
+		llvm::Value* eb = irb.CreateExtractElement(b, k);
+		llvm::Value* c = nullptr;
+		switch (i->id)
+		{
+		case ARM_INS_VCEQ: c = isFp ? irb.CreateFCmpOEQ(ea, eb) : irb.CreateICmpEQ(ea, eb); break;
+		case ARM_INS_VCGE:
+			c = isFp ? irb.CreateFCmpOGE(ea, eb)
+					 : (isSigned ? irb.CreateICmpSGE(ea, eb) : irb.CreateICmpUGE(ea, eb));
+			break;
+		case ARM_INS_VCGT:
+			c = isFp ? irb.CreateFCmpOGT(ea, eb)
+					 : (isSigned ? irb.CreateICmpSGT(ea, eb) : irb.CreateICmpUGT(ea, eb));
+			break;
+		case ARM_INS_VCLE:
+			c = isFp ? irb.CreateFCmpOLE(ea, eb)
+					 : (isSigned ? irb.CreateICmpSLE(ea, eb) : irb.CreateICmpULE(ea, eb));
+			break;
+		case ARM_INS_VCLT:
+			c = isFp ? irb.CreateFCmpOLT(ea, eb)
+					 : (isSigned ? irb.CreateICmpSLT(ea, eb) : irb.CreateICmpULT(ea, eb));
+			break;
+		case ARM_INS_VTST:
+			c = irb.CreateICmpNE(irb.CreateAnd(ea, eb), llvm::ConstantInt::get(ea->getType(), 0));
+			break;
+		default: translatePseudoAsmGeneric(i, ai, irb); return;
+		}
+		res = irb.CreateInsertElement(res, irb.CreateSExt(c, iLane), k);
+	}
+	storeNeonVector(ai->operands[0].reg, res, irb);
+}
+
+void Capstone2LlvmIrTranslatorArm_impl::translateNeonShift(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	unsigned bits = 0;
+	bool isFp = false, isSigned = false;
+	unsigned laneBits = vectorDataLaneBits(ai->vector_data, isFp, isSigned);
+	if (isFp || ai->op_count != 3 || ai->operands[2].type != ARM_OP_IMM || !neonBinaryRegs(ai, 2, bits)
+		|| laneBits == 0 || bits % laneBits != 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	uint64_t amount = static_cast<uint64_t>(ai->operands[2].imm);
+	llvm::Value* a = loadNeonVector(ai->operands[1].reg, laneBits, false, irb);
+	auto* vecTy = llvm::cast<llvm::FixedVectorType>(a->getType());
+	unsigned lanes = vecTy->getNumElements();
+	llvm::Value* acc = (i->id == ARM_INS_VSRA) ? loadNeonVector(ai->operands[0].reg, laneBits, false, irb) : nullptr;
+	llvm::Value* res = llvm::PoisonValue::get(vecTy);
+	for (uint64_t k = 0; k < lanes; ++k)
+	{
+		llvm::Value* e = irb.CreateExtractElement(a, k);
+		llvm::Value* sh = nullptr;
+		if (i->id == ARM_INS_VSHL)
+		{
+			if (amount >= laneBits)
+			{
+				sh = llvm::ConstantInt::get(e->getType(), 0);
+			}
+			else
+			{
+				sh = irb.CreateShl(e, amount);
+			}
+		}
+		else
+		{
+			if (amount >= laneBits)
+			{
+				sh = isSigned ? irb.CreateAShr(e, laneBits - 1) : llvm::ConstantInt::get(e->getType(), 0);
+			}
+			else
+			{
+				sh = isSigned ? irb.CreateAShr(e, amount) : irb.CreateLShr(e, amount);
+			}
+			if (acc)
+			{
+				sh = irb.CreateAdd(irb.CreateExtractElement(acc, k), sh);
+			}
+		}
+		res = irb.CreateInsertElement(res, sh, k);
+	}
+	storeNeonVector(ai->operands[0].reg, res, irb);
+}
+
+void Capstone2LlvmIrTranslatorArm_impl::translateNeonDup(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	if (ai->op_count != 2 || ai->operands[0].type != ARM_OP_REG || !isNeonRegister(ai->operands[0].reg))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	bool isFp = false, isSigned = false;
+	unsigned laneBits = vectorDataLaneBits(ai->vector_data, isFp, isSigned);
+	if (laneBits == 0)
+	{
+		laneBits = 32;
+	}
+	unsigned width = neonBitWidth(ai->operands[0].reg);
+	unsigned lanes = width / laneBits;
+	auto* laneTy = irb.getIntNTy(laneBits);
+	auto* vecTy = llvm::FixedVectorType::get(laneTy, lanes);
+
+	llvm::Value* lane = nullptr;
+	auto& src = ai->operands[1];
+	if (src.type == ARM_OP_REG && isNeonRegister(src.reg))
+	{
+		int idx = operandLane(src);
+		llvm::Value* v = loadNeonVector(src.reg, laneBits, false, irb);
+		lane = irb.CreateExtractElement(v, static_cast<uint64_t>(idx < 0 ? 0 : idx));
+	}
+	else
+	{
+		lane = irb.CreateZExtOrTrunc(loadOp(src, irb), laneTy);
+	}
+
+	llvm::Value* res = llvm::PoisonValue::get(vecTy);
+	for (uint64_t k = 0; k < lanes; ++k)
+	{
+		res = irb.CreateInsertElement(res, lane, k);
+	}
+	storeNeonVector(ai->operands[0].reg, res, irb);
+	(void)i;
+}
+
+void Capstone2LlvmIrTranslatorArm_impl::translateNeonExt(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	unsigned bits = 0;
+	if (ai->op_count != 4 || ai->operands[3].type != ARM_OP_IMM || !neonBinaryRegs(ai, 3, bits))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	unsigned laneBits = 8;
+	unsigned lanes = bits / laneBits;
+	llvm::Value* a = loadNeonVector(ai->operands[1].reg, laneBits, false, irb);
+	llvm::Value* b = loadNeonVector(ai->operands[2].reg, laneBits, false, irb);
+	unsigned imm = static_cast<unsigned>(ai->operands[3].imm);
+	if (imm >= lanes)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* vecTy = llvm::cast<llvm::FixedVectorType>(a->getType());
+	llvm::Value* res = llvm::PoisonValue::get(vecTy);
+	for (uint64_t k = 0; k < lanes; ++k)
+	{
+		uint64_t src = k + imm;
+		llvm::Value* e = src < lanes ? irb.CreateExtractElement(a, src) : irb.CreateExtractElement(b, src - lanes);
+		res = irb.CreateInsertElement(res, e, k);
+	}
+	storeNeonVector(ai->operands[0].reg, res, irb);
+	(void)i;
+}
+
+void Capstone2LlvmIrTranslatorArm_impl::translateNeonSwp(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	unsigned bits = 0;
+	if (ai->op_count != 2 || !neonBinaryRegs(ai, 2, bits))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	auto* a = loadNeonBits(ai->operands[0].reg, irb);
+	auto* b = loadNeonBits(ai->operands[1].reg, irb);
+	storeNeonBits(ai->operands[0].reg, b, irb);
+	storeNeonBits(ai->operands[1].reg, a, irb);
+	(void)i;
+}
+
+void Capstone2LlvmIrTranslatorArm_impl::translateNeonLdSt1(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	if (ai->op_count < 2)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	unsigned memIdx = ai->op_count - 1;
+	if (ai->operands[memIdx].type != ARM_OP_MEM)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	bool load = i->id == ARM_INS_VLD1;
+	auto* addr = loadOp(ai->operands[memIdx], irb, nullptr, true);
+	uint64_t off = 0;
+	for (unsigned j = 0; j < memIdx; ++j)
+	{
+		if (ai->operands[j].type != ARM_OP_REG || !isNeonRegister(ai->operands[j].reg))
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		int lane = operandLane(ai->operands[j]);
+		bool isFp = false, isSigned = false;
+		unsigned laneBits = vectorDataLaneBits(ai->vector_data, isFp, isSigned);
+		if (laneBits == 0)
+		{
+			laneBits = neonBitWidth(ai->operands[j].reg);
+		}
+		auto* at = irb.CreateAdd(addr, llvm::ConstantInt::get(addr->getType(), off));
+		if (lane >= 0)
+		{
+			auto* elemTy = irb.getIntNTy(laneBits);
+			if (load)
+			{
+				llvm::Value* v = loadNeonVector(ai->operands[j].reg, laneBits, false, irb);
+				auto* e = loadIntPtr(irb, at, elemTy);
+				storeNeonVector(ai->operands[j].reg, irb.CreateInsertElement(v, e, static_cast<uint64_t>(lane)), irb);
+			}
+			else
+			{
+				llvm::Value* v = loadNeonVector(ai->operands[j].reg, laneBits, false, irb);
+				storeIntPtr(irb, irb.CreateExtractElement(v, static_cast<uint64_t>(lane)), at, elemTy);
+			}
+			off += laneBits / 8;
+		}
+		else
+		{
+			unsigned w = neonBitWidth(ai->operands[j].reg);
+			llvm::Type* memTy = (w == 64) ? static_cast<llvm::Type*>(irb.getDoubleTy())
+										  : (w == 32) ? static_cast<llvm::Type*>(irb.getFloatTy())
+													  : irb.getIntNTy(w);
+			if (load)
+			{
+				storeNeonBits(ai->operands[j].reg, loadIntPtr(irb, at, memTy), irb);
+			}
+			else
+			{
+				auto* bits = loadNeonBits(ai->operands[j].reg, irb);
+				storeIntPtr(irb, generateTypeConversion(irb, bits, memTy, eOpConv::FPCAST_OR_BITCAST), at, memTy);
+			}
+			off += w / 8;
+		}
+	}
+
+	if (insnWriteback())
+	{
+		uint32_t base = ai->operands[memIdx].mem.base;
+		if (base != ARM_REG_INVALID)
+		{
+			storeRegister(base, irb.CreateAdd(loadRegister(base, irb), llvm::ConstantInt::get(getDefaultType(), off)), irb);
+		}
+	}
+}
+
+void Capstone2LlvmIrTranslatorArm_impl::translateNeonRev(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	unsigned bits = 0;
+	bool isFp = false, isSigned = false;
+	unsigned laneBits = vectorDataLaneBits(ai->vector_data, isFp, isSigned);
+	if (ai->op_count != 2 || !neonBinaryRegs(ai, 2, bits) || laneBits == 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	unsigned groupBits = (i->id == ARM_INS_VREV16) ? 16 : (i->id == ARM_INS_VREV32) ? 32 : 64;
+	if (groupBits <= laneBits || bits % groupBits != 0)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	unsigned lanes = bits / laneBits;
+	unsigned groupLanes = groupBits / laneBits;
+	llvm::Value* v = loadNeonVector(ai->operands[1].reg, laneBits, false, irb);
+	auto* vecTy = llvm::cast<llvm::FixedVectorType>(v->getType());
+	llvm::Value* res = llvm::PoisonValue::get(vecTy);
+	for (uint64_t k = 0; k < lanes; ++k)
+	{
+		uint64_t g = k / groupLanes;
+		uint64_t within = k % groupLanes;
+		uint64_t src = g * groupLanes + (groupLanes - 1 - within);
+		res = irb.CreateInsertElement(res, irb.CreateExtractElement(v, src), k);
+	}
+	storeNeonVector(ai->operands[0].reg, res, irb);
+}
+
+void Capstone2LlvmIrTranslatorArm_impl::translateVfpLdmStm(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_EXPR(i, ai, irb, (ai->op_count > 0));
+
+	if (ai->operands[0].type != ARM_OP_REG)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	// Capstone 6.x reports VPUSH/VPOP as VSTMDB/VLDMIA with only the FP
+	// list — SP is implied. A real VLDM/VSTM has a GPR (or SP) in op0.
+	bool listOnly = isFpRegister(ai->operands[0].reg) || isQuadView(ai->operands[0].reg);
+	unsigned first = listOnly ? 0u : 1u;
+	if (!listOnly && ai->op_count < 2)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	for (unsigned j = first; j < ai->op_count; ++j)
+	{
+		if (ai->operands[j].type != ARM_OP_REG || !isNeonRegister(ai->operands[j].reg))
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+	}
+
+	bool load = i->id == ARM_INS_VLDMIA || i->id == ARM_INS_VLDMDB
+			|| armIsId(i, ARM_INS_VPOP);
+	bool db = i->id == ARM_INS_VLDMDB || i->id == ARM_INS_VSTMDB
+			|| armIsId(i, ARM_INS_VPUSH);
+	auto* spTy = getDefaultType();
+	auto* base = listOnly ? loadRegister(ARM_REG_SP, irb) : loadOp(ai->operands[0], irb);
+	if (base && !base->getType()->isIntegerTy())
+	{
+		base = generateTypeConversion(irb, base, spTy, eOpConv::FPCAST_OR_BITCAST);
+	}
+	uint64_t total = 0;
+	for (unsigned j = first; j < ai->op_count; ++j)
+	{
+		total += neonBitWidth(ai->operands[j].reg) / 8;
+	}
+	auto* at = db ? irb.CreateSub(base, llvm::ConstantInt::get(base->getType(), total)) : base;
+	uint64_t off = 0;
+	for (unsigned j = first; j < ai->op_count; ++j)
+	{
+		unsigned w = neonBitWidth(ai->operands[j].reg);
+		llvm::Type* ty = nullptr;
+		if (isQuadView(ai->operands[j].reg))
+		{
+			ty = irb.getIntNTy(128);
+		}
+		else if (ai->operands[j].reg >= ARM_REG_S0 && ai->operands[j].reg <= ARM_REG_S31)
+		{
+			ty = irb.getFloatTy();
+		}
+		else
+		{
+			ty = irb.getDoubleTy();
+		}
+		auto* p = irb.CreateAdd(at, llvm::ConstantInt::get(base->getType(), off));
+		if (load)
+		{
+			if (isQuadView(ai->operands[j].reg))
+			{
+				storeNeonBits(ai->operands[j].reg, loadIntPtr(irb, p, irb.getIntNTy(128)), irb);
+			}
+			else
+			{
+				storeOp(ai->operands[j], loadIntPtr(irb, p, ty), irb, eOpConv::FPCAST_OR_BITCAST);
+			}
+		}
+		else
+		{
+			if (isQuadView(ai->operands[j].reg))
+			{
+				storeIntPtr(irb, loadNeonBits(ai->operands[j].reg, irb), p, irb.getIntNTy(128));
+			}
+			else
+			{
+				storeIntPtr(irb, loadVfpOp(ai->operands[j], irb, ty), p, ty);
+			}
+		}
+		off += w / 8;
+	}
+	if (listOnly || insnWriteback())
+	{
+		auto* nb = db ? at : irb.CreateAdd(base, llvm::ConstantInt::get(base->getType(), total));
+		if (listOnly)
+		{
+			storeRegister(ARM_REG_SP, nb, irb);
+		}
+		else
+		{
+			storeOp(ai->operands[0], nb, irb);
+		}
+	}
+}
+
+void Capstone2LlvmIrTranslatorArm_impl::translateVmsr(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	if (ai->op_count != 2 || ai->operands[0].type != ARM_OP_REG || ai->operands[1].type != ARM_OP_REG)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	storeRegister(ARM_REG_FPSCR, loadOp(ai->operands[1], irb), irb);
+	(void)i;
+}
+
+void Capstone2LlvmIrTranslatorArm_impl::translateQadd(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, ai, irb);
+
+	auto* rm = loadOp(ai->operands[1], irb);
+	auto* rn = loadOp(ai->operands[2], irb);
+	auto* ty = rm->getType();
+	auto* i64 = irb.getInt64Ty();
+	auto* minV = llvm::ConstantInt::getSigned(ty, INT32_MIN);
+	auto* maxV = llvm::ConstantInt::getSigned(ty, INT32_MAX);
+
+	auto sat32 = [&](llvm::Value* wide) {
+		auto* lo = llvm::ConstantInt::getSigned(i64, INT32_MIN);
+		auto* hi = llvm::ConstantInt::getSigned(i64, INT32_MAX);
+		auto* clamped = irb.CreateSelect(
+			irb.CreateICmpSLT(wide, lo), lo, irb.CreateSelect(irb.CreateICmpSGT(wide, hi), hi, wide));
+		return irb.CreateTrunc(clamped, ty);
+	};
+
+	llvm::Value* a = irb.CreateSExt(rm, i64);
+	llvm::Value* b = irb.CreateSExt(rn, i64);
+	if (i->id == ARM_INS_QDADD || i->id == ARM_INS_QDSUB)
+	{
+		b = irb.CreateSExt(sat32(irb.CreateShl(b, 1)), i64);
+	}
+	llvm::Value* sum = (i->id == ARM_INS_QSUB || i->id == ARM_INS_QDSUB) ? irb.CreateSub(a, b) : irb.CreateAdd(a, b);
+	storeOp(ai->operands[0], sat32(sum), irb);
+	(void)minV;
+	(void)maxV;
+}
+
+void Capstone2LlvmIrTranslatorArm_impl::translateDualMul(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	bool acc = false;
+	bool sub = false;
+	bool xchg = false;
+	switch (i->id)
+	{
+	case ARM_INS_SMLAD: acc = true; break;
+	case ARM_INS_SMLADX: acc = true; xchg = true; break;
+	case ARM_INS_SMLSD: acc = true; sub = true; break;
+	case ARM_INS_SMLSDX: acc = true; sub = true; xchg = true; break;
+	case ARM_INS_SMUAD: break;
+	case ARM_INS_SMUADX: xchg = true; break;
+	case ARM_INS_SMUSD: sub = true; break;
+	case ARM_INS_SMUSDX: sub = true; xchg = true; break;
+	default: translatePseudoAsmGeneric(i, ai, irb); return;
+	}
+
+	if (acc)
+	{
+		EXPECT_IS_QUATERNARY(i, ai, irb);
+	}
+	else
+	{
+		EXPECT_IS_TERNARY(i, ai, irb);
+	}
+
+	auto* n = loadOp(ai->operands[1], irb);
+	auto* m = loadOp(ai->operands[2], irb);
+	auto* i32 = getDefaultType();
+	auto* i16 = irb.getInt16Ty();
+	auto half = [&](llvm::Value* v, bool top) {
+		if (top)
+		{
+			v = irb.CreateLShr(v, llvm::ConstantInt::get(i32, 16));
+		}
+		return irb.CreateSExt(irb.CreateTrunc(v, i16), i32);
+	};
+	auto* nLo = half(n, false);
+	auto* nHi = half(n, true);
+	auto* mLo = half(m, xchg);
+	auto* mHi = half(m, !xchg);
+	llvm::Value* p0 = irb.CreateMul(nLo, mLo);
+	llvm::Value* p1 = irb.CreateMul(nHi, mHi);
+	llvm::Value* res = sub ? irb.CreateSub(p0, p1) : irb.CreateAdd(p0, p1);
+	if (acc)
+	{
+		res = irb.CreateAdd(res, loadOp(ai->operands[3], irb));
+	}
+	storeOp(ai->operands[0], res, irb);
+}
+
+void Capstone2LlvmIrTranslatorArm_impl::translateUmaal(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_QUATERNARY(i, ai, irb);
+
+	auto* i32 = irb.getInt32Ty();
+	auto* i64 = irb.getInt64Ty();
+	auto* rdLo = irb.CreateZExt(irb.CreateZExtOrTrunc(loadOp(ai->operands[0], irb), i32), i64);
+	auto* rdHi = irb.CreateZExt(irb.CreateZExtOrTrunc(loadOp(ai->operands[1], irb), i32), i64);
+	auto* rn = irb.CreateZExt(irb.CreateZExtOrTrunc(loadOp(ai->operands[2], irb), i32), i64);
+	auto* rm = irb.CreateZExt(irb.CreateZExtOrTrunc(loadOp(ai->operands[3], irb), i32), i64);
+	auto* sum = irb.CreateAdd(irb.CreateAdd(irb.CreateMul(rn, rm), rdLo), rdHi);
+	storeOp(ai->operands[0], irb.CreateTrunc(sum, i32), irb);
+	storeOp(ai->operands[1], irb.CreateTrunc(irb.CreateLShr(sum, llvm::ConstantInt::get(i64, 32)), i32), irb);
+	(void)i;
+}
+
+void Capstone2LlvmIrTranslatorArm_impl::translateUsad8(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	bool acc = i->id == ARM_INS_USADA8;
+	if (acc)
+	{
+		EXPECT_IS_QUATERNARY(i, ai, irb);
+	}
+	else
+	{
+		EXPECT_IS_TERNARY(i, ai, irb);
+	}
+
+	auto* a = loadOp(ai->operands[1], irb);
+	auto* b = loadOp(ai->operands[2], irb);
+	auto* i32 = getDefaultType();
+	auto* i8 = irb.getInt8Ty();
+	llvm::Value* sum = llvm::ConstantInt::get(i32, 0);
+	for (unsigned k = 0; k < 4; ++k)
+	{
+		auto* ea = irb.CreateZExt(irb.CreateTrunc(irb.CreateLShr(a, llvm::ConstantInt::get(i32, 8 * k)), i8), i32);
+		auto* eb = irb.CreateZExt(irb.CreateTrunc(irb.CreateLShr(b, llvm::ConstantInt::get(i32, 8 * k)), i8), i32);
+		auto* d = irb.CreateSelect(irb.CreateICmpUGT(ea, eb), irb.CreateSub(ea, eb), irb.CreateSub(eb, ea));
+		sum = irb.CreateAdd(sum, d);
+	}
+	if (acc)
+	{
+		sum = irb.CreateAdd(sum, loadOp(ai->operands[3], irb));
+	}
+	storeOp(ai->operands[0], sum, irb);
+}
+
+void Capstone2LlvmIrTranslatorArm_impl::translateSat16(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_EXPR(i, ai, irb, (ai->op_count >= 3));
+	if (ai->operands[1].type != ARM_OP_IMM)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	unsigned sat = static_cast<unsigned>(ai->operands[1].imm);
+	auto* src = loadOp(ai->operands[2], irb);
+	auto* i32 = getDefaultType();
+	auto* i16 = irb.getInt16Ty();
+	auto satHalf = [&](llvm::Value* h) {
+		auto* x = irb.CreateSExt(irb.CreateTrunc(h, i16), i32);
+		if (i->id == ARM_INS_SSAT16)
+		{
+			if (sat == 0 || sat > 16)
+			{
+				return x;
+			}
+			auto* minV = llvm::ConstantInt::getSigned(i32, -(int64_t(1) << (sat - 1)));
+			auto* maxV = llvm::ConstantInt::getSigned(i32, (int64_t(1) << (sat - 1)) - 1);
+			return irb.CreateSelect(
+				irb.CreateICmpSLT(x, minV), minV, irb.CreateSelect(irb.CreateICmpSGT(x, maxV), maxV, x));
+		}
+		auto* zero = llvm::ConstantInt::get(i32, 0);
+		auto* maxV = llvm::ConstantInt::get(i32, sat == 0 ? 0 : ((uint64_t(1) << sat) - 1));
+		auto* nn = irb.CreateSelect(irb.CreateICmpSLT(x, zero), zero, x);
+		return irb.CreateSelect(irb.CreateICmpUGT(nn, maxV), maxV, nn);
+	};
+	auto* lo = irb.CreateAnd(satHalf(src), llvm::ConstantInt::get(i32, 0xffff));
+	auto* hi = irb.CreateShl(
+		irb.CreateAnd(satHalf(irb.CreateLShr(src, llvm::ConstantInt::get(i32, 16))), llvm::ConstantInt::get(i32, 0xffff)),
+		llvm::ConstantInt::get(i32, 16));
+	storeOp(ai->operands[0], irb.CreateOr(lo, hi), irb);
+}
+
+void Capstone2LlvmIrTranslatorArm_impl::translateSmmul(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	bool acc = false;
+	bool sub = false;
+	bool round = false;
+	switch (i->id)
+	{
+	case ARM_INS_SMMUL: break;
+	case ARM_INS_SMMULR: round = true; break;
+	case ARM_INS_SMMLA: acc = true; break;
+	case ARM_INS_SMMLAR: acc = true; round = true; break;
+	case ARM_INS_SMMLS: acc = true; sub = true; break;
+	case ARM_INS_SMMLSR: acc = true; sub = true; round = true; break;
+	default: translatePseudoAsmGeneric(i, ai, irb); return;
+	}
+
+	if (acc)
+	{
+		EXPECT_IS_QUATERNARY(i, ai, irb);
+	}
+	else
+	{
+		EXPECT_IS_TERNARY(i, ai, irb);
+	}
+
+	auto* i32 = irb.getInt32Ty();
+	auto* i64 = irb.getInt64Ty();
+	auto* a = irb.CreateSExt(irb.CreateZExtOrTrunc(loadOp(ai->operands[1], irb), i32), i64);
+	auto* b = irb.CreateSExt(irb.CreateZExtOrTrunc(loadOp(ai->operands[2], irb), i32), i64);
+	llvm::Value* prod = irb.CreateMul(a, b);
+	if (round)
+	{
+		prod = irb.CreateAdd(prod, llvm::ConstantInt::get(i64, 0x80000000ULL));
+	}
+	llvm::Value* hi = irb.CreateTrunc(irb.CreateLShr(prod, llvm::ConstantInt::get(i64, 32)), i32);
+	if (acc)
+	{
+		auto* ra = irb.CreateZExtOrTrunc(loadOp(ai->operands[3], irb), i32);
+		hi = sub ? irb.CreateSub(ra, hi) : irb.CreateAdd(hi, ra);
+	}
+	storeOp(ai->operands[0], hi, irb);
 }
 
 } // namespace capstone2llvmir

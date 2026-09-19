@@ -632,7 +632,6 @@ void Capstone2LlvmIrTranslatorArm64_impl::initializeRegTypeMap()
 	//auto* f16 = llvm::Type::getHalfTy(_module->getContext());
 	auto* f32 = llvm::Type::getFloatTy(_module->getContext());
 	auto* f64 = llvm::Type::getDoubleTy(_module->getContext());
-	auto* f128 = llvm::Type::getFP128Ty(_module->getContext());
 
 	std::map<uint32_t, llvm::Type*> r2t =
 	{
@@ -702,74 +701,39 @@ void Capstone2LlvmIrTranslatorArm64_impl::initializeRegTypeMap()
 		{ARM64_REG_W29, i32},
 		{ARM64_REG_W30, i32},
 
-		// FP&SIMD Regs
-		// Vector
-		{ARM64_REG_V0, i128},
-		{ARM64_REG_V1, i128},
-		{ARM64_REG_V2, i128},
-		{ARM64_REG_V3, i128},
-		{ARM64_REG_V4, i128},
-		{ARM64_REG_V5, i128},
-		{ARM64_REG_V6, i128},
-		{ARM64_REG_V7, i128},
-		{ARM64_REG_V8, i128},
-		{ARM64_REG_V9, i128},
-		{ARM64_REG_V10, i128},
-		{ARM64_REG_V11, i128},
-		{ARM64_REG_V12, i128},
-		{ARM64_REG_V13, i128},
-		{ARM64_REG_V14, i128},
-		{ARM64_REG_V15, i128},
-		{ARM64_REG_V16, i128},
-		{ARM64_REG_V17, i128},
-		{ARM64_REG_V18, i128},
-		{ARM64_REG_V19, i128},
-		{ARM64_REG_V20, i128},
-		{ARM64_REG_V21, i128},
-		{ARM64_REG_V22, i128},
-		{ARM64_REG_V23, i128},
-		{ARM64_REG_V24, i128},
-		{ARM64_REG_V25, i128},
-		{ARM64_REG_V26, i128},
-		{ARM64_REG_V27, i128},
-		{ARM64_REG_V28, i128},
-		{ARM64_REG_V29, i128},
-		{ARM64_REG_V30, i128},
-		{ARM64_REG_V31, i128},
-
-		// FP
-		{ARM64_REG_Q0, f128},
-		{ARM64_REG_Q1, f128},
-		{ARM64_REG_Q2, f128},
-		{ARM64_REG_Q3, f128},
-		{ARM64_REG_Q4, f128},
-		{ARM64_REG_Q5, f128},
-		{ARM64_REG_Q6, f128},
-		{ARM64_REG_Q7, f128},
-		{ARM64_REG_Q8, f128},
-		{ARM64_REG_Q9, f128},
-		{ARM64_REG_Q10, f128},
-		{ARM64_REG_Q11, f128},
-		{ARM64_REG_Q12, f128},
-		{ARM64_REG_Q13, f128},
-		{ARM64_REG_Q14, f128},
-		{ARM64_REG_Q15, f128},
-		{ARM64_REG_Q16, f128},
-		{ARM64_REG_Q17, f128},
-		{ARM64_REG_Q18, f128},
-		{ARM64_REG_Q19, f128},
-		{ARM64_REG_Q20, f128},
-		{ARM64_REG_Q21, f128},
-		{ARM64_REG_Q22, f128},
-		{ARM64_REG_Q23, f128},
-		{ARM64_REG_Q24, f128},
-		{ARM64_REG_Q25, f128},
-		{ARM64_REG_Q26, f128},
-		{ARM64_REG_Q27, f128},
-		{ARM64_REG_Q28, f128},
-		{ARM64_REG_Q29, f128},
-		{ARM64_REG_Q30, f128},
-		{ARM64_REG_Q31, f128},
+		// FP&SIMD. Capstone 6.x SIMD parent is Qn (i128); Sn/Dn are FP views.
+		{ARM64_REG_Q0, i128},
+		{ARM64_REG_Q1, i128},
+		{ARM64_REG_Q2, i128},
+		{ARM64_REG_Q3, i128},
+		{ARM64_REG_Q4, i128},
+		{ARM64_REG_Q5, i128},
+		{ARM64_REG_Q6, i128},
+		{ARM64_REG_Q7, i128},
+		{ARM64_REG_Q8, i128},
+		{ARM64_REG_Q9, i128},
+		{ARM64_REG_Q10, i128},
+		{ARM64_REG_Q11, i128},
+		{ARM64_REG_Q12, i128},
+		{ARM64_REG_Q13, i128},
+		{ARM64_REG_Q14, i128},
+		{ARM64_REG_Q15, i128},
+		{ARM64_REG_Q16, i128},
+		{ARM64_REG_Q17, i128},
+		{ARM64_REG_Q18, i128},
+		{ARM64_REG_Q19, i128},
+		{ARM64_REG_Q20, i128},
+		{ARM64_REG_Q21, i128},
+		{ARM64_REG_Q22, i128},
+		{ARM64_REG_Q23, i128},
+		{ARM64_REG_Q24, i128},
+		{ARM64_REG_Q25, i128},
+		{ARM64_REG_Q26, i128},
+		{ARM64_REG_Q27, i128},
+		{ARM64_REG_Q28, i128},
+		{ARM64_REG_Q29, i128},
+		{ARM64_REG_Q30, i128},
+		{ARM64_REG_Q31, i128},
 
 		{ARM64_REG_D0, f64},
 		{ARM64_REG_D1, f64},
@@ -1604,9 +1568,9 @@ void Capstone2LlvmIrTranslatorArm64_impl::initializeRegistersParentMap()
 		{ARM64_REG_WSP, ARM64_REG_SP},
 		{ARM64_REG_WZR, ARM64_REG_XZR},
 
-		// The FP/NEON registers are ONE register each, not six. b0, h0,
-		// s0, d0, q0 and v0 are nested views of the same 128 bits, and
-		// every write to a narrow one zeroes the rest.
+		// The FP/NEON registers are ONE register each. b0, h0, s0, d0 and q0
+		// are nested views of the same 128 bits (Capstone 6.x has no Vn token;
+		// Qn is the parent). Every write to a narrow view zeroes the rest.
 		{ARM64_REG_B0, ARM64_REG_H0, ARM64_REG_S0, ARM64_REG_D0, ARM64_REG_Q0, ARM64_REG_V0},
 		{ARM64_REG_B1, ARM64_REG_H1, ARM64_REG_S1, ARM64_REG_D1, ARM64_REG_Q1, ARM64_REG_V1},
 		{ARM64_REG_B2, ARM64_REG_H2, ARM64_REG_S2, ARM64_REG_D2, ARM64_REG_Q2, ARM64_REG_V2},
@@ -1828,7 +1792,7 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorArm64_impl::*)(cs_insn* i, 
 		// ARMv8.1 LSE atomics. None of these 120 ids had an entry at
 		// all -- not even nullptr -- so the dispatch could never reach
 		// them however the translator was written. CASP, the 128-bit
-		// register-pair form, is deliberately absent: LLVM cmpxchg does
+		// register-pair form, is an explicit nullptr: LLVM cmpxchg does
 		// not take a register pair.
 		{ARM64_INS_LDADD, &Capstone2LlvmIrTranslatorArm64_impl::translateLse},
 		{ARM64_INS_LDADDB, &Capstone2LlvmIrTranslatorArm64_impl::translateLse},
@@ -1950,6 +1914,11 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorArm64_impl::*)(cs_insn* i, 
 		{ARM64_INS_CASAL, &Capstone2LlvmIrTranslatorArm64_impl::translateCas},
 		{ARM64_INS_CASALB, &Capstone2LlvmIrTranslatorArm64_impl::translateCas},
 		{ARM64_INS_CASALH, &Capstone2LlvmIrTranslatorArm64_impl::translateCas},
+		// 128-bit pair-CAS. LLVM cmpxchg does not take a register pair.
+		{ARM64_INS_CASP, nullptr},
+		{ARM64_INS_CASPA, nullptr},
+		{ARM64_INS_CASPL, nullptr},
+		{ARM64_INS_CASPAL, nullptr},
 		{ARM64_INS_LDAXR, &Capstone2LlvmIrTranslatorArm64_impl::translateLdr},
 		{ARM64_INS_LDNP, &Capstone2LlvmIrTranslatorArm64_impl::translateLdp},
 		{ARM64_INS_LDP, &Capstone2LlvmIrTranslatorArm64_impl::translateLdp},
@@ -2239,6 +2208,8 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorArm64_impl::*)(cs_insn* i, 
 		// composition right, where modelling the PAC itself would put a value in
 		// the emitted C that no source ever held. XPACLRI strips a PAC that, under
 		// this model, was never added.
+		// Capstone 6.x reports these as ARM64_INS_ALIAS_* (HINT encodings);
+		// capstone6_compat.h maps the 5.x names onto those alias IDs.
 		{ARM64_INS_BTI, &Capstone2LlvmIrTranslatorArm64_impl::translateNop},
 		{ARM64_INS_PACIASP, &Capstone2LlvmIrTranslatorArm64_impl::translateNop},
 		{ARM64_INS_AUTIASP, &Capstone2LlvmIrTranslatorArm64_impl::translateNop},

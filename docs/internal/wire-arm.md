@@ -1,27 +1,40 @@
 # Wire ARM / Thumb (32-bit) to Production
 
-Capstone **5.0.9**. This note is for the integrator. The lifter/ABI work
+Capstone **6.0.0-Alpha10**. This note is for the integrator. The lifter/ABI work
 in this change does **not** edit decoder, CLI, or `architecture.h`.
 
 ## What this change implemented
 
-Integer compiler-used ARM and Thumb-2 now lift to real LLVM IR (not
-`translatePseudoAsmGeneric`):
+Integer compiler-used ARM and Thumb-2, scalar VFP, and compiler-used NEON now
+lift to real LLVM IR (not `translatePseudoAsmGeneric`):
 
 | Class | IDs now real IR |
 | --- | --- |
-| Data processing | AND, EOR, SUB, SUBS, SUBW, RSB, ADD, ADDW, ADC, SBC, RSC, TST, TEQ, CMP, CMN, ORR, ORN, MOV, MVN, BIC, NEG, shifts (LSL/LSR/ASR/ROR/RRX) |
+| Data processing | AND, EOR, SUB, SUBS, SUBW, RSB, ADD, ADDW, ADC, SBC, RSC, TST, TEQ, CMP, CMN, ORR, ORN, MOV, MVN, BIC, shifts (LSL/LSR/ASR/ROR/RRX) |
 | Load/store | LDR/STR/LDRB/STRB/LDRH/STRH and signed/unprivileged/exclusive/acquire variants, LDM/STM, PUSH/POP, PC-relative LDR |
 | Branches / calls / returns | B, BL, BX, BLX, BXNS, BLXNS, CBZ, CBNZ, TBB, TBH; `BX LR` is a return |
-| Multiply | MUL, MLA, MLS, UMULL/SMULL, UMLAL/SMLAL, SMULBB/BT/TB/TT, SMLABB/BT/TB/TT, SMULWB/WT, SMLAWB/WT |
+| Multiply | MUL, MLA, MLS, UMULL/SMULL, UMLAL/SMLAL, SMULBB/BT/TB/TT, SMLABB/BT/TB/TT, SMULWB/WT, SMLAWB/WT, SMLAD/X, SMUAD/X, SMLSD/X, SMUSD/X, UMAAL, SMMUL/R, SMMLA/R, SMMLS/R, USAD8, USADA8 |
+| Saturating scalar | QADD, QSUB, QDADD, QDSUB, SSAT, USAT, SSAT16, USAT16 |
 | Extend | SXTB/SXTH/SXTAB/SXTAH/SXTB16/SXTAB16, UXTB/UXTH/UXTAB/UXTAH/UXTB16/UXTAB16 |
-| Bitfield / pack / sat | UBFX/SBFX/BFI/BFC, PKHBT/PKHTB, SSAT/USAT, CLZ, REV/REV16/REVSH/RBIT |
+| Bitfield / pack | UBFX/SBFX/BFI/BFC, PKHBT/PKHTB, CLZ, REV/REV16/REVSH/RBIT |
 | Thumb-2 control | IT (header is a no-op; predicated insns keep existing cond wrappers) |
 | Hints / barriers | NOP/YIELD/PLD/PLI, HINT, DMB/DSB/ISB/DFB/ESB/TSB, CSDB |
+| Scalar VFP | VLDR, VSTR, VADD/VSUB/VMUL/VDIV/VNMUL, VNEG/VABS/VSQRT, VMLA/VMLS/VFMA/…, VCMP/VCMPE, VMRS, VCVT/VCVTR, VMOV (GPR↔FP and FP immediate), VPUSH/VPOP, VLDMIA/VLDMDB/VSTMIA/VSTMDB, VMSR |
+| NEON (compiler-used) | VADD/VSUB/VMUL (integer and FP lanes on D/Q), VAND/VEOR/VORR/VBIC/VORN/VMVN/VBIT/VBIF/VBSL, VCEQ/VCGE/VCGT/VCLE/VCLT/VTST, VMAX/VMIN, VNEG/VABS (vector), VSHL/VSHR/VSRA, VDUP, VEXT, VSWP, VREV16/32/64, VLD1/VST1, VMOV lane insert/extract |
 
-Thumb interwork: `translateB`/`translateBl` now attach `arm.thumb_call`
-metadata at lift time. `arm_thumb_interwork.cpp` uses Capstone 5.0.9
-`ARM_INS_BX` / `ARM_INS_BLX` (the old hardcoded 14/13 were Capstone 4).
+Thumb interwork: `translateB`/`translateBl` attach `arm.thumb_call`
+metadata at lift time. `arm_thumb_interwork.cpp` uses Capstone 6
+`ARM_INS_BX` / `ARM_INS_BLX`.
+
+## Remaining gaps vs x86-64 Production
+
+Still **pseudo-asm** (or `nullptr` → generic pseudo):
+
+- Crypto (`AES*`, `SHA*`) and MVE extras (`VLDRB`/`VSTRW`, `VADDLV`, …).
+- Widening/narrowing NEON (`VADDL`/`VADDHN`/`VMULL`/`VSHLL`/`VQMOVN`, …), permutes (`VZIP`/`VUZP`/`VTRN`), table lookup (`VTBL`/`VTBX`), saturating SIMD (`VQADD`/`VQDMULH`, …).
+- Coprocessor `MCR`/`MRC` (except TPIDRURO), `MRS`/`MSR`, `SVC`/`UDF`/`BKPT`.
+- Armv8-M `SG`, `SETPAN`, `TT*`, `BLXNS`/`BXNS` lift as ordinary call/branch (no security state).
+- Table-branch decoder follow-through (TBB/TBH now emit a branch call; the decoder must treat them as switches).
 
 ABI (`AbiArm`): AAPCS return in `r0` (`_regFunctionReturnId`), GPRs
 include `sp`/`lr`, NOP detection covers `HINT`/`YIELD`, `mov rN,rN`, and
@@ -34,9 +47,8 @@ Calling convention tables were already AAPCS-VFP complete in
 
 Still **pseudo-asm** (or `nullptr` → generic pseudo):
 
-- NEON integer/SIMD (`VADD` on Q, `VLD1`/`VST1`, most `V*` lane ops). Scalar VFP (`VLDR`/`VSTR`/`VADD.f32`/…) is already real IR.
-- DSP dual-multiply (`SMLAD`, `SMUAD`, `SMUSD`, `UMAAL`, `USAD8`, …).
-- Saturating scalar `QADD`/`QSUB`/`QDADD`/`QDSUB` and `SSAT16`/`USAT16`.
+- Crypto (`AES*`, `SHA*`) and MVE extras (`VLDRB`/`VSTRW`, `VADDLV`, …).
+- Widening/narrowing NEON (`VADDL`/`VADDHN`/`VMULL`/`VSHLL`/`VQMOVN`, …), permutes (`VZIP`/`VUZP`/`VTRN`), table lookup (`VTBL`/`VTBX`), saturating SIMD (`VQADD`/`VQDMULH`, …).
 - Coprocessor `MCR`/`MRC` (except TPIDRURO), `MRS`/`MSR`, `SVC`/`UDF`/`BKPT`.
 - Armv8-M `SG`, `SETPAN`, `TT*`, `BLXNS`/`BXNS` lift as ordinary call/branch (no security state).
 - Table-branch decoder follow-through (TBB/TBH now emit a branch call; the decoder must treat them as switches).

@@ -4,10 +4,24 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek
  */
 
+#include <cmath>
+
+#include <llvm/IR/Intrinsics.h>
+
 #include "capstone2llvmir/riscv/riscv_impl.h"
 
 namespace retdec {
 namespace capstone2llvmir {
+
+namespace {
+
+uint32_t csrLlvmRegId(uint16_t encoding)
+{
+	return static_cast<uint32_t>(RISCV_REG_ENDING) + 0x1000u + encoding;
+}
+
+} // namespace
+
 
 Capstone2LlvmIrTranslatorRiscv_impl::Capstone2LlvmIrTranslatorRiscv_impl(
 		llvm::Module* m,
@@ -35,7 +49,10 @@ bool Capstone2LlvmIrTranslatorRiscv_impl::isAllowedBasicMode(cs_mode m)
 
 bool Capstone2LlvmIrTranslatorRiscv_impl::isAllowedExtraMode(cs_mode m)
 {
-	auto stripped = static_cast<cs_mode>(m & ~CS_MODE_RISCVC);
+	unsigned ext = static_cast<unsigned>(CS_MODE_RISCVC)
+			| static_cast<unsigned>(CS_MODE_RISCV_FD)
+			| static_cast<unsigned>(CS_MODE_RISCV_A);
+	auto stripped = static_cast<cs_mode>(static_cast<unsigned>(m) & ~ext);
 	return stripped == CS_MODE_LITTLE_ENDIAN
 			|| stripped == CS_MODE_BIG_ENDIAN;
 }
@@ -90,7 +107,19 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateInstruction(
 	cs_detail* d = i->detail;
 	cs_riscv* ri = &d->riscv;
 
-	auto fIt = _i2fm.find(i->id);
+	// Capstone 6 keeps the real id (ADDI/JAL/CSRRS) and puts nop/jal/frflags
+	// in alias_id. Prefer a dedicated alias translator (e.g. nop vs addi x0).
+	std::size_t id = i->id;
+	if (i->is_alias)
+	{
+		auto aIt = _i2fm.find(static_cast<std::size_t>(i->alias_id));
+		if (aIt != _i2fm.end() && aIt->second != nullptr)
+		{
+			id = static_cast<std::size_t>(i->alias_id);
+		}
+	}
+
+	auto fIt = _i2fm.find(id);
 	if (fIt != _i2fm.end() && fIt->second != nullptr)
 	{
 		auto f = fIt->second;
@@ -126,7 +155,14 @@ llvm::Value* Capstone2LlvmIrTranslatorRiscv_impl::pcRelativeTarget(
 {
 	auto* pc = getCurrentPc(i);
 	offset = generateTypeConversion(irb, offset, pc->getType(), eOpConv::SEXT_TRUNC_OR_BITCAST);
-	return irb.CreateAdd(pc, offset);
+	// Capstone 6: need_effective_addr means the IMM is still a displacement.
+	// When the flag is clear, IMM is already the effective target
+	// (beq +8 at 0x1000 arrives as 0x1008, not 8).
+	if (i->detail && i->detail->riscv.need_effective_addr)
+	{
+		return irb.CreateAdd(pc, offset);
+	}
+	return offset;
 }
 
 llvm::Value* Capstone2LlvmIrTranslatorRiscv_impl::maskShiftAmount(
@@ -203,6 +239,11 @@ llvm::Value* Capstone2LlvmIrTranslatorRiscv_impl::loadOp(
 		{
 			auto* t = getDefaultType();
 			return llvm::ConstantInt::getSigned(t, op.imm);
+		}
+		case RISCV_OP_CSR:
+		{
+			auto* v = loadCsr(op.csr, irb);
+			return v ? v : llvm::UndefValue::get(ty ? ty : getDefaultType());
 		}
 		case RISCV_OP_MEM:
 		{
@@ -363,16 +404,33 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateJal(cs_insn* i, cs_riscv* ri,
 	llvm::Value* offset = nullptr;
 	uint32_t rd = RISCV_REG_X0;
 
-	if (i->id == RISCV_INS_C_J)
+	uint64_t alias = i->is_alias ? i->alias_id : 0;
+	bool isJ = i->id == RISCV_INS_C_J || i->id == RISCV_INS_ALIAS_J
+			|| alias == RISCV_INS_ALIAS_J;
+	bool isJalAlias = i->id == RISCV_INS_C_JAL || i->id == RISCV_INS_ALIAS_JAL
+			|| alias == RISCV_INS_ALIAS_JAL;
+
+	if (isJ)
 	{
 		EXPECT_IS_UNARY(i, ri, irb);
 		offset = loadOp(ri->operands[0], irb);
 	}
-	else if (i->id == RISCV_INS_C_JAL)
+	else if (isJalAlias || ri->op_count == 1)
 	{
-		EXPECT_IS_UNARY(i, ri, irb);
-		offset = loadOp(ri->operands[0], irb);
-		rd = RISCV_REG_RA;
+		if (ri->op_count == 1)
+		{
+			offset = loadOp(ri->operands[0], irb);
+			rd = RISCV_REG_RA;
+		}
+		else
+		{
+			EXPECT_IS_BINARY(i, ri, irb);
+			if (ri->operands[0].type == RISCV_OP_REG)
+			{
+				rd = ri->operands[0].reg;
+			}
+			offset = loadOp(ri->operands[1], irb);
+		}
 	}
 	else
 	{
@@ -407,15 +465,51 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateJalr(cs_insn* i, cs_riscv* ri
 	uint32_t rd = RISCV_REG_X0;
 	uint32_t rs1 = RISCV_REG_INVALID;
 
-	if (i->id == RISCV_INS_C_JR || i->id == RISCV_INS_C_JALR)
+	uint64_t alias = i->is_alias ? i->alias_id : 0;
+	bool isJr = i->id == RISCV_INS_C_JR || i->id == RISCV_INS_ALIAS_JR
+			|| alias == RISCV_INS_ALIAS_JR;
+	bool isJalrAlias = i->id == RISCV_INS_C_JALR || i->id == RISCV_INS_ALIAS_JALR
+			|| alias == RISCV_INS_ALIAS_JALR;
+	bool isRet = i->id == RISCV_INS_ALIAS_RET || alias == RISCV_INS_ALIAS_RET;
+
+	if (ri->op_count < 3 && (isJr || isJalrAlias || isRet || ri->op_count <= 1))
 	{
-		EXPECT_IS_UNARY(i, ri, irb);
-		target = loadOp(ri->operands[0], irb);
-		if (ri->operands[0].type == RISCV_OP_REG)
+		if (ri->op_count == 0)
+		{
+			rs1 = RISCV_REG_RA;
+			target = loadRegister(RISCV_REG_RA, irb);
+		}
+		else if (ri->op_count == 1)
+		{
+			target = loadOp(ri->operands[0], irb, nullptr, ri->operands[0].type == RISCV_OP_MEM);
+			if (ri->operands[0].type == RISCV_OP_REG)
+			{
+				rs1 = ri->operands[0].reg;
+			}
+			else if (ri->operands[0].type == RISCV_OP_MEM)
+			{
+				rs1 = ri->operands[0].mem.base;
+			}
+		}
+		else if (ri->operands[0].type == RISCV_OP_REG
+				&& ri->operands[1].type == RISCV_OP_IMM)
 		{
 			rs1 = ri->operands[0].reg;
+			op1 = loadOp(ri->operands[0], irb);
+			op2 = loadOp(ri->operands[1], irb);
+			op2 = generateTypeConversion(irb, op2, op1->getType(), eOpConv::SEXT_TRUNC_OR_BITCAST);
+			target = irb.CreateAdd(op1, op2);
 		}
-		if (i->id == RISCV_INS_C_JALR)
+		else
+		{
+			EXPECT_IS_UNARY(i, ri, irb);
+			target = loadOp(ri->operands[0], irb);
+			if (ri->operands[0].type == RISCV_OP_REG)
+			{
+				rs1 = ri->operands[0].reg;
+			}
+		}
+		if (isJalrAlias || (!isJr && !isRet && i->id == RISCV_INS_JALR))
 		{
 			rd = RISCV_REG_RA;
 		}
@@ -466,22 +560,51 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateJalr(cs_insn* i, cs_riscv* ri
 
 /**
  * BEQ/BNE/BLT/BGE/BLTU/BGEU, C_BEQZ, C_BNEZ.
- * Capstone reports the PC-relative byte offset, not an absolute address.
+ * Capstone 6 IMM is the effective target unless need_effective_addr is set.
  */
 void Capstone2LlvmIrTranslatorRiscv_impl::translateBranch(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
 {
 	llvm::Value* cond = nullptr;
 	llvm::Value* offset = nullptr;
 
-	if (i->id == RISCV_INS_C_BEQZ || i->id == RISCV_INS_C_BNEZ)
+	if (i->id == RISCV_INS_C_BEQZ
+			|| i->id == RISCV_INS_C_BNEZ
+			|| i->id == RISCV_INS_ALIAS_BEQZ
+			|| i->id == RISCV_INS_ALIAS_BNEZ
+			|| i->id == RISCV_INS_ALIAS_BLEZ
+			|| i->id == RISCV_INS_ALIAS_BGEZ
+			|| i->id == RISCV_INS_ALIAS_BLTZ
+			|| i->id == RISCV_INS_ALIAS_BGTZ)
 	{
 		EXPECT_IS_BINARY(i, ri, irb);
 		op0 = loadOp(ri->operands[0], irb);
 		offset = loadOp(ri->operands[1], irb);
 		auto* zero = llvm::ConstantInt::get(op0->getType(), 0);
-		cond = (i->id == RISCV_INS_C_BEQZ)
-				? irb.CreateICmpEQ(op0, zero)
-				: irb.CreateICmpNE(op0, zero);
+		switch (i->id)
+		{
+			case RISCV_INS_C_BEQZ:
+			case RISCV_INS_ALIAS_BEQZ:
+				cond = irb.CreateICmpEQ(op0, zero);
+				break;
+			case RISCV_INS_C_BNEZ:
+			case RISCV_INS_ALIAS_BNEZ:
+				cond = irb.CreateICmpNE(op0, zero);
+				break;
+			case RISCV_INS_ALIAS_BLEZ:
+				cond = irb.CreateICmpSLE(op0, zero);
+				break;
+			case RISCV_INS_ALIAS_BGEZ:
+				cond = irb.CreateICmpSGE(op0, zero);
+				break;
+			case RISCV_INS_ALIAS_BLTZ:
+				cond = irb.CreateICmpSLT(op0, zero);
+				break;
+			case RISCV_INS_ALIAS_BGTZ:
+				cond = irb.CreateICmpSGT(op0, zero);
+				break;
+			default:
+				throw GenericError("Unhandled insn ID in translateBranch().");
+		}
 	}
 	else
 	{
@@ -774,6 +897,958 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateFence(cs_insn* i, cs_riscv* r
 	(void)i;
 	(void)ri;
 	irb.CreateFence(llvm::AtomicOrdering::SequentiallyConsistent);
+}
+
+llvm::Value* Capstone2LlvmIrTranslatorRiscv_impl::amoAddress(
+		cs_riscv_op& op,
+		llvm::IRBuilder<>& irb)
+{
+	if (op.type == RISCV_OP_MEM)
+	{
+		auto* base = loadRegister(op.mem.base, irb);
+		if (base == nullptr)
+		{
+			return llvm::ConstantInt::getSigned(getDefaultType(), op.mem.disp);
+		}
+		if (op.mem.disp == 0)
+		{
+			return base;
+		}
+		auto* disp = llvm::ConstantInt::getSigned(base->getType(), op.mem.disp);
+		return irb.CreateAdd(base, disp);
+	}
+	return loadOp(op, irb, nullptr, /*lea=*/true);
+}
+
+llvm::AtomicOrdering Capstone2LlvmIrTranslatorRiscv_impl::amoOrdering(unsigned id) const
+{
+	switch (id)
+	{
+		case RISCV_INS_AMOADD_W_AQ:
+		case RISCV_INS_AMOADD_D_AQ:
+		case RISCV_INS_AMOAND_W_AQ:
+		case RISCV_INS_AMOAND_D_AQ:
+		case RISCV_INS_AMOOR_W_AQ:
+		case RISCV_INS_AMOOR_D_AQ:
+		case RISCV_INS_AMOXOR_W_AQ:
+		case RISCV_INS_AMOXOR_D_AQ:
+		case RISCV_INS_AMOSWAP_W_AQ:
+		case RISCV_INS_AMOSWAP_D_AQ:
+		case RISCV_INS_LR_W_AQ:
+		case RISCV_INS_LR_D_AQ:
+		case RISCV_INS_SC_W_AQ:
+		case RISCV_INS_SC_D_AQ:
+			return llvm::AtomicOrdering::Acquire;
+		case RISCV_INS_AMOADD_W_RL:
+		case RISCV_INS_AMOADD_D_RL:
+		case RISCV_INS_AMOAND_W_RL:
+		case RISCV_INS_AMOAND_D_RL:
+		case RISCV_INS_AMOOR_W_RL:
+		case RISCV_INS_AMOOR_D_RL:
+		case RISCV_INS_AMOXOR_W_RL:
+		case RISCV_INS_AMOXOR_D_RL:
+		case RISCV_INS_AMOSWAP_W_RL:
+		case RISCV_INS_AMOSWAP_D_RL:
+		case RISCV_INS_LR_W_RL:
+		case RISCV_INS_LR_D_RL:
+		case RISCV_INS_SC_W_RL:
+		case RISCV_INS_SC_D_RL:
+			return llvm::AtomicOrdering::Release;
+		case RISCV_INS_AMOADD_W_AQ_RL:
+		case RISCV_INS_AMOADD_D_AQ_RL:
+		case RISCV_INS_AMOAND_W_AQ_RL:
+		case RISCV_INS_AMOAND_D_AQ_RL:
+		case RISCV_INS_AMOOR_W_AQ_RL:
+		case RISCV_INS_AMOOR_D_AQ_RL:
+		case RISCV_INS_AMOXOR_W_AQ_RL:
+		case RISCV_INS_AMOXOR_D_AQ_RL:
+		case RISCV_INS_AMOSWAP_W_AQ_RL:
+		case RISCV_INS_AMOSWAP_D_AQ_RL:
+		case RISCV_INS_LR_W_AQ_RL:
+		case RISCV_INS_LR_D_AQ_RL:
+		case RISCV_INS_SC_W_AQ_RL:
+		case RISCV_INS_SC_D_AQ_RL:
+			return llvm::AtomicOrdering::SequentiallyConsistent;
+		default:
+			return llvm::AtomicOrdering::Monotonic;
+	}
+}
+
+llvm::Type* Capstone2LlvmIrTranslatorRiscv_impl::amoAccessType(unsigned id, llvm::IRBuilder<>& irb)
+{
+	switch (id)
+	{
+		case RISCV_INS_AMOADD_D:
+		case RISCV_INS_AMOADD_D_AQ:
+		case RISCV_INS_AMOADD_D_RL:
+		case RISCV_INS_AMOADD_D_AQ_RL:
+		case RISCV_INS_AMOAND_D:
+		case RISCV_INS_AMOAND_D_AQ:
+		case RISCV_INS_AMOAND_D_RL:
+		case RISCV_INS_AMOAND_D_AQ_RL:
+		case RISCV_INS_AMOOR_D:
+		case RISCV_INS_AMOOR_D_AQ:
+		case RISCV_INS_AMOOR_D_RL:
+		case RISCV_INS_AMOOR_D_AQ_RL:
+		case RISCV_INS_AMOXOR_D:
+		case RISCV_INS_AMOXOR_D_AQ:
+		case RISCV_INS_AMOXOR_D_RL:
+		case RISCV_INS_AMOXOR_D_AQ_RL:
+		case RISCV_INS_AMOSWAP_D:
+		case RISCV_INS_AMOSWAP_D_AQ:
+		case RISCV_INS_AMOSWAP_D_RL:
+		case RISCV_INS_AMOSWAP_D_AQ_RL:
+		case RISCV_INS_LR_D:
+		case RISCV_INS_LR_D_AQ:
+		case RISCV_INS_LR_D_RL:
+		case RISCV_INS_LR_D_AQ_RL:
+		case RISCV_INS_SC_D:
+		case RISCV_INS_SC_D_AQ:
+		case RISCV_INS_SC_D_RL:
+		case RISCV_INS_SC_D_AQ_RL:
+			return irb.getInt64Ty();
+		default:
+			return irb.getInt32Ty();
+	}
+}
+
+llvm::Value* Capstone2LlvmIrTranslatorRiscv_impl::definedDivisor(
+		llvm::Value* dividend,
+		llvm::Value* divisor,
+		bool isSigned,
+		llvm::IRBuilder<>& irb)
+{
+	auto* ty = divisor->getType();
+	auto* one = llvm::ConstantInt::get(ty, 1);
+	if (isSigned)
+	{
+		unsigned bits = llvm::cast<llvm::IntegerType>(ty)->getBitWidth();
+		auto* intMin = llvm::ConstantInt::get(ty, llvm::APInt::getSignedMinValue(bits));
+		auto* minusOne = llvm::ConstantInt::getSigned(ty, -1);
+		auto* overflow = irb.CreateAnd(
+				irb.CreateICmpEQ(dividend, intMin),
+				irb.CreateICmpEQ(divisor, minusOne));
+		divisor = irb.CreateSelect(overflow, one, divisor);
+	}
+	return irb.CreateBinaryIntrinsic(llvm::Intrinsic::umax, divisor, one);
+}
+
+llvm::Value* Capstone2LlvmIrTranslatorRiscv_impl::fpToInt(
+		llvm::Value* v,
+		llvm::Type* intTy,
+		bool isSigned,
+		llvm::IRBuilder<>& irb)
+{
+	unsigned bits = intTy->getScalarSizeInBits();
+	auto* fpTy = v->getType();
+	llvm::Value* loF = nullptr;
+	llvm::Value* hiF = nullptr;
+	llvm::Value* oob = nullptr;
+	if (isSigned)
+	{
+		loF = llvm::ConstantFP::get(fpTy, -std::ldexp(1.0, static_cast<int>(bits - 1)));
+		hiF = llvm::ConstantFP::get(fpTy, std::ldexp(1.0, static_cast<int>(bits - 1)));
+		oob = llvm::ConstantInt::get(intTy, llvm::APInt::getSignedMaxValue(bits));
+	}
+	else
+	{
+		loF = llvm::ConstantFP::get(fpTy, 0.0);
+		hiF = llvm::ConstantFP::get(fpTy, std::ldexp(1.0, static_cast<int>(bits)));
+		oob = llvm::ConstantInt::get(intTy, llvm::APInt::getMaxValue(bits));
+	}
+	auto* inRange = irb.CreateAnd(irb.CreateFCmpOGE(v, loF), irb.CreateFCmpOLT(v, hiF));
+	auto* safe = irb.CreateSelect(inRange, v, llvm::ConstantFP::get(fpTy, 0.0));
+	auto* conv = isSigned ? irb.CreateFPToSI(safe, intTy) : irb.CreateFPToUI(safe, intTy);
+	return irb.CreateSelect(inRange, conv, oob);
+}
+
+uint32_t Capstone2LlvmIrTranslatorRiscv_impl::csrOperandReg(uint16_t encoding) const
+{
+	switch (encoding)
+	{
+		case RISCV_SYSREG_FFLAGS: return RISCV_REG_FFLAGS;
+		case RISCV_SYSREG_FRM: return RISCV_REG_FRM;
+		case RISCV_SYSREG_VL: return RISCV_REG_VL;
+		case RISCV_SYSREG_VTYPE: return RISCV_REG_VTYPE;
+		case RISCV_SYSREG_VLENB: return RISCV_REG_VLENB;
+		case RISCV_SYSREG_VXSAT: return RISCV_REG_VXSAT;
+		case RISCV_SYSREG_VXRM: return RISCV_REG_VXRM;
+		case RISCV_SYSREG_FCSR:
+		case RISCV_SYSREG_CYCLE:
+		case RISCV_SYSREG_TIME:
+		case RISCV_SYSREG_INSTRET:
+		case RISCV_SYSREG_CYCLEH:
+		case RISCV_SYSREG_TIMEH:
+		case RISCV_SYSREG_INSTRETH:
+		case RISCV_SYSREG_SSTATUS:
+		case RISCV_SYSREG_SIE:
+		case RISCV_SYSREG_STVEC:
+		case RISCV_SYSREG_SSCRATCH:
+		case RISCV_SYSREG_SEPC:
+		case RISCV_SYSREG_SCAUSE:
+		case RISCV_SYSREG_STVAL:
+		case RISCV_SYSREG_SIP:
+		case RISCV_SYSREG_SATP:
+		case RISCV_SYSREG_MSTATUS:
+		case RISCV_SYSREG_MISA:
+		case RISCV_SYSREG_MEDELEG:
+		case RISCV_SYSREG_MIDELEG:
+		case RISCV_SYSREG_MIE:
+		case RISCV_SYSREG_MTVEC:
+		case RISCV_SYSREG_MSCRATCH:
+		case RISCV_SYSREG_MEPC:
+		case RISCV_SYSREG_MCAUSE:
+		case RISCV_SYSREG_MTVAL:
+		case RISCV_SYSREG_MIP:
+		case RISCV_SYSREG_MHARTID:
+		case RISCV_SYSREG_MVENDORID:
+		case RISCV_SYSREG_MARCHID:
+		case RISCV_SYSREG_MIMPID:
+			return csrLlvmRegId(encoding);
+		default:
+			return RISCV_REG_INVALID;
+	}
+}
+
+llvm::Value* Capstone2LlvmIrTranslatorRiscv_impl::loadCsr(uint16_t encoding, llvm::IRBuilder<>& irb)
+{
+	if (encoding == RISCV_SYSREG_FCSR)
+	{
+		auto* flags = loadRegister(RISCV_REG_FFLAGS, irb);
+		auto* frm = loadRegister(RISCV_REG_FRM, irb);
+		auto* ty = getDefaultType();
+		flags = irb.CreateZExtOrTrunc(flags, ty);
+		frm = irb.CreateZExtOrTrunc(frm, ty);
+		auto* fmask = llvm::ConstantInt::get(ty, 0x1f);
+		auto* rmask = llvm::ConstantInt::get(ty, 0x7);
+		return irb.CreateOr(
+				irb.CreateAnd(flags, fmask),
+				irb.CreateShl(irb.CreateAnd(frm, rmask), llvm::ConstantInt::get(ty, 5)));
+	}
+	auto r = csrOperandReg(encoding);
+	if (r == RISCV_REG_INVALID || getRegister(r) == nullptr)
+	{
+		return nullptr;
+	}
+	return loadRegister(r, irb);
+}
+
+void Capstone2LlvmIrTranslatorRiscv_impl::storeCsr(
+		uint16_t encoding,
+		llvm::Value* val,
+		llvm::IRBuilder<>& irb)
+{
+	if (encoding == RISCV_SYSREG_FCSR)
+	{
+		auto* ty = getDefaultType();
+		val = irb.CreateZExtOrTrunc(val, ty);
+		storeRegister(RISCV_REG_FFLAGS, irb.CreateAnd(val, llvm::ConstantInt::get(ty, 0x1f)), irb);
+		storeRegister(
+				RISCV_REG_FRM,
+				irb.CreateAnd(
+						irb.CreateLShr(val, llvm::ConstantInt::get(ty, 5)),
+						llvm::ConstantInt::get(ty, 0x7)),
+				irb);
+		return;
+	}
+	auto r = csrOperandReg(encoding);
+	if (r == RISCV_REG_INVALID || getRegister(r) == nullptr)
+	{
+		return;
+	}
+	storeRegister(r, val, irb);
+}
+
+/**
+ * MUL/MULH/MULHSU/MULHU/MULW, C_MUL.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateMul(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, ri, irb);
+	std::tie(op1, op2) = loadAluSrc(ri, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+
+	bool word = i->id == RISCV_INS_MULW;
+	if (word)
+	{
+		op1 = narrowToWord(irb, op1);
+		op2 = irb.CreateZExtOrTrunc(op2, irb.getInt32Ty());
+	}
+
+	bool high = i->id == RISCV_INS_MULH || i->id == RISCV_INS_MULHU || i->id == RISCV_INS_MULHSU;
+	unsigned half = op1->getType()->getIntegerBitWidth();
+	auto* wide = irb.getIntNTy(half * 2);
+
+	if (i->id == RISCV_INS_MULHU)
+	{
+		op1 = irb.CreateZExt(op1, wide);
+		op2 = irb.CreateZExt(op2, wide);
+	}
+	else if (i->id == RISCV_INS_MULHSU)
+	{
+		op1 = irb.CreateSExt(op1, wide);
+		op2 = irb.CreateZExt(op2, wide);
+	}
+	else
+	{
+		op1 = irb.CreateSExt(op1, wide);
+		op2 = irb.CreateSExt(op2, wide);
+	}
+
+	auto* mul = irb.CreateMul(op1, op2);
+	auto* halfTy = irb.getIntNTy(half);
+	llvm::Value* res = high
+			? irb.CreateTrunc(irb.CreateLShr(mul, llvm::ConstantInt::get(wide, half)), halfTy)
+			: irb.CreateTrunc(mul, halfTy);
+	if (word)
+	{
+		res = widenFromWord(irb, res);
+	}
+	storeOp(ri->operands[0], res, irb);
+}
+
+/**
+ * DIV/DIVU/REM/REMU and W variants. RISC-V names the zero-divisor and
+ * signed-overflow results, so the IR never carries LLVM sdiv/udiv UB.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateDiv(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, ri, irb);
+	std::tie(op1, op2) = loadAluSrc(ri, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+
+	bool word = i->id == RISCV_INS_DIVW || i->id == RISCV_INS_DIVUW
+			|| i->id == RISCV_INS_REMW || i->id == RISCV_INS_REMUW;
+	if (word)
+	{
+		op1 = narrowToWord(irb, op1);
+		op2 = irb.CreateZExtOrTrunc(op2, irb.getInt32Ty());
+	}
+
+	bool isSigned = i->id == RISCV_INS_DIV || i->id == RISCV_INS_DIVW
+			|| i->id == RISCV_INS_REM || i->id == RISCV_INS_REMW;
+	bool remainder = i->id == RISCV_INS_REM || i->id == RISCV_INS_REMU
+			|| i->id == RISCV_INS_REMW || i->id == RISCV_INS_REMUW;
+
+	auto* ty = op1->getType();
+	auto* zero = llvm::ConstantInt::get(ty, 0);
+	auto* divZero = irb.CreateICmpEQ(op2, zero);
+	auto* safe = definedDivisor(op1, op2, isSigned, irb);
+
+	llvm::Value* arith = nullptr;
+	llvm::Value* dzRes = nullptr;
+	if (remainder)
+	{
+		arith = isSigned ? irb.CreateSRem(op1, safe) : irb.CreateURem(op1, safe);
+		dzRes = op1;
+	}
+	else if (isSigned)
+	{
+		arith = irb.CreateSDiv(op1, safe);
+		dzRes = llvm::ConstantInt::getSigned(ty, -1);
+	}
+	else
+	{
+		arith = irb.CreateUDiv(op1, safe);
+		dzRes = llvm::ConstantInt::getAllOnesValue(ty);
+	}
+
+	llvm::Value* res = irb.CreateSelect(divZero, dzRes, arith);
+	if (isSigned)
+	{
+		unsigned bits = llvm::cast<llvm::IntegerType>(ty)->getBitWidth();
+		auto* intMin = llvm::ConstantInt::get(ty, llvm::APInt::getSignedMinValue(bits));
+		auto* minusOne = llvm::ConstantInt::getSigned(ty, -1);
+		auto* overflow = irb.CreateAnd(
+				irb.CreateICmpEQ(op1, intMin),
+				irb.CreateICmpEQ(op2, minusOne));
+		auto* ovRes = remainder ? llvm::ConstantInt::get(ty, 0) : intMin;
+		res = irb.CreateSelect(overflow, ovRes, res);
+	}
+
+	if (word)
+	{
+		res = widenFromWord(irb, res);
+	}
+	storeOp(ri->operands[0], res, irb);
+}
+
+void Capstone2LlvmIrTranslatorRiscv_impl::translateFpArith(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	if (ri->op_count < 3)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, ri, irb);
+		return;
+	}
+	op1 = loadOp(ri->operands[1], irb);
+	op2 = loadOp(ri->operands[2], irb);
+	if (op1->getType() != op2->getType() && op2->getType()->isFloatingPointTy())
+	{
+		op1 = irb.CreateFPCast(op1, op2->getType());
+	}
+	else if (op1->getType() != op2->getType() && op1->getType()->isFloatingPointTy())
+	{
+		op2 = irb.CreateFPCast(op2, op1->getType());
+	}
+
+	llvm::Value* res = nullptr;
+	switch (i->id)
+	{
+		case RISCV_INS_FADD_S:
+		case RISCV_INS_FADD_D:
+			res = irb.CreateFAdd(op1, op2);
+			break;
+		case RISCV_INS_FSUB_S:
+		case RISCV_INS_FSUB_D:
+			res = irb.CreateFSub(op1, op2);
+			break;
+		case RISCV_INS_FMUL_S:
+		case RISCV_INS_FMUL_D:
+			res = irb.CreateFMul(op1, op2);
+			break;
+		case RISCV_INS_FDIV_S:
+		case RISCV_INS_FDIV_D:
+			res = irb.CreateFDiv(op1, op2);
+			break;
+		default:
+			throw GenericError("Unhandled insn ID in translateFpArith().");
+	}
+	storeOp(ri->operands[0], res, irb, eOpConv::FPCAST_OR_BITCAST);
+}
+
+void Capstone2LlvmIrTranslatorRiscv_impl::translateFpLoad(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	if (ri->op_count < 2)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, ri, irb);
+		return;
+	}
+
+	llvm::Type* ty = nullptr;
+	switch (i->id)
+	{
+		case RISCV_INS_FLW:
+		case RISCV_INS_C_FLW:
+		case RISCV_INS_C_FLWSP:
+			ty = irb.getFloatTy();
+			break;
+		case RISCV_INS_FLD:
+		case RISCV_INS_C_FLD:
+		case RISCV_INS_C_FLDSP:
+			ty = irb.getDoubleTy();
+			break;
+		default:
+			throw GenericError("Unhandled insn ID in translateFpLoad().");
+	}
+
+	if (ri->operands[1].type == RISCV_OP_MEM
+			|| (ri->op_count == 2 && ri->operands[1].type != RISCV_OP_REG))
+	{
+		op1 = loadOp(ri->operands[1], irb, ty);
+	}
+	else if (ri->op_count >= 3)
+	{
+		auto* base = loadOp(ri->operands[1], irb);
+		auto* off = loadOp(ri->operands[2], irb);
+		off = irb.CreateSExtOrTrunc(off, base->getType());
+		op1 = loadIntPtr(irb, irb.CreateAdd(base, off), ty);
+	}
+	else
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, ri, irb);
+		return;
+	}
+	storeOp(ri->operands[0], op1, irb, eOpConv::FPCAST_OR_BITCAST);
+}
+
+void Capstone2LlvmIrTranslatorRiscv_impl::translateFpStore(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	if (ri->op_count < 2)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, ri, irb);
+		return;
+	}
+
+	llvm::Type* ty = nullptr;
+	switch (i->id)
+	{
+		case RISCV_INS_FSW:
+		case RISCV_INS_C_FSW:
+		case RISCV_INS_C_FSWSP:
+			ty = irb.getFloatTy();
+			break;
+		case RISCV_INS_FSD:
+		case RISCV_INS_C_FSD:
+		case RISCV_INS_C_FSDSP:
+			ty = irb.getDoubleTy();
+			break;
+		default:
+			throw GenericError("Unhandled insn ID in translateFpStore().");
+	}
+
+	op0 = loadOp(ri->operands[0], irb);
+	if (op0->getType() != ty)
+	{
+		if (op0->getType()->isFloatingPointTy() && ty->isFloatingPointTy())
+		{
+			op0 = irb.CreateFPCast(op0, ty);
+		}
+		else if (ty->isFloatingPointTy())
+		{
+			op0 = generateTypeConversion(irb, op0, ty, eOpConv::FPCAST_OR_BITCAST);
+		}
+		else
+		{
+			op0 = irb.CreateBitCast(op0, ty);
+		}
+	}
+
+	if (ri->operands[1].type == RISCV_OP_MEM
+			|| (ri->op_count == 2 && ri->operands[1].type != RISCV_OP_REG))
+	{
+		storeOp(ri->operands[1], op0, irb);
+	}
+	else if (ri->op_count >= 3)
+	{
+		auto* base = loadOp(ri->operands[1], irb);
+		auto* off = loadOp(ri->operands[2], irb);
+		off = irb.CreateSExtOrTrunc(off, base->getType());
+		storeIntPtr(irb, op0, irb.CreateAdd(base, off), ty);
+	}
+	else
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, ri, irb);
+	}
+}
+
+void Capstone2LlvmIrTranslatorRiscv_impl::translateFcvt(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, ri, irb);
+	op1 = loadOp(ri->operands[1], irb);
+	llvm::Value* res = nullptr;
+
+	switch (i->id)
+	{
+		case RISCV_INS_FCVT_S_D:
+			res = irb.CreateFPTrunc(op1, irb.getFloatTy());
+			break;
+		case RISCV_INS_FCVT_D_S:
+			res = irb.CreateFPExt(op1, irb.getDoubleTy());
+			break;
+		case RISCV_INS_FCVT_S_W:
+			res = irb.CreateSIToFP(irb.CreateSExtOrTrunc(op1, irb.getInt32Ty()), irb.getFloatTy());
+			break;
+		case RISCV_INS_FCVT_S_WU:
+			res = irb.CreateUIToFP(irb.CreateZExtOrTrunc(op1, irb.getInt32Ty()), irb.getFloatTy());
+			break;
+		case RISCV_INS_FCVT_D_W:
+			res = irb.CreateSIToFP(irb.CreateSExtOrTrunc(op1, irb.getInt32Ty()), irb.getDoubleTy());
+			break;
+		case RISCV_INS_FCVT_D_WU:
+			res = irb.CreateUIToFP(irb.CreateZExtOrTrunc(op1, irb.getInt32Ty()), irb.getDoubleTy());
+			break;
+		case RISCV_INS_FCVT_S_L:
+			res = irb.CreateSIToFP(irb.CreateSExtOrTrunc(op1, irb.getInt64Ty()), irb.getFloatTy());
+			break;
+		case RISCV_INS_FCVT_S_LU:
+			res = irb.CreateUIToFP(irb.CreateZExtOrTrunc(op1, irb.getInt64Ty()), irb.getFloatTy());
+			break;
+		case RISCV_INS_FCVT_D_L:
+			res = irb.CreateSIToFP(irb.CreateSExtOrTrunc(op1, irb.getInt64Ty()), irb.getDoubleTy());
+			break;
+		case RISCV_INS_FCVT_D_LU:
+			res = irb.CreateUIToFP(irb.CreateZExtOrTrunc(op1, irb.getInt64Ty()), irb.getDoubleTy());
+			break;
+		case RISCV_INS_FCVT_W_S:
+		case RISCV_INS_FCVT_W_D:
+			res = widenFromWord(irb, fpToInt(op1, irb.getInt32Ty(), /*isSigned=*/true, irb));
+			break;
+		case RISCV_INS_FCVT_WU_S:
+		case RISCV_INS_FCVT_WU_D:
+			res = irb.CreateZExt(fpToInt(op1, irb.getInt32Ty(), /*isSigned=*/false, irb), getDefaultType());
+			break;
+		case RISCV_INS_FCVT_L_S:
+		case RISCV_INS_FCVT_L_D:
+			res = fpToInt(op1, irb.getInt64Ty(), /*isSigned=*/true, irb);
+			break;
+		case RISCV_INS_FCVT_LU_S:
+		case RISCV_INS_FCVT_LU_D:
+			res = fpToInt(op1, irb.getInt64Ty(), /*isSigned=*/false, irb);
+			break;
+		default:
+			throw GenericError("Unhandled insn ID in translateFcvt().");
+	}
+	storeOp(ri->operands[0], res, irb, res->getType()->isFloatingPointTy()
+			? eOpConv::FPCAST_OR_BITCAST
+			: eOpConv::SEXT_TRUNC_OR_BITCAST);
+}
+
+void Capstone2LlvmIrTranslatorRiscv_impl::translateFcmp(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	if (ri->op_count < 3)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, ri, irb);
+		return;
+	}
+	op1 = loadOp(ri->operands[1], irb);
+	op2 = loadOp(ri->operands[2], irb);
+	if (op1->getType() != op2->getType() && op1->getType()->isFloatingPointTy())
+	{
+		op2 = irb.CreateFPCast(op2, op1->getType());
+	}
+
+	llvm::Value* cmp = nullptr;
+	switch (i->id)
+	{
+		case RISCV_INS_FEQ_S:
+		case RISCV_INS_FEQ_D:
+			cmp = irb.CreateFCmpOEQ(op1, op2);
+			break;
+		case RISCV_INS_FLT_S:
+		case RISCV_INS_FLT_D:
+			cmp = irb.CreateFCmpOLT(op1, op2);
+			break;
+		case RISCV_INS_FLE_S:
+		case RISCV_INS_FLE_D:
+			cmp = irb.CreateFCmpOLE(op1, op2);
+			break;
+		default:
+			throw GenericError("Unhandled insn ID in translateFcmp().");
+	}
+	storeOp(ri->operands[0], irb.CreateZExt(cmp, getDefaultType()), irb);
+}
+
+void Capstone2LlvmIrTranslatorRiscv_impl::translateAmo(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, ri, irb);
+
+	llvm::AtomicRMWInst::BinOp op;
+	switch (i->id)
+	{
+		case RISCV_INS_AMOADD_W:
+		case RISCV_INS_AMOADD_W_AQ:
+		case RISCV_INS_AMOADD_W_RL:
+		case RISCV_INS_AMOADD_W_AQ_RL:
+		case RISCV_INS_AMOADD_D:
+		case RISCV_INS_AMOADD_D_AQ:
+		case RISCV_INS_AMOADD_D_RL:
+		case RISCV_INS_AMOADD_D_AQ_RL:
+			op = llvm::AtomicRMWInst::Add;
+			break;
+		case RISCV_INS_AMOAND_W:
+		case RISCV_INS_AMOAND_W_AQ:
+		case RISCV_INS_AMOAND_W_RL:
+		case RISCV_INS_AMOAND_W_AQ_RL:
+		case RISCV_INS_AMOAND_D:
+		case RISCV_INS_AMOAND_D_AQ:
+		case RISCV_INS_AMOAND_D_RL:
+		case RISCV_INS_AMOAND_D_AQ_RL:
+			op = llvm::AtomicRMWInst::And;
+			break;
+		case RISCV_INS_AMOOR_W:
+		case RISCV_INS_AMOOR_W_AQ:
+		case RISCV_INS_AMOOR_W_RL:
+		case RISCV_INS_AMOOR_W_AQ_RL:
+		case RISCV_INS_AMOOR_D:
+		case RISCV_INS_AMOOR_D_AQ:
+		case RISCV_INS_AMOOR_D_RL:
+		case RISCV_INS_AMOOR_D_AQ_RL:
+			op = llvm::AtomicRMWInst::Or;
+			break;
+		case RISCV_INS_AMOXOR_W:
+		case RISCV_INS_AMOXOR_W_AQ:
+		case RISCV_INS_AMOXOR_W_RL:
+		case RISCV_INS_AMOXOR_W_AQ_RL:
+		case RISCV_INS_AMOXOR_D:
+		case RISCV_INS_AMOXOR_D_AQ:
+		case RISCV_INS_AMOXOR_D_RL:
+		case RISCV_INS_AMOXOR_D_AQ_RL:
+			op = llvm::AtomicRMWInst::Xor;
+			break;
+		case RISCV_INS_AMOSWAP_W:
+		case RISCV_INS_AMOSWAP_W_AQ:
+		case RISCV_INS_AMOSWAP_W_RL:
+		case RISCV_INS_AMOSWAP_W_AQ_RL:
+		case RISCV_INS_AMOSWAP_D:
+		case RISCV_INS_AMOSWAP_D_AQ:
+		case RISCV_INS_AMOSWAP_D_RL:
+		case RISCV_INS_AMOSWAP_D_AQ_RL:
+			op = llvm::AtomicRMWInst::Xchg;
+			break;
+		default:
+			translatePseudoAsmGeneric(i, ri, irb);
+			return;
+	}
+
+	auto* elem = amoAccessType(i->id, irb);
+	auto* addr = amoAddress(ri->operands[1], irb);
+	auto* val = loadOp(ri->operands[2], irb);
+	val = generateTypeConversion(irb, val, elem, eOpConv::SEXT_TRUNC_OR_BITCAST);
+	auto* ptr = intToPtr(irb, addr, elem);
+	auto* old = irb.CreateAtomicRMW(op, ptr, val, llvm::MaybeAlign(), amoOrdering(i->id));
+	attachPointeeType(old, elem);
+	storeOp(ri->operands[0], old, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * LR.W/D: atomic load. No exclusive-monitor model (same as ARM LDXR).
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateLr(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, ri, irb);
+	auto* elem = amoAccessType(i->id, irb);
+	auto* addr = amoAddress(ri->operands[1], irb);
+	auto* ld = loadIntPtr(irb, addr, elem);
+	ld->setAtomic(amoOrdering(i->id));
+	storeOp(ri->operands[0], ld, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * SC.W/D: atomic store + status 0. No exclusive-monitor model (same as ARM STXR).
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateSc(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, ri, irb);
+	auto* elem = amoAccessType(i->id, irb);
+	auto* addr = amoAddress(ri->operands[1], irb);
+	auto* val = loadOp(ri->operands[2], irb);
+	val = generateTypeConversion(irb, val, elem, eOpConv::SEXT_TRUNC_OR_BITCAST);
+	auto* st = storeIntPtr(irb, val, addr, elem);
+	st->setAtomic(amoOrdering(i->id));
+	storeOp(ri->operands[0], llvm::ConstantInt::get(getDefaultType(), 0), irb);
+}
+
+/**
+ * CSRRW/CSRRS/CSRRC and immediates. Capstone SYSREG encodings only; unknown
+ * encodings stay a named __asm_* call rather than inventing a CSR number.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateCsr(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	if (ri->op_count < 1)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, ri, irb);
+		return;
+	}
+
+	uint16_t encoding = 0;
+	bool haveCsr = false;
+	int rdOp = -1;
+	int srcOp = -1;
+	for (int n = 0; n < ri->op_count; ++n)
+	{
+		auto& op = ri->operands[n];
+		if (op.type == RISCV_OP_CSR)
+		{
+			encoding = op.csr;
+			haveCsr = true;
+		}
+		else if (op.type == RISCV_OP_REG
+				&& (op.reg == RISCV_REG_FFLAGS
+						|| op.reg == RISCV_REG_FRM
+						|| csrOperandReg(static_cast<uint16_t>(op.reg)) != RISCV_REG_INVALID))
+		{
+			encoding = static_cast<uint16_t>(op.reg);
+			haveCsr = true;
+		}
+		else if (op.type == RISCV_OP_REG)
+		{
+			if (rdOp < 0)
+			{
+				rdOp = n;
+			}
+			else
+			{
+				srcOp = n;
+			}
+		}
+		else if (op.type == RISCV_OP_IMM)
+		{
+			if (!haveCsr && n != 0)
+			{
+				encoding = static_cast<uint16_t>(op.imm);
+				haveCsr = true;
+			}
+			else
+			{
+				srcOp = n;
+			}
+		}
+	}
+
+	uint64_t alias = i->is_alias ? i->alias_id : i->id;
+	if (!haveCsr)
+	{
+		switch (alias)
+		{
+			case RISCV_INS_ALIAS_FRFLAGS:
+			case RISCV_INS_ALIAS_FSFLAGS:
+			case RISCV_INS_ALIAS_FSFLAGSI:
+				encoding = RISCV_SYSREG_FFLAGS;
+				haveCsr = true;
+				break;
+			case RISCV_INS_ALIAS_FRRM:
+			case RISCV_INS_ALIAS_FSRM:
+			case RISCV_INS_ALIAS_FSRMI:
+				encoding = RISCV_SYSREG_FRM;
+				haveCsr = true;
+				break;
+			case RISCV_INS_ALIAS_FRCSR:
+			case RISCV_INS_ALIAS_FSCSR:
+				encoding = RISCV_SYSREG_FCSR;
+				haveCsr = true;
+				break;
+			case RISCV_INS_ALIAS_RDCYCLE:
+				encoding = RISCV_SYSREG_CYCLE;
+				haveCsr = true;
+				break;
+			case RISCV_INS_ALIAS_RDTIME:
+				encoding = RISCV_SYSREG_TIME;
+				haveCsr = true;
+				break;
+			case RISCV_INS_ALIAS_RDINSTRET:
+				encoding = RISCV_SYSREG_INSTRET;
+				haveCsr = true;
+				break;
+			case RISCV_INS_ALIAS_RDCYCLEH:
+				encoding = RISCV_SYSREG_CYCLEH;
+				haveCsr = true;
+				break;
+			case RISCV_INS_ALIAS_RDTIMEH:
+				encoding = RISCV_SYSREG_TIMEH;
+				haveCsr = true;
+				break;
+			case RISCV_INS_ALIAS_RDINSTRETH:
+				encoding = RISCV_SYSREG_INSTRETH;
+				haveCsr = true;
+				break;
+			default:
+				break;
+		}
+	}
+
+	if (!haveCsr)
+	{
+		translatePseudoAsmGeneric(i, ri, irb);
+		return;
+	}
+
+	if (csrOperandReg(encoding) == RISCV_REG_INVALID && encoding != RISCV_SYSREG_FCSR)
+	{
+		translatePseudoAsmGeneric(i, ri, irb);
+		return;
+	}
+
+	llvm::Value* src = nullptr;
+	if (srcOp >= 0)
+	{
+		src = loadOp(ri->operands[srcOp], irb);
+	}
+	else
+	{
+		src = llvm::ConstantInt::get(getDefaultType(), 0);
+	}
+	src = irb.CreateZExtOrTrunc(src, getDefaultType());
+
+	bool isImm = i->id == RISCV_INS_CSRRWI || i->id == RISCV_INS_CSRRSI || i->id == RISCV_INS_CSRRCI
+			|| i->id == RISCV_INS_ALIAS_CSRWI || i->id == RISCV_INS_ALIAS_CSRSI
+			|| i->id == RISCV_INS_ALIAS_CSRCI
+			|| alias == RISCV_INS_ALIAS_CSRWI || alias == RISCV_INS_ALIAS_CSRSI
+			|| alias == RISCV_INS_ALIAS_CSRCI || alias == RISCV_INS_ALIAS_FSFLAGSI
+			|| alias == RISCV_INS_ALIAS_FSRMI;
+	bool isWrite = i->id == RISCV_INS_CSRRW || i->id == RISCV_INS_CSRRWI
+			|| i->id == RISCV_INS_ALIAS_CSRW || i->id == RISCV_INS_ALIAS_CSRWI
+			|| i->id == RISCV_INS_ALIAS_FSFLAGS || i->id == RISCV_INS_ALIAS_FSCSR
+			|| i->id == RISCV_INS_ALIAS_FSRM || i->id == RISCV_INS_ALIAS_FSFLAGSI
+			|| i->id == RISCV_INS_ALIAS_FSRMI
+			|| alias == RISCV_INS_ALIAS_CSRW || alias == RISCV_INS_ALIAS_CSRWI
+			|| alias == RISCV_INS_ALIAS_FSFLAGS || alias == RISCV_INS_ALIAS_FSCSR
+			|| alias == RISCV_INS_ALIAS_FSRM || alias == RISCV_INS_ALIAS_FSFLAGSI
+			|| alias == RISCV_INS_ALIAS_FSRMI;
+	bool isSet = i->id == RISCV_INS_CSRRS || i->id == RISCV_INS_CSRRSI
+			|| i->id == RISCV_INS_ALIAS_CSRS || i->id == RISCV_INS_ALIAS_CSRSI
+			|| i->id == RISCV_INS_ALIAS_CSRR || i->id == RISCV_INS_ALIAS_FRFLAGS
+			|| i->id == RISCV_INS_ALIAS_FRRM || i->id == RISCV_INS_ALIAS_FRCSR
+			|| i->id == RISCV_INS_ALIAS_RDCYCLE || i->id == RISCV_INS_ALIAS_RDTIME
+			|| i->id == RISCV_INS_ALIAS_RDINSTRET || i->id == RISCV_INS_ALIAS_RDCYCLEH
+			|| i->id == RISCV_INS_ALIAS_RDTIMEH || i->id == RISCV_INS_ALIAS_RDINSTRETH
+			|| alias == RISCV_INS_ALIAS_CSRS || alias == RISCV_INS_ALIAS_CSRSI
+			|| alias == RISCV_INS_ALIAS_CSRR || alias == RISCV_INS_ALIAS_FRFLAGS
+			|| alias == RISCV_INS_ALIAS_FRRM || alias == RISCV_INS_ALIAS_FRCSR
+			|| alias == RISCV_INS_ALIAS_RDCYCLE || alias == RISCV_INS_ALIAS_RDTIME
+			|| alias == RISCV_INS_ALIAS_RDINSTRET || alias == RISCV_INS_ALIAS_RDCYCLEH
+			|| alias == RISCV_INS_ALIAS_RDTIMEH || alias == RISCV_INS_ALIAS_RDINSTRETH;
+	bool isClear = i->id == RISCV_INS_CSRRC || i->id == RISCV_INS_CSRRCI
+			|| i->id == RISCV_INS_ALIAS_CSRC || i->id == RISCV_INS_ALIAS_CSRCI
+			|| alias == RISCV_INS_ALIAS_CSRC || alias == RISCV_INS_ALIAS_CSRCI;
+
+	if (!isWrite && !isSet && !isClear)
+	{
+		isSet = true;
+	}
+
+	bool srcIsZero = false;
+	if (srcOp < 0)
+	{
+		srcIsZero = true;
+	}
+	else if (isImm || ri->operands[srcOp].type == RISCV_OP_IMM)
+	{
+		srcIsZero = llvm::isa<llvm::ConstantInt>(src)
+				&& llvm::cast<llvm::ConstantInt>(src)->isZero();
+	}
+	else if (ri->operands[srcOp].type == RISCV_OP_REG)
+	{
+		srcIsZero = ri->operands[srcOp].reg == RISCV_REG_X0;
+	}
+
+	bool rdIsZero = rdOp >= 0
+			&& ri->operands[rdOp].type == RISCV_OP_REG
+			&& ri->operands[rdOp].reg == RISCV_REG_X0;
+	if (rdOp < 0)
+	{
+		rdIsZero = true;
+	}
+
+	llvm::Value* old = nullptr;
+	if (!isWrite || !rdIsZero)
+	{
+		old = loadCsr(encoding, irb);
+		if (old == nullptr)
+		{
+			translatePseudoAsmGeneric(i, ri, irb);
+			return;
+		}
+		old = irb.CreateZExtOrTrunc(old, getDefaultType());
+		if (rdOp >= 0)
+		{
+			storeOp(ri->operands[rdOp], old, irb);
+		}
+	}
+
+	if (isWrite)
+	{
+		storeCsr(encoding, src, irb);
+	}
+	else if ((isSet || isClear) && !srcIsZero)
+	{
+		if (old == nullptr)
+		{
+			old = loadCsr(encoding, irb);
+			if (old == nullptr)
+			{
+				translatePseudoAsmGeneric(i, ri, irb);
+				return;
+			}
+			old = irb.CreateZExtOrTrunc(old, getDefaultType());
+		}
+		auto* next = isSet ? irb.CreateOr(old, src) : irb.CreateAnd(old, irb.CreateNot(src));
+		storeCsr(encoding, next, irb);
+	}
 }
 
 } // namespace capstone2llvmir

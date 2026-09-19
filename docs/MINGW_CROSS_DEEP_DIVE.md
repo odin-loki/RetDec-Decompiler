@@ -20,7 +20,7 @@ For a shorter **preset and path reference** (`build/linux/mingw-w64-release`, `d
 
 2. **OpenSSL** — With `fileformat` enabled, cross to Windows **requires**
    `RETDEC_BUNDLED_OPENSSL=ON`. The build runs `Configure mingw64` in a
-   bundled OpenSSL 3.2.6 source tree. This needs **Perl** and **make** on the
+   bundled OpenSSL 3.5.8 source tree. This needs **Perl** and **make** on the
    host. The key requirement: pass **only** `--cross-compile-prefix` to
    OpenSSL's configure, **not** explicit `CC`/`AR`/`RANLIB` env vars —
    OpenSSL derives all tool names from the prefix, and mixing both causes it
@@ -283,7 +283,7 @@ This is already applied in the source tree.
 |---------|-------|-----|
 | CMake warns: no `llvm-tblgen` | Host build missing or at wrong path | Run `wsl_configure_nosudo.sh` first; or pass `-DRETDEC_LLVM_TABLEGEN=...` |
 | `x86_64-w64-mingw32-x86_64-w64-mingw32-ar: No such file` | OpenSSL doubling prefix | Use only `--cross-compile-prefix`, no env CC/AR vars |
-| OpenSSL SHA256 mismatch | Wrong tarball URL or version | Verify URL and hash in `deps/openssl/CMakeLists.txt` (currently OpenSSL 3.2.6) |
+| OpenSSL SHA256 mismatch | Wrong tarball URL or version | Verify URL and hash in `deps/openssl/CMakeLists.txt` (currently OpenSSL 3.5.8) |
 | OpenSSL `libcrypto.a` not found, libs in `lib64/` | Default install dir | Add `--libdir=lib` to OpenSSL configure; or `ln -sfn lib64 lib` |
 | `retdec::macho-extractor` target not found | Component disabled | Add `-DRETDEC_ENABLE_MACHO_EXTRACTOR=ON` |
 | gtest target not found | Tests included in cross build | Set `-DRETDEC_TESTS=OFF -DRETDEC_ENABLE_GOOGLETEST=OFF` |

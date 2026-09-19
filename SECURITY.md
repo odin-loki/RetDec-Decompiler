@@ -65,7 +65,7 @@ Out of scope:
 
 ## FIPS
 
-This tree bundles OpenSSL 3.2.6 (`deps/openssl`). The default configure
+This tree bundles OpenSSL 3.5.8 (`deps/openssl`). The default configure
 does **not** enable the OpenSSL FIPS provider. Shipped binaries are **not**
 FIPS 140-3 validated. Do not treat `libcrypto` here as a FIPS module.
 

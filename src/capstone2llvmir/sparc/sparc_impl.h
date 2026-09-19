@@ -72,12 +72,20 @@ class Capstone2LlvmIrTranslatorSparc_impl :
 		bool isBigEndian() const;
 		bool isZeroRegister(uint32_t r) const;
 		bool isGeneralPurposeRegister(uint32_t r) const;
+		bool isFpSingleRegister(uint32_t r) const;
+		bool isFpDoubleRegister(uint32_t r) const;
+		bool isFccRegister(uint32_t r) const;
+		bool isGprPairRegister(uint32_t r) const;
+		uint32_t gprPairEven(uint32_t r) const;
+		uint32_t nextGpr(uint32_t r) const;
+		uint32_t fccFromField(sparc_cc_field field) const;
 
 		llvm::Value* loadOpAddress(cs_sparc_op& op, llvm::IRBuilder<>& irb);
 		std::pair<llvm::Value*, llvm::Value*> loadOpRs1Rs2(
 				cs_sparc* si,
 				llvm::IRBuilder<>& irb);
 		cs_sparc_op* destOperand(cs_sparc* si);
+		cs_sparc_op* fpDestOperand(cs_sparc* si);
 
 		void storeIcc(
 				llvm::Value* result,
@@ -85,11 +93,21 @@ class Capstone2LlvmIrTranslatorSparc_impl :
 				llvm::Value* op1,
 				bool isSub,
 				llvm::IRBuilder<>& irb);
+		void storeFcc(
+				llvm::Value* a,
+				llvm::Value* b,
+				uint32_t fccReg,
+				llvm::IRBuilder<>& irb);
 		llvm::Value* generateIccCondition(
 				sparc_cc cc,
 				uint32_t ccReg,
+				unsigned nibbleShift,
 				llvm::IRBuilder<>& irb);
-		uint32_t conditionRegister(cs_sparc* si) const;
+		llvm::Value* generateFccCondition(
+				sparc_cc cc,
+				uint32_t fccReg,
+				llvm::IRBuilder<>& irb);
+		llvm::Value* generateCondition(cs_sparc* si, llvm::IRBuilder<>& irb);
 
 		void copyOutsToIns(llvm::IRBuilder<>& irb);
 		void copyInsToOuts(llvm::IRBuilder<>& irb);
@@ -138,20 +156,29 @@ class Capstone2LlvmIrTranslatorSparc_impl :
 		void translateAdd(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateAnd(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateB(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
+		void translateBr(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateCall(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateCmp(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
+		void translateDiv(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
+		void translateFpArith(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
+		void translateFpCmp(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
+		void translateFpUnary(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateJmpl(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateLoad(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateMov(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
+		void translateMul(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateNop(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateOr(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
+		void translateRd(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateRestore(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateRet(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateRett(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateSave(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateSethi(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
+		void translateShift(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateStore(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateSub(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
+		void translateWr(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateXor(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 };
 

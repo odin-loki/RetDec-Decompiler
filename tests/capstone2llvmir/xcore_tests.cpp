@@ -428,6 +428,400 @@ TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_RETSP)
 	});
 }
 
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_BITREV)
+{
+	setRegisters({
+		{XCORE_REG_R10, 0x1},
+	});
+
+	emulate_bin("26 ff ec 07");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R10});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R1, 0x80000000},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("llvm.bitreverse.i32"), {0x1}},
+	});
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_BYTEREV)
+{
+	setRegisters({
+		{XCORE_REG_R1, 0x12345678},
+	});
+
+	emulate_bin("11 ff ec 07");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R4, 0x78563412},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_MKMSK)
+{
+	emulate_bin("72 a7");
+
+	EXPECT_NO_REGISTERS_LOADED();
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R4, 0x00ffffff},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_SEXT)
+{
+	setRegisters({
+		{XCORE_REG_R8, 0x0000ffff},
+	});
+
+	emulate_bin("b1 37");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R8});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R8, 0xffffffff},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_ZEXT)
+{
+	setRegisters({
+		{XCORE_REG_R3, 0x12345678},
+		{XCORE_REG_R8, 8},
+	});
+
+	emulate_bin("2c 47");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R3, XCORE_REG_R8});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R3, 0x78},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_DIVU)
+{
+	setRegisters({
+		{XCORE_REG_R1, 20},
+		{XCORE_REG_R3, 4},
+	});
+
+	emulate_bin("97 f8 ec 4f");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R1, XCORE_REG_R3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R9, 5},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_DIVS)
+{
+	setRegisters({
+		{XCORE_REG_R7, 0xffffffec},
+		{XCORE_REG_R2, 4},
+	});
+
+	emulate_bin("2e f9 ec 47");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R7, XCORE_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R6, 0xfffffffb},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_REMU)
+{
+	setRegisters({
+		{XCORE_REG_R2, 20},
+		{XCORE_REG_R3, 6},
+	});
+
+	emulate_bin("1b f8 ec cf");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R2, XCORE_REG_R3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R1, 2},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_EXTSP)
+{
+	setRegisters({
+		{XCORE_REG_SP, 0x2000},
+	});
+
+	emulate_bin("89 77");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_SP});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_SP, 0x2000 - 9 * 4},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_EXTDP)
+{
+	setRegisters({
+		{XCORE_REG_DP, 0x2000},
+	});
+
+	emulate_bin("84 73");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_DP});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_DP, 0x2000 - 4 * 4},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_LDA16)
+{
+	setRegisters({
+		{XCORE_REG_R2, 0x1000},
+		{XCORE_REG_R1, 3},
+	});
+
+	emulate_bin("b9 f8 ec 2f");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R2, XCORE_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R11, 0x1000 + 3 * 2},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_LDAP)
+{
+	emulate_bin("28 d8", 0x1000);
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R11, ANY},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_LMUL)
+{
+	setRegisters({
+		{XCORE_REG_R2, 2},
+		{XCORE_REG_R5, 3},
+		{XCORE_REG_R8, 4},
+		{XCORE_REG_R10, 5},
+	});
+
+	emulate_bin("f9 fa 02 06");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R2, XCORE_REG_R5, XCORE_REG_R8, XCORE_REG_R10});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R11, 0},
+		{XCORE_REG_R0, 15},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_LADD)
+{
+	setRegisters({
+		{XCORE_REG_R5, 0xffffffff},
+		{XCORE_REG_R1, 1},
+		{XCORE_REG_R7, 0},
+	});
+
+	emulate_bin("e5 f8 fb 06");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R5, XCORE_REG_R1, XCORE_REG_R7});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R10, 0},
+		{XCORE_REG_R2, 1},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_MACCU)
+{
+	setRegisters({
+		{XCORE_REG_R0, 0},
+		{XCORE_REG_R2, 1},
+		{XCORE_REG_R5, 2},
+		{XCORE_REG_R8, 3},
+	});
+
+	emulate_bin("44 fd f2 07");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R0, XCORE_REG_R2, XCORE_REG_R5, XCORE_REG_R8});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R0, 0},
+		{XCORE_REG_R2, 7},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_CRC32_zero)
+{
+	setRegisters({
+		{XCORE_REG_R5, 0},
+		{XCORE_REG_R6, 0},
+		{XCORE_REG_R1, 0x04c11db7},
+	});
+
+	emulate_bin("19 f9 ec af");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R5, XCORE_REG_R6, XCORE_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R5, 0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_SSYNC)
+{
+	emulate_bin("ee 07");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_GET)
+{
+	setRegisters({
+		{XCORE_REG_ID, 3},
+	});
+
+	emulate_bin("ee 17");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_ID});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R11, 3},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_SET)
+{
+	setRegisters({
+		{XCORE_REG_R3, 0x3000},
+	});
+
+	emulate_bin("f3 2f");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_SP, 0x3000},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_BLAT)
+{
+	setRegisters({
+		{XCORE_REG_CP, 0x1000},
+	});
+	setMemory({
+		{0x1000 + 9 * 4, 0x2000_dw},
+	});
+
+	emulate_bin("49 73", 0x3000);
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_CP});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_LR, 0x3002},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000 + 9 * 4});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCallFunction(), {0x2000}},
+	});
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_KENTSP)
+{
+	setRegisters({
+		{XCORE_REG_SP, 0x2000},
+	});
+
+	emulate_bin("96 7b");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_SP});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_KSP, 0x2000},
+		{XCORE_REG_SP, 0x2000 - 22 * 4},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_ECALLF_not_taken)
+{
+	setRegisters({
+		{XCORE_REG_R5, 1},
+		{XCORE_REG_KEP, 0x4000},
+	});
+
+	emulate_bin("e5 4f");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R5, XCORE_REG_KEP});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_ASHR)
+{
+	setRegisters({
+		{XCORE_REG_R1, 0xfffffff0},
+	});
+
+	emulate_bin("57 f8 ec 97");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R5, 0xfffffffe},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_CLZ)
+{
+	setRegisters({
+		{XCORE_REG_R10, 1},
+	});
+
+	emulate_bin("ae ff ec 0f");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R10});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R11, 31},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_F(Capstone2LlvmIrTranslatorXcoreTests, translatorIs32Bit)
 {
 	EXPECT_EQ(4u, _translator->getArchByteSize());

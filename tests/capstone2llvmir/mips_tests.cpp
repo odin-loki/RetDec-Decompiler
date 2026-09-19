@@ -12,6 +12,13 @@
 #include "capstone2llvmir/capstone2llvmir_tests.h"
 #include "retdec/capstone2llvmir/mips/mips.h"
 
+#ifndef MIPS_REG_HI
+#define MIPS_REG_HI MIPS_REG_HI0
+#endif
+#ifndef MIPS_REG_LO
+#define MIPS_REG_LO MIPS_REG_LO0
+#endif
+
 using namespace ::testing;
 using namespace llvm;
 
@@ -697,27 +704,48 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MULTU)
 // MIPS_INS_DIV
 //
 
-// TODO: For some reason, Keystone translates "div $1, $2" into 10 instructions.
-//
-//TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DIV)
-//{
-//	SKIP_MODE_64;
-//
-//	setRegisters({
-//		{MIPS_REG_2, 105},
-//		{MIPS_REG_3, 10},
-//	});
-//
-//	emulate("div $2, $3");
-//
-//	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
-//	EXPECT_JUST_REGISTERS_STORED({
-//		{MIPS_REG_HI, 5},
-//		{MIPS_REG_LO, 10},
-//	});
-//	EXPECT_NO_MEMORY_LOADED_STORED();
-//	EXPECT_NO_VALUE_CALLED();
-//}
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DIV_32)
+{
+	SKIP_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_2, 105},
+		{MIPS_REG_3, 10},
+	});
+
+	// Keystone expands "div $2, $3" into a multi-insn sequence. SPECIAL /
+	// DIV rs=$2 rt=$3 → 0x0043001A, little-endian.
+	emulate_bin("1a 00 43 00");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_HI, 5},
+		{MIPS_REG_LO, 10},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DIVU)
+{
+	SKIP_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_2, 105},
+		{MIPS_REG_3, 10},
+	});
+
+	// SPECIAL / DIVU rs=$2 rt=$3 → 0x0043001B.
+	emulate_bin("1b 00 43 00");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_HI, 5},
+		{MIPS_REG_LO, 10},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
 
 //
 // MIPS_INS_SLL
@@ -4630,18 +4658,18 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ABS_s_32)
 	SKIP_MODE_64;
 
 	setRegisters({
-		{MIPS_REG_F2, 3.14_f32},
+		{MIPS_REG_F2, -3.14f},
 	});
 
 	emulate("abs.s $f0, $f2");
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_F0, ANY},
+		{MIPS_REG_F0, 3.14_f32},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_abs.s"), {3.14_f32}},
+		{_module.getFunction("llvm.fabs.f32"), {-3.14f}},
 	});
 }
 
@@ -4650,18 +4678,18 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ABS_d_32)
 	SKIP_MODE_64;
 
 	setRegisters({
-		{MIPS_REG_FD2, 3.14_f64},
+		{MIPS_REG_FD2, -3.14},
 	});
 
 	emulate("abs.d $f0, $f2");
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_FD2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_FD0, ANY},
+		{MIPS_REG_FD0, 3.14_f64},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_abs.d"), {3.14_f64}},
+		{_module.getFunction("llvm.fabs.f64"), {-3.14}},
 	});
 }
 
@@ -4670,18 +4698,18 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ABS_s_64)
 	ONLY_MODE_64;
 
 	setRegisters({
-		{MIPS_REG_F2, 3.14_f64},
+		{MIPS_REG_F2, -3.14},
 	});
 
 	emulate("abs.s $f0, $f2");
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_F0, ANY},
+		{MIPS_REG_F0, 3.14_f64},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_abs.s"), {3.14_f64}},
+		{_module.getFunction("llvm.fabs.f64"), {-3.14}},
 	});
 }
 
@@ -4690,18 +4718,18 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ABS_d_64)
 	ONLY_MODE_64;
 
 	setRegisters({
-		{MIPS_REG_F2, 3.14_f64},
+		{MIPS_REG_F2, -3.14},
 	});
 
 	emulate("abs.d $f0, $f2");
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_F0, ANY},
+		{MIPS_REG_F0, 3.14_f64},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_abs.d"), {3.14_f64}},
+		{_module.getFunction("llvm.fabs.f64"), {-3.14}},
 	});
 }
 
@@ -4761,12 +4789,10 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_NEG_s_32)
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_F0, ANY},
+		{MIPS_REG_F0, -3.14f},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_neg.s"), {3.14_f32}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_NEG_d_32)
@@ -4781,12 +4807,10 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_NEG_d_32)
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_FD2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_FD0, ANY},
+		{MIPS_REG_FD0, -3.14},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_neg.d"), {3.14_f64}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_NEG_s_64)
@@ -4801,12 +4825,10 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_NEG_s_64)
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_F0, ANY},
+		{MIPS_REG_F0, -3.14},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_neg.s"), {3.14_f64}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_NEG_d_64)
@@ -4821,12 +4843,10 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_NEG_d_64)
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_F0, ANY},
+		{MIPS_REG_F0, -3.14},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_neg.d"), {3.14_f64}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -4838,18 +4858,18 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SQRT_s_32)
 	SKIP_MODE_64;
 
 	setRegisters({
-		{MIPS_REG_F2, 3.14_f32},
+		{MIPS_REG_F2, 16.0_f32},
 	});
 
 	emulate("sqrt.s $f0, $f2");
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_F0, ANY},
+		{MIPS_REG_F0, 4.0_f32},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_sqrt.s"), {3.14_f32}},
+		{_module.getFunction("llvm.sqrt.f32"), {16.0_f32}},
 	});
 }
 
@@ -4858,18 +4878,18 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SQRT_d_32)
 	SKIP_MODE_64;
 
 	setRegisters({
-		{MIPS_REG_FD2, 3.14_f64},
+		{MIPS_REG_FD2, 16.0_f64},
 	});
 
 	emulate("sqrt.d $f0, $f2");
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_FD2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_FD0, ANY},
+		{MIPS_REG_FD0, 4.0_f64},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_sqrt.d"), {3.14_f64}},
+		{_module.getFunction("llvm.sqrt.f64"), {16.0_f64}},
 	});
 }
 
@@ -4878,18 +4898,18 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SQRT_s_64)
 	ONLY_MODE_64;
 
 	setRegisters({
-		{MIPS_REG_F2, 3.14_f64},
+		{MIPS_REG_F2, 16.0_f64},
 	});
 
 	emulate("sqrt.s $f0, $f2");
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_F0, ANY},
+		{MIPS_REG_F0, 4.0_f64},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_sqrt.s"), {3.14_f64}},
+		{_module.getFunction("llvm.sqrt.f64"), {16.0_f64}},
 	});
 }
 
@@ -4898,18 +4918,18 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SQRT_d_64)
 	ONLY_MODE_64;
 
 	setRegisters({
-		{MIPS_REG_F2, 3.14_f64},
+		{MIPS_REG_F2, 16.0_f64},
 	});
 
 	emulate("sqrt.d $f0, $f2");
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_F0, ANY},
+		{MIPS_REG_F0, 4.0_f64},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_sqrt.d"), {3.14_f64}},
+		{_module.getFunction("llvm.sqrt.f64"), {16.0_f64}},
 	});
 }
 
@@ -6569,15 +6589,9 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, issue_633)
 
 	emulate_bin("c0 ff b7 79"); // ori.b $w31, $w31, 0xb7
 
-	// MSA shares its capstone ids with the scalar instructions it is named
-	// after: this is MIPS_INS_ORI, the same id as a plain `ori`. It used to
-	// reach translateOr, which OR'd the immediate into the LOW BYTE of the
-	// register -- where ORI.B ORs it into all sixteen byte lanes. The value
-	// was never checked here (the expectation was ANY), so the wrong answer
-	// passed.
-	//
-	// MSA is not modelled, so the honest answer is the pseudo-assembly call
-	// every other unmodelled instruction gets.
+	// Capstone 6 gives MSA its own ids: this is MIPS_INS_ORI_B, not scalar
+	// ORI. Byte-immediate MSA is not modelled, so the honest answer is the
+	// pseudo-assembly call every other unmodelled instruction gets.
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_W31});
 	EXPECT_NO_REGISTERS_STORED();
 	EXPECT_NO_MEMORY_LOADED_STORED();

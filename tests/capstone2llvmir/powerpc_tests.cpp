@@ -80,6 +80,29 @@ class Capstone2LlvmIrTranslatorPowerpcTests :
 #define SKIP_MODE_32 if (GetParam() == CS_MODE_32) return;
 #define SKIP_MODE_64 if (GetParam() == CS_MODE_64) return;
 #define SKIP_MODE_QPX if (GetParam() == CS_MODE_QPX) return;
+		void setV(uint32_t reg, uint64_t hi, uint64_t lo)
+		{
+			auto* gv = getRegister(reg);
+			assert(gv);
+			llvm::GenericValue v = _emulator->getGlobalVariableValue(gv);
+			const uint64_t words[2] = {lo, hi};
+			v.IntVal = llvm::APInt(128, llvm::ArrayRef<uint64_t>(words, 2));
+			_emulator->setGlobalVariableValue(gv, v);
+		}
+
+		uint64_t vLow(uint32_t reg)
+		{
+			auto* gv = getRegister(reg);
+			assert(gv);
+			return _emulator->getGlobalVariableValue(gv).IntVal.trunc(64).getZExtValue();
+		}
+
+		uint64_t vHigh(uint32_t reg)
+		{
+			auto* gv = getRegister(reg);
+			assert(gv);
+			return _emulator->getGlobalVariableValue(gv).IntVal.lshr(64).trunc(64).getZExtValue();
+		}
 };
 
 struct PrintCapstoneModeToString_Powerpc
@@ -11470,6 +11493,185 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FCPSGN)
 	EXPECT_JUST_REGISTERS_STORED({
 		{PPC_REG_F0, -3.5},
 	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FCMPO_less_than)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F1, 1.0_f64},
+		{PPC_REG_F2, 2.0_f64},
+	});
+
+	emulate_bin("fc 01 10 40");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_CR0LT, true},
+		{PPC_REG_CR0GT, false},
+		{PPC_REG_CR0EQ, false},
+		{PPC_REG_CR0UN, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// Altivec / VSX — gcc -O1. Binary encodings so Keystone does not have to
+// know VMX/VSX; Capstone 6 plain PPC32/64 already decodes these (do not
+// OR CS_MODE_PWR7 — that drops classic fadd).
+//
+// vand v2,v3,v4  VX-form opcode 4 VX=1028
+// vor  v2,v3,v4  VX=1156
+// vxor v2,v2,v2  VX=1220  (the compiler's vector zero)
+// lvx  v2,0,r3   X-form opcode 31 XO=103
+// stvx v2,0,r3   XO=231
+// xsadddp f1,f2,f3  XX3 opcode 60 XO=32 T=1 A=2 B=3  → f0221900
+// xsmuldp f1,f2,f3  XX3 XO=48                         → f0221980
+// xxlor vs1,vs2,vs2 XX3 XO=146                         → f0221490
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VAND)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0x0f0f0f0f0f0f0f0fULL, 0xf0f0f0f0f0f0f0f0ULL);
+	setV(PPC_REG_V4, 0x00ff00ff00ff00ffULL, 0xff00ff00ff00ff00ULL);
+
+	emulate_bin("10 43 24 04");
+
+	EXPECT_EQ(0x000f000f000f000fULL, vHigh(PPC_REG_V2));
+	EXPECT_EQ(0xf000f000f000f000ULL, vLow(PPC_REG_V2));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VOR)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0x0000000000000001ULL, 0x0000000000000002ULL);
+	setV(PPC_REG_V4, 0x0000000000000004ULL, 0x0000000000000008ULL);
+
+	emulate_bin("10 43 24 84");
+
+	EXPECT_EQ(0x0000000000000005ULL, vHigh(PPC_REG_V2));
+	EXPECT_EQ(0x000000000000000aULL, vLow(PPC_REG_V2));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VXOR_zero)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V2, 0xdeadbeefdeadbeefULL, 0xcafecafecafecafeULL);
+
+	emulate_bin("10 42 14 c4");
+
+	EXPECT_EQ(0ULL, vHigh(PPC_REG_V2));
+	EXPECT_EQ(0ULL, vLow(PPC_REG_V2));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VSPLTISW_minus_one)
+{
+	ALL_MODES;
+
+	emulate_bin("10 5f 03 8c");
+
+	EXPECT_EQ(0xffffffffffffffffULL, vHigh(PPC_REG_V2));
+	EXPECT_EQ(0xffffffffffffffffULL, vLow(PPC_REG_V2));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LVX)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R3, 0x2000},
+	});
+	setV(PPC_REG_V2, 0, 0);
+
+	setMemoryValueUnsigned(0x2000, 0xfedcba9876543210ULL, 64);
+	setMemoryValueUnsigned(0x2008, 0x0123456789abcdefULL, 64);
+
+	emulate_bin("7c 40 18 ce");
+
+	EXPECT_EQ(0xfedcba9876543210ULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
+	EXPECT_EQ(0x0123456789abcdefULL, vLow(PPC_REG_V2)) << dumpFunction(_function);
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STVX)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R3, 0x2000},
+	});
+	setV(PPC_REG_V2, 0x1111111111111111ULL, 0x2222222222222222ULL);
+
+	emulate_bin("7c 40 19 ce");
+
+	EXPECT_EQ(0x1111111111111111ULL, getMemoryValueUnsigned(0x2000, 64)) << dumpFunction(_function);
+	EXPECT_EQ(0x2222222222222222ULL, getMemoryValueUnsigned(0x2008, 64)) << dumpFunction(_function);
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSADDDP)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F2, 1.5_f64},
+		{PPC_REG_F3, 2.25_f64},
+	});
+
+	emulate_bin("f0 22 19 00");
+
+	EXPECT_EQ(3.75, getRegisterValueDouble(PPC_REG_F1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSMULDP)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F2, 1.5_f64},
+		{PPC_REG_F3, 4.0_f64},
+	});
+
+	emulate_bin("f0 22 19 80");
+
+	EXPECT_EQ(6.0, getRegisterValueDouble(PPC_REG_F1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XXLOR_move)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_VSL2, 0x4022000000000000ULL, 0); // 9.0 in the high doubleword
+
+	emulate_bin("f0 22 14 90");
+
+	EXPECT_EQ(0x4022000000000000ULL, vHigh(PPC_REG_VSL1));
+	EXPECT_EQ(0ULL, vLow(PPC_REG_VSL1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VADDFP)
+{
+	ALL_MODES;
+
+	// 1.0f and 2.0f in each of four lanes: 0x3f800000 and 0x40000000.
+	setV(PPC_REG_V3, 0x3f8000003f800000ULL, 0x3f8000003f800000ULL);
+	setV(PPC_REG_V4, 0x4000000040000000ULL, 0x4000000040000000ULL);
+
+	emulate_bin("10 43 20 0a");
+
+	EXPECT_EQ(0x4040000040400000ULL, vHigh(PPC_REG_V2));
+	EXPECT_EQ(0x4040000040400000ULL, vLow(PPC_REG_V2));
+	EXPECT_NO_VALUE_CALLED();
 }
 
 } // namespace tests

@@ -15,6 +15,7 @@ add_executable(tests-capstone2llvmir
 target_include_directories(tests-capstone2llvmir
 	PRIVATE
 		${RETDEC_TESTS_DIR}
+		${RETDEC_SOURCE_DIR}
 )
 
 target_link_libraries(tests-capstone2llvmir

@@ -103,6 +103,72 @@ void appendFadd(std::vector<uint8_t>& v)
 	le64bytes(v, 0x0000000502097221ULL);
 	le64bytes(v, 0x004fca0000000000ULL);
 }
+void appendImadMov1282(std::vector<uint8_t>& v)
+{
+	// IMAD.MOV.U32 R1, RZ, RZ, c[0x0][0x28] — CUDA Binary Utilities 12.8.2
+	le64bytes(v, 0x00000a00ff017624ULL);
+	le64bytes(v, 0x000fd000078e00ffULL);
+}
+void appendMov1282(std::vector<uint8_t>& v)
+{
+	// MOV R3, c[0x0][0x164] — CUDA Binary Utilities 12.8.2
+	le64bytes(v, 0x0000590000037a02ULL);
+	le64bytes(v, 0x000fe20000000f00ULL);
+}
+void appendBra1282(std::vector<uint8_t>& v)
+{
+	// BRA 0xd0 — CUDA Binary Utilities 12.8.2
+	le64bytes(v, 0xfffffff000007947ULL);
+	le64bytes(v, 0x000fc0000383ffffULL);
+}
+void appendShfl1282(std::vector<uint8_t>& v)
+{
+	// @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ — CUDA Binary Utilities 12.8.2
+	le64bytes(v, 0x000000fffffff389ULL);
+	le64bytes(v, 0x000fe200000e00ffULL);
+}
+void appendImadWide133(std::vector<uint8_t>& v)
+{
+	// IMAD.WIDE R2, R9, 0x4, R2 — CUDA Binary Utilities 13.3
+	le64bytes(v, 0x0000000409027825ULL);
+	le64bytes(v, 0x004fcc00078e0202ULL);
+}
+void appendImadUr133(std::vector<uint8_t>& v)
+{
+	// IMAD R9, R0, UR6, R9 — CUDA Binary Utilities 13.3
+	le64bytes(v, 0x0000000600097c24ULL);
+	le64bytes(v, 0x001fce000f8e0209ULL);
+}
+void appendS2ur133(std::vector<uint8_t>& v)
+{
+	// S2UR UR6, SR_CTAID.X — CUDA Binary Utilities 13.3
+	le64bytes(v, 0x00000000000679c3ULL);
+	le64bytes(v, 0x000e220000002500ULL);
+}
+void appendLdcu133(std::vector<uint8_t>& v)
+{
+	// LDCU.64 UR4, c[0x0][0x358] — CUDA Binary Utilities 13.3
+	le64bytes(v, 0x00006b00ff0477acULL);
+	le64bytes(v, 0x000e6e0008000a00ULL);
+}
+void appendLdg7981(std::vector<uint8_t>& v)
+{
+	// LDG.E R2, desc[UR4][R2.64] — CUDA Binary Utilities 13.3
+	le64bytes(v, 0x0000000402027981ULL);
+	le64bytes(v, 0x002ea2000c1e1900ULL);
+}
+void appendStg7986(std::vector<uint8_t>& v)
+{
+	// STG.E desc[UR4][R6.64], R9 — CUDA Binary Utilities 13.3
+	le64bytes(v, 0x0000000906007986ULL);
+	le64bytes(v, 0x000fe2000c101904ULL);
+}
+void appendBra133(std::vector<uint8_t>& v)
+{
+	// BRA 0x110 — CUDA Binary Utilities 13.3
+	le64bytes(v, 0xfffffffc00fc7947ULL);
+	le64bytes(v, 0x000fc0000383ffffULL);
+}
 
 std::vector<uint8_t> makeCubin(bool elf64, uint32_t sm, const std::string& secName, const std::vector<uint8_t>& text)
 {
@@ -290,6 +356,84 @@ TEST(SassDecoder, S2rLdgStgFadd)
 	EXPECT_EQ(ins[3].dest, 9);
 }
 
+TEST(SassDecoder, ImadMovAndMovFromNvidia1282)
+{
+	SassDecoder d(80, 64);
+	std::vector<uint8_t> bytes;
+	appendImadMov1282(bytes);
+	appendMov1282(bytes);
+	auto ins = d.decodeStream(bytes);
+	ASSERT_EQ(ins.size(), 2u);
+	EXPECT_EQ(ins[0].opcode, SassOpcode::Imad);
+	EXPECT_EQ(ins[0].dest, 1);
+	EXPECT_EQ(ins[0].src0, 255);
+	EXPECT_EQ(ins[1].opcode, SassOpcode::Mov);
+	EXPECT_EQ(ins[1].dest, 3);
+	EXPECT_EQ(sassOpcodeName(ins[0].opcode), std::string("IMAD"));
+	EXPECT_EQ(sassOpcodeName(ins[1].opcode), std::string("MOV"));
+}
+
+TEST(SassDecoder, BraShflFromNvidia1282)
+{
+	SassDecoder d(70, 64);
+	std::vector<uint8_t> bytes;
+	appendBra1282(bytes);
+	appendShfl1282(bytes);
+	auto ins = d.decodeStream(bytes);
+	ASSERT_EQ(ins.size(), 2u);
+	EXPECT_EQ(ins[0].opcode, SassOpcode::Bra);
+	EXPECT_TRUE(ins[0].decoded);
+	EXPECT_EQ(ins[1].opcode, SassOpcode::Shfl);
+	EXPECT_EQ(ins[1].dest, 255);
+	EXPECT_EQ(sassOpcodeName(ins[1].opcode), std::string("SHFL"));
+}
+
+TEST(SassDecoder, ImadWideS2urLdcuFromNvidia133)
+{
+	SassDecoder d(80, 64);
+	std::vector<uint8_t> bytes;
+	appendImadWide133(bytes);
+	appendImadUr133(bytes);
+	appendS2ur133(bytes);
+	appendLdcu133(bytes);
+	auto ins = d.decodeStream(bytes);
+	ASSERT_EQ(ins.size(), 4u);
+	EXPECT_EQ(ins[0].opcode, SassOpcode::ImadWide);
+	EXPECT_EQ(ins[0].dest, 2);
+	EXPECT_EQ(ins[0].src0, 9);
+	EXPECT_EQ(ins[0].src1, 4);
+	EXPECT_EQ(ins[0].src2, 2);
+	EXPECT_EQ(ins[1].opcode, SassOpcode::Imad);
+	EXPECT_EQ(ins[1].dest, 9);
+	EXPECT_EQ(ins[1].src0, 0);
+	EXPECT_EQ(ins[1].src1, 6);
+	EXPECT_EQ(ins[1].src2, 9);
+	EXPECT_EQ(ins[2].opcode, SassOpcode::S2ur);
+	EXPECT_EQ(ins[2].dest, 6);
+	EXPECT_EQ(ins[3].opcode, SassOpcode::Ldcu);
+	EXPECT_EQ(ins[3].dest, 4);
+	EXPECT_EQ(sassOpcodeName(ins[0].opcode), std::string("IMAD.WIDE"));
+	EXPECT_EQ(sassOpcodeName(ins[2].opcode), std::string("S2UR"));
+	EXPECT_EQ(sassOpcodeName(ins[3].opcode), std::string("LDCU"));
+}
+
+TEST(SassDecoder, LdgStgBraVariantsFromNvidia133)
+{
+	SassDecoder d(80, 64);
+	std::vector<uint8_t> bytes;
+	appendLdg7981(bytes);
+	appendStg7986(bytes);
+	appendBra133(bytes);
+	auto ins = d.decodeStream(bytes);
+	ASSERT_EQ(ins.size(), 3u);
+	EXPECT_EQ(ins[0].opcode, SassOpcode::Ldg);
+	EXPECT_EQ(ins[0].dest, 2);
+	EXPECT_EQ(ins[1].opcode, SassOpcode::Stg);
+	EXPECT_EQ(ins[1].src0, 6);
+	EXPECT_EQ(ins[1].src1, 9);
+	EXPECT_EQ(ins[2].opcode, SassOpcode::Bra);
+}
+
 TEST(SassDecoder, UnknownOpcodeStaysUnknown)
 {
 	SassDecoder d(80, 64);
@@ -422,6 +566,41 @@ TEST(SassLifter, ThirtyTwoBitPointersInLoad)
 	auto c = decompileCudaBinary(cubin.data(), cubin.size());
 	EXPECT_NE(c.find("uint32_t"), std::string::npos);
 	EXPECT_NE(c.find("32-bit GPU pointers"), std::string::npos);
+}
+
+TEST(SassLifter, ImadWideAndS2urToCudaC)
+{
+	std::vector<uint8_t> text;
+	appendS2ur133(text);
+	appendImadWide133(text);
+	appendLdg7981(text);
+	appendFadd(text);
+	appendStg7986(text);
+	appendExitSm70(text);
+	auto cubin = makeCubin(true, 0x50, ".text.add", text);
+	auto c = decompileCudaBinary(cubin.data(), cubin.size());
+	EXPECT_NE(c.find("__global__ void add"), std::string::npos);
+	EXPECT_NE(c.find("blockIdx.x"), std::string::npos);
+	EXPECT_NE(c.find("IMAD.WIDE"), std::string::npos);
+	EXPECT_NE(c.find("r2 = r9 * 4u + r2"), std::string::npos);
+	EXPECT_NE(c.find("*(float*)&r9 = *(float*)&r2 + *(float*)&r5"), std::string::npos);
+	EXPECT_NE(c.find("uint64_t"), std::string::npos);
+	EXPECT_NE(c.find("64-bit GPU pointers"), std::string::npos);
+	EXPECT_NE(c.find("return;"), std::string::npos);
+	EXPECT_NE(c.find("NOT Production"), std::string::npos);
+}
+
+TEST(SassLifter, ShflAndBraFromNvidiaListings)
+{
+	std::vector<uint8_t> text;
+	appendShfl1282(text);
+	appendBra1282(text);
+	appendExitSm70(text);
+	auto cubin = makeCubin(true, 0x50, ".text.k", text);
+	auto c = decompileCudaBinary(cubin.data(), cubin.size());
+	EXPECT_NE(c.find("SHFL.IDX"), std::string::npos);
+	EXPECT_NE(c.find("goto L_bra_"), std::string::npos);
+	EXPECT_NE(c.find("return;"), std::string::npos);
 }
 
 TEST(SassLifter, FatbinPtxIsLabelledNotSass)

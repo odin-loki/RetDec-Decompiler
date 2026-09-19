@@ -1,20 +1,20 @@
 # URLs below are required artifact locations for CMake dependency downloads (not documentation).
 
 set(CAPSTONE_URL
-    "https://github.com/capstone-engine/capstone/archive/refs/tags/5.0.9.zip"
+    "https://github.com/capstone-engine/capstone/archive/refs/tags/6.0.0-Alpha10.zip"
     CACHE STRING "URL of Capstone archive to use."
 )
 set(CAPSTONE_ARCHIVE_SHA256
-    "0a651143e88a9c244a05dba149ee34e0379bebffa392eb4ccc285fc360442c4d"
+    "b42356d981d4c9e791c917b682689e8baeaa0e0db5385ded17254b1214828ee4"
     CACHE STRING ""
 )
 
 set(GOOGLETEST_URL
-    "https://github.com/google/googletest/archive/refs/tags/v1.15.2.zip"
+    "https://github.com/google/googletest/archive/refs/tags/v1.18.0.zip"
     CACHE STRING "URL of Googletest archive to use."
 )
 set(GOOGLETEST_ARCHIVE_SHA256
-    "f179ec217f9b3b3f3c6e8b02d3e7eda997b49e4ce26d6b235c9053bec9c0bf9f"
+    "63b9c77751a5b8f492486005f67533fdc58682b67476fcb91650be5958d5195a"
     CACHE STRING ""
 )
 
@@ -70,14 +70,14 @@ set(YARAMOD_ARCHIVE_SHA256
 # whatever that was -- and then the build had nowhere else to go. madler's
 # GitHub release asset is byte-identical to zlib.net's tarball (same SHA256,
 # 1,512,791 bytes, verified) and is served by a CDN, so it goes first.
-# The bare https://www.zlib.net/zlib-1.3.1.tar.gz is NOT a fallback: it is a
+# The bare https://www.zlib.net/zlib-1.3.2.tar.gz is NOT a fallback: it is a
 # 355-byte error page.
 set(ZLIB_URL
-	"https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz;https://zlib.net/fossils/zlib-1.3.1.tar.gz"
+	"https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz;https://zlib.net/fossils/zlib-1.3.2.tar.gz"
 	CACHE STRING "URLs of the zlib tarball, tried in order (GitHub release asset, then zlib.net fossils)."
 )
 set(ZLIB_ARCHIVE_SHA256
-	"9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23"
+	"bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16"
 	CACHE STRING ""
 )
 
@@ -95,23 +95,23 @@ set(SUPPORT_PKG_VERSION
 )
 
 # llama.cpp — enable with -DRETDEC_ENABLE_LLAMACPP=ON; bump via scripts/upgrade-dep.sh LLAMACPP
-# b10451 is current as of 2026-08-16 and includes qwen35 / MTP (b9180+).
+# v0.4.1 is the latest stable semver (nightly line is bNNNN; do not pin nightlies).
 set(LLAMACPP_URL
-    "https://github.com/ggml-org/llama.cpp/archive/refs/tags/b10451.zip"
+    "https://github.com/ggml-org/llama.cpp/archive/refs/tags/v0.4.1.zip"
     CACHE STRING "URL of llama.cpp archive to use."
 )
 set(LLAMACPP_ARCHIVE_SHA256
-    "b04aeb511cc05451a410437eacd5a2d64a3130c27f10a54a23ad948369816cad"
+    "cc4ddb85b68fc4a03f606d7911528796815966273c3a61dfba6fc69932b15cfa"
     CACHE STRING ""
 )
 
 # xsimd — header-only; enable with -DRETDEC_ENABLE_XSIMD=ON. Do not vendor under deps/xsimd/.
 set(XSIMD_URL
-    "https://github.com/xtensor-stack/xsimd/archive/refs/tags/13.2.0.zip"
+    "https://github.com/xtensor-stack/xsimd/archive/refs/tags/14.3.0.zip"
     CACHE STRING "URL of xsimd archive to use."
 )
 set(XSIMD_ARCHIVE_SHA256
-    "3ff360dc82109b11b35389a5dfed8ac15155f356f39840dff2be2e230b935b8c"
+    "b768fe65493c6f3849dcbdd34987382f31e4b561eb15b663a51af5f105fc4aca"
     CACHE STRING ""
 )
 
@@ -126,13 +126,13 @@ set(TREE_SITTER_C_ARCHIVE_SHA256
     CACHE STRING ""
 )
 
-# tree-sitter runtime — ABI 15, compatible with tree-sitter-c 0.24.2 (ABI 14).
+# tree-sitter runtime — ABI 15, compatible with tree-sitter-c 0.24.2 (LANGUAGE_VERSION 15).
 set(TREE_SITTER_URL
-    "https://github.com/tree-sitter/tree-sitter/archive/refs/tags/v0.26.12.zip"
+    "https://github.com/tree-sitter/tree-sitter/archive/refs/tags/v0.27.0.zip"
     CACHE STRING "URL of tree-sitter archive to use."
 )
 set(TREE_SITTER_ARCHIVE_SHA256
-    "cbafe90818093cd5f2b2f56ff8c10504bab9f26840a80fabd11985e2445f91ee"
+    "71e0997e8ada866c673b63836f8aa2ea8035d251d1ec62fc33e1e191e0916e95"
     CACHE STRING ""
 )
 option(RETDEC_SUPPORT_PKG_VERIFY_SHA256

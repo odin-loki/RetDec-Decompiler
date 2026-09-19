@@ -89,6 +89,21 @@ class Capstone2LlvmIrTranslatorXcore_impl :
 				bool arithmetic,
 				bool left,
 				llvm::IRBuilder<>& irb);
+		llvm::Value* generateMakeMask(
+				llvm::Value* bits,
+				llvm::IRBuilder<>& irb);
+		llvm::Value* generateCrc(
+				llvm::Value* crc,
+				llvm::Value* data,
+				llvm::Value* poly,
+				unsigned bitCount,
+				llvm::IRBuilder<>& irb);
+		void translateDivRem(
+				cs_insn* i,
+				cs_xcore* xi,
+				llvm::IRBuilder<>& irb,
+				bool isSigned,
+				bool remainder);
 
 //
 //==============================================================================
@@ -137,6 +152,39 @@ class Capstone2LlvmIrTranslatorXcore_impl :
 		void translateBla(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
 		void translateRetsp(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
 		void translateEntsp(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateBitrev(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateByterev(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateMkmsk(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateSext(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateZext(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateDiv(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateRem(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateLdap(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateExtsp(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateExtdp(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateLadd(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateLsub(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateLmul(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateLdivu(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateMacc(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateCrc32(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateCrc8(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateBlat(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateDcall(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateDret(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateKcall(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateKret(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateEcall(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateDentsp(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateDrestsp(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateKentsp(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateKrestsp(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateGet(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateSet(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateGetsr(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateSetsr(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateClrsr(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateNop(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
 };
 
 } // namespace capstone2llvmir

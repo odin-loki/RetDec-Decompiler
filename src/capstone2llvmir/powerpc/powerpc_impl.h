@@ -100,8 +100,14 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 
 		llvm::Value* roundToSingle(llvm::IRBuilder<>& irb, llvm::Value* val);
 		llvm::Value* loadOpDouble(cs_ppc_op& op, llvm::IRBuilder<>& irb);
+		llvm::Value* loadOpI128(cs_ppc_op& op, llvm::IRBuilder<>& irb);
+		void storeOpI128(cs_ppc_op& op, llvm::Value* val, llvm::IRBuilder<>& irb);
 		llvm::Value* fpIntrinsic(llvm::IRBuilder<>& irb, llvm::Intrinsic::ID id, llvm::ArrayRef<llvm::Value*> args);
 		static bool isSinglePrecisionForm(unsigned id);
+		uint32_t canonicalRegister(uint32_t r) const;
+		llvm::Value* i128HighDouble(llvm::Value* v, llvm::IRBuilder<>& irb);
+		llvm::Value* insertHighDouble(llvm::Value* vec, llvm::Value* d, llvm::IRBuilder<>& irb);
+		llvm::Value* asVec128(llvm::Value* v, llvm::Type* elemTy, unsigned n, llvm::IRBuilder<>& irb);
 
 		std::tuple<llvm::Value*, llvm::Value*, llvm::Value*, llvm::Value*> loadCrX(
 				llvm::IRBuilder<>& irb,
@@ -109,7 +115,7 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		llvm::Value* loadCrX(
 				llvm::IRBuilder<>& irb,
 				uint32_t crReg,
-				ppc_cr_types type);
+				ppc_pred type);
 
 		bool isGeneralPurposeRegister(uint32_t r);
 		uint32_t getGeneralPurposeRegisterIndex(uint32_t r);
@@ -118,6 +124,7 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		bool isCrRegister(cs_ppc_op& op);
 		bool isCrBitRegister(uint32_t r);
 		llvm::Value* generateIndexedAddress(cs_ppc* pi, llvm::Value* base, llvm::Value* index, llvm::IRBuilder<>& irb);
+		llvm::Value* loadIndexedEffectiveAddress(cs_ppc* pi, llvm::IRBuilder<>& irb);
 		virtual bool isOperandRegister(cs_ppc_op& op) override;
 //
 //==============================================================================
@@ -209,6 +216,17 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		void translateSubfze(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateXor(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateXoris(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecLogical(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecLoadIndexed(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecStoreIndexed(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecSplatImm(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecFpArith(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecIntAdd(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateXxpermdi(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateXxspltw(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateLoadFloatAsInt(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateStoreFloatAsInt(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVsxMove(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 };
 
 } // namespace capstone2llvmir

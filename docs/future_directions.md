@@ -163,13 +163,13 @@ not a free-choice list.
 |-------------|--------|-------|
 | x86-64 | **Production** | Primary native path |
 | x86-32 | **Production** | — |
-| ARM32 / Thumb | Production (integer) | Lifter + ABI; SIMD/FP may be pseudo-asm |
-| AArch64 | Production (integer) | Capstone + AAPCS64 ABI; `-a arm64` |
-| MIPS32/64 | Production (integer) | — |
-| PowerPC 32/64 | Production (integer) | — |
-| RISC-V (RV32I, RV64I) | Production (integer) | Capstone `CS_ARCH_RISCV`; F/D/A/M/CSR → pseudo-asm |
+| ARM32 / Thumb | **Production** | Compiler VFP/NEON; leftover permute/crypto may be pseudo-asm |
+| AArch64 | **Production** | Capstone + AAPCS64; scalar+vector FP; SVE/AES still unmapped |
+| MIPS32/64 | **Production** | FPU + integer MUL/DIV; compact R6/microMIPS leftovers |
+| PowerPC 32/64 | **Production** | Compiler FP + gcc -O1 VSX/Altivec; QPX unmapped |
+| RISC-V (RV32I, RV64I) | **Production** | I+C+M+F+D+A+CSR; AMOMIN/MAX and fused FP leftover |
 | LoongArch | Research | — |
-| SPARC / SystemZ / XCore | Production (integer) | SPARC V8/V9; SystemZ 64-only; XCore 32-only |
+| SPARC / SystemZ / XCore | **Production** | SPARC V8/V9 FP; SystemZ 64-only BFP; XCore 32-only (no channels) |
 | WASM (binary) | **Shipped (input-keyed)** | `.wasm` → WAT |
 | PTX (NVIDIA virtual ISA) | In-tree `src/ptx_decompile` | **Not** a general native output choice |
 | SASS (NVIDIA machine code) | Library, not Production | cubin/fatbin loader + SM_70/80 subset in `src/sass_decode/`; no nvdisasm; not CLI |

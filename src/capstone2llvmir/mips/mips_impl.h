@@ -11,6 +11,24 @@
 #include "retdec/capstone2llvmir/mips/mips.h"
 #include "capstone2llvmir/capstone2llvmir_impl.h"
 
+// Capstone 6.0.0-Alpha10: HI/LO live as HI0/LO0; beqz/bnez are aliases;
+// NOTFP64BIT is a feature group, not MIPS_GRP_*.
+#ifndef MIPS_REG_HI
+#define MIPS_REG_HI MIPS_REG_HI0
+#endif
+#ifndef MIPS_REG_LO
+#define MIPS_REG_LO MIPS_REG_LO0
+#endif
+#ifndef MIPS_INS_BEQZ
+#define MIPS_INS_BEQZ MIPS_INS_ALIAS_BEQZ
+#endif
+#ifndef MIPS_INS_BNEZ
+#define MIPS_INS_BNEZ MIPS_INS_ALIAS_BNEZ
+#endif
+#ifndef MIPS_GRP_NOTFP64BIT
+#define MIPS_GRP_NOTFP64BIT MIPS_FEATURE_NOTFP64BIT
+#endif
+
 namespace retdec {
 namespace capstone2llvmir {
 
@@ -109,6 +127,8 @@ class Capstone2LlvmIrTranslatorMips_impl :
 				llvm::IRBuilder<>& irb);
 		bool isFpInstructionVariant(cs_insn* i);
 		bool hasMsaOperand(cs_mips* mi) const;
+		bool isFccRegister(uint32_t r) const;
+		bool isMsaBitwiseId(uint32_t id) const;
 
 		virtual bool isOperandRegister(cs_mips_op& op) override;
 		bool isGeneralPurposeRegister(uint32_t r);
@@ -131,6 +151,7 @@ class Capstone2LlvmIrTranslatorMips_impl :
 //
 	protected:
 		void translateAdd(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
+		void translateAbs(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateAnd(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateBc1f(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateBc1t(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
@@ -174,6 +195,8 @@ class Capstone2LlvmIrTranslatorMips_impl :
 		void translateMovz(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateMul(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateMult(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
+		void translateRecip(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
+		void translateSqrt(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateMod(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateNeg(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateNegu(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);

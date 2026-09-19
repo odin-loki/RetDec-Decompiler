@@ -83,8 +83,12 @@ set(_FIB_BIN "${CMAKE_CURRENT_BINARY_DIR}/fib_smoke${CMAKE_EXECUTABLE_SUFFIX}")
 # /EXPORT:main kept the UCRT; corpus_fib.c was then 581 KiB of api-ms-win-*
 # UTF-16 arrays and the keyword `printf` was absent. /ENTRY:main plus a
 # stub printf (msvc_fixture_printf.c) is the user program only.
+# /Ob0 keeps fibonacci out-of-line for the decompiler, but it also
+# materializes UCRT's header-inline printf into the .obj (LNK2005 vs the
+# stub, LNK2019 on __acrt_iob_func / __stdio_common_vfprintf).
+# _NO_CRT_STDIO_INLINE makes <stdio.h> declare printf only.
 if(MSVC)
-    set(_MSVC_FIXTURE_C /nologo /Od /Ob0 /Oi- /GS- /Oy- /guard:cf-)
+    set(_MSVC_FIXTURE_C /nologo /Od /Ob0 /Oi- /GS- /Oy- /guard:cf- /D_NO_CRT_STDIO_INLINE)
     set(_MSVC_PRINTF_STUB "${CMAKE_CURRENT_SOURCE_DIR}/msvc_fixture_printf.c")
     set(_MSVC_FIXTURE_LINK /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO /ENTRY:main /NODEFAULTLIB /SUBSYSTEM:CONSOLE /EXPORT:main)
     add_custom_command(

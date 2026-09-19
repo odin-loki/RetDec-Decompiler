@@ -23,6 +23,7 @@
 #include <keystone/keystone.h>
 
 #include "retdec/capstone2llvmir/capstone2llvmir.h"
+#include "capstone2llvmir/capstone6_compat.h"
 #include "retdec/llvmir-emul/llvmir_emul.h"
 #include "retdec/utils/conversion.h"
 

@@ -25,6 +25,10 @@ const char* sassOpcodeName(SassOpcode op)
 	case SassOpcode::Fadd: return "FADD";
 	case SassOpcode::S2r: return "S2R";
 	case SassOpcode::Ldc: return "LDC";
+	case SassOpcode::ImadWide: return "IMAD.WIDE";
+	case SassOpcode::Shfl: return "SHFL";
+	case SassOpcode::S2ur: return "S2UR";
+	case SassOpcode::Ldcu: return "LDCU";
 	case SassOpcode::Unknown:
 	default: return "UNKNOWN";
 	}

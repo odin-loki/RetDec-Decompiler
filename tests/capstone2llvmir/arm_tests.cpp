@@ -2047,12 +2047,8 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ADC_r_r_i_false)
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_CPSR_C});
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM_REG_R0, 0x1234},
-		// TODO: These probably should not be set for "adc" without "s".
-		// Probbaly a Capstone bug.
-		{ARM_REG_CPSR_N, ANY},
-		{ARM_REG_CPSR_Z, ANY},
-		{ARM_REG_CPSR_C, ANY},
-		{ARM_REG_CPSR_V, ANY},
+		// Capstone 6.x reports the architectural S bit: ADC without S does
+		// not write NZCV. Capstone 5.x wrongly set update_flags here.
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();
@@ -2072,12 +2068,8 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ADC_r_r_i_true)
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_CPSR_C});
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM_REG_R0, 0x1235},
-		// TODO: These probably should not be set for "adc" without "s".
-		// Probbaly a Capstone bug.
-		{ARM_REG_CPSR_N, ANY},
-		{ARM_REG_CPSR_Z, ANY},
-		{ARM_REG_CPSR_C, ANY},
-		{ARM_REG_CPSR_V, ANY},
+		// Capstone 6.x reports the architectural S bit: ADC without S does
+		// not write NZCV. Capstone 5.x wrongly set update_flags here.
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();
@@ -2124,12 +2116,8 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SBC_r_r_i_false)
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_CPSR_C});
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM_REG_R0, 0x1230},
-		// TODO: These probably should not be set for "sbc" without "s".
-		// Probbaly a Capstone bug.
-		{ARM_REG_CPSR_N, ANY},
-		{ARM_REG_CPSR_Z, ANY},
-		{ARM_REG_CPSR_C, ANY},
-		{ARM_REG_CPSR_V, ANY},
+		// Capstone 6.x reports the architectural S bit: SBC without S does
+		// not write NZCV. Capstone 5.x wrongly set update_flags here.
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();
@@ -2149,12 +2137,8 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SBC_r_r_i_true)
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_CPSR_C});
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM_REG_R0, 0x1231},
-		// TODO: These probably should not be set for "sbc" without "s".
-		// Probbaly a Capstone bug.
-		{ARM_REG_CPSR_N, ANY},
-		{ARM_REG_CPSR_Z, ANY},
-		{ARM_REG_CPSR_C, ANY},
-		{ARM_REG_CPSR_V, ANY},
+		// Capstone 6.x reports the architectural S bit: SBC without S does
+		// not write NZCV. Capstone 5.x wrongly set update_flags here.
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();
@@ -2205,12 +2189,8 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_RSC_r_r_r_false)
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2, ARM_REG_CPSR_C});
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM_REG_R0, 0x1230},
-		// TODO: These probably should not be set for "rsc" without "s".
-		// Probably a Capstone bug.
-		{ARM_REG_CPSR_N, ANY},
-		{ARM_REG_CPSR_Z, ANY},
-		{ARM_REG_CPSR_C, ANY},
-		{ARM_REG_CPSR_V, ANY},
+		// Capstone 6.x reports the architectural S bit: RSC without S does
+		// not write NZCV. Capstone 5.x wrongly set update_flags here.
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();
@@ -2231,12 +2211,8 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_RSC_r_r_r_true)
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2, ARM_REG_CPSR_C});
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM_REG_R0, 0x1231},
-		// TODO: These probably should not be set for "rsc" without "s".
-		// Probably a Capstone bug.
-		{ARM_REG_CPSR_N, ANY},
-		{ARM_REG_CPSR_Z, ANY},
-		{ARM_REG_CPSR_C, ANY},
-		{ARM_REG_CPSR_V, ANY},
+		// Capstone 6.x reports the architectural S bit: RSC without S does
+		// not write NZCV. Capstone 5.x wrongly set update_flags here.
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();
@@ -5021,12 +4997,10 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_USAD8)
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, ANY},
+		{ARM_REG_R0, 0x88},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_usad8"), {0x1234, 0x5678}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -5047,12 +5021,10 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_USADA8)
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2, ARM_REG_R3});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, ANY},
+		{ARM_REG_R0, 0x9b44},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_usada8"), {0x1234, 0x5678, 0x9abc}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -5093,12 +5065,10 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_USAT16)
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, ANY},
+		{ARM_REG_R0, 0xff},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_usat16"), {0x8, 0x5678}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -6421,13 +6391,11 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UMAAL)
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R0, ARM_REG_R1, ARM_REG_R2, ARM_REG_R3});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, ANY},
-		{ARM_REG_R1, ANY},
+		{ARM_REG_R0, 0x34440575},
+		{ARM_REG_R1, 0},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_umaal"), {0x4321, 0x1234, 0x5678, 0x9abc}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -7350,26 +7318,27 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMRS_unpacks_into_cpsr)
 	EXPECT_NO_VALUE_CALLED();
 }
 
-TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VADD_i32_is_neon_and_stays_a_pseudo_call)
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VADD_i32_is_lane_wise)
 {
 	ALL_MODES;
 
-	// `vadd.i32 d0, d1, d2` is two 32-bit lane adds, not one f64 add. The
-	// registers are the same D registers the scalar form uses, so only
-	// cs_arm::vector_data tells them apart. Translating this as a scalar
-	// float add would be silently wrong, which is the whole reason the guard
-	// exists.
-	auto* f = translate(assemble("vadd.i32 d0, d1, d2"));
-	ASSERT_NE(nullptr, f);
-	// getPseudoAsmFunction() names the function after the mnemonic, and the
-	// mnemonic carries the type suffix: "__asm_vadd.i32", not "__asm_vadd".
-	EXPECT_NE(nullptr, _module.getFunction("__asm_vadd.i32"));
-	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
-	{
-		EXPECT_FALSE(
-			isa<llvm::BinaryOperator>(&*it) && cast<llvm::BinaryOperator>(&*it)->getOpcode() == llvm::Instruction::FAdd)
-			<< "NEON vadd.i32 was translated as a scalar float add";
-	}
+	// Each word wraps on its own. A register-wide 64-bit add would carry into
+	// the high lane and answer 0x0000000100000000.
+	double d1;
+	double d2;
+	uint64_t b1 = 0xffffffffffffffffULL;
+	uint64_t b2 = 0x0000000100000001ULL;
+	std::memcpy(&d1, &b1, sizeof d1);
+	std::memcpy(&d2, &b2, sizeof d2);
+	setRegisters({
+		{ARM_REG_D1, d1},
+		{ARM_REG_D2, d2},
+	});
+
+	emulate("vadd.i32 d0, d1, d2");
+
+	EXPECT_EQ(0x0000000000000000ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
 }
 
 
@@ -8333,6 +8302,195 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_BLX_register_is_annotated)
 		}
 	}
 	EXPECT_TRUE(annotated);
+}
+
+static double armDBits(uint64_t bits)
+{
+	double d;
+	std::memcpy(&d, &bits, sizeof d);
+	return d;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VAND_d)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0xf0f0f0f0f0f0f0f0ULL)},
+		{ARM_REG_D2, armDBits(0x0ff00ff00ff00ff0ULL)},
+	});
+
+	emulate("vand d0, d1, d2");
+
+	EXPECT_EQ(0x00f000f000f000f0ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VEOR_d)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x00000000ffffffffULL)},
+		{ARM_REG_D2, armDBits(0x0f0f0f0f0f0f0f0fULL)},
+	});
+
+	emulate("veor d0, d1, d2");
+
+	EXPECT_EQ(0x0f0f0f0ff0f0f0f0ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VADD_q_is_two_d_registers)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D2, armDBits(0xffffffffffffffffULL)},
+		{ARM_REG_D3, armDBits(0xffffffffffffffffULL)},
+		{ARM_REG_D4, armDBits(0x0000000100000001ULL)},
+		{ARM_REG_D5, armDBits(0x0000000100000001ULL)},
+	});
+
+	emulate("vadd.i32 q0, q1, q2");
+
+	EXPECT_EQ(0x0000000000000000ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0000000000000000ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VLD1_d)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R0, 0x1000},
+	});
+	setMemory({
+		{0x1000, 3.5_f64},
+	});
+
+	emulate("vld1.64 {d0}, [r0]");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_D0, 3.5_f64},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VST1_d)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R0, 0x1000},
+		{ARM_REG_D0, 2.25_f64},
+	});
+
+	emulate("vst1.64 {d0}, [r0]");
+
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 2.25_f64},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VLDMIA_d)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R0, 0x1000},
+	});
+	setMemory({
+		{0x1000, 1.5_f64},
+		{0x1008, 2.5_f64},
+	});
+
+	emulate("vldmia r0, {d0, d1}");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_D0, 1.5_f64},
+		{ARM_REG_D1, 2.5_f64},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCEQ_i32)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x0000000200000001ULL)},
+		{ARM_REG_D2, armDBits(0x0000000200000000ULL)},
+	});
+
+	emulate("vceq.i32 d0, d1, d2");
+
+	EXPECT_EQ(0xffffffff00000000ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VDUP_32_from_gpr)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R0, 0xa5a5a5a5},
+	});
+
+	emulate("vdup.32 d0, r0");
+
+	EXPECT_EQ(0xa5a5a5a5a5a5a5a5ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_QADD)
+{
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x7fffffff},
+		{ARM_REG_R2, 2},
+	});
+
+	emulate("qadd r0, r1, r2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x7fffffff},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SMUAD)
+{
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x00020003},
+		{ARM_REG_R2, 0x00040005},
+	});
+
+	emulate("smuad r0, r1, r2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 23},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSHR_u32)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x0000000800000004ULL)},
+	});
+
+	emulate("vshr.u32 d0, d1, #1");
+
+	EXPECT_EQ(0x0000000400000002ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
 }
 
 } // namespace tests

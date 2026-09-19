@@ -11,7 +11,7 @@ on:
       tag:
         description: Release tag whose Linux tarball is packed
         required: false
-        default: v2.0.24
+        default: v2.0.25
   push:
     branches: [main]
     paths:
@@ -35,7 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -58,7 +58,7 @@ jobs:
               exit 0
             fi
           else
-            TAG="v2.0.24"
+            TAG="v2.0.25"
           fi
           IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER}/retdec"
           mkdir -p /tmp/docker-runtime

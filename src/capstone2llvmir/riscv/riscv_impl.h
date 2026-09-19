@@ -91,6 +91,23 @@ class Capstone2LlvmIrTranslatorRiscv_impl :
 				cs_riscv* ri,
 				llvm::IRBuilder<>& irb,
 				eOpConv ct);
+
+		llvm::Value* amoAddress(cs_riscv_op& op, llvm::IRBuilder<>& irb);
+		llvm::AtomicOrdering amoOrdering(unsigned id) const;
+		llvm::Type* amoAccessType(unsigned id, llvm::IRBuilder<>& irb);
+		llvm::Value* definedDivisor(
+				llvm::Value* dividend,
+				llvm::Value* divisor,
+				bool isSigned,
+				llvm::IRBuilder<>& irb);
+		llvm::Value* fpToInt(
+				llvm::Value* v,
+				llvm::Type* intTy,
+				bool isSigned,
+				llvm::IRBuilder<>& irb);
+		uint32_t csrOperandReg(uint16_t encoding) const;
+		llvm::Value* loadCsr(uint16_t encoding, llvm::IRBuilder<>& irb);
+		void storeCsr(uint16_t encoding, llvm::Value* val, llvm::IRBuilder<>& irb);
 //
 //==============================================================================
 // RISC-V implementation data.
@@ -132,6 +149,17 @@ class Capstone2LlvmIrTranslatorRiscv_impl :
 		void translateEcall(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateNop(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateFence(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateMul(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateDiv(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateFpArith(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateFpLoad(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateFpStore(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateFcvt(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateFcmp(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateAmo(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateLr(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateSc(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateCsr(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 };
 
 } // namespace capstone2llvmir

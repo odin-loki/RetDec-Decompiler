@@ -105,13 +105,14 @@ std::size_t Capstone2LlvmIrTranslatorMips_impl::getDelaySlot(uint32_t id) const
 			MIPS_INS_BLEZ, MIPS_INS_BLEZL, MIPS_INS_BGTZ, MIPS_INS_BGTZL,
 			MIPS_INS_BLTZ, MIPS_INS_BLTZL, MIPS_INS_BGEZ, MIPS_INS_BGEZL,
 			MIPS_INS_BEQZ, MIPS_INS_BNEZ,
+			MIPS_INS_ALIAS_BEQZ, MIPS_INS_ALIAS_BNEZ,
 			// call
 			MIPS_INS_BGEZAL, MIPS_INS_BGEZALL, MIPS_INS_BLTZAL,
 			MIPS_INS_BLTZALL, MIPS_INS_JAL, MIPS_INS_JALR,
-			MIPS_INS_BAL,
+			MIPS_INS_BAL, MIPS_INS_ALIAS_BAL,
 			// branch
 			MIPS_INS_J, MIPS_INS_JR,
-			MIPS_INS_B,
+			MIPS_INS_B, MIPS_INS_ALIAS_B, MIPS_INS_ALIAS_JR,
 	};
 	return set.count(id);
 }
@@ -161,9 +162,9 @@ uint32_t Capstone2LlvmIrTranslatorMips_impl::getCarryRegister()
 }
 
 /**
- * True when any operand names an MSA vector register. MSA is not modelled --
- * the W registers have no globals at all -- so this is what keeps an MSA
- * instruction out of the scalar translator that shares its id.
+ * True when any operand names an MSA vector register. Bitwise V ops
+ * (`AND_V`/`OR_V`/`XOR_V`/`NOR_V`) are modelled as i128; every other MSA
+ * id still goes to a pseudo-assembly call.
  */
 bool Capstone2LlvmIrTranslatorMips_impl::hasMsaOperand(cs_mips* mi) const
 {
@@ -188,25 +189,30 @@ void Capstone2LlvmIrTranslatorMips_impl::translateInstruction(
 	cs_detail* d = i->detail;
 	cs_mips* mi = &d->mips;
 
-	// MSA instructions share their capstone ids with the scalar ones they are
-	// named after -- `ld.b $w0, 0($a0)` is MIPS_INS_LD, the same id as the
-	// doubleword load, and `and.v` is MIPS_INS_AND. The only thing that tells
-	// them apart is that the operands are W registers.
-	//
-	// Until now those ids reached the scalar translator, which called
-	// loadRegister() on a W register, found no global for it and THREW --
-	// taking the whole function's translation with it rather than degrading
-	// to a pseudo-assembly call the way every other unmodelled instruction
-	// does. Route them to that call instead. `and.v` would in fact have come
-	// out right as a 128-bit AND; `ld.b` would not, and guessing which is
-	// which per id is how the EVEX compare family went wrong on x86.
-	if (hasMsaOperand(mi))
+	// Capstone 6 keeps the real id (SLL/ADDIU/BEQ) and puts nop/li/beqz in
+	// alias_id. Prefer a dedicated alias translator so delay-slot nop stays
+	// empty and li keeps two operands.
+	std::size_t id = i->id;
+	if (i->is_alias)
+	{
+		auto aIt = _i2fm.find(static_cast<std::size_t>(i->alias_id));
+		if (aIt != _i2fm.end() && aIt->second != nullptr)
+		{
+			id = static_cast<std::size_t>(i->alias_id);
+		}
+	}
+
+	// Capstone 6 gives MSA its own ids (`AND_V`, `LD_B`, `ORI_B`, …). A few
+	// of those (128-bit bitwise) are modelled; everything else with a W
+	// register still goes to a pseudo-assembly call rather than the scalar
+	// translator.
+	if (hasMsaOperand(mi) && !isMsaBitwiseId(static_cast<uint32_t>(id)))
 	{
 		translatePseudoAsmGeneric(i, mi, irb);
 		return;
 	}
 
-	auto fIt = _i2fm.find(i->id);
+	auto fIt = _i2fm.find(id);
 	if (fIt != _i2fm.end() && fIt->second != nullptr)
 	{
 		auto f = fIt->second;
@@ -256,6 +262,55 @@ llvm::Value* Capstone2LlvmIrTranslatorMips_impl::getNextNextInsnAddress(cs_insn*
 llvm::Value* Capstone2LlvmIrTranslatorMips_impl::getUnpredictableValue()
 {
 	return nullptr;
+}
+
+/// Capstone 6 reports paired doubles as D0–D15, 64-bit FPRs as D0_64–D31_64,
+/// and N64 GPRs as ZERO_64 / AT_64 / …. Fold those onto the F / GPR ids
+/// this translator already models.
+static uint32_t canonicalizeMipsReg(uint32_t r)
+{
+	if (r >= MIPS_REG_D0 && r <= MIPS_REG_D15)
+	{
+		return MIPS_REG_F0 + 2 * (r - MIPS_REG_D0);
+	}
+	if (r >= MIPS_REG_D0_64 && r <= MIPS_REG_D31_64)
+	{
+		return MIPS_REG_F0 + (r - MIPS_REG_D0_64);
+	}
+	if (r >= MIPS_REG_A0_64 && r <= MIPS_REG_A3_64)
+	{
+		return MIPS_REG_A0 + (r - MIPS_REG_A0_64);
+	}
+	if (r >= MIPS_REG_S0_64 && r <= MIPS_REG_S7_64)
+	{
+		return MIPS_REG_S0 + (r - MIPS_REG_S0_64);
+	}
+	if (r >= MIPS_REG_T0_64 && r <= MIPS_REG_T9_64)
+	{
+		return MIPS_REG_T0 + (r - MIPS_REG_T0_64);
+	}
+	switch (r)
+	{
+		case MIPS_REG_ZERO_64: return MIPS_REG_ZERO;
+		case MIPS_REG_AT_64: return MIPS_REG_AT;
+		case MIPS_REG_V0_64: return MIPS_REG_V0;
+		case MIPS_REG_V1_64: return MIPS_REG_V1;
+		case MIPS_REG_K0_64: return MIPS_REG_K0;
+		case MIPS_REG_K1_64: return MIPS_REG_K1;
+		case MIPS_REG_GP_64: return MIPS_REG_GP;
+		case MIPS_REG_SP_64: return MIPS_REG_SP;
+		case MIPS_REG_FP_64: return MIPS_REG_FP;
+		case MIPS_REG_RA_64: return MIPS_REG_RA;
+		case MIPS_REG_HI0_64: return MIPS_REG_HI;
+		case MIPS_REG_LO0_64: return MIPS_REG_LO;
+		default: return r;
+	}
+}
+
+static bool isCanonicalFpReg(uint32_t r)
+{
+	r = canonicalizeMipsReg(r);
+	return MIPS_REG_F0 <= r && r <= MIPS_REG_F31;
 }
 
 uint32_t Capstone2LlvmIrTranslatorMips_impl::singlePrecisionToDoublePrecisionFpRegister(
@@ -321,6 +376,8 @@ llvm::Value* Capstone2LlvmIrTranslatorMips_impl::loadRegister(
 	{
 		return getCurrentPc(_insn);
 	}
+
+	r = canonicalizeMipsReg(r);
 
 	if (r == MIPS_REG_ZERO)
 	{
@@ -418,6 +475,8 @@ llvm::StoreInst* Capstone2LlvmIrTranslatorMips_impl::storeRegister(
 	}
 	// These registers should not be stored, or their store has no effect.
 	//
+	r = canonicalizeMipsReg(r);
+
 	if (r == MIPS_REG_PC
 			|| r == MIPS_REG_ZERO)
 	{
@@ -511,10 +570,31 @@ llvm::Instruction* Capstone2LlvmIrTranslatorMips_impl::storeOp(
 bool Capstone2LlvmIrTranslatorMips_impl::isFpInstructionVariant(cs_insn* i)
 {
 	auto& mi = i->detail->mips;
-	return mi.op_count > 0
-			&& mi.operands[0].type == MIPS_OP_REG
-			&& MIPS_REG_F0 <= mi.operands[0].reg
-			&& mi.operands[0].reg <= MIPS_REG_F31;
+	if (mi.op_count == 0 || mi.operands[0].type != MIPS_OP_REG)
+	{
+		return false;
+	}
+	uint32_t r = canonicalizeMipsReg(mi.operands[0].reg);
+	return MIPS_REG_F0 <= r && r <= MIPS_REG_F31;
+}
+
+bool Capstone2LlvmIrTranslatorMips_impl::isFccRegister(uint32_t r) const
+{
+	return MIPS_REG_FCC0 <= r && r <= MIPS_REG_FCC7;
+}
+
+bool Capstone2LlvmIrTranslatorMips_impl::isMsaBitwiseId(uint32_t id) const
+{
+	switch (id)
+	{
+		case MIPS_INS_AND_V:
+		case MIPS_INS_OR_V:
+		case MIPS_INS_XOR_V:
+		case MIPS_INS_NOR_V:
+			return true;
+		default:
+			return false;
+	}
 }
 
 bool Capstone2LlvmIrTranslatorMips_impl::isOperandRegister(cs_mips_op& op)
@@ -524,7 +604,24 @@ bool Capstone2LlvmIrTranslatorMips_impl::isOperandRegister(cs_mips_op& op)
 
 bool Capstone2LlvmIrTranslatorMips_impl::isGeneralPurposeRegister(uint32_t r)
 {
-	return MIPS_REG_0 <= r && r <= MIPS_REG_31;
+	r = canonicalizeMipsReg(r);
+	switch (r)
+	{
+		case MIPS_REG_ZERO:
+		case MIPS_REG_AT:
+		case MIPS_REG_V0: case MIPS_REG_V1:
+		case MIPS_REG_A0: case MIPS_REG_A1: case MIPS_REG_A2: case MIPS_REG_A3:
+		case MIPS_REG_T0: case MIPS_REG_T1: case MIPS_REG_T2: case MIPS_REG_T3:
+		case MIPS_REG_T4: case MIPS_REG_T5: case MIPS_REG_T6: case MIPS_REG_T7:
+		case MIPS_REG_S0: case MIPS_REG_S1: case MIPS_REG_S2: case MIPS_REG_S3:
+		case MIPS_REG_S4: case MIPS_REG_S5: case MIPS_REG_S6: case MIPS_REG_S7:
+		case MIPS_REG_T8: case MIPS_REG_T9:
+		case MIPS_REG_K0: case MIPS_REG_K1:
+		case MIPS_REG_GP: case MIPS_REG_SP: case MIPS_REG_FP: case MIPS_REG_RA:
+			return true;
+		default:
+			return false;
+	}
 }
 
 //
@@ -550,7 +647,28 @@ void Capstone2LlvmIrTranslatorMips_impl::translateAdd(cs_insn* i, cs_mips* mi, l
 }
 
 /**
- * MIPS_INS_AND, MIPS_INS_ANDI
+ * MIPS_INS_ABS, MIPS_INS_ABS_S, MIPS_INS_ABS_D
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateAbs(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, mi, irb);
+
+	op1 = loadOpBinaryOp1(mi, irb);
+	if (op1->getType()->isFloatingPointTy())
+	{
+		auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::fabs, op1->getType());
+		storeOp(mi->operands[0], irb.CreateCall(f, {op1}), irb);
+		return;
+	}
+
+	auto* zero = llvm::ConstantInt::get(op1->getType(), 0);
+	auto* neg = irb.CreateSub(zero, op1);
+	auto* val = irb.CreateSelect(irb.CreateICmpSLT(op1, zero), neg, op1);
+	storeOp(mi->operands[0], val, irb);
+}
+
+/**
+ * MIPS_INS_AND, MIPS_INS_ANDI, MIPS_INS_AND_V
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateAnd(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
@@ -794,10 +912,35 @@ void Capstone2LlvmIrTranslatorMips_impl::translateFpToInt(cs_insn* i, cs_mips* m
 						 ? 32
 						 : (mnem.size() >= 2 && mnem.compare(mnem.size() - 2, 2, ".d") == 0 ? 64 : 0);
 
+	switch (i->id)
+	{
+		case MIPS_INS_TRUNC_W_S:
+		case MIPS_INS_ROUND_W_S:
+		case MIPS_INS_CEIL_W_S:
+		case MIPS_INS_FLOOR_W_S:
+			dstBits = 32; srcBits = 32; break;
+		case MIPS_INS_TRUNC_W_D:
+		case MIPS_INS_ROUND_W_D:
+		case MIPS_INS_CEIL_W_D:
+		case MIPS_INS_FLOOR_W_D:
+			dstBits = 32; srcBits = 64; break;
+		case MIPS_INS_TRUNC_L_S:
+		case MIPS_INS_ROUND_L_S:
+		case MIPS_INS_CEIL_L_S:
+		case MIPS_INS_FLOOR_L_S:
+			dstBits = 64; srcBits = 32; break;
+		case MIPS_INS_TRUNC_L_D:
+		case MIPS_INS_ROUND_L_D:
+		case MIPS_INS_CEIL_L_D:
+		case MIPS_INS_FLOOR_L_D:
+			dstBits = 64; srcBits = 64; break;
+		default: break;
+	}
+
 	if (mi->operands[0].type != MIPS_OP_REG
-		|| !(MIPS_REG_F0 <= mi->operands[0].reg && mi->operands[0].reg <= MIPS_REG_F31)
+		|| !isCanonicalFpReg(mi->operands[0].reg)
 		|| mi->operands[1].type != MIPS_OP_REG
-		|| !(MIPS_REG_F0 <= mi->operands[1].reg && mi->operands[1].reg <= MIPS_REG_F31))
+		|| !isCanonicalFpReg(mi->operands[1].reg))
 	{
 		throwUnexpectedOperands(i);
 		translatePseudoAsmOp0FncOp1(i, mi, irb);
@@ -825,7 +968,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateFpToInt(cs_insn* i, cs_mips* m
 	// that applies the same single-to-double mapping to the destination, and
 	// `trunc.w.d $f0, $f2` would land a 32-bit integer in fd0 where the next
 	// instruction reads f0.
-	uint32_t dr = mi->operands[0].reg;
+	uint32_t dr = canonicalizeMipsReg(mi->operands[0].reg);
 	llvm::Type* dstTy = getRegisterType(dr);
 	if (dstTy == nullptr || dstTy->getPrimitiveSizeInBits() != dstBits)
 	{
@@ -846,10 +989,26 @@ void Capstone2LlvmIrTranslatorMips_impl::translateFpToInt(cs_insn* i, cs_mips* m
 
 	switch (i->id)
 	{
-	case MIPS_INS_TRUNC: break; // fptosi already truncates toward zero
-	case MIPS_INS_ROUND: src = irb.CreateUnaryIntrinsic(llvm::Intrinsic::roundeven, src); break;
-	case MIPS_INS_CEIL: src = irb.CreateUnaryIntrinsic(llvm::Intrinsic::ceil, src); break;
-	case MIPS_INS_FLOOR: src = irb.CreateUnaryIntrinsic(llvm::Intrinsic::floor, src); break;
+	case MIPS_INS_TRUNC_W_S:
+	case MIPS_INS_TRUNC_W_D:
+	case MIPS_INS_TRUNC_L_S:
+	case MIPS_INS_TRUNC_L_D:
+		break; // fptosi already truncates toward zero
+	case MIPS_INS_ROUND_W_S:
+	case MIPS_INS_ROUND_W_D:
+	case MIPS_INS_ROUND_L_S:
+	case MIPS_INS_ROUND_L_D:
+		src = irb.CreateUnaryIntrinsic(llvm::Intrinsic::roundeven, src); break;
+	case MIPS_INS_CEIL_W_S:
+	case MIPS_INS_CEIL_W_D:
+	case MIPS_INS_CEIL_L_S:
+	case MIPS_INS_CEIL_L_D:
+		src = irb.CreateUnaryIntrinsic(llvm::Intrinsic::ceil, src); break;
+	case MIPS_INS_FLOOR_W_S:
+	case MIPS_INS_FLOOR_W_D:
+	case MIPS_INS_FLOOR_L_S:
+	case MIPS_INS_FLOOR_L_D:
+		src = irb.CreateUnaryIntrinsic(llvm::Intrinsic::floor, src); break;
 	default: throw GenericError("translateFpToInt(): unhandled instruction id");
 	}
 
@@ -866,22 +1025,22 @@ void Capstone2LlvmIrTranslatorMips_impl::translateCvt(cs_insn* i, cs_mips* mi, l
 	EXPECT_IS_BINARY(i, mi, irb);
 
 	if (mi->operands[0].type != MIPS_OP_REG
-			|| !(MIPS_REG_F0 <= mi->operands[0].reg && mi->operands[0].reg <= MIPS_REG_F31)
+			|| !isCanonicalFpReg(mi->operands[0].reg)
 			|| mi->operands[1].type != MIPS_OP_REG
-			|| !(MIPS_REG_F0 <= mi->operands[1].reg && mi->operands[1].reg <= MIPS_REG_F31))
+			|| !isCanonicalFpReg(mi->operands[1].reg))
 	{
 		throwUnexpectedOperands(i);
 		translatePseudoAsmGeneric(i, mi, irb);
 		return;
 	}
 
-	auto r0 = mi->operands[0].reg;
-	auto r1 = mi->operands[1].reg;
+	auto r0 = canonicalizeMipsReg(mi->operands[0].reg);
+	auto r1 = canonicalizeMipsReg(mi->operands[1].reg);
 
 	// CVT.S.fmt
 	//
 	std::string mnem = i->mnemonic;
-	if (mnem == "cvt.s.d") // should be only on MIPS32
+	if (mnem == "cvt.s.d" || i->id == MIPS_INS_CVT_S_D) // should be only on MIPS32
 	{
 		op1 = loadRegister(r1, irb);
 		op1 = irb.CreateFPCast(op1, getRegisterType(r0));
@@ -890,7 +1049,9 @@ void Capstone2LlvmIrTranslatorMips_impl::translateCvt(cs_insn* i, cs_mips* mi, l
 		attachPointeeType(st, dst->getValueType());
 	}
 	else if (mnem == "cvt.s.w" // should be only on MIPS32
-			|| mnem == "cvt.s.l") // should be only on MIPS64
+			|| mnem == "cvt.s.l" // should be only on MIPS64
+			|| i->id == MIPS_INS_CVT_S_W
+			|| i->id == MIPS_INS_CVT_S_L)
 	{
 		auto* op0Ty = getRegisterType(r0);
 		op1 = loadRegister(r1, irb);
@@ -905,13 +1066,15 @@ void Capstone2LlvmIrTranslatorMips_impl::translateCvt(cs_insn* i, cs_mips* mi, l
 	}
 	// CVT.D.fmt
 	//
-	else if (mnem == "cvt.d.s")
+	else if (mnem == "cvt.d.s" || i->id == MIPS_INS_CVT_D_S)
 	{
 		op1 = createLoad(irb, getRegister(r1));
 		storeRegister(r0, op1, irb, eOpConv::SITOFP_OR_FPCAST);
 	}
 	else if (mnem == "cvt.d.w" // should be only on MIPS32
-			|| mnem == "cvt.d.l") // should be only on MIPS64
+			|| mnem == "cvt.d.l" // should be only on MIPS64
+			|| i->id == MIPS_INS_CVT_D_W
+			|| i->id == MIPS_INS_CVT_D_L)
 	{
 		op1 = createLoad(irb, getRegister(r1));
 		auto* iTy = op1->getType()->isDoubleTy()
@@ -924,7 +1087,9 @@ void Capstone2LlvmIrTranslatorMips_impl::translateCvt(cs_insn* i, cs_mips* mi, l
 	// CVT.W.fmt
 	//
 	else if (mnem == "cvt.w.s" // should be only on MIPS32
-			|| mnem == "cvt.w.d") // should be only on MIPS64
+			|| mnem == "cvt.w.d" // should be only on MIPS64
+			|| i->id == MIPS_INS_CVT_W_S
+			|| i->id == MIPS_INS_CVT_W_D)
 	{
 		op1 = loadRegister(r1, irb);
 		// CVT.W.fmt rounds with the CURRENT rounding mode (FCSR.RM), whose
@@ -950,6 +1115,18 @@ void Capstone2LlvmIrTranslatorMips_impl::translateCvt(cs_insn* i, cs_mips* mi, l
 		auto* dst = getRegister(r0);
 		auto* st = irb.CreateStore(op1, dst);
 		attachPointeeType(st, dst->getValueType());
+	}
+	else if (mnem == "cvt.l.s"
+			|| mnem == "cvt.l.d"
+			|| i->id == MIPS_INS_CVT_L_S
+			|| i->id == MIPS_INS_CVT_L_D)
+	{
+		op1 = loadRegister(r1, irb);
+		op1 = irb.CreateUnaryIntrinsic(llvm::Intrinsic::roundeven, op1);
+		auto* iTy = irb.getInt64Ty();
+		op1 = generateFpToIntDefault(op1, iTy, irb);
+		op1 = irb.CreateBitCast(op1, irb.getDoubleTy());
+		storeRegister(r0, op1, irb, eOpConv::FPCAST_OR_BITCAST);
 	}
 	else
 	{
@@ -1003,8 +1180,25 @@ void Capstone2LlvmIrTranslatorMips_impl::translateCondBranchBinary(cs_insn* i, c
 	std::tie(op0, op1) = loadOpBinary(mi, irb);
 	auto* zero = llvm::ConstantInt::get(op0->getType(), 0);
 
+	unsigned cid = i->id;
+	if (i->is_alias)
+	{
+		unsigned a = static_cast<unsigned>(i->alias_id);
+		if (a == static_cast<unsigned>(MIPS_INS_BEQZ)
+#ifdef MIPS_INS_ALIAS_BEQZ
+				|| a == static_cast<unsigned>(MIPS_INS_ALIAS_BEQZ)
+#endif
+				|| a == static_cast<unsigned>(MIPS_INS_BNEZ)
+#ifdef MIPS_INS_ALIAS_BNEZ
+				|| a == static_cast<unsigned>(MIPS_INS_ALIAS_BNEZ)
+#endif
+			)
+		{
+			cid = a;
+		}
+	}
 	llvm::Value* cond = nullptr;
-	switch (i->id)
+	switch (cid)
 	{
 		case MIPS_INS_BLEZ:
 		case MIPS_INS_BLEZL:
@@ -1023,9 +1217,15 @@ void Capstone2LlvmIrTranslatorMips_impl::translateCondBranchBinary(cs_insn* i, c
 			cond = irb.CreateICmpSGE(op0, zero);
 			break;
 		case MIPS_INS_BEQZ:
+#ifdef MIPS_INS_ALIAS_BEQZ
+		case MIPS_INS_ALIAS_BEQZ:
+#endif
 			cond = irb.CreateICmpEQ(op0, zero);
 			break;
 		case MIPS_INS_BNEZ:
+#ifdef MIPS_INS_ALIAS_BNEZ
+		case MIPS_INS_ALIAS_BNEZ:
+#endif
 			cond = irb.CreateICmpNE(op0, zero);
 			break;
 		default:
@@ -1081,77 +1281,102 @@ void Capstone2LlvmIrTranslatorMips_impl::translateBreak(cs_insn* i, cs_mips* mi,
 }
 
 /**
- * MIPS_INS_C
+ * MIPS_INS_C_* / MIPS_INS_ALIAS_C_*  (c.cond.fmt)
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateC(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
-	EXPECT_IS_BINARY(i, mi, irb);
+	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
 
-	std::tie(op0, op1) = loadOpBinary(mi, irb, eOpConv::THROW);
+	uint32_t fcc = MIPS_REG_FCC0;
+	if (mi->op_count == 3
+			&& mi->operands[0].type == MIPS_OP_REG
+			&& isFccRegister(mi->operands[0].reg))
+	{
+		fcc = mi->operands[0].reg;
+		op0 = loadOp(mi->operands[1], irb);
+		op1 = loadOp(mi->operands[2], irb);
+	}
+	else
+	{
+		std::tie(op0, op1) = loadOpBinary(mi, irb, eOpConv::THROW);
+	}
 
 	std::string mnem = i->mnemonic;
 	llvm::Value* val = nullptr;
 
 	// http://ti.ira.uka.de/TI-2/Mips/Befehlssatz.pdf
+	// Capstone 6 splits each cond/fmt pair into its own id; the mnemonic
+	// still names the comparison, and the alias ids share that mnemonic.
 	//
 	if (mnem == "c.f.s" || mnem == "c.f.d"
-			|| mnem == "c.sf.s" || mnem == "c.sf.d")
+			|| mnem == "c.sf.s" || mnem == "c.sf.d"
+			|| i->id == MIPS_INS_C_F_S || i->id == MIPS_INS_C_F_D
+			|| i->id == MIPS_INS_C_SF_S || i->id == MIPS_INS_C_SF_D
+			|| i->id == MIPS_INS_ALIAS_C_F_S || i->id == MIPS_INS_ALIAS_C_F_D
+			|| i->id == MIPS_INS_ALIAS_C_SF_S || i->id == MIPS_INS_ALIAS_C_SF_D)
 	{
 		val = irb.getFalse(); // This is ok, I checked.
 	}
-	else if (mnem == "c.un.s" || mnem == "c.un.d")
+	else if (mnem == "c.un.s" || mnem == "c.un.d"
+			|| mnem == "c.ngle.s" || mnem == "c.ngle.d"
+			|| i->id == MIPS_INS_C_UN_S || i->id == MIPS_INS_C_UN_D
+			|| i->id == MIPS_INS_C_NGLE_S || i->id == MIPS_INS_C_NGLE_D
+			|| i->id == MIPS_INS_ALIAS_C_UN_S || i->id == MIPS_INS_ALIAS_C_UN_D
+			|| i->id == MIPS_INS_ALIAS_C_NGLE_S || i->id == MIPS_INS_ALIAS_C_NGLE_D)
 	{
 		val = irb.CreateFCmpUNO(op0, op1);
 	}
-	else if (mnem == "c.ngle.s" || mnem == "c.ngle.d")
-	{
-		val = irb.CreateFCmpUNO(op0, op1);
-	}
-	else if (mnem == "c.eq.s" || mnem == "c.eq.d")
-	{
-		val = irb.CreateFCmpOEQ(op0, op1);
-	}
-	else if (mnem == "c.seq.s" || mnem == "c.seq.d")
-	{
-		val = irb.CreateFCmpOEQ(op0, op1);
-	}
-	else if (mnem == "c.ngl.s" || mnem == "c.ngl.d")
+	else if (mnem == "c.eq.s" || mnem == "c.eq.d"
+			|| mnem == "c.seq.s" || mnem == "c.seq.d"
+			|| mnem == "c.ngl.s" || mnem == "c.ngl.d"
+			|| i->id == MIPS_INS_C_EQ_S || i->id == MIPS_INS_C_EQ_D
+			|| i->id == MIPS_INS_C_SEQ_S || i->id == MIPS_INS_C_SEQ_D
+			|| i->id == MIPS_INS_C_NGL_S || i->id == MIPS_INS_C_NGL_D
+			|| i->id == MIPS_INS_ALIAS_C_EQ_S || i->id == MIPS_INS_ALIAS_C_EQ_D
+			|| i->id == MIPS_INS_ALIAS_C_SEQ_S || i->id == MIPS_INS_ALIAS_C_SEQ_D
+			|| i->id == MIPS_INS_ALIAS_C_NGL_S || i->id == MIPS_INS_ALIAS_C_NGL_D)
 	{
 		val = irb.CreateFCmpOEQ(op0, op1);
 	}
-	else if (mnem == "c.ueq.s" || mnem == "c.ueq.d")
+	else if (mnem == "c.ueq.s" || mnem == "c.ueq.d"
+			|| i->id == MIPS_INS_C_UEQ_S || i->id == MIPS_INS_C_UEQ_D
+			|| i->id == MIPS_INS_ALIAS_C_UEQ_S || i->id == MIPS_INS_ALIAS_C_UEQ_D)
 	{
 		val = irb.CreateFCmpUEQ(op0, op1);
 	}
-	else if (mnem == "c.olt.s" || mnem == "c.olt.d")
+	else if (mnem == "c.olt.s" || mnem == "c.olt.d"
+			|| mnem == "c.lt.s" || mnem == "c.lt.d"
+			|| mnem == "c.nge.s" || mnem == "c.nge.d"
+			|| i->id == MIPS_INS_C_OLT_S || i->id == MIPS_INS_C_OLT_D
+			|| i->id == MIPS_INS_C_LT_S || i->id == MIPS_INS_C_LT_D
+			|| i->id == MIPS_INS_C_NGE_S || i->id == MIPS_INS_C_NGE_D
+			|| i->id == MIPS_INS_ALIAS_C_OLT_S || i->id == MIPS_INS_ALIAS_C_OLT_D
+			|| i->id == MIPS_INS_ALIAS_C_LT_S || i->id == MIPS_INS_ALIAS_C_LT_D
+			|| i->id == MIPS_INS_ALIAS_C_NGE_S || i->id == MIPS_INS_ALIAS_C_NGE_D)
 	{
 		val = irb.CreateFCmpOLT(op0, op1);
 	}
-	else if (mnem == "c.lt.s" || mnem == "c.lt.d")
-	{
-		val = irb.CreateFCmpOLT(op0, op1);
-	}
-	else if (mnem == "c.nge.s" || mnem == "c.nge.d")
-	{
-		val = irb.CreateFCmpOLT(op0, op1);
-	}
-	else if (mnem == "c.ult.s" || mnem == "c.ult.d")
+	else if (mnem == "c.ult.s" || mnem == "c.ult.d"
+			|| i->id == MIPS_INS_C_ULT_S || i->id == MIPS_INS_C_ULT_D
+			|| i->id == MIPS_INS_ALIAS_C_ULT_S || i->id == MIPS_INS_ALIAS_C_ULT_D)
 	{
 		val = irb.CreateFCmpULT(op0, op1);
 	}
-	else if (mnem == "c.ole.s" || mnem == "c.ole.d")
+	else if (mnem == "c.ole.s" || mnem == "c.ole.d"
+			|| mnem == "c.le.s" || mnem == "c.le.d"
+			|| mnem == "c.ngt.s" || mnem == "c.ngt.d"
+			|| i->id == MIPS_INS_C_OLE_S || i->id == MIPS_INS_C_OLE_D
+			|| i->id == MIPS_INS_C_LE_S || i->id == MIPS_INS_C_LE_D
+			|| i->id == MIPS_INS_C_NGT_S || i->id == MIPS_INS_C_NGT_D
+			|| i->id == MIPS_INS_ALIAS_C_OLE_S || i->id == MIPS_INS_ALIAS_C_OLE_D
+			|| i->id == MIPS_INS_ALIAS_C_LE_S || i->id == MIPS_INS_ALIAS_C_LE_D
+			|| i->id == MIPS_INS_ALIAS_C_NGT_S || i->id == MIPS_INS_ALIAS_C_NGT_D)
 	{
 		val = irb.CreateFCmpOLE(op0, op1);
 	}
-	else if (mnem == "c.le.s" || mnem == "c.le.d")
-	{
-		val = irb.CreateFCmpOLE(op0, op1);
-	}
-	else if (mnem == "c.ngt.s" || mnem == "c.ngt.d")
-	{
-		val = irb.CreateFCmpOLE(op0, op1);
-	}
-	else if (mnem == "c.ule.s" || mnem == "c.ule.d")
+	else if (mnem == "c.ule.s" || mnem == "c.ule.d"
+			|| i->id == MIPS_INS_C_ULE_S || i->id == MIPS_INS_C_ULE_D
+			|| i->id == MIPS_INS_ALIAS_C_ULE_S || i->id == MIPS_INS_ALIAS_C_ULE_D)
 	{
 		val = irb.CreateFCmpULE(op0, op1);
 	}
@@ -1162,7 +1387,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateC(cs_insn* i, cs_mips* mi, llv
 		return;
 	}
 
-	storeRegister(MIPS_REG_FCC0, val, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	storeRegister(fcc, val, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 }
 
 /**
@@ -1220,7 +1445,12 @@ void Capstone2LlvmIrTranslatorMips_impl::translateDiv(cs_insn* i, cs_mips* mi, l
 		// count is what distinguishes them.
 		EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
 
-		if (mi->op_count == 3)
+		// Capstone 6 often reports pre-R6 `div rs, rt` as three operands with
+		// rd=$zero. That is still the HI/LO form, not R6 `div rd, rs, rt`.
+		const bool r6Gpr = mi->op_count == 3
+				&& mi->operands[0].type == MIPS_OP_REG
+				&& canonicalizeMipsReg(mi->operands[0].reg) != MIPS_REG_ZERO;
+		if (r6Gpr)
 		{
 			std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
 			op1 = narrowToWord(i, irb, op1);
@@ -1230,7 +1460,15 @@ void Capstone2LlvmIrTranslatorMips_impl::translateDiv(cs_insn* i, cs_mips* mi, l
 			return;
 		}
 
-		std::tie(op0, op1) = loadOpBinary(mi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+		if (mi->op_count == 3)
+		{
+			op0 = loadOp(mi->operands[1], irb, nullptr, false);
+			op1 = loadOp(mi->operands[2], irb, nullptr, false);
+		}
+		else
+		{
+			std::tie(op0, op1) = loadOpBinary(mi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+		}
 		op0 = narrowToWord(i, irb, op0);
 		op1 = narrowToWord(i, irb, op1);
 
@@ -1307,7 +1545,10 @@ void Capstone2LlvmIrTranslatorMips_impl::translateDivu(cs_insn* i, cs_mips* mi, 
 {
 	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
 
-	if (mi->op_count == 3)
+	const bool r6Gpr = mi->op_count == 3
+			&& mi->operands[0].type == MIPS_OP_REG
+			&& canonicalizeMipsReg(mi->operands[0].reg) != MIPS_REG_ZERO;
+	if (r6Gpr)
 	{
 		std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
 		op1 = narrowToWord(i, irb, op1);
@@ -1317,7 +1558,15 @@ void Capstone2LlvmIrTranslatorMips_impl::translateDivu(cs_insn* i, cs_mips* mi, 
 		return;
 	}
 
-	std::tie(op0, op1) = loadOpBinary(mi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+	if (mi->op_count == 3)
+	{
+		op0 = loadOp(mi->operands[1], irb, nullptr, false);
+		op1 = loadOp(mi->operands[2], irb, nullptr, false);
+	}
+	else
+	{
+		std::tie(op0, op1) = loadOpBinary(mi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+	}
 	op0 = narrowToWord(i, irb, op0);
 	op1 = narrowToWord(i, irb, op1);
 	// See translateDiv: UNPREDICTABLE is not immediate UB, and GCC's guard is
@@ -2157,6 +2406,16 @@ void Capstone2LlvmIrTranslatorMips_impl::translateMadd(cs_insn* i, cs_mips* mi, 
 
 void Capstone2LlvmIrTranslatorMips_impl::translateMaddf(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
+	if (mi->op_count == 3)
+	{
+		// R6 maddf.s fd, fs, ft  →  fd = fd + fs * ft
+		op0 = loadOp(mi->operands[0], irb);
+		op1 = loadOp(mi->operands[1], irb);
+		op2 = loadOp(mi->operands[2], irb);
+		storeOp(mi->operands[0], irb.CreateFAdd(op0, irb.CreateFMul(op1, op2)), irb);
+		return;
+	}
+
 	EXPECT_IS_QUATERNARY(i, mi, irb);
 
 	op1 = loadOp(mi->operands[1], irb);
@@ -2169,10 +2428,18 @@ void Capstone2LlvmIrTranslatorMips_impl::translateMaddf(cs_insn* i, cs_mips* mi,
 }
 
 /**
- * MIPS_INS_NEG
+ * MIPS_INS_NEG, MIPS_INS_NEG_S, MIPS_INS_NEG_D
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateNeg(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
+	if (i->id == MIPS_INS_NEG_S || i->id == MIPS_INS_NEG_D || isFpInstructionVariant(i))
+	{
+		EXPECT_IS_BINARY(i, mi, irb);
+		op1 = loadOpBinaryOp1(mi, irb);
+		storeOp(mi->operands[0], irb.CreateFNeg(op1), irb);
+		return;
+	}
+
 	if (mi->op_count == 2
 			&& isOperandRegister(mi->operands[0])
 			&& isGeneralPurposeRegister(mi->operands[0].reg)
@@ -2219,13 +2486,18 @@ void Capstone2LlvmIrTranslatorMips_impl::translateNmadd(cs_insn* i, cs_mips* mi,
 }
 
 /**
- * MIPS_INS_MAX
+ * MIPS_INS_MAX, MIPS_INS_MAX_S, MIPS_INS_MAX_D
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateMax(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::THROW);
+	if (op1->getType()->isFloatingPointTy())
+	{
+		storeOp(mi->operands[0], irb.CreateBinaryIntrinsic(llvm::Intrinsic::maxnum, op1, op2), irb);
+		return;
+	}
 	auto* sge = irb.CreateICmpSGE(op1, op2);
 	auto* val = irb.CreateSelect(sge, op1, op2);
 	storeOp(mi->operands[0], val, irb);
@@ -2327,13 +2599,18 @@ void Capstone2LlvmIrTranslatorMips_impl::translateMflo(cs_insn* i, cs_mips* mi, 
 }
 
 /**
- * MIPS_INS_MIN
+ * MIPS_INS_MIN, MIPS_INS_MIN_S, MIPS_INS_MIN_D
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateMin(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::THROW);
+	if (op1->getType()->isFloatingPointTy())
+	{
+		storeOp(mi->operands[0], irb.CreateBinaryIntrinsic(llvm::Intrinsic::minnum, op1, op2), irb);
+		return;
+	}
 	auto* sle = irb.CreateICmpSLE(op1, op2);
 	auto* val = irb.CreateSelect(sle, op1, op2);
 	storeOp(mi->operands[0], val, irb);
@@ -2421,6 +2698,16 @@ void Capstone2LlvmIrTranslatorMips_impl::translateMsub(cs_insn* i, cs_mips* mi, 
 
 void Capstone2LlvmIrTranslatorMips_impl::translateMsubf(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
+	if (mi->op_count == 3)
+	{
+		// R6 msubf.s fd, fs, ft  →  fd = fd - fs * ft
+		op0 = loadOp(mi->operands[0], irb);
+		op1 = loadOp(mi->operands[1], irb);
+		op2 = loadOp(mi->operands[2], irb);
+		storeOp(mi->operands[0], irb.CreateFSub(op0, irb.CreateFMul(op1, op2)), irb);
+		return;
+	}
+
 	EXPECT_IS_QUATERNARY(i, mi, irb);
 
 	op1 = loadOp(mi->operands[1], irb);
@@ -2618,6 +2905,35 @@ void Capstone2LlvmIrTranslatorMips_impl::translateMult(cs_insn* i, cs_mips* mi, 
 	auto* shift = irb.CreateLShr(mul, half);
 	auto* high = irb.CreateTrunc(shift, halfTy);
 	storeRegister(MIPS_REG_HI, high, irb);
+}
+
+/**
+ * MIPS_INS_SQRT_S, MIPS_INS_SQRT_D
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateSqrt(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, mi, irb);
+
+	op1 = loadOpBinaryOp1(mi, irb);
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::sqrt, op1->getType());
+	storeOp(mi->operands[0], irb.CreateCall(f, {op1}), irb);
+}
+
+/**
+ * MIPS_INS_RECIP_S, MIPS_INS_RECIP_D, MIPS_INS_RSQRT_S, MIPS_INS_RSQRT_D
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateRecip(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, mi, irb);
+
+	op1 = loadOpBinaryOp1(mi, irb);
+	if (i->id == MIPS_INS_RSQRT_S || i->id == MIPS_INS_RSQRT_D)
+	{
+		auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::sqrt, op1->getType());
+		op1 = irb.CreateCall(f, {op1});
+	}
+	auto* one = llvm::ConstantFP::get(op1->getType(), 1.0);
+	storeOp(mi->operands[0], irb.CreateFDiv(one, op1), irb);
 }
 
 /**

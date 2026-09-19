@@ -385,8 +385,8 @@ Help text:
 |---|---|
 | `include/retdec/capstone2llvmir/sparc/sparc.h` | public translator interface |
 | `src/capstone2llvmir/sparc/sparc_impl.h` | impl |
-| `src/capstone2llvmir/sparc/sparc.cpp` | integer / CTI / SAVE lift |
-| `src/capstone2llvmir/sparc/sparc_init.cpp` | regs + `_i2fm` (Capstone 5.0.9 IDs only) |
+| `src/capstone2llvmir/sparc/sparc.cpp` | integer / FP / CTI / SAVE lift |
+| `src/capstone2llvmir/sparc/sparc_init.cpp` | regs + `_i2fm` (Capstone 6.0.0-Alpha10 IDs only) |
 | `tests/capstone2llvmir/sparc_tests.cpp` | 32-bit and V9/64, no SKIP |
 | `include/retdec/bin2llvmir/providers/abi/sparc.h` | V8 ABI |
 | `include/retdec/bin2llvmir/providers/abi/sparc64.h` | V9 ABI |
@@ -407,3 +407,60 @@ Filter SPARC:
 
 Both `CS_MODE_32` and `CS_MODE_64` (`CS_MODE_V9`) parameterizations must run.
 Do not SKIP or DISABLED-prefix any of them.
+
+---
+
+## Capstone 6.0.0-Alpha10 IDs (do not invent `SPARC_INS_*`)
+
+`cs_open(CS_ARCH_SPARC, mode)` still accepts only endian plus `CS_MODE_V9`.
+Do **not** pass `CS_MODE_32` to `cs_open`. V9 is extra `CS_MODE_V9`.
+`createSparc` keeps basic mode `CS_MODE_LITTLE_ENDIAN` (0).
+
+Capstone 6 dropped several Capstone 5 names. Compat aliases in
+`src/capstone2llvmir/capstone6_compat.h` map tests onto real enumerators:
+
+| Capstone 5 name | Capstone 6 token |
+|---|---|
+| `SPARC_INS_JMP` | `SPARC_INS_JMPL` |
+| `SPARC_INS_CMP` | `SPARC_INS_ALIAS_CMP` (real lift is `SPARC_INS_SUBCC`) |
+| `SPARC_INS_RET` / `RETL` | `SPARC_INS_ALIAS_RET` / `ALIAS_RETL` (encoding is `JMPL`) |
+| `SPARC_INS_BRZ` / `BRNZ` / … | `SPARC_INS_ALIAS_BR*` (real id `SPARC_INS_BR`) |
+| `SPARC_REG_XCC` | no register; XCC is `SPARC_CC_FIELD_XCC`. Flags packed in `SPARC_REG_ICC` bits 7:4 |
+| assembler `ldf` | `SPARC_INS_LD` with `SPARC_REG_F*` dest |
+| assembler `std` / `stdf` | `SPARC_INS_STD` |
+
+There is **no** `SPARC_INS_LDF` / `SPARC_INS_STF` in Capstone 6.
+
+### Mapped (real LLVM IR)
+
+Integer: `ADD`/`ADDCC`/`ADDX*`, `SUB`/`SUBCC`/`SUBX*`, `AND`/`ANDN`/`AND*CC`,
+`OR`/`ORN`/`OR*CC`, `XOR`/`XNOR`/`XOR*CC`, `SLL`/`SRL`/`SRA`/`SLLX`/`SRLX`/`SRAX`,
+`SETHI`, `NOP`, `MOV`, `SMUL`/`UMUL`/`MULX`, `SDIV`/`UDIV`/`SDIVX`/`UDIVX`,
+`RD`/`WR` (`%y`), `LD`/`LDSB`/`LDUB`/`LDSH`/`LDUH`/`LDSW`/`LDX`/`LDD`,
+`ST`/`STB`/`STH`/`STX`/`STD`, `SAVE`/`RESTORE`, `CALL`, `JMPL`, `RETT`,
+`B`, `BR`, `CMP` (alias of `SUBCC`).
+
+FP: `FADDS`/`FADDD`/`FSUBS`/`FSUBD`/`FMULS`/`FMULD`/`FDIVS`/`FDIVD`,
+`FCMPS`/`FCMPD`/`FCMPES`/`FCMPED`, `FMOVS`/`FMOVD`, `FNEGS`/`FNEGD`,
+`FABSS`/`FABSD`, `FSQRTS`/`FSQRTD`, `FITOS`/`FITOD`/`FSTOI`/`FDTOI`/`FSTOD`/`FDTOS`,
+`FB`, `ld`/`ldd` to `F*`/`D*`, `st`/`std` from `F*`/`D*`.
+
+Delay slot stays 1 for `B`/`FB`/`BR`/`CALL`/`JMPL`/`RETT`/`RET`/`RETL`.
+`hasDelaySlotLikely` remains false (annul is a hint, not an id).
+
+Capstone 6 auto-sync reports `id=JMPL` for `ret`/`retl` with `alias_id=ALIAS_RET(L)`
+and often zero alias operands. The translator prefers `_i2fm[alias_id]` and,
+if `JMPL` still has `op_count==0`, dispatches on mnemonic/`alias_id` to
+`translateRet` (`%o7+8` vs `%i7+8`). GPR even/odd pairs (`SPARC_REG_G2_G3`, …)
+are composed from the two GPRs; they are not separate LLVM globals.
+`ld`/`ldd` to `F*`/`D*` load integer bits then `bitcast` to float/double
+(the emulator memory map is integer-typed).
+
+### Remaining gaps (pseudo-asm)
+
+VIS (`FAND`, `ARRAY*`, `ALIGNADDR`, `PDIST`, `FALIGNDATA`, 16/32-bit packed
+compares), quad `FADDq`/`LDQ`/`STQ`, ASI loads/stores (`LDA`/`STA`/`CASA`),
+`SWAP`/`LDSTUB`, `T`/`TA` traps, `MEMBAR`/`FLUSH`/`FLUSHW`, `POPC`,
+`MOVR`/`FMOVR*`, coprocessor `CB`, window state `DONE`/`RETRY`/`SAVED`/`RESTORED`,
+privileged `RDPR`/`WRPR`. Annulled delay slots still execute (decoder is id-only).
+`F*`/`D*` are separate LLVM globals (no hardware even/odd aliasing).

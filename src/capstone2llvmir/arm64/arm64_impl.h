@@ -179,7 +179,8 @@ class Capstone2LlvmIrTranslatorArm64_impl :
 
 		/**
 		* @brief Check if register is Vector type.
-		* This is true for all  ARM64_REG_V* registers.
+		* This is true for ARM64_REG_Q* (Capstone 6.x SIMD parent) and for
+		* Dn operands that carry a 64-bit NEON arrangement.
 		* @param op Capstone operand type to check.
 		*/
 		bool isVectorRegister(cs_arm64_op& op) const;
@@ -224,6 +225,7 @@ class Capstone2LlvmIrTranslatorArm64_impl :
 		void translateNeonWiden(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		llvm::Value* loadNeonVector(uint32_t reg, unsigned laneBits, unsigned lanes, llvm::IRBuilder<>& irb);
 		void translateNeonLaneBinary(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateNeonFpLaneBinary(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateNeonLaneShift(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateNeonLaneMove(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateNeonMovi(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
