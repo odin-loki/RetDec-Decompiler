@@ -878,6 +878,231 @@ TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_PEEK)
 	EXPECT_EQ(nullptr, _module.getFunction("__asm_peek"));
 }
 
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_CHKCT)
+{
+	setRegisters({
+		{XCORE_REG_R6, 0x50},
+		{XCORE_REG_R0, 1},
+	});
+
+	emulate_bin("08 cf");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R6, XCORE_REG_R0});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("xcore.chan.chkct"), {0x50, 1}},
+	});
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_chkct"));
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_CHKCT_imm)
+{
+	setRegisters({
+		{XCORE_REG_R1, 0x60},
+	});
+
+	emulate_bin("34 cf");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R1});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("xcore.chan.chkct"), {0x60, 8}},
+	});
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_chkct"));
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_FREET)
+{
+	emulate_bin("ef 07");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("xcore.thread.freet"), {}},
+	});
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_freet"));
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_CLRPT)
+{
+	setRegisters({
+		{XCORE_REG_R9, 0x70},
+	});
+
+	emulate_bin("e9 87");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R9});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("xcore.res.clrpt"), {0x70}},
+	});
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_clrpt"));
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_DGETREG)
+{
+	emulate_bin("eb 3f");
+
+	EXPECT_NO_REGISTERS_LOADED();
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R11, ANY},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("xcore.thread.dgetreg"), {}},
+	});
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_dgetreg"));
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_GETST)
+{
+	setRegisters({
+		{XCORE_REG_R1, 0x11},
+	});
+
+	emulate_bin("1d 07");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R7, ANY},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("xcore.thread.getst"), {0x11}},
+	});
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_getst"));
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_INIT_sp)
+{
+	setRegisters({
+		{XCORE_REG_R1, 0x21},
+		{XCORE_REG_R2, 0x2000},
+	});
+
+	emulate_bin("c9 16");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R1, XCORE_REG_R2});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("xcore.thread.init.sp"), {0x21, 0x2000}},
+	});
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_init"));
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_INIT_pc)
+{
+	setRegisters({
+		{XCORE_REG_R10, 0x22},
+		{XCORE_REG_R1, 0x3000},
+	});
+
+	emulate_bin("26 07");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R10, XCORE_REG_R1});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("xcore.thread.init.pc"), {0x22, 0x3000}},
+	});
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_init"));
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_SETN)
+{
+	setRegisters({
+		{XCORE_REG_R9, 0x31},
+		{XCORE_REG_R7, 0x32},
+	});
+
+	emulate_bin("6d ff ec 37");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R9, XCORE_REG_R7});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("xcore.res.setn"), {0x31, 0x32}},
+	});
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_setn"));
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_SETPSC)
+{
+	setRegisters({
+		{XCORE_REG_R8, 0x41},
+		{XCORE_REG_R2, 0x42},
+	});
+
+	emulate_bin("28 c7");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R8, XCORE_REG_R2});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("xcore.res.setpsc"), {0x41, 0x42}},
+	});
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_setpsc"));
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_SETRDY)
+{
+	setRegisters({
+		{XCORE_REG_R3, 0x51},
+		{XCORE_REG_R1, 0x52},
+	});
+
+	emulate_bin("c7 fe ec 2f");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R3, XCORE_REG_R1});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("xcore.res.setrdy"), {0x51, 0x52}},
+	});
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_setrdy"));
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_TESTLCL)
+{
+	setRegisters({
+		{XCORE_REG_R0, 0x61},
+	});
+
+	emulate_bin("c8 fe ec 27");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{XCORE_REG_R2, ANY},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("xcore.res.testlcl"), {0x61}},
+	});
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_testlcl"));
+}
+
+TEST_F(Capstone2LlvmIrTranslatorXcoreTests, XCORE_INS_TSETMR)
+{
+	setRegisters({
+		{XCORE_REG_R7, 0x71},
+		{XCORE_REG_R3, 0x73},
+	});
+
+	emulate_bin("1f 1f");
+
+	EXPECT_JUST_REGISTERS_LOADED({XCORE_REG_R7, XCORE_REG_R3});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("xcore.thread.tsetmr"), {0x71, 0x73}},
+	});
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_tsetmr"));
+}
+
 TEST_F(Capstone2LlvmIrTranslatorXcoreTests, translatorIs32Bit)
 {
 	EXPECT_EQ(4u, _translator->getArchByteSize());

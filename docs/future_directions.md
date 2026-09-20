@@ -164,12 +164,12 @@ not a free-choice list.
 | x86-64 | **Production** | Primary native path |
 | x86-32 | **Production** | — |
 | ARM32 / Thumb | **Production** | Compiler VFP/NEON including VFMA, VZIP/VUZP/VTRN, VTBL/VTBX |
-| AArch64 | **Production** | Capstone + AAPCS64; scalar+vector FP including FMLA/FMLS; SVE/AES still unmapped (AES matches x86) |
-| MIPS32/64 | **Production** | FPU + MUL/DIV; microMIPS 16-bit + compact R6 (no delay slot) |
-| PowerPC 32/64 | **Production** | Compiler FP + gcc -O1/-O2 VSX/Altivec; 64-bit DIVD/MULLD/SLD; QPX unmapped |
-| RISC-V (RV32I, RV64I) | **Production** | I+C+M+F+D+A+CSR including fused FP and AMOMIN/MAX |
+| AArch64 | **Production** | Capstone + AAPCS64; AES/SHA/CRC32/`PMULL`; leftover NEON; SVE remainder; SME `FMOPA` |
+| MIPS32/64 | **Production** | FPU + MUL/DIV; microMIPS + R6; MSA ADDVI/DOTP/HADD; R6 `CRC32*` |
+| PowerPC 32/64 | **Production** | VSX/Altivec + QPX `QV*` + SPE `EV*` + ISEL/VCLZ/XVSQRT |
+| RISC-V (RV32I, RV64I) | **Production** | I+C+M+F+D+A+CSR + Zb* + RVV including mask logicals and `VAES*` |
 | LoongArch | Research | — |
-| SPARC / SystemZ / XCore | **Production** | SPARC V8/V9 FP + VIS; SystemZ 64-only BFP + MVC/vector; XCore 32-only + channel IN/OUT |
+| SPARC / SystemZ / XCore | **Production** | SPARC V8/V9 FP including quad + VIS; SystemZ 64-only BFP + MVC/vector + CPACF helpers; XCore 32-only + channel IN/OUT + remaining Capstone IDs as named helpers |
 | WASM (binary) | **Shipped (input-keyed)** | `.wasm` → WAT |
 | PTX (NVIDIA virtual ISA) | In-tree `src/ptx_decompile` | **Not** a general native output choice |
 | SASS (NVIDIA machine code) | Library, not Production | cubin/fatbin loader + SM_70/80 subset in `src/sass_decode/`; no nvdisasm; not CLI |

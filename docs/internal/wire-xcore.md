@@ -28,7 +28,9 @@ helpers created with `getPseudoAsmFunction`, returning SSA values that are
 stored to the dest register. Names are `xcore.chan.*` / `xcore.res.*` /
 `xcore.event.*` / `xcore.thread.*`, not opaque `__asm_in` barriers. The
 channel/resource operand is a register (Capstone `MEM` `res[rN]`, or parsed
-from `op_str` when the printer overwrites that MEM).
+from `op_str` when the printer overwrites that MEM). `CHKCT` is the x86
+`OUT` analogue (`xcore.chan.chkct`); `FREET` / `DGETREG` use `xcore.thread.*`
+without modeling the XS1 thread.
 
 ### Mapped (LLVM IR)
 
@@ -40,21 +42,16 @@ from `op_str` when the printer overwrites that MEM).
 | Address / stack | `LDC`, `LDAW`, `LDA16`, `LDAP`, `LDW`, `LD16S`, `LD8U`, `STW`, `ST16`, `ST8`, `ENTSP`, `EXTSP`, `EXTDP`, `RETSP`, `KENTSP`, `KRESTSP`, `DENTSP`, `DRESTSP` |
 | Control flow | `BU`, `BAU`, `BRU`, `BF`, `BT`, `BL`, `BLA`, `BLAT`, `DCALL`, `DRET`, `KCALL`, `KRET`, `ECALLF`, `ECALLT` |
 | Thread status / GPRs | `GET` (reg←reg), `SET` (reg←reg), `GETSR`, `SETSR`, `CLRSR`, `SSYNC` (nop) |
-| Channel I/O | `IN`, `OUT`, `INPW`, `OUTPW`, `INSHR`, `OUTSHR`, `INCT`, `OUTCT`, `INT`, `OUTT`, `PEEK`, `ENDIN`, `TESTCT`, `TESTWCT` |
-| Resource | `SETD`, `SETC`, `SETCLK`, `SETPT`, `SETTW`, `SETV`, `SETEV`, `GETD`, `GETTS`, `GETR`, `GETN`, `FREER` |
+| Channel I/O | `IN`, `OUT`, `INPW`, `OUTPW`, `INSHR`, `OUTSHR`, `INCT`, `OUTCT`, `CHKCT`, `INT`, `OUTT`, `PEEK`, `ENDIN`, `TESTCT`, `TESTWCT` |
+| Resource | `SETD`, `SETC`, `SETCLK`, `SETPT`, `CLRPT`, `SETTW`, `SETV`, `SETEV`, `GETD`, `GETTS`, `GETR`, `GETN`, `SETN`, `SETPSC`, `SETRDY`, `TESTLCL`, `FREER` |
 | Events | `EEU`, `EDU`, `EEF`, `EET`, `WAITEU`, `WAITEF`, `WAITET`, `CLRE` |
-| Threads / sync | `START`, `MSYNC`, `MJOIN`, `SYNCR` |
+| Threads / sync | `START`, `MSYNC`, `MJOIN`, `SYNCR`, `FREET`, `DGETREG`, `GETST`, `INIT` (`xcore.thread.init.{sp,pc,cp,dp,lr}`), `TSETMR` |
 
 ### Remaining gaps (`nullptr`)
 
-True hardware-only ops with no sequential model (generic `__asm_*` pseudo):
-
-`CHKCT` (control-token check that raises a hardware exception), `FREET`
-(kill current thread), `CLRPT`, `DGETREG`, `INIT`, `GETST`, `SETN`,
-`SETPSC`, `SETRDY`, `TESTLCL`, `TSETMR`.
-
-`GET`/`SET` of `ps[reg]` (processor state memory) also fall back to
-pseudo-asm; only register-to-register forms are lifted.
+`GET`/`SET` of `ps[reg]` (processor state memory) fall back to generic
+`__asm_*` pseudo; only register-to-register forms are lifted. Every
+Capstone `XCORE_INS_*` ID is mapped.
 
 Capstone’s XCore printer often leaves a trailing `XCORE_OP_MEM` in
 `operands[op_count]` without incrementing `op_count`. Load/store/LDAW/LDA16

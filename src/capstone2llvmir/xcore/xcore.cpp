@@ -373,6 +373,32 @@ static uint32_t parseResourceReg(cs_insn* i)
 	return XCORE_REG_INVALID;
 }
 
+static const char* xcoreInitHelperName(cs_insn* i)
+{
+	const char* s = i->op_str;
+	if (std::strstr(s, ":sp"))
+	{
+		return "xcore.thread.init.sp";
+	}
+	if (std::strstr(s, ":pc"))
+	{
+		return "xcore.thread.init.pc";
+	}
+	if (std::strstr(s, ":cp"))
+	{
+		return "xcore.thread.init.cp";
+	}
+	if (std::strstr(s, ":dp"))
+	{
+		return "xcore.thread.init.dp";
+	}
+	if (std::strstr(s, ":lr"))
+	{
+		return "xcore.thread.init.lr";
+	}
+	return "xcore.thread.init";
+}
+
 llvm::Value* Capstone2LlvmIrTranslatorXcore_impl::loadChanResource(
 		cs_insn* i,
 		cs_xcore* xi,
@@ -1492,6 +1518,12 @@ void Capstone2LlvmIrTranslatorXcore_impl::translateChanIn(
 		case XCORE_INS_GETN:
 			name = "xcore.res.getn";
 			break;
+		case XCORE_INS_GETST:
+			name = "xcore.thread.getst";
+			break;
+		case XCORE_INS_TESTLCL:
+			name = "xcore.res.testlcl";
+			break;
 		default:
 			break;
 	}
@@ -1575,6 +1607,9 @@ void Capstone2LlvmIrTranslatorXcore_impl::translateChanOut(
 		case XCORE_INS_OUTCT:
 			name = "xcore.chan.outct";
 			break;
+		case XCORE_INS_CHKCT:
+			name = "xcore.chan.chkct";
+			break;
 		case XCORE_INS_OUTT:
 			name = "xcore.chan.outt";
 			break;
@@ -1592,6 +1627,15 @@ void Capstone2LlvmIrTranslatorXcore_impl::translateChanOut(
 			break;
 		case XCORE_INS_SETTW:
 			name = "xcore.res.settw";
+			break;
+		case XCORE_INS_SETN:
+			name = "xcore.res.setn";
+			break;
+		case XCORE_INS_SETPSC:
+			name = "xcore.res.setpsc";
+			break;
+		case XCORE_INS_SETRDY:
+			name = "xcore.res.setrdy";
 			break;
 		default:
 			break;
@@ -1722,6 +1766,7 @@ void Capstone2LlvmIrTranslatorXcore_impl::translateResUnary(
 		case XCORE_INS_MJOIN: name = "xcore.thread.mjoin"; break;
 		case XCORE_INS_SYNCR: name = "xcore.thread.syncr"; break;
 		case XCORE_INS_START: name = "xcore.thread.start"; break;
+		case XCORE_INS_CLRPT: name = "xcore.res.clrpt"; break;
 		default: break;
 	}
 	llvm::Function* fnc = getXcoreHelper(
@@ -1802,6 +1847,155 @@ void Capstone2LlvmIrTranslatorXcore_impl::translateEventCond(
 			llvm::ArrayRef<llvm::Type*>{cond->getType(), chan->getType()},
 			name);
 	irb.CreateCall(fnc, llvm::ArrayRef<llvm::Value*>{cond, chan});
+}
+
+void Capstone2LlvmIrTranslatorXcore_impl::translateFreet(
+		cs_insn* i,
+		cs_xcore* xi,
+		llvm::IRBuilder<>& irb)
+{
+	llvm::Function* fnc = getXcoreHelper(
+			i,
+			irb.getVoidTy(),
+			llvm::ArrayRef<llvm::Type*>{},
+			"xcore.thread.freet");
+	irb.CreateCall(fnc, llvm::ArrayRef<llvm::Value*>{});
+}
+
+void Capstone2LlvmIrTranslatorXcore_impl::translateDgetreg(
+		cs_insn* i,
+		cs_xcore* xi,
+		llvm::IRBuilder<>& irb)
+{
+	unsigned n = xcoreOpCount(xi);
+	cs_xcore_op* dest = nullptr;
+	for (unsigned j = 0; j < n; ++j)
+	{
+		auto& op = xi->operands[j];
+		if (op.type == XCORE_OP_REG && dest == nullptr)
+		{
+			dest = &op;
+		}
+	}
+
+	llvm::Function* fnc = getXcoreHelper(
+			i,
+			getDefaultType(),
+			llvm::ArrayRef<llvm::Type*>{},
+			"xcore.thread.dgetreg");
+	auto* c = irb.CreateCall(fnc, llvm::ArrayRef<llvm::Value*>{});
+	if (dest)
+	{
+		storeOp(*dest, c, irb);
+	}
+	else
+	{
+		storeRegister(XCORE_REG_R11, c, irb);
+	}
+}
+
+void Capstone2LlvmIrTranslatorXcore_impl::translateInit(
+		cs_insn* i,
+		cs_xcore* xi,
+		llvm::IRBuilder<>& irb)
+{
+	unsigned n = xcoreOpCount(xi);
+	EXPECT_IS_EXPR(i, xi, irb, n >= 1);
+
+	llvm::Value* thr = loadChanResource(i, xi, irb);
+	uint32_t thrReg = parseResourceReg(i);
+	llvm::Value* val = nullptr;
+	for (unsigned j = 0; j < n; ++j)
+	{
+		auto& op = xi->operands[j];
+		if (op.type == XCORE_OP_MEM)
+		{
+			continue;
+		}
+		if (op.type == XCORE_OP_REG && op.reg == thrReg)
+		{
+			continue;
+		}
+		val = loadOp(op, irb);
+	}
+	if (thr == nullptr && n >= 1)
+	{
+		thr = loadOp(xi->operands[0], irb);
+	}
+	if (val == nullptr && n >= 2)
+	{
+		val = loadOp(xi->operands[n - 1], irb);
+	}
+	if (thr == nullptr || val == nullptr)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	thr = irb.CreateZExtOrTrunc(thr, getDefaultType());
+	val = irb.CreateZExtOrTrunc(val, getDefaultType());
+	const char* name = xcoreInitHelperName(i);
+	llvm::Function* fnc = getXcoreHelper(
+			i,
+			irb.getVoidTy(),
+			llvm::ArrayRef<llvm::Type*>{thr->getType(), val->getType()},
+			name);
+	irb.CreateCall(fnc, llvm::ArrayRef<llvm::Value*>{thr, val});
+}
+
+void Capstone2LlvmIrTranslatorXcore_impl::translateTsetmr(
+		cs_insn* i,
+		cs_xcore* xi,
+		llvm::IRBuilder<>& irb)
+{
+	unsigned n = xcoreOpCount(xi);
+	EXPECT_IS_EXPR(i, xi, irb, n >= 2);
+
+	llvm::Value* a = nullptr;
+	llvm::Value* b = nullptr;
+	for (unsigned j = 0; j < n; ++j)
+	{
+		auto& op = xi->operands[j];
+		if (op.type == XCORE_OP_MEM)
+		{
+			continue;
+		}
+		llvm::Value* v = nullptr;
+		if (op.type == XCORE_OP_IMM && op.imm >= 0 && op.imm <= 11)
+		{
+			v = loadRegister(
+					static_cast<uint32_t>(XCORE_REG_R0) + static_cast<uint32_t>(op.imm),
+					irb);
+		}
+		else
+		{
+			v = loadOp(op, irb);
+		}
+		if (a == nullptr)
+		{
+			a = v;
+		}
+		else if (b == nullptr)
+		{
+			b = v;
+		}
+	}
+	if (a == nullptr || b == nullptr)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	a = irb.CreateZExtOrTrunc(a, getDefaultType());
+	b = irb.CreateZExtOrTrunc(b, getDefaultType());
+	llvm::Function* fnc = getXcoreHelper(
+			i,
+			irb.getVoidTy(),
+			llvm::ArrayRef<llvm::Type*>{a->getType(), b->getType()},
+			"xcore.thread.tsetmr");
+	irb.CreateCall(fnc, llvm::ArrayRef<llvm::Value*>{a, b});
 }
 
 } // namespace capstone2llvmir

@@ -251,6 +251,7 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		void translateBitCount(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateAndn(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateBls(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateTbm(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateBextr(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateBzhi(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateShiftX(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
@@ -399,7 +400,28 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		void translateAvxPmovmskb(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateAvxMovScalar(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateAvxPackedFloat(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAvxFma(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateAvxF128Lane(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAvxPermute(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAvxVariableShift(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAvxGather(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateF16c(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSseCmpP(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateMaskMovdqu(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAvxMaskMov(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAvxAlign(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAvxBlendM(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAvxExtractInsert(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAvxCvtU(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAvxPmovNarrow(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAvxPermI2(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAvxCompressExpand(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAvxLzcnt(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAvxScatter(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAvxConflict(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateXop(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translate3dnow(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateRdrand(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		bool hasEvexModifier(cs_x86* xi, unsigned from = 0) const;
 		unsigned vectorRegisterWidth(uint32_t r) const;
 		unsigned avxWidth(cs_x86* xi) const;
@@ -457,6 +479,19 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		void translateCvtSd2Si(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateCvtDq2Ps(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateCvtPs2Dq(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateCvtPd2Dq(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSseRcpRsqrt(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translatePadlock(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateMulx(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSseDp(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSseMpsadbw(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateMxcsr(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAesEncDec(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAesImc(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAesKeygenAssist(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translatePclmulqdq(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateCrc32(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateSha(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 
 		// AVX-512 opmask registers (x86_avx512.cpp).
 		unsigned maskWidth(cs_insn* i);

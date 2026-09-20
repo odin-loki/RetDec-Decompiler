@@ -165,6 +165,7 @@ struct PrintCapstoneModeToString_Mips
 			case CS_MODE_MICRO: return "CS_MODE_MICRO";
 			case CS_MODE_MIPS3: return "CS_MODE_MIPS3";
 			case CS_MODE_MIPS32R6: return "CS_MODE_MIPS32R6";
+			case CS_MODE_OCTEON: return "CS_MODE_OCTEON";
 			default: return "UNHANDLED CS_MODE";
 		}
 	}
@@ -5422,19 +5423,17 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CFC1_32)
 	SKIP_MODE_64;
 
 	setRegisters({
-		{MIPS_REG_1, 0x1234},
+		{MIPS_REG_FCR1, 0x1234},
 	});
 
 	emulate("cfc1 $2, $1");
 
-	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_1});
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_FCR1});
 	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_2, ANY},
+		{MIPS_REG_2, 0x1234},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_cfc1"), {0x1234}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CFC1_64)
@@ -5442,19 +5441,17 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CFC1_64)
 	ONLY_MODE_64;
 
 	setRegisters({
-		{MIPS_REG_1, 0x1234},
+		{MIPS_REG_FCR1, 0x1234},
 	});
 
 	emulate("cfc1 $2, $1");
 
-	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_1});
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_FCR1});
 	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_2, ANY},
+		{MIPS_REG_2, 0x1234},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_cfc1"), {0x1234}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -5467,17 +5464,16 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CTC1)
 
 	setRegisters({
 		{MIPS_REG_1, 0x1234},
-		{MIPS_REG_2, 0x5678},
 	});
 
 	emulate("ctc1 $1, $2");
 
-	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_1, MIPS_REG_2});
-	EXPECT_NO_REGISTERS_STORED();
-	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_ctc1"), {0x1234, 0x5678}},
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_FCR2, 0x1234},
 	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -9215,6 +9211,140 @@ TEST_P(Capstone2LlvmIrTranslatorMipsMicroTests, MIPS_INS_SWM16_reglist)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorMipsMicroTests, MIPS_INS_ADDIUR1SP)
+{
+	setRegisters({
+		{MIPS_REG_SP, 0x1000},
+	});
+
+	emulate_bin("03 6d"); // addiur1sp $v0, 4
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_SP});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0x1004},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsMicroTests, MIPS_INS_ADDIUR2)
+{
+	setRegisters({
+		{MIPS_REG_V1, 0x20},
+	});
+
+	emulate_bin("32 6d"); // addiur2 $v0, $v1, 4
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0x24},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsMicroTests, MIPS_INS_ADDIUS5)
+{
+	setRegisters({
+		{MIPS_REG_V0, 0x10},
+	});
+
+	emulate_bin("48 4c"); // addius5 $v0, 4
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0x14},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsMicroTests, MIPS_INS_MOVEP)
+{
+	setRegisters({
+		{MIPS_REG_V0, 0x1111},
+	});
+
+	emulate_bin("04 84"); // movep $a1, $a2, $v0, $zero
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_A1, 0x1111},
+		{MIPS_REG_A2, 0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsMicroTests, MIPS_INS_LWXS)
+{
+	setRegisters({
+		{MIPS_REG_A0, 0x1000},
+		{MIPS_REG_V1, 2},
+	});
+	setMemory({
+		{0x1008, 0x12345678_dw},
+	});
+
+	emulate_bin("64 00 18 11"); // lwxs $v0, $v1($a0)
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_A0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0x12345678},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1008});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsMicroTests, MIPS_INS_BGEZALS_call)
+{
+	setRegisters({
+		{MIPS_REG_V0, 1},
+	});
+
+	emulate_bin("62 42 00 00", 0x1000); // bgezals $v0, 0x1004
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_RA, 0x1006},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCallFunction(), {0x1004}},
+	});
+	EXPECT_EQ(1u, _translator->getDelaySlot(MIPS_INS_BGEZALS));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsMicroTests, MIPS_INS_BLTZALS_no_call)
+{
+	setRegisters({
+		{MIPS_REG_V0, 1},
+	});
+
+	emulate_bin("22 42 00 00", 0x1000); // bltzals $v0, 0x1004
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V0});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsMicroTests, MIPS_INS_JALS)
+{
+	emulate_bin("00 74 00 00", 0x1000); // jals 0
+
+	EXPECT_NO_REGISTERS_LOADED();
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_RA, 0x1006},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCallFunction(), {0}},
+	});
+	EXPECT_EQ(1u, _translator->getDelaySlot(MIPS_INS_JALS));
+}
+
 //
 // MIPS32 Release 6 compact encodings. Keystone is unused (0.9.2 fails as a
 // basic R6 mode); encodings are from Capstone MC tests, little-endian.
@@ -9374,6 +9504,2294 @@ TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_SEL_S_lsb_clear)
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F0, MIPS_REG_F1, MIPS_REG_F2});
 	EXPECT_JUST_REGISTERS_STORED({
 		{MIPS_REG_F0, 3.14_f32},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_CRC32B)
+{
+	setRegisters({
+		{MIPS_REG_2, 0},
+		{MIPS_REG_3, 1},
+	});
+
+	emulate_bin("0f 00 62 7c"); // crc32b $2, $3
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x77073096u},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_CRC32W)
+{
+	setRegisters({
+		{MIPS_REG_2, 0},
+		{MIPS_REG_3, 0x12345678u},
+	});
+
+	emulate_bin("8f 00 62 7c"); // crc32w $2, $3
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x8e2958ceu},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_CRC32CB)
+{
+	setRegisters({
+		{MIPS_REG_2, 0},
+		{MIPS_REG_3, 1},
+	});
+
+	emulate_bin("0f 01 62 7c"); // crc32cb $2, $3
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0xf26b8303u},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_CLASS_S)
+{
+	// LE 1b 08 00 46 class.s $f0, $f1. +1.0 → bit 8 (+norm) = 0x100.
+	float classMask = 0.0f;
+	uint32_t bits = 0x100;
+	std::memcpy(&classMask, &bits, sizeof(bits));
+
+	setRegisters({
+		{MIPS_REG_F1, 1.0f},
+	});
+
+	emulate_bin("1b 08 00 46");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_F0, classMask},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_CMP_EQ_S_true)
+{
+	setRegisters({
+		{MIPS_REG_F2, 1.0f},
+		{MIPS_REG_F4, 1.0f},
+	});
+
+	emulate_bin("02 10 84 46"); // cmp.eq.s $f0, $f2, $f4
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2, MIPS_REG_F4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_F0, StoredValue()},
+	});
+	float eqBitsF = getRegisterValueFloat(MIPS_REG_F0);
+	uint32_t eqBits = 0;
+	std::memcpy(&eqBits, &eqBitsF, sizeof(eqBits));
+	EXPECT_EQ(0xffffffffu, eqBits);
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_CMP_EQ_S_false)
+{
+	setRegisters({
+		{MIPS_REG_F2, 1.0f},
+		{MIPS_REG_F4, 2.0f},
+	});
+
+	emulate_bin("02 10 84 46"); // cmp.eq.s $f0, $f2, $f4
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2, MIPS_REG_F4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_F0, 0.0f},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_CMP_LT_S)
+{
+	setRegisters({
+		{MIPS_REG_F2, 1.0f},
+		{MIPS_REG_F4, 2.0f},
+	});
+
+	emulate_bin("04 10 84 46"); // cmp.lt.s $f0, $f2, $f4
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2, MIPS_REG_F4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_F0, StoredValue()},
+	});
+	float eqBitsF = getRegisterValueFloat(MIPS_REG_F0);
+	uint32_t eqBits = 0;
+	std::memcpy(&eqBits, &eqBitsF, sizeof(eqBits));
+	EXPECT_EQ(0xffffffffu, eqBits);
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_RINT_S)
+{
+	setRegisters({
+		{MIPS_REG_F1, 1.5f},
+	});
+
+	emulate_bin("1a 08 00 46"); // rint.s $f0, $f1
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_F0, 2.0f},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("llvm.nearbyint.f32"), {1.5f}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_MAXA_S)
+{
+	// LE 1f 08 02 46 maxa.s $f0, $f1, $f2. |-3| > |2| → keep -3.
+	setRegisters({
+		{MIPS_REG_F1, -3.0f},
+		{MIPS_REG_F2, 2.0f},
+	});
+
+	emulate_bin("1f 08 02 46");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F1, MIPS_REG_F2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_F0, -3.0f},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_MINA_S)
+{
+	// LE 1e 08 02 46 mina.s $f0, $f1, $f2. |-3| > |2| → keep 2.
+	setRegisters({
+		{MIPS_REG_F1, -3.0f},
+		{MIPS_REG_F2, 2.0f},
+	});
+
+	emulate_bin("1e 08 02 46");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F1, MIPS_REG_F2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_F0, 2.0f},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_BC1EQZ_branch)
+{
+	setRegisters({
+		{MIPS_REG_F2, 0.0f},
+	});
+
+	emulate_bin("02 00 22 45", 0x1000); // bc1eqz $f2, 0x100c
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCondBranchFunction(), {true, 0x100c}},
+	});
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_BC1EQZ));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_BC1NEZ_branch)
+{
+	setRegisters({
+		{MIPS_REG_F2, 1.0f},
+	});
+
+	emulate_bin("02 00 a2 45", 0x1000); // bc1nez $f2, 0x100c
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCondBranchFunction(), {true, 0x100c}},
+	});
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_BC1NEZ));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_SELEQZ_S_keep)
+{
+	setRegisters({
+		{MIPS_REG_F1, 3.14f},
+		{MIPS_REG_F2, 0.0f},
+	});
+
+	emulate_bin("14 08 02 46"); // seleqz.s $f0, $f1, $f2
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F1, MIPS_REG_F2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_F0, 3.14_f32},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_SELEQZ_S_zero)
+{
+	setRegisters({
+		{MIPS_REG_F1, 3.14f},
+		{MIPS_REG_F2, 1.0f},
+	});
+
+	emulate_bin("14 08 02 46");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F1, MIPS_REG_F2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_F0, 0.0f},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_SELNEZ_S)
+{
+	setRegisters({
+		{MIPS_REG_F1, 3.14f},
+		{MIPS_REG_F2, 1.0f},
+	});
+
+	emulate_bin("17 08 02 46"); // selnez.s $f0, $f1, $f2
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F1, MIPS_REG_F2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_F0, 3.14_f32},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_BOVC_overflow)
+{
+	setRegisters({
+		{MIPS_REG_V1, 0x7fffffff},
+		{MIPS_REG_V0, 1},
+	});
+
+	emulate_bin("02 00 62 20", 0x1000); // bovc $v1, $v0, 0x100c
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_V0});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCondBranchFunction(), {true, 0x100c}},
+	});
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_BOVC));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_BNVC_no_overflow)
+{
+	setRegisters({
+		{MIPS_REG_V1, 1},
+		{MIPS_REG_V0, 1},
+	});
+
+	emulate_bin("02 00 62 60", 0x1000); // bnvc $v1, $v0, 0x100c
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_V0});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCondBranchFunction(), {true, 0x100c}},
+	});
+	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_BNVC));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ADDVI_W)
+{
+	ONLY_MODE_32;
+
+	// LE 06 08 42 78 addvi.w $w0, $w1, 2
+	setW(MIPS_REG_W1, 0, 0x0000000500000003ULL);
+
+	emulate_bin("06 08 42 78");
+
+	EXPECT_EQ(0x0000000700000005ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000200000002ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SUBVI_W)
+{
+	ONLY_MODE_32;
+
+	// LE 06 08 c2 78 subvi.w $w0, $w1, 2
+	setW(MIPS_REG_W1, 0, 0x0000000500000003ULL);
+
+	emulate_bin("06 08 c2 78");
+
+	EXPECT_EQ(0x0000000300000001ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0xfffffffefffffffeULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_BCLR_W)
+{
+	ONLY_MODE_32;
+
+	// LE 0d 08 c2 79 bclr.w $w0, $w1, $w2. Clear bit (wt%32).
+	setW(MIPS_REG_W1, 0, 0xffffffffffffffffULL);
+	setW(MIPS_REG_W2, 0, 0x0000000100000000ULL);
+
+	emulate_bin("0d 08 c2 79");
+
+	EXPECT_EQ(0xfffffffdfffffffeULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_BSET_W)
+{
+	ONLY_MODE_32;
+
+	// LE 0d 08 42 7a bset.w $w0, $w1, $w2
+	setW(MIPS_REG_W1, 0, 0);
+	setW(MIPS_REG_W2, 0, 0x0000000100000000ULL);
+
+	emulate_bin("0d 08 42 7a");
+
+	EXPECT_EQ(0x0000000200000001ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000100000001ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_BNEG_W)
+{
+	ONLY_MODE_32;
+
+	// LE 0d 08 c2 7a bneg.w $w0, $w1, $w2
+	setW(MIPS_REG_W1, 0, 0);
+	setW(MIPS_REG_W2, 0, 0);
+
+	emulate_bin("0d 08 c2 7a");
+
+	EXPECT_EQ(0x0000000100000001ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000100000001ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_BCLRI_W)
+{
+	ONLY_MODE_32;
+
+	// LE 09 08 c2 79 bclri.w $w0, $w1, 2
+	setW(MIPS_REG_W1, 0, 0x00000000ffffffffULL);
+
+	emulate_bin("09 08 c2 79");
+
+	EXPECT_EQ(0x00000000fffffffbULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_BINSL_W)
+{
+	ONLY_MODE_32;
+
+	// LE 0d 08 42 7b binsl.w $w0, $w1, $w2. nbits=(wt%32)+1=8 → high 8 of ws.
+	setW(MIPS_REG_W0, 0, 0x00000000000000aaULL);
+	setW(MIPS_REG_W1, 0, 0x00000000ffffffffULL);
+	setW(MIPS_REG_W2, 0, 0x0000000000000007ULL);
+
+	emulate_bin("0d 08 42 7b");
+
+	EXPECT_EQ(0x00000000ff0000aaULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_BINSR_W)
+{
+	ONLY_MODE_32;
+
+	// LE 0d 08 c2 7b binsr.w $w0, $w1, $w2. nbits=8 → low 8 of ws.
+	setW(MIPS_REG_W0, 0, 0x00000000aa000000ULL);
+	setW(MIPS_REG_W1, 0, 0x00000000ffffffffULL);
+	setW(MIPS_REG_W2, 0, 0x0000000000000007ULL);
+
+	emulate_bin("0d 08 c2 7b");
+
+	EXPECT_EQ(0x00000000aa0000ffULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_BMNZ_V)
+{
+	ONLY_MODE_32;
+
+	// LE 1e 08 82 78 bmnz.v $w0, $w1, $w2. Where wt=1 take ws, else wd.
+	setW(MIPS_REG_W0, 0, 0x00000000000000aaULL);
+	setW(MIPS_REG_W1, 0, 0x00000000000000ffULL);
+	setW(MIPS_REG_W2, 0, 0x000000000000000fULL);
+
+	emulate_bin("1e 08 82 78");
+
+	EXPECT_EQ(0x00000000000000afULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_BMZ_V)
+{
+	ONLY_MODE_32;
+
+	// LE 1e 08 a2 78 bmz.v $w0, $w1, $w2. Where wt=0 take ws, else wd.
+	setW(MIPS_REG_W0, 0, 0x00000000000000aaULL);
+	setW(MIPS_REG_W1, 0, 0x00000000000000ffULL);
+	setW(MIPS_REG_W2, 0, 0x000000000000000fULL);
+
+	emulate_bin("1e 08 a2 78");
+
+	EXPECT_EQ(0x00000000000000faULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ADD_A_W)
+{
+	ONLY_MODE_32;
+
+	// LE 10 08 42 78 add_a.w $w0, $w1, $w2. |-3|+|4|=7
+	setW(MIPS_REG_W1, 0, 0x00000000fffffffdULL);
+	setW(MIPS_REG_W2, 0, 0x0000000000000004ULL);
+
+	emulate_bin("10 08 42 78");
+
+	EXPECT_EQ(0x0000000000000007ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ASUB_S_W)
+{
+	ONLY_MODE_32;
+
+	// LE 11 08 42 7a asub_s.w $w0, $w1, $w2. |-3-5|=8
+	setW(MIPS_REG_W1, 0, 0x00000000fffffffdULL);
+	setW(MIPS_REG_W2, 0, 0x0000000000000005ULL);
+
+	emulate_bin("11 08 42 7a");
+
+	EXPECT_EQ(0x0000000000000008ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ASUB_U_W)
+{
+	ONLY_MODE_32;
+
+	// LE 11 08 c2 7a asub_u.w $w0, $w1, $w2. |1-4|=3
+	setW(MIPS_REG_W1, 0, 0x0000000000000001ULL);
+	setW(MIPS_REG_W2, 0, 0x0000000000000004ULL);
+
+	emulate_bin("11 08 c2 7a");
+
+	EXPECT_EQ(0x0000000000000003ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_AVE_S_W)
+{
+	ONLY_MODE_32;
+
+	// LE 10 08 42 7a ave_s.w $w0, $w1, $w2. (5+3)>>1=4
+	setW(MIPS_REG_W1, 0, 0x0000000000000005ULL);
+	setW(MIPS_REG_W2, 0, 0x0000000000000003ULL);
+
+	emulate_bin("10 08 42 7a");
+
+	EXPECT_EQ(0x0000000000000004ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_AVER_S_W)
+{
+	ONLY_MODE_32;
+
+	// LE 10 08 42 7b aver_s.w $w0, $w1, $w2. (1+2+1)>>1=2
+	setW(MIPS_REG_W1, 0, 0x0000000000000001ULL);
+	setW(MIPS_REG_W2, 0, 0x0000000000000002ULL);
+
+	emulate_bin("10 08 42 7b");
+
+	EXPECT_EQ(0x0000000000000002ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CLT_U_W)
+{
+	ONLY_MODE_32;
+
+	// LE 0f 08 c2 79 clt_u.w $w0, $w1, $w2. 1<2 true, 5<3 false
+	setW(MIPS_REG_W1, 0, 0x0000000500000001ULL);
+	setW(MIPS_REG_W2, 0, 0x0000000300000002ULL);
+
+	emulate_bin("0f 08 c2 79");
+
+	EXPECT_EQ(0x00000000ffffffffULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CLE_U_W)
+{
+	ONLY_MODE_32;
+
+	// LE 0f 08 c2 7a cle_u.w $w0, $w1, $w2. 5<=5 true, 6<=3 false
+	setW(MIPS_REG_W1, 0, 0x0000000600000005ULL);
+	setW(MIPS_REG_W2, 0, 0x0000000300000005ULL);
+
+	emulate_bin("0f 08 c2 7a");
+
+	EXPECT_EQ(0x00000000ffffffffULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0xffffffffffffffffULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FADD_D_msa)
+{
+	ONLY_MODE_32;
+
+	// LE 1b 08 22 78 fadd.d $w0, $w1, $w2. 1.0+1.0=2.0
+	setW(MIPS_REG_W1, 0, 0x3ff0000000000000ULL);
+	setW(MIPS_REG_W2, 0, 0x3ff0000000000000ULL);
+
+	emulate_bin("1b 08 22 78");
+
+	EXPECT_EQ(0x4000000000000000ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FMAX_D)
+{
+	ONLY_MODE_32;
+
+	// LE 1b 08 a2 7b fmax.d $w0, $w1, $w2. max(1.0, 2.0)=2.0
+	setW(MIPS_REG_W1, 0, 0x3ff0000000000000ULL);
+	setW(MIPS_REG_W2, 0, 0x4000000000000000ULL);
+
+	emulate_bin("1b 08 a2 7b");
+
+	EXPECT_EQ(0x4000000000000000ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FMAX_A_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1b 08 c2 7b fmax_a.w $w0, $w1, $w2. |-2.0f| > |1.0f| → -2.0f
+	setW(MIPS_REG_W1, 0, 0x3f800000c0000000ULL);
+	setW(MIPS_REG_W2, 0, 0x400000003f800000ULL);
+
+	emulate_bin("1b 08 c2 7b");
+
+	EXPECT_EQ(0x40000000c0000000ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FMIN_A_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1b 08 42 7b fmin_a.w $w0, $w1, $w2. |-2.0f| > |1.0f| → 1.0f
+	setW(MIPS_REG_W1, 0, 0x3f800000c0000000ULL);
+	setW(MIPS_REG_W2, 0, 0x400000003f800000ULL);
+
+	emulate_bin("1b 08 42 7b");
+
+	EXPECT_EQ(0x3f8000003f800000ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FCEQ_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1a 08 82 78 fceq.w $w0, $w1, $w2. 1.0==1.0, 2.0!=1.0; high 0==0.
+	setW(MIPS_REG_W1, 0, 0x400000003f800000ULL);
+	setW(MIPS_REG_W2, 0, 0x3f8000003f800000ULL);
+
+	emulate_bin("1a 08 82 78");
+
+	EXPECT_EQ(0x00000000ffffffffULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0xffffffffffffffffULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FCLT_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1a 08 02 79 fclt.w $w0, $w1, $w2. 1.0<2.0, 3.0<2.0 false.
+	setW(MIPS_REG_W1, 0, 0x404000003f800000ULL);
+	setW(MIPS_REG_W2, 0, 0x4000000040000000ULL);
+
+	emulate_bin("1a 08 02 79");
+
+	EXPECT_EQ(0x00000000ffffffffULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DOTP_S_W)
+{
+	ONLY_MODE_32;
+
+	// LE 13 08 42 78 dotp_s.w $w0, $w1, $w2.
+	// (1*5+2*6)=17, (3*7+4*8)=53
+	setW(MIPS_REG_W1, 0, 0x0004000300020001ULL);
+	setW(MIPS_REG_W2, 0, 0x0008000700060005ULL);
+
+	emulate_bin("13 08 42 78");
+
+	EXPECT_EQ(0x0000003500000011ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DPADD_S_W)
+{
+	ONLY_MODE_32;
+
+	// LE 13 08 42 79 dpadd_s.w $w0, $w1, $w2. acc 1 + 17 = 18
+	setW(MIPS_REG_W0, 0, 0x0000000000000001ULL);
+	setW(MIPS_REG_W1, 0, 0x0004000300020001ULL);
+	setW(MIPS_REG_W2, 0, 0x0008000700060005ULL);
+
+	emulate_bin("13 08 42 79");
+
+	EXPECT_EQ(0x0000003500000012ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_HADD_S_W)
+{
+	ONLY_MODE_32;
+
+	// LE 15 08 42 7a hadd_s.w $w0, $w1, $w2.
+	// wd[i] = ws[2i+1] + wt[2i] → 2+5=7, 4+7=11
+	setW(MIPS_REG_W1, 0, 0x0004000300020001ULL);
+	setW(MIPS_REG_W2, 0, 0x0008000700060005ULL);
+
+	emulate_bin("15 08 42 7a");
+
+	EXPECT_EQ(0x0000000b00000007ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_HSUB_S_W)
+{
+	ONLY_MODE_32;
+
+	// LE 15 08 42 7b hsub_s.w $w0, $w1, $w2. 2-5=-3, 4-7=-3
+	setW(MIPS_REG_W1, 0, 0x0004000300020001ULL);
+	setW(MIPS_REG_W2, 0, 0x0008000700060005ULL);
+
+	emulate_bin("15 08 42 7b");
+
+	EXPECT_EQ(0xfffffffdfffffffdULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DIV_S_W)
+{
+	ONLY_MODE_32;
+
+	// LE 12 08 42 7a div_s.w $w0, $w1, $w2. 10/2=5, 9/3=3
+	setW(MIPS_REG_W1, 0, 0x000000090000000aULL);
+	setW(MIPS_REG_W2, 0, 0x0000000300000002ULL);
+
+	emulate_bin("12 08 42 7a");
+
+	EXPECT_EQ(0x0000000300000005ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MOD_S_W)
+{
+	ONLY_MODE_32;
+
+	// LE 12 08 42 7b mod_s.w $w0, $w1, $w2. 10%3=1, 8%3=2
+	setW(MIPS_REG_W1, 0, 0x000000080000000aULL);
+	setW(MIPS_REG_W2, 0, 0x0000000300000003ULL);
+
+	emulate_bin("12 08 42 7b");
+
+	EXPECT_EQ(0x0000000200000001ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MOVE_V)
+{
+	ONLY_MODE_32;
+
+	// LE 19 08 be 78 move.v $w0, $w1
+	setW(MIPS_REG_W1, 0x1122334455667788ULL, 0x99aabbccddeeff00ULL);
+
+	emulate_bin("19 08 be 78");
+
+	EXPECT_EQ(0x99aabbccddeeff00ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x1122334455667788ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MUL_Q_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1c 08 22 79 mul_q.w $w0, $w1, $w2. Q31 0.5*0.5=0.25
+	setW(MIPS_REG_W1, 0, 0x0000000040000000ULL);
+	setW(MIPS_REG_W2, 0, 0x0000000040000000ULL);
+
+	emulate_bin("1c 08 22 79");
+
+	EXPECT_EQ(0x0000000020000000ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ADDS_A_W)
+{
+	ONLY_MODE_32;
+
+	// LE 10 08 c2 78 adds_a.w $w0, $w1, $w2. | -3 | + | 4 | = 7
+	setW(MIPS_REG_W1, 0, 0x00000000fffffffdULL);
+	setW(MIPS_REG_W2, 0, 0x0000000000000004ULL);
+
+	emulate_bin("10 08 c2 78");
+
+	EXPECT_EQ(0x0000000000000007ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CFCMSA)
+{
+	ONLY_MODE_32;
+
+	// LE 99 08 7e 78 cfcmsa $v0, $1 (MSACSR)
+	setRegisters({
+		{MIPS_REG_MSACSR, 0xa5u},
+	});
+
+	emulate_bin("99 08 7e 78");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0xa5u},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CTCMSA)
+{
+	ONLY_MODE_32;
+
+	// LE 99 08 3e 78 ctcmsa $2, $at → MSAACCESS = AT
+	setRegisters({
+		{MIPS_REG_AT, 0x5au},
+	});
+
+	emulate_bin("99 08 3e 78");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_MSAACCESS, 0x5au},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_BNZ_W)
+{
+	ONLY_MODE_32;
+
+	// LE 08 00 c1 47 bnz.w $w1, +0x24. Any nonzero lane branches.
+	setW(MIPS_REG_W1, 0, 1);
+
+	emulate_bin("08 00 c1 47", 0x1000);
+
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCondBranchFunction(), {true, 0x1024}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_BZ_W)
+{
+	ONLY_MODE_32;
+
+	// LE 08 00 41 47 bz.w $w1, +0x24. All-zero vector branches.
+	setW(MIPS_REG_W1, 0, 0);
+
+	emulate_bin("08 00 41 47", 0x1000);
+
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCondBranchFunction(), {true, 0x1024}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FCLASS_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1e 08 20 7b fclass.w $w0, $w1. +1.0f → bit 8 (positive normal).
+	setW(MIPS_REG_W1, 0x3f8000003f800000ULL, 0x3f8000003f800000ULL);
+
+	emulate_bin("1e 08 20 7b");
+
+	EXPECT_EQ(0x0000010000000100ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000010000000100ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FMADD_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1b 08 02 79 fmadd.w $w0, $w1, $w2. 1 + 2*3 = 7
+	setW(MIPS_REG_W0, 0, 0x3f800000);
+	setW(MIPS_REG_W1, 0, 0x40000000);
+	setW(MIPS_REG_W2, 0, 0x40400000);
+
+	emulate_bin("1b 08 02 79");
+
+	EXPECT_EQ(0x0000000040e00000ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FRCP_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1e 08 2a 7b frcp.w $w0, $w1. 1/2 = 0.5
+	setW(MIPS_REG_W1, 0x4000000040000000ULL, 0x4000000040000000ULL);
+
+	emulate_bin("1e 08 2a 7b");
+
+	EXPECT_EQ(0x3f0000003f000000ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x3f0000003f000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FSQRT_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1e 08 26 7b fsqrt.w $w0, $w1. sqrt(4) = 2
+	setW(MIPS_REG_W1, 0x4080000040800000ULL, 0x4080000040800000ULL);
+
+	emulate_bin("1e 08 26 7b");
+
+	EXPECT_EQ(0x4000000040000000ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x4000000040000000ULL, wHigh(MIPS_REG_W0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FSEQ_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1a 08 82 7a fseq.w $w0, $w1, $w2. 1==1, 2!=1
+	setW(MIPS_REG_W1, 0, 0x400000003f800000ULL);
+	setW(MIPS_REG_W2, 0, 0x3f8000003f800000ULL);
+
+	emulate_bin("1a 08 82 7a");
+
+	EXPECT_EQ(0x00000000ffffffffULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0xffffffffffffffffULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FFINT_S_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1e 08 3c 7b ffint_s.w $w0, $w1. 2 → 2.0f
+	setW(MIPS_REG_W1, 0, 2);
+
+	emulate_bin("1e 08 3c 7b");
+
+	EXPECT_EQ(0x0000000040000000ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FTINT_S_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1e 08 38 7b ftint_s.w $w0, $w1. 2.0f → 2
+	setW(MIPS_REG_W1, 0, 0x40000000);
+
+	emulate_bin("1e 08 38 7b");
+
+	EXPECT_EQ(0x0000000000000002ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FEXUPR_D)
+{
+	ONLY_MODE_32;
+
+	// LE 1e 08 33 7b fexupr.d $w0, $w1. low two f32 → two f64
+	setW(MIPS_REG_W1, 0, 0x400000003f800000ULL);
+
+	emulate_bin("1e 08 33 7b");
+
+	EXPECT_EQ(0x3ff0000000000000ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x4000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MADDV_W)
+{
+	ONLY_MODE_32;
+
+	// LE 12 08 c2 78 maddv.w $w0, $w1, $w2. 1 + 2*3 = 7
+	setW(MIPS_REG_W0, 0, 1);
+	setW(MIPS_REG_W1, 0, 2);
+	setW(MIPS_REG_W2, 0, 3);
+
+	emulate_bin("12 08 c2 78");
+
+	EXPECT_EQ(0x0000000000000007ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MAXI_S_W)
+{
+	ONLY_MODE_32;
+
+	// LE 06 08 43 79 maxi_s.w $w0, $w1, 3. max(1,3)=3, max(5,3)=5
+	setW(MIPS_REG_W1, 0, 0x0000000500000001ULL);
+
+	emulate_bin("06 08 43 79");
+
+	EXPECT_EQ(0x0000000500000003ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000300000003ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MAX_A_W)
+{
+	ONLY_MODE_32;
+
+	// LE 0e 08 42 7b max_a.w $w0, $w1, $w2. |-5| > |3| → -5
+	setW(MIPS_REG_W1, 0, 0xfffffffb);
+	setW(MIPS_REG_W2, 0, 3);
+
+	emulate_bin("0e 08 42 7b");
+
+	EXPECT_EQ(0x00000000fffffffbULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MAX_U_W)
+{
+	ONLY_MODE_32;
+
+	// LE 0e 08 c2 79 max_u.w $w0, $w1, $w2
+	setW(MIPS_REG_W1, 0, 0xffffffff);
+	setW(MIPS_REG_W2, 0, 1);
+
+	emulate_bin("0e 08 c2 79");
+
+	EXPECT_EQ(0x00000000ffffffffULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_NLZC_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1e 08 0e 7b nlzc.w $w0, $w1. 0x0000000f → 28
+	setW(MIPS_REG_W1, 0, 0x0000000f);
+
+	emulate_bin("1e 08 0e 7b");
+
+	EXPECT_EQ(0x000000200000001cULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000002000000020ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_PCNT_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1e 08 06 7b pcnt.w $w0, $w1. 0xf → 4
+	setW(MIPS_REG_W1, 0, 0x0000000f);
+
+	emulate_bin("1e 08 06 7b");
+
+	EXPECT_EQ(0x0000000000000004ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_NLOC_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1e 08 0a 7b nloc.w $w0, $w1. 0xffff0000 → 16
+	setW(MIPS_REG_W1, 0, 0xffff0000);
+
+	emulate_bin("1e 08 0a 7b");
+
+	EXPECT_EQ(0x0000000000000010ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_VSHF_W)
+{
+	ONLY_MODE_32;
+
+	// LE 15 08 42 78 vshf.w $w0, $w1, $w2. idx 0..3 copies wd
+	setW(MIPS_REG_W0, 0x1111111122222222ULL, 0x3333333344444444ULL);
+	setW(MIPS_REG_W1, 0, 0);
+	setW(MIPS_REG_W2, 0x0000000300000002ULL, 0x0000000100000000ULL);
+
+	emulate_bin("15 08 42 78");
+
+	EXPECT_EQ(0x3333333344444444ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x1111111122222222ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_INSVE_W)
+{
+	ONLY_MODE_32;
+
+	// LE 19 08 71 79 insve.w $w0[1], $w1[0]
+	setW(MIPS_REG_W0, 0, 0xaaaaaaaa55555555ULL);
+	setW(MIPS_REG_W1, 0, 0x12345678);
+
+	emulate_bin("19 08 71 79");
+
+	EXPECT_EQ(0x1234567855555555ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MULR_Q_W)
+{
+	ONLY_MODE_32;
+
+	// LE 1c 08 22 7b mulr_q.w $w0, $w1, $w2. Q31 0.5*0.5=0.25
+	setW(MIPS_REG_W1, 0, 0x40000000);
+	setW(MIPS_REG_W2, 0, 0x40000000);
+
+	emulate_bin("1c 08 22 7b");
+
+	EXPECT_EQ(0x0000000020000000ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FFQL_D)
+{
+	ONLY_MODE_32;
+
+	// LE 1e 08 35 7b ffql.d $w0, $w1. left Q31 0x40000000 → 0.5
+	setW(MIPS_REG_W1, 0x4000000040000000ULL, 0);
+
+	emulate_bin("1e 08 35 7b");
+
+	EXPECT_EQ(0x3fe0000000000000ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x3fe0000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SRA_W)
+{
+	ONLY_MODE_32;
+
+	// LE 0d 08 c2 78 sra.w $w0, $w1, $w2. 0x80000000 >>a 1 = 0xc0000000
+	setW(MIPS_REG_W1, 0, 0x80000000);
+	setW(MIPS_REG_W2, 0, 1);
+
+	emulate_bin("0d 08 c2 78");
+
+	EXPECT_EQ(0x00000000c0000000ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SLLI_W)
+{
+	ONLY_MODE_32;
+
+	// LE 09 08 42 78 slli.w $w0, $w1, 2. 1 << 2 = 4
+	setW(MIPS_REG_W1, 0, 1);
+
+	emulate_bin("09 08 42 78");
+
+	EXPECT_EQ(0x0000000000000004ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SRAI_W)
+{
+	ONLY_MODE_32;
+
+	// LE 09 08 c2 78 srai.w $w0, $w1, 2. 0x80000000 >>a 2 = 0xe0000000
+	setW(MIPS_REG_W1, 0, 0x80000000);
+
+	emulate_bin("09 08 c2 78");
+
+	EXPECT_EQ(0x00000000e0000000ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SRLI_W)
+{
+	ONLY_MODE_32;
+
+	// LE 09 08 42 79 srli.w $w0, $w1, 2. 0x80000000 >> 2 = 0x20000000
+	setW(MIPS_REG_W1, 0, 0x80000000);
+
+	emulate_bin("09 08 42 79");
+
+	EXPECT_EQ(0x0000000020000000ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SRAR_W)
+{
+	ONLY_MODE_32;
+
+	// LE 15 08 c2 78 srar.w $w0, $w1, $w2. (6 + 2) >> 2 = 2
+	setW(MIPS_REG_W1, 0, 6);
+	setW(MIPS_REG_W2, 0, 2);
+
+	emulate_bin("15 08 c2 78");
+
+	EXPECT_EQ(0x0000000000000002ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SRARI_W)
+{
+	ONLY_MODE_32;
+
+	// LE 0a 08 42 79 srari.w $w0, $w1, 2. (6 + 2) >> 2 = 2
+	setW(MIPS_REG_W1, 0, 6);
+
+	emulate_bin("0a 08 42 79");
+
+	EXPECT_EQ(0x0000000000000002ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SRLR_W)
+{
+	ONLY_MODE_32;
+
+	// LE 15 08 42 79 srlr.w $w0, $w1, $w2. (5 + 1) >> 1 = 3
+	setW(MIPS_REG_W1, 0, 5);
+	setW(MIPS_REG_W2, 0, 1);
+
+	emulate_bin("15 08 42 79");
+
+	EXPECT_EQ(0x0000000000000003ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SRLRI_W)
+{
+	ONLY_MODE_32;
+
+	// LE 0a 08 c2 79 srlri.w $w0, $w1, 2. (6 + 2) >> 2 = 2
+	setW(MIPS_REG_W1, 0, 6);
+
+	emulate_bin("0a 08 c2 79");
+
+	EXPECT_EQ(0x0000000000000002ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SUBSUS_U_W)
+{
+	ONLY_MODE_32;
+
+	// LE 11 08 42 79 subsus_u.w $w0, $w1, $w2. 1 - (-1) sat_u = 2
+	setW(MIPS_REG_W1, 0, 1);
+	setW(MIPS_REG_W2, 0, 0xffffffff);
+
+	emulate_bin("11 08 42 79");
+
+	EXPECT_EQ(0x0000000000000002ULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SUBSUU_S_W)
+{
+	ONLY_MODE_32;
+
+	// LE 11 08 c2 79 subsuu_s.w $w0, $w1, $w2. 1 - 3 sat_s = -2
+	setW(MIPS_REG_W1, 0, 1);
+	setW(MIPS_REG_W2, 0, 3);
+
+	emulate_bin("11 08 c2 79");
+
+	EXPECT_EQ(0x00000000fffffffeULL, wLow(MIPS_REG_W0));
+	EXPECT_EQ(0x0000000000000000ULL, wHigh(MIPS_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LSA)
+{
+	SKIP_MODE_64;
+
+	// LE 45 10 64 00 lsa $v0, $v1, $a0, 2. Capstone IMM is the shift (2).
+	setRegisters({
+		{MIPS_REG_V1, 3},
+		{MIPS_REG_A0, 5},
+	});
+
+	emulate_bin("45 10 64 00");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_A0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 17},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DLSA)
+{
+	ONLY_MODE_64;
+
+	// LE 55 10 64 00 dlsa $v0, $v1, $a0, 2
+	setRegisters({
+		{MIPS_REG_V1, 3},
+		{MIPS_REG_A0, 5},
+	});
+
+	emulate_bin("55 10 64 00");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_A0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 17},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DMFC1)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_F0, 3.14_f64},
+	});
+
+	emulate_bin("00 00 22 44"); // dmfc1 $v0, $f0
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0x40091eb851eb851fULL},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DMTC1)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_V0, 0x40091eb851eb851fULL},
+	});
+
+	emulate_bin("00 00 a2 44"); // dmtc1 $v0, $f0
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_F0, 3.14_f64},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LWXC1)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_V0, 0x1000},
+		{MIPS_REG_V1, 8},
+	});
+	setMemory({
+		{0x1008, 3.0_f32},
+	});
+
+	emulate_bin("00 00 43 4c"); // lwxc1 $f0, $v1($v0)
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_V0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_F0, 3.0_f64},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1008});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LDXC1)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_V0, 0x1000},
+		{MIPS_REG_V1, 8},
+	});
+	setMemory({
+		{0x1008, 3.14_f64},
+	});
+
+	emulate_bin("01 00 43 4c"); // ldxc1 $f0, $v1($v0)
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_V0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_F0, 3.14_f64},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1008});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LUXC1)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_V0, 0x1000},
+		{MIPS_REG_V1, 8},
+	});
+	setMemory({
+		{0x1008, 2.5_f64},
+	});
+
+	emulate_bin("05 00 43 4c"); // luxc1 $f0, $v1($v0)
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_V0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_F0, 2.5_f64},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1008});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SWXC1)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_F0, 3.0_f64},
+		{MIPS_REG_V0, 0x1000},
+		{MIPS_REG_V1, 8},
+	});
+
+	emulate_bin("08 00 43 4c"); // swxc1 $f0, $v1($v0)
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F0, MIPS_REG_V1, MIPS_REG_V0});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1008, 3.0_f32},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SDXC1)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_F0, 3.14_f64},
+		{MIPS_REG_V0, 0x1000},
+		{MIPS_REG_V1, 8},
+	});
+
+	emulate_bin("09 00 43 4c"); // sdxc1 $f0, $v1($v0)
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F0, MIPS_REG_V1, MIPS_REG_V0});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1008, 3.14_f64},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SUXC1)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_F0, 2.5_f64},
+		{MIPS_REG_V0, 0x1000},
+		{MIPS_REG_V1, 8},
+	});
+
+	emulate_bin("0d 00 43 4c"); // suxc1 $f0, $v1($v0)
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F0, MIPS_REG_V1, MIPS_REG_V0});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1008, 2.5_f64},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_JALX)
+{
+	emulate_bin("00 04 00 74", 0x1000); // jalx 0x1000
+
+	EXPECT_NO_REGISTERS_LOADED();
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_RA, 0x1008},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCallFunction(), {0x1000}},
+	});
+	EXPECT_EQ(1u, _translator->getDelaySlot(MIPS_INS_JALX));
+}
+
+//
+// MIPS64R6 integer / PC-relative. createMips64 extra CS_MODE_MIPS64R6 is
+// required: Capstone 6 does not decode DAHI/DATI/DAUI/DALIGN/LDPC/LWUPC
+// on plain CS_MODE_MIPS64.
+//
+
+class Capstone2LlvmIrTranslatorMips64R6Tests : public Capstone2LlvmIrTranslatorTests,
+											   public ::testing::WithParamInterface<cs_mode> {
+protected:
+	virtual void initKeystoneEngine() override
+	{
+		if (ks_open(KS_ARCH_MIPS, KS_MODE_MIPS64, &_assembler) != KS_ERR_OK)
+		{
+			throw std::runtime_error("ERROR: failed on ks_open().\n");
+		}
+	}
+
+	virtual void initCapstone2LlvmIrTranslator() override
+	{
+		_translator = Capstone2LlvmIrTranslator::createMips64(&_module, CS_MODE_MIPS64R6);
+	}
+};
+
+INSTANTIATE_TEST_SUITE_P(
+	InstantiateMips64R6,
+	Capstone2LlvmIrTranslatorMips64R6Tests,
+	::testing::Values(CS_MODE_MIPS64),
+	PrintCapstoneModeToString_Mips());
+
+TEST_P(Capstone2LlvmIrTranslatorMips64R6Tests, MIPS_INS_DAUI)
+{
+	setRegisters({
+		{MIPS_REG_V1, 0x1000},
+	});
+
+	emulate_bin("01 00 62 74"); // daui $v0, $v1, 1
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0x11000},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMips64R6Tests, MIPS_INS_DAHI)
+{
+	setRegisters({
+		{MIPS_REG_V0, 1},
+	});
+
+	emulate_bin("01 00 46 04"); // dahi $v0, $v0, 1
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0x100000001ULL},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMips64R6Tests, MIPS_INS_DATI)
+{
+	setRegisters({
+		{MIPS_REG_V0, 1},
+	});
+
+	emulate_bin("01 00 5e 04"); // dati $v0, $v0, 1
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0x1000000000001ULL},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMips64R6Tests, MIPS_INS_DALIGN)
+{
+	setRegisters({
+		{MIPS_REG_V1, 0x1111111111111111ULL},
+		{MIPS_REG_A0, 0x2222222222222222ULL},
+	});
+
+	emulate_bin("a4 12 64 7c"); // dalign $v0, $v1, $a0, 2
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_A0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0x1111111111112222ULL},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMips64R6Tests, MIPS_INS_LDPC)
+{
+	setMemory({
+		{0x1008, 0x0123456789abcdef_qw},
+	});
+
+	emulate_bin("01 00 58 ec", 0x1000); // ldpc $v0, 8
+
+	EXPECT_NO_REGISTERS_LOADED();
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0x0123456789abcdefULL},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1008});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMips64R6Tests, MIPS_INS_LWUPC)
+{
+	setMemory({
+		{0x1008, 0x80000000_dw},
+	});
+
+	emulate_bin("02 00 50 ec", 0x1000); // lwupc $v0, 8
+
+	EXPECT_NO_REGISTERS_LOADED();
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0x80000000ULL},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1008});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ADDQ_PH)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_V1, 0x00020003},
+		{MIPS_REG_A0, 0x00040005},
+	});
+
+	emulate_bin("90 12 64 7c"); // addq.ph $v0, $v1, $a0
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_A0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0x00060008},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ADDU_S_QB)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_V1, 0xff0203ff},
+		{MIPS_REG_A0, 0x02020102},
+	});
+
+	emulate_bin("10 11 64 7c"); // addu_s.qb $v0, $v1, $a0
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_A0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0xff0404ff},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ADDQH_W)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_V1, 10},
+		{MIPS_REG_A0, 4},
+	});
+
+	emulate_bin("18 14 64 7c"); // addqh.w $v0, $v1, $a0
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_A0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 7},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SUBQ_S_W)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_V1, 5},
+		{MIPS_REG_A0, 8},
+	});
+
+	emulate_bin("d0 15 64 7c"); // subq_s.w $v0, $v1, $a0
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_A0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0xfffffffd},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SHLL_PH)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_A0, 0x00010002},
+	});
+
+	emulate_bin("13 12 64 7c"); // shll.ph $v0, $a0, 3
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_A0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0x00080010},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_REPL_QB)
+{
+	ONLY_MODE_32;
+
+	emulate_bin("92 10 64 7c"); // repl.qb $v0, 0x64
+
+	EXPECT_NO_REGISTERS_LOADED();
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0x64646464},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_PICK_PH)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_V1, 0x11112222},
+		{MIPS_REG_A0, 0x33334444},
+		{MIPS_REG_DSPCCOND, 1},
+	});
+
+	emulate_bin("d1 12 64 7c"); // pick.ph $v0, $v1, $a0
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_A0, MIPS_REG_DSPCCOND});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0x33332222},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CMPGU_EQ_QB)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_V1, 0x01020304},
+		{MIPS_REG_A0, 0x010203ff},
+	});
+
+	emulate_bin("11 11 64 7c"); // cmpgu.eq.qb $v0, $v1, $a0
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_A0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 14},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CMP_EQ_PH)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_V1, 0x00010002},
+		{MIPS_REG_A0, 0x00010003},
+	});
+
+	emulate_bin("11 02 64 7c"); // cmp.eq.ph $v1, $a0
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_A0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_DSPCCOND, 2},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DPA_W_PH)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_AC2, 1},
+		{MIPS_REG_V1, 0x00020003},
+		{MIPS_REG_A0, 0x00040005},
+	});
+
+	emulate_bin("30 10 64 7c"); // dpa.w.ph $ac2, $v1, $a0
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_AC2, MIPS_REG_V1, MIPS_REG_A0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_AC2, 24},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_EXTR_W)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_AC2, 0x80},
+	});
+
+	emulate_bin("38 10 64 7c"); // extr.w $a0, $ac2, 3
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_AC2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_A0, 0x10},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LBUX)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_V1, 0x1000},
+		{MIPS_REG_A0, 2},
+	});
+	setMemory({
+		{0x1002, 0xab_b},
+	});
+
+	emulate_bin("8a 11 64 7c"); // lbux $v0, $a0($v1)
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_A0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0xab},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1002});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LWX)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_V1, 0x1000},
+		{MIPS_REG_A0, 4},
+	});
+	setMemory({
+		{0x1004, 0x11223344_dw},
+	});
+
+	emulate_bin("0a 10 64 7c"); // lwx $v0, $a0($v1)
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_A0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0x11223344},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1004});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ADDSC)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_V1, 0xfffffffe},
+		{MIPS_REG_A0, 3},
+	});
+
+	emulate_bin("10 14 64 7c"); // addsc $v0, $v1, $a0
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_A0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 1},
+		{MIPS_REG_DSPCARRY, true},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ADDWC)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_V1, 2},
+		{MIPS_REG_A0, 3},
+		{MIPS_REG_DSPCARRY, 1},
+	});
+
+	emulate_bin("50 14 64 7c"); // addwc $v0, $v1, $a0
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_A0, MIPS_REG_DSPCARRY});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 6},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MODSUB)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_V1, 0},
+		{MIPS_REG_A0, 0x00120034},
+	});
+
+	emulate_bin("90 14 64 7c"); // modsub $v0, $v1, $a0
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_A0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0x12},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_INSV)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_A0, 0},
+		{MIPS_REG_V1, 0xab},
+		{MIPS_REG_DSPPOS, 8},
+		{MIPS_REG_DSPSCOUNT, 8},
+	});
+
+	emulate_bin("0c 00 64 7c"); // insv $a0, $v1
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_A0, MIPS_REG_V1, MIPS_REG_DSPPOS, MIPS_REG_DSPSCOUNT});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_A0, 0x0000ab00},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_BPOSGE32)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_DSPPOS, 32},
+	});
+
+	emulate_bin("02 00 1c 04", 0x1000); // bposge32 0x100c
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_DSPPOS});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCondBranchFunction(), {true, 0x100c}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_RDDSP)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_DSPPOS, 5},
+	});
+
+	emulate_bin("b8 14 01 7c"); // rddsp $v0, 1
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_DSPPOS});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 5},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SHILO)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_AC2, 0x80},
+	});
+
+	emulate_bin("b8 16 10 7c"); // shilo $ac2, 1
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_AC2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_AC2, 0x40},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SHILOV)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_AC2, 0x80},
+		{MIPS_REG_V1, 1},
+	});
+
+	emulate_bin("f8 16 60 7c"); // shilov $ac2, $v1
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_AC2, MIPS_REG_V1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_AC2, 0x40},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_APPEND)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_A0, 0x10},
+		{MIPS_REG_V1, 0x3},
+	});
+
+	emulate_bin("31 10 64 7c"); // append $a0, $v1, 2
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_A0, MIPS_REG_V1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_A0, 0x43},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_PREPEND)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_A0, 0x10},
+		{MIPS_REG_V1, 0x3},
+	});
+
+	emulate_bin("71 10 64 7c"); // prepend $a0, $v1, 2
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_A0, MIPS_REG_V1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_A0, 0xc0000004},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// Cavium Octeon. Capstone 6 decodes these only with CS_MODE_OCTEON extra.
+// Encodings from a live dump: pop/baddu/cins/exts on SPECIAL2.
+//
+
+class Capstone2LlvmIrTranslatorMipsOcteonTests : public Capstone2LlvmIrTranslatorTests,
+												 public ::testing::WithParamInterface<cs_mode> {
+protected:
+	virtual void initKeystoneEngine() override
+	{
+		if (ks_open(KS_ARCH_MIPS, KS_MODE_MIPS32, &_assembler) != KS_ERR_OK)
+		{
+			throw std::runtime_error("ERROR: failed on ks_open().\n");
+		}
+	}
+
+	virtual void initCapstone2LlvmIrTranslator() override
+	{
+		_translator = Capstone2LlvmIrTranslator::createMips32(&_module, CS_MODE_OCTEON);
+	}
+};
+
+INSTANTIATE_TEST_SUITE_P(
+	InstantiateMipsOcteon,
+	Capstone2LlvmIrTranslatorMipsOcteonTests,
+	::testing::Values(CS_MODE_OCTEON),
+	PrintCapstoneModeToString_Mips());
+
+TEST_P(Capstone2LlvmIrTranslatorMipsOcteonTests, MIPS_INS_POP)
+{
+	setRegisters({
+		{MIPS_REG_T1, 0xf},
+	});
+
+	emulate_bin("2c 40 20 71"); // pop $t0, $t1
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_T1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_T0, 4},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsOcteonTests, MIPS_INS_BADDU)
+{
+	setRegisters({
+		{MIPS_REG_T1, 0xff},
+		{MIPS_REG_T2, 0x2},
+	});
+
+	emulate_bin("28 40 2a 71"); // baddu $t0, $t1, $t2
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_T1, MIPS_REG_T2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_T0, 1},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsOcteonTests, MIPS_INS_CINS)
+{
+	setRegisters({
+		{MIPS_REG_T0, 0xffffffffu},
+		{MIPS_REG_T1, 0xab},
+	});
+
+	emulate_bin("32 3a 28 71"); // cins $t0, $t1, 8, 7
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_T0, MIPS_REG_T1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_T0, 0xffffabffu},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsOcteonTests, MIPS_INS_BBIT0)
+{
+	setRegisters({
+		{MIPS_REG_T0, 0},
+	});
+
+	emulate_bin("02 00 03 c9", 0x1000); // bbit0 $t0, 3, 0x100c  (bit 3 clear)
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_T0});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCondBranchFunction(), {true, 0x100c}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsOcteonTests, MIPS_INS_BBIT1)
+{
+	setRegisters({
+		{MIPS_REG_T0, 8},
+	});
+
+	emulate_bin("02 00 03 e9", 0x1000); // bbit1 $t0, 3, 0x100c  (bit 3 set)
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_T0});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCondBranchFunction(), {true, 0x100c}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsOcteonTests, MIPS_INS_VMULU)
+{
+	setRegisters({
+		{MIPS_REG_T1, 3},
+		{MIPS_REG_T2, 5},
+	});
+
+	emulate_bin("0f 40 2a 71"); // vmulu $t0, $t1, $t2
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_T1, MIPS_REG_T2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_T0, 15},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsOcteonTests, MIPS_INS_PAUSE)
+{
+	emulate_bin("40 01 00 00"); // pause
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsOcteonTests, MIPS_INS_EXTS)
+{
+	setRegisters({
+		{MIPS_REG_T1, 0xff00},
+	});
+
+	emulate_bin("3a 3a 28 71"); // exts $t0, $t1, 8, 7
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_T1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_T0, 0xffffffffu},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+class Capstone2LlvmIrTranslatorMipsOcteon64Tests : public Capstone2LlvmIrTranslatorTests,
+												   public ::testing::WithParamInterface<cs_mode> {
+protected:
+	virtual void initKeystoneEngine() override
+	{
+		if (ks_open(KS_ARCH_MIPS, KS_MODE_MIPS64, &_assembler) != KS_ERR_OK)
+		{
+			throw std::runtime_error("ERROR: failed on ks_open().\n");
+		}
+	}
+
+	virtual void initCapstone2LlvmIrTranslator() override
+	{
+		_translator = Capstone2LlvmIrTranslator::createMips64(&_module, CS_MODE_OCTEON);
+	}
+};
+
+INSTANTIATE_TEST_SUITE_P(
+	InstantiateMipsOcteon64,
+	Capstone2LlvmIrTranslatorMipsOcteon64Tests,
+	::testing::Values(CS_MODE_OCTEON),
+	PrintCapstoneModeToString_Mips());
+
+TEST_P(Capstone2LlvmIrTranslatorMipsOcteon64Tests, MIPS_INS_DPOP)
+{
+	setRegisters({
+		{MIPS_REG_T1, 0x10000000f_qw},
+	});
+
+	emulate_bin("2d 40 20 71"); // dpop $t0, $t1
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_T1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_T0, 5_qw},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsOcteon64Tests, MIPS_INS_EXTS32)
+{
+	setRegisters({
+		{MIPS_REG_T1, 0xff0000000000_qw},
+	});
+
+	emulate_bin("3b 3a 28 71"); // exts32 $t0, $t1, 8, 7  (pos = 8+32)
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_T1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_T0, 0xffffffffffffffff_qw},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsOcteon64Tests, MIPS_INS_CINS32)
+{
+	setRegisters({
+		{MIPS_REG_T0, 0_qw},
+		{MIPS_REG_T1, 0xab_qw},
+	});
+
+	emulate_bin("33 3a 28 71"); // cins32 $t0, $t1, 8, 7  (pos = 8+32)
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_T0, MIPS_REG_T1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_T0, 0xab0000000000_qw},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();

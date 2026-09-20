@@ -99,11 +99,16 @@ are nops.
 - Hexadecimal FP (`AE`, `AD`, `ME`, `DE` without `B`) and DFP (`ADTR`, …)
 - BFP test (`TCEB`, …); Hexadecimal FP / DFP stay unmapped
 - Packed-decimal vector (`VPKZ` / `VUPKZ`), remaining VXE forms
-- Privileged, transactional-execution, MSA crypto (x86 AES is also `nullptr`)
+- Privileged, transactional-execution
+- CPACF MSA crypto is mapped: `SYSZ_INS_KM` / `KMA` / `KMAC` / `KMC` /
+  `KMCTR` / `KMF` / `KMO` / `KIMD` / `KLMD` / `KDSA` / `PCC` / `PCKMO` →
+  named helpers `__sysz_<mnemonic>` (GR0 function code, GR1 param block, plus
+  Capstone register operands). LLVM 23.1.0 has no `llvm.s390.km*` /
+  `kimd` / `pcc` (`IntrinsicsS390.h` / `IntrinsicsSystemZ.td`).
 
 ## Tests
 
 `tests/capstone2llvmir/sysz_tests.cpp` uses **real bytes** (`emulate_bin`)
 for the integer core plus AEBR/ADBR/MEEBR/LDEB/CEBR, LD/STD, LGHI/AGHI/NGR/CGR/LAY,
 VL/VLR, MVC, LMG, CSG, VAB, MAEBR, VPDI, VMLF, VREPB, VPERM, CDS, CDSG, VPKF,
-FIDBR, FIEBR. `createSysz(&_module)` (extra 0).
+FIDBR, FIEBR, KM, KIMD, PCC, KMCTR. `createSysz(&_module)` (extra 0).

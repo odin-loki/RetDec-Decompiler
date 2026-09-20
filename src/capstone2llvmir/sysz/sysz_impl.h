@@ -197,6 +197,7 @@ class Capstone2LlvmIrTranslatorSysz_impl :
 		void translateVgm(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
 		void translateVlei(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
 		void translateVfee(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
+		void translateCpacf(cs_insn* i, cs_sysz* si, llvm::IRBuilder<>& irb);
 		llvm::Value* generateCcMask(unsigned mask, llvm::IRBuilder<>& irb);
 		bool isLoc64(unsigned id) const;
 };

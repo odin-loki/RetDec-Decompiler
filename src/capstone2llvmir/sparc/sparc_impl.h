@@ -74,12 +74,14 @@ class Capstone2LlvmIrTranslatorSparc_impl :
 		bool isGeneralPurposeRegister(uint32_t r) const;
 		bool isFpSingleRegister(uint32_t r) const;
 		bool isFpDoubleRegister(uint32_t r) const;
+		bool isFpQuadRegister(uint32_t r) const;
 		bool isFccRegister(uint32_t r) const;
 		bool isGprPairRegister(uint32_t r) const;
 		uint32_t gprPairEven(uint32_t r) const;
 		uint32_t nextGpr(uint32_t r) const;
 		uint32_t fccFromField(sparc_cc_field field) const;
 		uint32_t visContainerReg(uint32_t r, unsigned bitWidth) const;
+		uint32_t quadContainerReg(uint32_t r) const;
 		cs_sparc_op* lastRegOperand(cs_sparc* si);
 		llvm::Value* visIntegerBits(
 				llvm::Value* v,
@@ -194,6 +196,7 @@ class Capstone2LlvmIrTranslatorSparc_impl :
 		void translateMov(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateMovr(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateMul(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
+		void translateMulscc(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateNop(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translateOr(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);
 		void translatePopc(cs_insn* i, cs_sparc* si, llvm::IRBuilder<>& irb);

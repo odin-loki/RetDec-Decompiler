@@ -745,6 +745,19 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorSysz_impl::*)(cs_insn* i, c
 		{SYSZ_INS_VSEGB, &Capstone2LlvmIrTranslatorSysz_impl::translateVseg},
 		{SYSZ_INS_VSEGH, &Capstone2LlvmIrTranslatorSysz_impl::translateVseg},
 		{SYSZ_INS_VSEGF, &Capstone2LlvmIrTranslatorSysz_impl::translateVseg},
+
+		{SYSZ_INS_KDSA, &Capstone2LlvmIrTranslatorSysz_impl::translateCpacf},
+		{SYSZ_INS_KIMD, &Capstone2LlvmIrTranslatorSysz_impl::translateCpacf},
+		{SYSZ_INS_KLMD, &Capstone2LlvmIrTranslatorSysz_impl::translateCpacf},
+		{SYSZ_INS_KM, &Capstone2LlvmIrTranslatorSysz_impl::translateCpacf},
+		{SYSZ_INS_KMA, &Capstone2LlvmIrTranslatorSysz_impl::translateCpacf},
+		{SYSZ_INS_KMAC, &Capstone2LlvmIrTranslatorSysz_impl::translateCpacf},
+		{SYSZ_INS_KMC, &Capstone2LlvmIrTranslatorSysz_impl::translateCpacf},
+		{SYSZ_INS_KMCTR, &Capstone2LlvmIrTranslatorSysz_impl::translateCpacf},
+		{SYSZ_INS_KMF, &Capstone2LlvmIrTranslatorSysz_impl::translateCpacf},
+		{SYSZ_INS_KMO, &Capstone2LlvmIrTranslatorSysz_impl::translateCpacf},
+		{SYSZ_INS_PCC, &Capstone2LlvmIrTranslatorSysz_impl::translateCpacf},
+		{SYSZ_INS_PCKMO, &Capstone2LlvmIrTranslatorSysz_impl::translateCpacf},
 };
 
 } // namespace capstone2llvmir

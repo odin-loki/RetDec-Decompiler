@@ -264,6 +264,23 @@ class Capstone2LlvmIrTranslatorX86Tests :
 			return false;
 		}
 
+		/// Assemble @p textAsm, or translate @p fallback bytes if Keystone
+		/// rejects the mnemonic (AES-NI / SHA-NI / PCLMUL are the usual
+		/// misses). The fallback must be a Capstone-decodable encoding.
+		llvm::Function* translateTextOrBytes(
+				const char* textAsm,
+				std::initializer_list<uint8_t> fallback)
+		{
+			try
+			{
+				return translate(assemble(textAsm));
+			}
+			catch (const std::runtime_error&)
+			{
+				return translate(std::vector<uint8_t>(fallback));
+			}
+		}
+
 		/// Quadword @p w (0..7) of vector register @p n.
 		uint64_t zmmWord(unsigned n, unsigned w)
 		{
@@ -15961,8 +15978,8 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VROUNDPS_is_the_three_operand_
 {
 	SKIP_MODE_16;
 
-	// VROUNDSS is four operands (dst, src1-upper, src2, imm) and stays
-	// nullptr. VROUNDPS is ROUNDPS plus a VEX prefix.
+	// VROUNDPS is ROUNDPS plus a VEX prefix. VROUNDSS/SD are the 4-operand
+	// scalar twins (dst, src1-upper, src2, imm).
 	setXmm(
 		X86_REG_XMM1,
 		(uint64_t(fbits(4.9f)) << 32) | fbits(-1.25f),
@@ -21651,6 +21668,1533 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VUNPCKHPS_interleaves_the_high
 	EXPECT_EQ(0x8888888844444444ULL, xmmHigh(X86_REG_XMM0));
 	EXPECT_EQ(0ULL, xmmLow(X86_REG_YMM0_HI));
 	EXPECT_EQ(0ULL, xmmHigh(X86_REG_YMM0_HI));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// AES-NI / PCLMULQDQ / CRC32 / SHA-NI — llvm.x86.* intrinsics, not __asm_*.
+// XMM instructions do not exist in 16-bit mode.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_AESENC_emits_aesni_intrinsic)
+{
+	SKIP_MODE_16;
+
+	// 66 0F 38 DC /r  AESENC xmm0, xmm1
+	auto* f = translateTextOrBytes("aesenc xmm0, xmm1", {0x66, 0x0f, 0x38, 0xdc, 0xc1});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.aesni.aesenc")) << ir;
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PCLMULQDQ_emits_pclmulqdq_intrinsic)
+{
+	SKIP_MODE_16;
+
+	// 66 0F 3A 44 /r ib  PCLMULQDQ xmm0, xmm1, 0
+	auto* f = translateTextOrBytes("pclmulqdq xmm0, xmm1, 0", {0x66, 0x0f, 0x3a, 0x44, 0xc1, 0x00});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.pclmulqdq")) << ir;
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_CRC32_emits_sse42_crc32_intrinsic)
+{
+	SKIP_MODE_16;
+
+	// F2 0F 38 F1 /r  CRC32 r32, r/m32  — crc32 eax, ebx
+	auto* f = translateTextOrBytes("crc32 eax, ebx", {0xf2, 0x0f, 0x38, 0xf1, 0xc3});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.sse42.crc32")) << ir;
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_SHA1RNDS4_emits_sha1rnds4_intrinsic)
+{
+	SKIP_MODE_16;
+
+	// NP 0F 3A CC /r ib  SHA1RNDS4 xmm0, xmm1, 0
+	auto* f = translateTextOrBytes("sha1rnds4 xmm0, xmm1, 0", {0x0f, 0x3a, 0xcc, 0xc1, 0x00});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.sha1rnds4")) << ir;
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_RCPPS_emits_sse_rcp_ps_intrinsic)
+{
+	SKIP_MODE_16;
+
+	// 0F 53 /r  RCPPS xmm0, xmm1
+	auto* f = translateTextOrBytes("rcpps xmm0, xmm1", {0x0f, 0x53, 0xc1});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.sse.rcp.ps")) << ir;
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_RSQRTPS_emits_sse_rsqrt_ps_intrinsic)
+{
+	SKIP_MODE_16;
+
+	// 0F 52 /r  RSQRTPS xmm0, xmm1
+	auto* f = translateTextOrBytes("rsqrtps xmm0, xmm1", {0x0f, 0x52, 0xc1});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.sse.rsqrt.ps")) << ir;
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_RCPSS_emits_sse_rcp_ss_intrinsic)
+{
+	SKIP_MODE_16;
+
+	// F3 0F 53 /r  RCPSS xmm0, xmm1
+	auto* f = translateTextOrBytes("rcpss xmm0, xmm1", {0xf3, 0x0f, 0x53, 0xc1});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.sse.rcp.ss")) << ir;
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_RSQRTSS_emits_sse_rsqrt_ss_intrinsic)
+{
+	SKIP_MODE_16;
+
+	// F3 0F 52 /r  RSQRTSS xmm0, xmm1
+	auto* f = translateTextOrBytes("rsqrtss xmm0, xmm1", {0xf3, 0x0f, 0x52, 0xc1});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.sse.rsqrt.ss")) << ir;
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_ADDSUBPD_even_sub_odd_add)
+{
+	SKIP_MODE_16;
+
+	// dest[0] = 1.0 - 2.0 = -1.0; dest[1] = 4.0 + 3.0 = 7.0
+	setXmm(X86_REG_XMM0, 0x4010000000000000ULL, 0x3FF0000000000000ULL);
+	setXmm(X86_REG_XMM1, 0x4008000000000000ULL, 0x4000000000000000ULL);
+
+	emulate("addsubpd xmm0, xmm1");
+
+	EXPECT_EQ(0xBFF0000000000000ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x401C000000000000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_ADDSUBPS_even_sub_odd_add)
+{
+	SKIP_MODE_16;
+
+	// lanes: [1.0-2.0=-1.0, 4.0+3.0=7.0, 1.0-2.0=-1.0, 4.0+3.0=7.0]
+	setXmm(X86_REG_XMM0, 0x408000003F800000ULL, 0x408000003F800000ULL);
+	setXmm(X86_REG_XMM1, 0x4040000040000000ULL, 0x4040000040000000ULL);
+
+	emulate("addsubps xmm0, xmm1");
+
+	EXPECT_EQ(0x40E00000BF800000ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x40E00000BF800000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_CVTPD2DQ_converts_two_doubles)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM1, 0x4000000000000000ULL, 0x3FF0000000000000ULL);
+
+	emulate("cvtpd2dq xmm0, xmm1");
+
+	EXPECT_EQ(0x0000000200000001ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_CVTTPD2DQ_truncates_toward_zero)
+{
+	SKIP_MODE_16;
+
+	// 1.9 and 2.9 → 1 and 2
+	setXmm(X86_REG_XMM1, 0x4007333333333333ULL, 0x3FFE666666666666ULL);
+
+	emulate("cvttpd2dq xmm0, xmm1");
+
+	EXPECT_EQ(0x0000000200000001ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_XSHA1_is_a_named_padlock_helper)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{X86_REG_ESI, 0x1000},
+		{X86_REG_EDI, 0x2000},
+		{X86_REG_EAX, 0x40},
+	});
+
+	emulate_bin("f3 0f a6 c8"); // XSHA1
+
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("x86.padlock.xsha1"), {0x1000, 0x2000, 0x40}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_XCRYPTECB_is_a_named_padlock_helper)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{X86_REG_ESI, 0x1000},
+		{X86_REG_EDI, 0x2000},
+		{X86_REG_EAX, 0x1},
+		{X86_REG_EBX, 0x3000},
+		{X86_REG_ECX, 0x10},
+		{X86_REG_EDX, 0x4000},
+	});
+
+	emulate_bin("f3 0f a7 c8"); // XCRYPTECB
+
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("x86.padlock.xcrypt.ecb"), {0x1000, 0x2000, 0x1, 0x3000, 0x10, 0x4000}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_XSHA256_is_a_named_padlock_helper)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{X86_REG_ESI, 0x1000},
+		{X86_REG_EDI, 0x2000},
+		{X86_REG_EAX, 0x40},
+	});
+
+	emulate_bin("f3 0f a6 d0"); // XSHA256
+
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("x86.padlock.xsha256"), {0x1000, 0x2000, 0x40}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_XSTORE_is_a_named_padlock_helper)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{X86_REG_ESI, 0x1000},
+		{X86_REG_EDI, 0x2000},
+		{X86_REG_EAX, 0x8},
+	});
+
+	emulate_bin("0f a7 c0"); // XSTORE
+
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("x86.padlock.xstore"), {0x1000, 0x2000, 0x8}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MULX_r32_unsigned_high_low)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EDX, 6},
+		{X86_REG_ECX, 7},
+		{X86_REG_EAX, 0xdead},
+		{X86_REG_EBX, 0xbeef},
+	});
+
+	emulate_bin("c4 e2 63 f6 c1"); // MULX eax, ebx, ecx
+
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_EAX));
+	EXPECT_EQ(42ULL, getRegisterValueUnsigned(X86_REG_EBX));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MULX_r64_unsigned_high_low)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RDX, 0x100000000ULL},
+		{X86_REG_RCX, 0x100000000ULL},
+		{X86_REG_RAX, 0xdeadULL},
+		{X86_REG_RBX, 0xbeefULL},
+	});
+
+	emulate_bin("c4 e2 e3 f6 c1"); // MULX rax, rbx, rcx
+
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_RAX));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_RBX));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_DPPS_emits_sse41_dpps_intrinsic)
+{
+	SKIP_MODE_16;
+
+	auto* f = translateTextOrBytes("dpps xmm0, xmm1, 0xff", {0x66, 0x0f, 0x3a, 0x40, 0xc1, 0xff});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.sse41.dpps")) << ir;
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_DPPD_emits_sse41_dppd_intrinsic)
+{
+	SKIP_MODE_16;
+
+	auto* f = translateTextOrBytes("dppd xmm0, xmm1, 0x33", {0x66, 0x0f, 0x3a, 0x41, 0xc1, 0x33});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.sse41.dppd")) << ir;
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VDPPS_emits_sse41_dpps_intrinsic)
+{
+	SKIP_MODE_16;
+
+	auto* f = translateTextOrBytes(
+			"vdpps xmm0, xmm1, xmm2, 0xff",
+			{0xc4, 0xe3, 0x71, 0x40, 0xc2, 0xff});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.sse41.dpps")) << ir;
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VDPPD_emits_sse41_dppd_intrinsic)
+{
+	SKIP_MODE_16;
+
+	auto* f = translateTextOrBytes(
+			"vdpd xmm0, xmm1, xmm2, 0x33",
+			{0xc4, 0xe3, 0x71, 0x41, 0xc2, 0x33});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.sse41.dppd")) << ir;
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VCVTSS2SD_preserves_src1_upper)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM1, 0xAAAAAAAAAAAAAAAAULL, 0xBBBBBBBBCCCCCCCCULL);
+	setXmm(X86_REG_XMM2, 0ULL, 0x3F800000ULL);
+
+	emulate_bin("c5 f2 5a c2"); // VCVTSS2SD xmm0, xmm1, xmm2
+
+	EXPECT_EQ(0x3FF0000000000000ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xAAAAAAAAAAAAAAAAULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VCVTSD2SS_preserves_src1_upper)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM1, 0xAAAAAAAAAAAAAAAAULL, 0xBBBBBBBBCCCCCCCCULL);
+	setXmm(X86_REG_XMM2, 0ULL, 0x3FF0000000000000ULL);
+
+	emulate_bin("c5 f3 5a c2"); // VCVTSD2SS xmm0, xmm1, xmm2
+
+	EXPECT_EQ(0xBBBBBBBB3F800000ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xAAAAAAAAAAAAAAAAULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MPSADBW_emits_sse41_mpsadbw_intrinsic)
+{
+	SKIP_MODE_16;
+
+	auto* f = translateTextOrBytes("mpsadbw xmm0, xmm1, 0", {0x66, 0x0f, 0x3a, 0x42, 0xc1, 0x00});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.sse41.mpsadbw")) << ir;
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VMPSADBW_emits_sse41_mpsadbw_intrinsic)
+{
+	SKIP_MODE_16;
+
+	auto* f = translateTextOrBytes(
+			"vmpsadbw xmm0, xmm1, xmm2, 0",
+			{0xc4, 0xe3, 0x71, 0x42, 0xc2, 0x00});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.sse41.mpsadbw")) << ir;
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_LDMXCSR_emits_sse_ldmxcsr_intrinsic)
+{
+	SKIP_MODE_16;
+
+	auto* f = translateTextOrBytes("ldmxcsr dword ptr [eax]", {0x0f, 0xae, 0x10});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.sse.ldmxcsr")) << ir;
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_STMXCSR_emits_sse_stmxcsr_intrinsic)
+{
+	SKIP_MODE_16;
+
+	auto* f = translateTextOrBytes("stmxcsr dword ptr [eax]", {0x0f, 0xae, 0x18});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.sse.stmxcsr")) << ir;
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+//
+// AVX VEX twins of already-lifted SSE, plus FMA.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VADDSD_uses_src1_upper_not_dest)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, dbits(99.0), dbits(1.0));
+	setXmm(X86_REG_XMM1, dbits(8.0), dbits(1.0));
+	setXmm(X86_REG_XMM2, dbits(4.0), dbits(2.0));
+
+	emulate("vaddsd xmm0, xmm1, xmm2");
+
+	EXPECT_EQ(dbits(3.0), xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(dbits(8.0), xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VANDPS_is_three_operand_bitwise_and)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setXmm(X86_REG_XMM1, 0xffff0000ffff0000ULL, 0x0000ffff0000ffffULL);
+	setXmm(X86_REG_XMM2, 0x0f0f0f0f0f0f0f0fULL, 0xf0f0f0f0f0f0f0f0ULL);
+
+	emulate("vandps xmm0, xmm1, xmm2");
+
+	EXPECT_EQ(0x0000f0f00000f0f0ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0f0f00000f0f0000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VANDNPS_complements_src1)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0x00000000ffffffffULL);
+	setXmm(X86_REG_XMM2, 0, 0xffffffffffffffffULL);
+
+	emulate("vandnps xmm0, xmm1, xmm2");
+
+	EXPECT_EQ(0xffffffff00000000ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VMAXSD_returns_src2_on_nan)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, dbits(8.0), 0x7ff8000000000000ULL); // qNaN low
+	setXmm(X86_REG_XMM2, dbits(4.0), dbits(2.0));
+
+	emulate("vmaxsd xmm0, xmm1, xmm2");
+
+	EXPECT_EQ(dbits(2.0), xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(dbits(8.0), xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VMOVSD_three_operand_keeps_src1_upper)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, dbits(8.0), dbits(1.0));
+	setXmm(X86_REG_XMM2, dbits(4.0), dbits(2.0));
+
+	emulate("vmovsd xmm0, xmm1, xmm2");
+
+	EXPECT_EQ(dbits(2.0), xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(dbits(8.0), xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VMOVHLPS_takes_high_of_src2)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x1111111111111111ULL, 0x2222222222222222ULL);
+	setXmm(X86_REG_XMM2, 0xaaaaaaaaaaaaaaaaULL, 0xbbbbbbbbbbbbbbbbULL);
+
+	emulate("vmovhlps xmm0, xmm1, xmm2");
+
+	EXPECT_EQ(0xaaaaaaaaaaaaaaaaULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x1111111111111111ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPABSB_of_the_minimum_signed_value_is_itself)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x8081828384858687ULL, 0x807f01ff02fe0380ULL);
+
+	emulate("vpabsb xmm0, xmm1");
+
+	EXPECT_EQ(0x807f010102020380ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x807f7e7d7c7b7a79ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPADDSB_saturates_at_127)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0x7f7f7f7f7f7f7f7fULL);
+	setXmm(X86_REG_XMM2, 0, 0x0101010101010101ULL);
+
+	emulate("vpaddsb xmm0, xmm1, xmm2");
+
+	EXPECT_EQ(0x7f7f7f7f7f7f7f7fULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPAVGB_rounds_half_up)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0x0000000000000080ULL);
+	setXmm(X86_REG_XMM2, 0, 0x0000000000000080ULL);
+
+	emulate("vpavgb xmm0, xmm1, xmm2");
+
+	EXPECT_EQ(0x80ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VCVTDQ2PS_converts_four_int32s)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x0000000400000003ULL, 0x0000000200000001ULL);
+
+	emulate("vcvtdq2ps xmm0, xmm1");
+
+	EXPECT_EQ((uint64_t(fbits(2.0f)) << 32) | fbits(1.0f), xmmLow(X86_REG_XMM0));
+	EXPECT_EQ((uint64_t(fbits(4.0f)) << 32) | fbits(3.0f), xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VINSERTPS_four_operand_insert)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x4444444433333333ULL, 0x2222222211111111ULL);
+	setXmm(X86_REG_XMM2, 0xddddddddccccccccULL, 0xbbbbbbbbaaaaaaaaULL);
+
+	emulate("vinsertps xmm0, xmm1, xmm2, 0x10");
+
+	EXPECT_EQ(0xAAAAAAAA11111111ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x4444444433333333ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VEXTRACTPS_extracts_f32_lane)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x1111222233334444ULL, 0xaaaabbbbccccddddULL);
+	setRegisters({
+		{X86_REG_RAX, 0xffffffffffffffffULL},
+	});
+
+	emulate("vextractps eax, xmm0, 2");
+
+	EXPECT_EQ(0x33334444ULL, getRegisterValueUnsigned(X86_REG_EAX));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VFMADD231SD_is_src1_times_src2_plus_dest)
+{
+	ONLY_MODE_64;
+
+	// dest=4, src1=2, src2=3 → 2*3+4 = 10. 132 would be dest*src2+src1 = 4*3+2 = 14.
+	setXmm(X86_REG_XMM0, dbits(8.0), dbits(4.0));
+	setXmm(X86_REG_XMM1, dbits(7.0), dbits(2.0));
+	setXmm(X86_REG_XMM2, dbits(9.0), dbits(3.0));
+
+	emulate("vfmadd231sd xmm0, xmm1, xmm2");
+
+	EXPECT_EQ(dbits(10.0), xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(dbits(8.0), xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VFMADD132SD_is_dest_times_src2_plus_src1)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, dbits(8.0), dbits(4.0));
+	setXmm(X86_REG_XMM1, dbits(7.0), dbits(2.0));
+	setXmm(X86_REG_XMM2, dbits(9.0), dbits(3.0));
+
+	emulate("vfmadd132sd xmm0, xmm1, xmm2");
+
+	EXPECT_EQ(dbits(14.0), xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(dbits(8.0), xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VSQRTPS_takes_sqrt_of_every_lane)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, (uint64_t(fbits(16.0f)) << 32) | fbits(9.0f),
+		(uint64_t(fbits(4.0f)) << 32) | fbits(1.0f));
+
+	emulate("vsqrtps xmm0, xmm1");
+
+	EXPECT_EQ((uint64_t(fbits(2.0f)) << 32) | fbits(1.0f), xmmLow(X86_REG_XMM0));
+	EXPECT_EQ((uint64_t(fbits(4.0f)) << 32) | fbits(3.0f), xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VLDMXCSR_emits_sse_ldmxcsr_intrinsic)
+{
+	SKIP_MODE_16;
+
+	auto* f = translateTextOrBytes("vldmxcsr dword ptr [eax]", {0xc5, 0xf8, 0xae, 0x10});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.sse.ldmxcsr")) << ir;
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPACKSSWB_packs_two_sources)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0x0004000300020001ULL);
+	setXmm(X86_REG_XMM2, 0, 0x0008000700060005ULL);
+
+	emulate("vpacksswb xmm0, xmm1, xmm2");
+
+	EXPECT_EQ(0x0000000004030201ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0000000008070605ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// Remaining AVX integer twins of SSE2/SSSE3.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPSHUFD_reverses_each_128bit_lane)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x0000000300000002ULL, 0x0000000100000000ULL);
+	setXmm(X86_REG_YMM1_HI, 0x0000000700000006ULL, 0x0000000500000004ULL);
+
+	emulate("vpshufd ymm0, ymm1, 0x1b");
+
+	EXPECT_EQ(0x0000000200000003ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0000000000000001ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_EQ(0x0000000600000007ULL, xmmLow(X86_REG_YMM0_HI));
+	EXPECT_EQ(0x0000000400000005ULL, xmmHigh(X86_REG_YMM0_HI));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPSHUFLW_permutes_only_the_low_words)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x0008000700060005ULL, 0x0004000300020001ULL);
+
+	emulate("vpshuflw xmm0, xmm1, 0x1b");
+
+	EXPECT_EQ(0x0001000200030004ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0008000700060005ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPUNPCKLBW_is_three_operand)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0x00000000000000aaULL);
+	setXmm(X86_REG_XMM2, 0, 0x00000000000000bbULL);
+
+	emulate("vpunpcklbw xmm0, xmm1, xmm2");
+
+	EXPECT_EQ(0x000000000000bbaaULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPUNPCKLBW_ymm_does_not_cross_lanes)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0x00000000000000aaULL);
+	setXmm(X86_REG_YMM1_HI, 0, 0x00000000000000ccULL);
+	setXmm(X86_REG_XMM2, 0, 0x00000000000000bbULL);
+	setXmm(X86_REG_YMM2_HI, 0, 0x00000000000000ddULL);
+
+	emulate("vpunpcklbw ymm0, ymm1, ymm2");
+
+	EXPECT_EQ(0x000000000000bbaaULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_EQ(0x000000000000ddccULL, xmmLow(X86_REG_YMM0_HI));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_YMM0_HI));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPSLLQ_immediate_shifts_each_qword)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x8000000000000001ULL, 0x0000000000000001ULL);
+
+	emulate("vpsllq xmm0, xmm1, 1");
+
+	EXPECT_EQ(2ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(2ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPSIGNB_is_three_operand)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0xf0f1f2f3f4f5f6f7ULL, 0x0102030405060708ULL);
+	setXmm(X86_REG_XMM2, 0x0100ff0001ff0001ULL, 0x01ff0001ff000100ULL);
+
+	emulate("vpsignb xmm0, xmm1, xmm2");
+
+	EXPECT_EQ(0x01fe0004fb000700ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xf0000e00f40b00f7ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPMULLW_is_three_operand)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0xffff000400050006ULL, 0x80007fff00020003ULL);
+	setXmm(X86_REG_XMM2, 0x0002000200020002ULL, 0x0002000200030004ULL);
+
+	emulate("vpmullw xmm0, xmm1, xmm2");
+
+	EXPECT_EQ(0x0000fffe0006000cULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xfffe0008000a000cULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPMADDWD_adds_adjacent_products)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x8000800000050006ULL, 0x0001000200030004ULL);
+	setXmm(X86_REG_XMM2, 0x800080000009000aULL, 0x0005000600070008ULL);
+
+	emulate("vpmaddwd xmm0, xmm1, xmm2");
+
+	EXPECT_EQ(0x0000001100000035ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x8000000000000069ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPMOVSXBW_widens_the_low_eight_bytes)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0xdeadbeefdeadbeefULL, 0x01ff7f80fe020103ULL);
+
+	emulate("vpmovsxbw xmm0, xmm1");
+
+	EXPECT_EQ(0xfffe000200010003ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0001ffff007fff80ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPHADDW_is_three_operand)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x0005000600070008ULL, 0x0001000200030004ULL);
+	setXmm(X86_REG_XMM2, 0x000e000f00100011ULL, 0x000a000b000c000dULL);
+
+	emulate("vphaddw xmm0, xmm1, xmm2");
+
+	EXPECT_EQ(0x000b000f00030007ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x001d002100150019ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPSHUFB_is_three_operand)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x0f0e0d0c0b0a0908ULL, 0x0706050403020100ULL);
+	setXmm(X86_REG_XMM2, 0x0405068384858687ULL, 0x8000810102820303ULL);
+
+	emulate("vpshufb xmm0, xmm1, xmm2");
+
+	EXPECT_EQ(0x0000000102000303ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0405060000000000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPALIGNR_is_four_operand)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x1111111111111111ULL, 0x2222222222222222ULL);
+	setXmm(X86_REG_XMM2, 0xaaaaaaaaaaaaaaaaULL, 0xbbbbbbbbbbbbbbbbULL);
+
+	emulate("vpalignr xmm0, xmm1, xmm2, 8");
+
+	// Concatenation is src1:src2 with src2 at the bottom. An 8-byte window
+	// therefore starts at src2's high qword and continues into src1's low.
+	EXPECT_EQ(0xaaaaaaaaaaaaaaaaULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x2222222222222222ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VBLENDVPS_is_four_operand)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x0000000400000002ULL, 0x0000000300000001ULL);
+	setXmm(X86_REG_XMM2, 0xddddddddccccccccULL, 0xbbbbbbbbaaaaaaaaULL);
+	setXmm(X86_REG_XMM3, 0x0000000080000000ULL, 0x0000000080000000ULL);
+
+	emulate("vblendvps xmm0, xmm1, xmm2, xmm3");
+
+	EXPECT_EQ(0x00000003aaaaaaaaULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x00000004ccccccccULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPBLENDVB_is_four_operand)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x0807060504030201ULL);
+	setXmm(X86_REG_XMM2, 0x0000000000000000ULL, 0xa8a7a6a5a4a3a2a1ULL);
+	setXmm(X86_REG_XMM3, 0x0000000000000000ULL, 0x0080008000800080ULL);
+
+	emulate("vpblendvb xmm0, xmm1, xmm2, xmm3");
+
+	EXPECT_EQ(0x08a706a504a302a1ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VBROADCASTF128_splats_both_ymm_lanes)
+{
+	ONLY_MODE_64;
+
+	setRegisters({{X86_REG_RAX, 0x1000}});
+	setMemoryValue128(0x1000, 0x1111111111111111ULL, 0x2222222222222222ULL);
+
+	emulate("vbroadcastf128 ymm0, xmmword ptr [rax]");
+
+	EXPECT_EQ(0x2222222222222222ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x1111111111111111ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_EQ(0x2222222222222222ULL, xmmLow(X86_REG_YMM0_HI));
+	EXPECT_EQ(0x1111111111111111ULL, xmmHigh(X86_REG_YMM0_HI));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPERMILPS_imm_reverses_in_lane)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x3333333322222222ULL, 0x1111111100000000ULL);
+
+	emulate("vpermilps xmm0, xmm1, 0x1b");
+
+	EXPECT_EQ(0x2222222233333333ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0000000011111111ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPERMILPS_variable_uses_low_two_bits)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x3333333322222222ULL, 0x1111111100000000ULL);
+	setXmm(X86_REG_XMM2, 0x0000000000000001ULL, 0x0000000200000003ULL);
+
+	emulate("vpermilps xmm0, xmm1, xmm2");
+
+	EXPECT_EQ(0x2222222233333333ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0000000011111111ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPERMILPD_imm_swaps_qwords)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x2222222222222222ULL, 0x1111111111111111ULL);
+
+	emulate("vpermilpd xmm0, xmm1, 1");
+
+	EXPECT_EQ(0x2222222222222222ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x1111111111111111ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPERMQ_imm_permutes_ymm_qwords)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x20, 0x10);
+	setXmm(X86_REG_YMM1_HI, 0x40, 0x30);
+
+	emulate("vpermq ymm0, ymm1, 0x1b");
+
+	EXPECT_EQ(0x40ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x30ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_EQ(0x20ULL, xmmLow(X86_REG_YMM0_HI));
+	EXPECT_EQ(0x10ULL, xmmHigh(X86_REG_YMM0_HI));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPERMD_permutes_ymm_dwords)
+{
+	ONLY_MODE_64;
+
+	// vpermd dest, idx, data -- SRC1 is the index vector.
+	setXmm(X86_REG_XMM1, 0x0000000400000005ULL, 0x0000000600000007ULL);
+	setXmm(X86_REG_YMM1_HI, 0x0000000000000001ULL, 0x0000000200000003ULL);
+	setXmm(X86_REG_XMM2, 0x0000004000000030ULL, 0x0000002000000010ULL);
+	setXmm(X86_REG_YMM2_HI, 0x0000008000000070ULL, 0x0000006000000050ULL);
+
+	emulate("vpermd ymm0, ymm1, ymm2");
+
+	EXPECT_EQ(0x0000007000000080ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0000005000000060ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_EQ(0x0000003000000040ULL, xmmLow(X86_REG_YMM0_HI));
+	EXPECT_EQ(0x0000001000000020ULL, xmmHigh(X86_REG_YMM0_HI));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPSLLVD_shifts_each_dword)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x0000000100000001ULL, 0x0000000100000001ULL);
+	setXmm(X86_REG_XMM2, 0x0000001f00000002ULL, 0x0000000100000000ULL);
+
+	emulate("vpsllvd xmm0, xmm1, xmm2");
+
+	EXPECT_EQ(0x0000000200000001ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x8000000000000004ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPSRAVD_sign_fills_on_wide_count)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x8000000080000000ULL, 0x8000000080000000ULL);
+	setXmm(X86_REG_XMM2, 0x000000200000001fULL, 0x0000000100000000ULL);
+
+	emulate("vpsravd xmm0, xmm1, xmm2");
+
+	EXPECT_EQ(0xc000000080000000ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xffffffffffffffffULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VGATHERDPS_loads_masked_lanes)
+{
+	ONLY_MODE_64;
+
+	setRegisters({{X86_REG_RAX, 0x1000}});
+	setMemoryValueUnsigned(0x1000, 0x11111111, 32);
+	setMemoryValueUnsigned(0x1004, 0x22222222, 32);
+	setXmm(X86_REG_XMM0, 0xddddddddccccccccULL, 0xbbbbbbbbaaaaaaaaULL);
+	setXmm(X86_REG_XMM2, 0, 0x0000000100000000ULL);
+	setXmm(X86_REG_XMM3, 0, 0x8000000080000000ULL);
+
+	emulate("vgatherdps xmm0, dword ptr [rax + xmm2*4], xmm3");
+
+	EXPECT_EQ(0x2222222211111111ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xddddddddccccccccULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmLow(X86_REG_XMM3));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM3));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VROUNDSS_uses_src1_upper)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, dbits(7.0), (uint64_t(fbits(9.0f)) << 32) | fbits(8.0f));
+	setXmm(X86_REG_XMM2, 0, (uint64_t(fbits(4.0f)) << 32) | fbits(1.75f));
+
+	emulate("vroundss xmm0, xmm1, xmm2, 1");
+
+	EXPECT_EQ(fbits(1.0f), static_cast<uint32_t>(xmmLow(X86_REG_XMM0)));
+	EXPECT_EQ(fbits(9.0f), static_cast<uint32_t>(xmmLow(X86_REG_XMM0) >> 32));
+	EXPECT_EQ(dbits(7.0), xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPESTRI_ignores_explicit_length)
+{
+	ONLY_MODE_64;
+
+	// EAX/EDX lengths are ignored; the implicit-terminator PCMPISTR* path
+	// is reused. Identical strings, EqualEach + negative polarity, no null.
+	setXmm(X86_REG_XMM0, 0x706f6e6d6c6b6a69ULL, 0x6867666564636261ULL);
+	setXmm(X86_REG_XMM1, 0x706f6e6d6c6b6a69ULL, 0x6867666564636261ULL);
+	setRegisters({{X86_REG_EAX, 16}, {X86_REG_EDX, 16}});
+
+	emulate("pcmpestri xmm0, xmm1, 0x1a");
+
+	EXPECT_EQ(16ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VCVTPH2PS_expands_four_halves)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0x0000440040003c00ULL);
+
+	emulate("vcvtph2ps xmm0, xmm1");
+
+	EXPECT_EQ((uint64_t(fbits(2.0f)) << 32) | fbits(1.0f), xmmLow(X86_REG_XMM0));
+	EXPECT_EQ((uint64_t(fbits(0.0f)) << 32) | fbits(4.0f), xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VCVTPS2PH_packs_four_floats)
+{
+	ONLY_MODE_64;
+
+	setXmm(
+		X86_REG_XMM1,
+		(uint64_t(fbits(0.0f)) << 32) | fbits(4.0f),
+		(uint64_t(fbits(2.0f)) << 32) | fbits(1.0f));
+
+	emulate("vcvtps2ph xmm0, xmm1, 0");
+
+	EXPECT_EQ(0x0000440040003c00ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, CMPPS_eq_writes_all_ones_or_zero_lanes)
+{
+	ONLY_MODE_64;
+
+	setXmm(
+		X86_REG_XMM0,
+		(uint64_t(fbits(4.0f)) << 32) | fbits(3.0f),
+		(uint64_t(fbits(2.0f)) << 32) | fbits(1.0f));
+	setXmm(
+		X86_REG_XMM1,
+		(uint64_t(fbits(4.0f)) << 32) | fbits(9.0f),
+		(uint64_t(fbits(8.0f)) << 32) | fbits(1.0f));
+
+	emulate_bin("0f c2 c1 00"); // cmpps xmm0, xmm1, 0
+
+	EXPECT_EQ(0x00000000ffffffffULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xffffffff00000000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, CMPSS_eq_keeps_upper_lanes)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, dbits(7.0), (uint64_t(fbits(9.0f)) << 32) | fbits(1.0f));
+	setXmm(X86_REG_XMM1, 0, fbits(1.0f));
+
+	emulate_bin("f3 0f c2 c1 00"); // cmpss xmm0, xmm1, 0
+
+	EXPECT_EQ(0xffffffffU, static_cast<uint32_t>(xmmLow(X86_REG_XMM0)));
+	EXPECT_EQ(fbits(9.0f), static_cast<uint32_t>(xmmLow(X86_REG_XMM0) >> 32));
+	EXPECT_EQ(dbits(7.0), xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, CMPSD_xmm_is_fp_compare_not_string)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, dbits(9.0), dbits(1.0));
+	setXmm(X86_REG_XMM1, dbits(4.0), dbits(1.0));
+
+	emulate_bin("f2 0f c2 c1 00"); // cmpsd xmm0, xmm1, 0
+
+	EXPECT_EQ(~0ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(dbits(9.0), xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, CMPSD_string_still_compares_memory)
+{
+	ONLY_MODE_64;
+
+	setRegisters({{X86_REG_RSI, 0x1000}, {X86_REG_RDI, 0x2000}});
+	setMemoryValueUnsigned(0x1000, 0x11111111, 32);
+	setMemoryValueUnsigned(0x2000, 0x11111111, 32);
+
+	emulate("cmpsd");
+
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_ZF));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VCMPPS_is_four_operand)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, (uint64_t(fbits(2.0f)) << 32) | fbits(1.0f));
+	setXmm(X86_REG_XMM2, 0, (uint64_t(fbits(3.0f)) << 32) | fbits(1.0f));
+
+	emulate_bin("c5 f0 c2 c2 00"); // vcmpps xmm0, xmm1, xmm2, 0
+
+	EXPECT_EQ(0x00000000ffffffffULL, xmmLow(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPBLENDW_is_four_operand)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x2222222222222222ULL, 0x1111111111111111ULL);
+	setXmm(X86_REG_XMM2, 0xbbbbbbbbbbbbbbbbULL, 0xaaaaaaaaaaaaaaaaULL);
+
+	emulate("vpblendw xmm0, xmm1, xmm2, 0xa5");
+
+	EXPECT_EQ(0x1111aaaa1111aaaaULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xbbbb2222bbbb2222ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPTEST_sets_zf_and_cf)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0xf0f0f0f0f0f0f0f0ULL, 0xf0f0f0f0f0f0f0f0ULL);
+	setXmm(X86_REG_XMM1, 0x0f0f0f0f0f0f0f0fULL, 0x0f0f0f0f0f0f0f0fULL);
+
+	emulate("vptest xmm0, xmm1");
+
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPSADBW_is_three_operand)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0x0807060504030201ULL);
+	setXmm(X86_REG_XMM2, 0, 0x0101010101010101ULL);
+
+	emulate("vpsadbw xmm0, xmm1, xmm2");
+
+	EXPECT_EQ(28ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPABSQ_absolute_quadwords)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0xfffffffffffffff0ULL, 5);
+
+	emulate_bin("62 f2 fd 08 1f c1"); // vpabsq xmm0, xmm1
+
+	EXPECT_EQ(5ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(16ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPCMOV_blends_with_mask)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0xffffffff00000000ULL);
+	setXmm(X86_REG_XMM2, 0, 0x00000000ffffffffULL);
+	setXmm(X86_REG_XMM3, 0, 0xffff0000ffff0000ULL);
+
+	emulate("vpcmov xmm0, xmm1, xmm2, xmm3");
+
+	EXPECT_EQ(0xffff00000000ffffULL, xmmLow(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPLZCNTD_counts_leading_zeros)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0x0000000100000000ULL);
+
+	emulate_bin("62 f2 7d 08 44 c1"); // vplzcntd xmm0, xmm1
+
+	EXPECT_EQ(0x0000001f00000020ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VALIGND_shifts_dwords_from_concat)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x4444444433333333ULL, 0x2222222211111111ULL);
+	setXmm(X86_REG_XMM2, 0x8888888877777777ULL, 0x6666666655555555ULL);
+
+	emulate_bin("62 f3 75 08 03 c2 01"); // valignd xmm0, xmm1, xmm2, 1
+
+	// Concatenate(SRC1, SRC2) is SRC2 in the low 128 bits. imm=1 drops
+	// SRC2's lowest dword and pulls SRC1's lowest dword into the top.
+	EXPECT_EQ(0x7777777766666666ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x1111111188888888ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPMOVDB_truncates_dwords_to_bytes)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setXmm(X86_REG_XMM1, 0x0000004400000043ULL, 0x0000004200000041ULL);
+
+	emulate_bin("62 f2 7e 08 31 c8"); // vpmovdb xmm0, xmm1
+
+	EXPECT_EQ(0x44434241ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPMOVDW_truncates_dwords_to_words)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setXmm(X86_REG_XMM1, 0x0000444400003333ULL, 0x0000222200001111ULL);
+
+	emulate_bin("62 f2 7e 08 33 c8"); // vpmovdw xmm0, xmm1
+
+	EXPECT_EQ(0x4444333322221111ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPMOVQB_truncates_quads_to_bytes)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000046ULL, 0x0000000000000045ULL);
+
+	emulate_bin("62 f2 7e 08 32 c8"); // vpmovqb xmm0, xmm1
+
+	EXPECT_EQ(0x4645ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPMOVQD_truncates_quads_to_dwords)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setXmm(X86_REG_XMM1, 0x0000000022222222ULL, 0x0000000011111111ULL);
+
+	emulate_bin("62 f2 7e 08 35 c8"); // vpmovqd xmm0, xmm1
+
+	EXPECT_EQ(0x2222222211111111ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPMOVQW_truncates_quads_to_words)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setXmm(X86_REG_XMM1, 0x0000000000002222ULL, 0x0000000000001111ULL);
+
+	emulate_bin("62 f2 7e 08 34 c8"); // vpmovqw xmm0, xmm1
+
+	EXPECT_EQ(0x22221111ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPMOVSDB_signed_saturates_dwords_to_bytes)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setXmm(X86_REG_XMM1, 0xffffff380000007fULL, 0xffffffff000000c8ULL);
+
+	emulate_bin("62 f2 7e 08 21 c8"); // vpmovsdb xmm0, xmm1
+
+	EXPECT_EQ(0x807fff7fULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPMOVUSDB_unsigned_saturates_dwords_to_bytes)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setXmm(X86_REG_XMM1, 0x0000012c000000ffULL, 0xffffffff000000c8ULL);
+
+	emulate_bin("62 f2 7e 08 11 c8"); // vpmovusdb xmm0, xmm1
+
+	EXPECT_EQ(0xffff00c8ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPMOVM2B_spreads_mask_bits_to_bytes)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setRegisters({
+		{X86_REG_K1, 5ULL},
+	});
+
+	emulate_bin("62 f2 7e 08 28 c1"); // vpmovm2b xmm0, k1
+
+	EXPECT_EQ(0x0000000000ff00ffULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPMOVM2D_spreads_mask_bits_to_dwords)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setRegisters({
+		{X86_REG_K1, 5ULL},
+	});
+
+	emulate_bin("62 f2 7e 08 38 c1"); // vpmovm2d xmm0, k1
+
+	EXPECT_EQ(0x00000000ffffffffULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x00000000ffffffffULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPERMI2D_selects_from_two_tables)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x0000000500000004ULL, 0x0000000100000000ULL);
+	setXmm(X86_REG_XMM1, 0x000000280000001eULL, 0x000000140000000aULL);
+	setXmm(X86_REG_XMM2, 0x0000005000000046ULL, 0x0000003c00000032ULL);
+
+	emulate_bin("62 f2 75 08 76 c2"); // vpermi2d xmm0, xmm1, xmm2
+
+	EXPECT_EQ(0x000000140000000aULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0000003c00000032ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPERMT2D_uses_dest_as_table0)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x000000280000001eULL, 0x000000140000000aULL);
+	setXmm(X86_REG_XMM1, 0x0000000500000004ULL, 0x0000000100000000ULL);
+	setXmm(X86_REG_XMM2, 0x0000005000000046ULL, 0x0000003c00000032ULL);
+
+	emulate_bin("62 f2 75 08 7e c2"); // vpermt2d xmm0, xmm1, xmm2
+
+	EXPECT_EQ(0x000000140000000aULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0000003c00000032ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPERMI2Q_selects_from_two_tables)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 2ULL, 0ULL);
+	setXmm(X86_REG_XMM1, 20ULL, 10ULL);
+	setXmm(X86_REG_XMM2, 60ULL, 50ULL);
+
+	emulate_bin("62 f2 f5 08 76 c2"); // vpermi2q xmm0, xmm1, xmm2
+
+	EXPECT_EQ(10ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(50ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, RDRAND_calls_named_helper)
+{
+	ONLY_MODE_64;
+
+	emulate("rdrand eax");
+
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_CF));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_BLCFILL_ands_with_src_plus_one)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EBX, 0x0f},
+	});
+
+	emulate("blcfill eax, ebx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0},
+		{X86_REG_CF, false},
+		{X86_REG_OF, false},
+		{X86_REG_ZF, true},
+		{X86_REG_SF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_TZMSK_masks_trailing_zeros)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EBX, 0x18},
+	});
+
+	emulate("tzmsk eax, ebx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0x07},
+		{X86_REG_CF, false},
+		{X86_REG_OF, false},
+		{X86_REG_ZF, false},
+		{X86_REG_SF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PSHUFW_shuffles_mmx_words)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_MM1, 0x4444333322221111ULL},
+	});
+
+	emulate("pshufw mm0, mm1, 0x1b");
+
+	EXPECT_EQ(0x1111222233334444ULL, getRegisterValueUnsigned(X86_REG_MM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PFADD_adds_two_mmx_floats)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_MM0, 0x400000003f800000ULL}, // 2.0f, 1.0f
+		{X86_REG_MM1, 0x3f8000003f800000ULL}, // 1.0f, 1.0f
+	});
+
+	emulate("pfadd mm0, mm1");
+
+	EXPECT_EQ(0x4040000040000000ULL, getRegisterValueUnsigned(X86_REG_MM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PSWAPD_swaps_mmx_dwords)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_MM1, 0x1111111122222222ULL},
+	});
+
+	emulate("pswapd mm0, mm1");
+
+	EXPECT_EQ(0x2222222211111111ULL, getRegisterValueUnsigned(X86_REG_MM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPBROADCASTMB2Q_spreads_mask_bits_to_quads)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setRegisters({
+		{X86_REG_K1, 5ULL},
+	});
+
+	emulate_bin("62 f2 fe 08 2a c1"); // vpbroadcastmb2q xmm0, k1
+
+	EXPECT_EQ(0xffffffffffffffffULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPCONFLICTD_ors_matching_earlier_lanes)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x0000000100000002ULL, 0x0000000100000001ULL);
+
+	emulate_bin("62 f2 7d 08 c4 c1"); // vpconflictd xmm0, xmm1
+
+	EXPECT_EQ(0x0000000100000000ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0000000300000000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPCOMB_compares_bytes_with_eq_predicate)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x1111111111111111ULL, 0x0807060504030201ULL);
+	setXmm(X86_REG_XMM2, 0x2222222222222222ULL, 0x0800060504030001ULL);
+
+	emulate("vpcomb xmm0, xmm1, xmm2, 4");
+
+	EXPECT_EQ(0xff00ffffffff00ffULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
 	EXPECT_NO_VALUE_CALLED();
 }
 

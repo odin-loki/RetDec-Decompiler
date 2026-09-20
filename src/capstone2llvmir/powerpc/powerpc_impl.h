@@ -102,12 +102,18 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		llvm::Value* loadOpDouble(cs_ppc_op& op, llvm::IRBuilder<>& irb);
 		llvm::Value* loadOpI128(cs_ppc_op& op, llvm::IRBuilder<>& irb);
 		void storeOpI128(cs_ppc_op& op, llvm::Value* val, llvm::IRBuilder<>& irb);
+		llvm::Value* loadOpI256(cs_ppc_op& op, llvm::IRBuilder<>& irb);
+		void storeOpI256(cs_ppc_op& op, llvm::Value* val, llvm::IRBuilder<>& irb);
 		llvm::Value* fpIntrinsic(llvm::IRBuilder<>& irb, llvm::Intrinsic::ID id, llvm::ArrayRef<llvm::Value*> args);
 		static bool isSinglePrecisionForm(unsigned id);
+		static bool isQpxSingle(unsigned id);
 		uint32_t canonicalRegister(uint32_t r) const;
 		llvm::Value* i128HighDouble(llvm::Value* v, llvm::IRBuilder<>& irb);
 		llvm::Value* insertHighDouble(llvm::Value* vec, llvm::Value* d, llvm::IRBuilder<>& irb);
 		llvm::Value* asVec128(llvm::Value* v, llvm::Type* elemTy, unsigned n, llvm::IRBuilder<>& irb);
+		llvm::Value* asVec256(llvm::Value* v, llvm::Type* elemTy, unsigned n, llvm::IRBuilder<>& irb);
+		llvm::Value* qpxAsArithVec(llvm::Value* bits, bool sp, llvm::IRBuilder<>& irb);
+		llvm::Value* qpxFromArithVec(llvm::Value* vec, llvm::IRBuilder<>& irb);
 
 		std::tuple<llvm::Value*, llvm::Value*, llvm::Value*, llvm::Value*> loadCrX(
 				llvm::IRBuilder<>& irb,
@@ -241,6 +247,59 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		void translateLoadFloatAsInt(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateStoreFloatAsInt(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateVsxMove(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateQpxFpArith(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateQpxFpFma(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateQpxFpSign(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateQpxFpCmp(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateQpxFpSel(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateQpxFpConvert(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateQpxFpRound(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateQpxLogical(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateQpxAlign(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateQpxSplat(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateQpxPerm(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateQpxGpci(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateQpxCrossFma(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateQpxLoadIndexed(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateQpxStoreIndexed(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void qpxWritebackIndexed(cs_insn* i, cs_ppc* pi, llvm::Value* ea, llvm::IRBuilder<>& irb);
+		uint32_t speOverlayReg(uint32_t r) const;
+		llvm::Value* loadSpeI64(cs_ppc_op& op, llvm::IRBuilder<>& irb);
+		void storeSpeI64(cs_ppc_op& op, llvm::Value* val, llvm::IRBuilder<>& irb);
+		llvm::Value* speEffectiveAddress(cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateSpeArith(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateSpeBrinc(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateSpeLogical(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateSpeUnary(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateSpeCmp(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateSpeShift(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateSpeSplat(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateSpeMerge(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateSpeLoad(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateSpeStore(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateSpeMac(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateSpeDiv(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateSpeFscr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateIsel(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateCmpb(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateDivde(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecClz(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecAvg(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecElementLoadStore(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecFpEstimate(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecMinMax(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecPopcnt(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecMulWiden(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecMsum(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecUnpack(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecSum(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecFpTest(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateXxPerm(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateFpscr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVscr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+
+		static constexpr uint32_t kFpscrReg = PPC_REG_ENDING + 1;
+		static constexpr uint32_t kVscrReg = PPC_REG_ENDING + 2;
 };
 
 } // namespace capstone2llvmir

@@ -5,6 +5,7 @@
  */
 
 #include <llvm/IR/InstIterator.h>
+#include <llvm/IR/Instructions.h>
 
 #include "capstone2llvmir/capstone2llvmir_tests.h"
 #include "retdec/capstone2llvmir/sparc/sparc.h"
@@ -731,6 +732,370 @@ TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_FADDD)
 	EXPECT_JUST_REGISTERS_LOADED({SPARC_REG_D0, SPARC_REG_D1});
 	EXPECT_JUST_REGISTERS_STORED({
 		{SPARC_REG_D2, 3.75},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+static bool sparcQuadIsLeftover(llvm::Function* f)
+{
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		auto* c = dyn_cast<CallInst>(&*it);
+		if (!c)
+		{
+			continue;
+		}
+		auto* cf = c->getCalledFunction();
+		if (cf && cf->getName().starts_with("__asm_"))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool sparcQuadHasOpcodeOnFp128(llvm::Function* f, unsigned opc)
+{
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (it->getOpcode() != opc)
+		{
+			continue;
+		}
+		if (it->getType()->isFP128Ty())
+		{
+			return true;
+		}
+		for (auto& op : it->operands())
+		{
+			if (op->getType()->isFP128Ty())
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+static bool sparcHasI128Mem(llvm::Function* f)
+{
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* li = dyn_cast<LoadInst>(&*it))
+		{
+			if (li->getType()->isIntegerTy(128))
+			{
+				return true;
+			}
+		}
+		if (auto* si = dyn_cast<StoreInst>(&*it))
+		{
+			if (si->getValueOperand()->getType()->isIntegerTy(128))
+			{
+				return true;
+			}
+		}
+		if (auto* bc = dyn_cast<BitCastInst>(&*it))
+		{
+			bool toFp128 = bc->getType()->isFP128Ty()
+					&& bc->getOperand(0)->getType()->isIntegerTy(128);
+			bool toI128 = bc->getType()->isIntegerTy(128)
+					&& bc->getOperand(0)->getType()->isFP128Ty();
+			if (toFp128 || toI128)
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+//
+// SPARC_INS_FADDQ  faddq %f0, %f4, %f8   encoding 91 a0 08 64
+// Capstone 6 operands are Q0, Q1, Q2 (QFPRegs). The emulator cannot execute
+// fadd fp128, so this asserts on IR rather than register values.
+// Keystone 0.9.2 may reject `faddq`; hex encoding is used either way.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_FADDQ)
+{
+	ALL_MODES;
+
+	auto* f = translate(utils::hexStringToBytes("91 a0 08 64"));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	EXPECT_FALSE(sparcQuadIsLeftover(f)) << dumpFunction(f);
+	EXPECT_TRUE(sparcQuadHasOpcodeOnFp128(f, Instruction::FAdd)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_FSUBQ)
+{
+	ALL_MODES;
+
+	auto* f = translate(utils::hexStringToBytes("91 a0 08 e4"));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	EXPECT_FALSE(sparcQuadIsLeftover(f)) << dumpFunction(f);
+	EXPECT_TRUE(sparcQuadHasOpcodeOnFp128(f, Instruction::FSub)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_FMULQ)
+{
+	ALL_MODES;
+
+	auto* f = translate(utils::hexStringToBytes("91 a0 09 64"));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	EXPECT_FALSE(sparcQuadIsLeftover(f)) << dumpFunction(f);
+	EXPECT_TRUE(sparcQuadHasOpcodeOnFp128(f, Instruction::FMul)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_FDIVQ)
+{
+	ALL_MODES;
+
+	auto* f = translate(utils::hexStringToBytes("91 a0 09 e4"));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	EXPECT_FALSE(sparcQuadIsLeftover(f)) << dumpFunction(f);
+	EXPECT_TRUE(sparcQuadHasOpcodeOnFp128(f, Instruction::FDiv)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_FNEGQ)
+{
+	// Capstone 6 TableGen CheckPredicate: FNEGQ is V9-only.
+	ONLY_MODE_64;
+
+	auto* f = translate(utils::hexStringToBytes("91 a0 00 e0"));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	EXPECT_FALSE(sparcQuadIsLeftover(f)) << dumpFunction(f);
+	EXPECT_TRUE(sparcQuadHasOpcodeOnFp128(f, Instruction::FNeg)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_FABSQ)
+{
+	// Capstone 6 TableGen CheckPredicate: FABSQ is V9-only.
+	ONLY_MODE_64;
+
+	auto* f = translate(utils::hexStringToBytes("91 a0 01 60"));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	EXPECT_FALSE(sparcQuadIsLeftover(f)) << dumpFunction(f);
+	bool sawFabs = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		auto* c = dyn_cast<CallInst>(&*it);
+		if (c && c->getCalledFunction()
+				&& c->getCalledFunction()->getName().starts_with("llvm.fabs"))
+		{
+			sawFabs = c->getType()->isFP128Ty();
+		}
+	}
+	EXPECT_TRUE(sawFabs) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_FSQRTQ)
+{
+	ALL_MODES;
+
+	auto* f = translate(utils::hexStringToBytes("91 a0 05 60"));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	EXPECT_FALSE(sparcQuadIsLeftover(f)) << dumpFunction(f);
+	bool sawSqrt = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		auto* c = dyn_cast<CallInst>(&*it);
+		if (c && c->getCalledFunction()
+				&& c->getCalledFunction()->getName().starts_with("llvm.sqrt"))
+		{
+			sawSqrt = c->getType()->isFP128Ty();
+		}
+	}
+	EXPECT_TRUE(sawSqrt) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_FQTOS)
+{
+	ALL_MODES;
+
+	auto* f = translate(utils::hexStringToBytes("85 a0 18 e0"));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	EXPECT_FALSE(sparcQuadIsLeftover(f)) << dumpFunction(f);
+	EXPECT_TRUE(sparcQuadHasOpcodeOnFp128(f, Instruction::FPTrunc)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_FQTOD)
+{
+	ALL_MODES;
+
+	auto* f = translate(utils::hexStringToBytes("89 a0 19 60"));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	EXPECT_FALSE(sparcQuadIsLeftover(f)) << dumpFunction(f);
+	EXPECT_TRUE(sparcQuadHasOpcodeOnFp128(f, Instruction::FPTrunc)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_FSTOQ)
+{
+	ALL_MODES;
+
+	auto* f = translate(utils::hexStringToBytes("91 a0 19 a0"));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	EXPECT_FALSE(sparcQuadIsLeftover(f)) << dumpFunction(f);
+	EXPECT_TRUE(sparcQuadHasOpcodeOnFp128(f, Instruction::FPExt)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_FDTOQ)
+{
+	ALL_MODES;
+
+	auto* f = translate(utils::hexStringToBytes("91 a0 19 c0"));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	EXPECT_FALSE(sparcQuadIsLeftover(f)) << dumpFunction(f);
+	EXPECT_TRUE(sparcQuadHasOpcodeOnFp128(f, Instruction::FPExt)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_FITOQ)
+{
+	ALL_MODES;
+
+	auto* f = translate(utils::hexStringToBytes("91 a0 19 80"));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	EXPECT_FALSE(sparcQuadIsLeftover(f)) << dumpFunction(f);
+	EXPECT_TRUE(sparcQuadHasOpcodeOnFp128(f, Instruction::SIToFP)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_FQTOI)
+{
+	ALL_MODES;
+
+	auto* f = translate(utils::hexStringToBytes("85 a0 1a 60"));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	EXPECT_FALSE(sparcQuadIsLeftover(f)) << dumpFunction(f);
+	EXPECT_TRUE(sparcQuadHasOpcodeOnFp128(f, Instruction::FPToSI)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_FCMPQ)
+{
+	ALL_MODES;
+
+	auto* f = translate(utils::hexStringToBytes("81 a8 0a 64"));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	EXPECT_FALSE(sparcQuadIsLeftover(f)) << dumpFunction(f);
+	EXPECT_TRUE(sparcQuadHasOpcodeOnFp128(f, Instruction::FCmp)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_FCMPEQ)
+{
+	ALL_MODES;
+
+	auto* f = translate(utils::hexStringToBytes("81 a8 0a e4"));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	EXPECT_FALSE(sparcQuadIsLeftover(f)) << dumpFunction(f);
+	EXPECT_TRUE(sparcQuadHasOpcodeOnFp128(f, Instruction::FCmp)) << dumpFunction(f);
+}
+
+//
+// SPARC_INS_LDQ  ldq [%g1], %f0   encoding c1 10 60 00
+// 128-bit load into Q0 (fp128). Emulator StoredValue has no fp128, IR only.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_LDQ)
+{
+	// Capstone CheckPredicate is V9 for LDQ (same as FNEGQ); 32-bit decode is empty.
+	ONLY_MODE_64;
+
+	auto* f = translate(utils::hexStringToBytes("c1 10 60 00"));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	EXPECT_FALSE(sparcQuadIsLeftover(f)) << dumpFunction(f);
+	EXPECT_TRUE(sparcHasI128Mem(f)) << dumpFunction(f);
+}
+
+//
+// SPARC_INS_STQ  stq %f0, [%g1]   encoding c1 30 60 00
+//
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_STQ)
+{
+	ONLY_MODE_64;
+
+	auto* f = translate(utils::hexStringToBytes("c1 30 60 00"));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	EXPECT_FALSE(sparcQuadIsLeftover(f)) << dumpFunction(f);
+	EXPECT_TRUE(sparcHasI128Mem(f)) << dumpFunction(f);
+}
+
+//
+// SPARC_INS_LDQA  ldqa [%g1] #ASI_P, %f0   encoding c1 90 50 00
+//
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_LDQA)
+{
+	ONLY_MODE_64;
+
+	auto* f = translate(utils::hexStringToBytes("c1 90 50 00"));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	EXPECT_FALSE(sparcQuadIsLeftover(f)) << dumpFunction(f);
+	EXPECT_TRUE(sparcHasI128Mem(f)) << dumpFunction(f);
+}
+
+//
+// SPARC_INS_STQA  stqa %f0, [%g1] #ASI_P   encoding c1 b0 50 00
+//
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_STQA)
+{
+	ONLY_MODE_64;
+
+	auto* f = translate(utils::hexStringToBytes("c1 b0 50 00"));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	EXPECT_FALSE(sparcQuadIsLeftover(f)) << dumpFunction(f);
+	EXPECT_TRUE(sparcHasI128Mem(f)) << dumpFunction(f);
+}
+
+//
+// SPARC_INS_MULSCC  mulscc %g1, %g2, %g3   encoding 87 20 40 02
+// Y[0]=1, N^V=0: lhs = rs1>>1, add rs2.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_MULSCC)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{SPARC_REG_G1, 10},
+		{SPARC_REG_G2, 5},
+		{SPARC_REG_Y, 1},
+		{SPARC_REG_ICC, 0},
+	});
+
+	emulate_bin("87 20 40 02");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{SPARC_REG_G3, 10},
+		{SPARC_REG_Y, 0},
+		{SPARC_REG_ICC, 0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// MULSCC with Y[0]=0: addend is 0, rd = (N^V)<<31 | rs1>>1.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_MULSCC_y0_zero)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{SPARC_REG_G1, 10},
+		{SPARC_REG_G2, 99},
+		{SPARC_REG_Y, 0},
+		{SPARC_REG_ICC, 0},
+	});
+
+	emulate_bin("87 20 40 02");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{SPARC_REG_G3, 5},
+		{SPARC_REG_Y, 0},
+		{SPARC_REG_ICC, 0},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();
@@ -1897,6 +2262,54 @@ TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_FLUSH)
 	EXPECT_NO_REGISTERS_LOADED_STORED();
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_XMULX)
+{
+	ALL_MODES;
+
+	auto* f = translate(utils::hexStringToBytes("87 b0 62 a2"));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	bool hit = false;
+	for (llvm::inst_iterator I = llvm::inst_begin(f), E = llvm::inst_end(f); I != E; ++I)
+	{
+		if (auto* c = llvm::dyn_cast<llvm::CallInst>(&*I))
+		{
+			if (auto* cf = c->getCalledFunction())
+			{
+				if (cf->getName().starts_with("llvm.clmul"))
+				{
+					hit = true;
+				}
+			}
+		}
+	}
+	EXPECT_TRUE(hit) << dumpFunction(f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_xmulx"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorSparcTests, SPARC_INS_XMULXHI)
+{
+	ALL_MODES;
+
+	auto* f = translate(utils::hexStringToBytes("87 b0 62 c2"));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	bool hit = false;
+	for (llvm::inst_iterator I = llvm::inst_begin(f), E = llvm::inst_end(f); I != E; ++I)
+	{
+		if (auto* c = llvm::dyn_cast<llvm::CallInst>(&*I))
+		{
+			if (auto* cf = c->getCalledFunction())
+			{
+				if (cf->getName().starts_with("llvm.clmul"))
+				{
+					hit = true;
+				}
+			}
+		}
+	}
+	EXPECT_TRUE(hit) << dumpFunction(f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_xmulxhi"));
 }
 
 } // namespace tests

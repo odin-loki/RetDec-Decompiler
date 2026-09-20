@@ -76,9 +76,11 @@ Native CPU architectures: see [ARCHITECTURE_TARGETS.md](ARCHITECTURE_TARGETS.md)
 Compiler integer, FP, SIMD, and atomics lift to LLVM IR for x86 /
 x86-64, ARM / Thumb, ARM64, MIPS 32/64, PIC32, PowerPC 32/64, RISC-V 32/64,
 SPARC 32/64, SystemZ (64), and XCore (32) at the same gcc `-O1`/`-O2` bar
-as x86-64 (including FMLA, microMIPS/R6 compact, VIS, MVC, channel IN/OUT).
-Leftover specialized IDs (SVE, AES/SHA on every ISA including x86, QPX,
-unprinted SASS opcodes) still become pseudo-asm. **SASS is not Production**
+as x86-64 (including FMLA, microMIPS/R6 compact, VIS, MVC, channel IN/OUT,
+AES-NI/SHA/CRC/PCLMUL and the Capstone-enumerated analogues on other ISAs,
+QPX `QV*`, SPE `EV*`, SPARC quad FP + `LDQ`/`STQ`, SVE remainder, SME `FMOPA`,
+RVV subset including mask logicals and `VAES*`). Remaining specialized IDs
+(RVV segmented mem, unprinted SASS opcodes) still become pseudo-asm. **SASS is not Production**
 (cubin/fatbin probe, not `-a sass`).
 
 ---

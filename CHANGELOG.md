@@ -6,6 +6,57 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ## [Unreleased]
 
+### Changed
+
+- AES-NI/VAES, SHA, CRC32, and PCLMULQDQ lift to `llvm.x86.*` (CRC32
+  `r64,r/m8` stays pseudo — LLVM has no 64.8 form). ARM32/ARM64 AES/SHA/CRC32
+  match that bar; ARM64 `PMULL`/`PMULL2` is the PCLMUL analogue; ARM32
+  `VMULL.P8` uses `llvm.arm.neon.vmullp`. MIPS R6 `CRC32*` is a reflected
+  bit-loop (no AES/SHA Capstone IDs). SystemZ CPACF `KM`/`KIMD`/`PCC`/…
+  become named `__sysz_*` helpers. SPARC VIS3 `XMULX`/`XMULXHI` uses
+  `llvm.clmul`. RISC-V Zbc `CLMUL`/`CLMULH`/`CLMULR` is a branchless XLEN walk.
+- PowerPC QPX: every Capstone `QV*` ID. SPE `EV*` fully mapped on a private
+  i64 `S0`–`S31` overlay (`CS_MODE_SPE`); MAC family uses `ppc.spe.*`
+  helpers (Power10 `ACC0`–`7` are MMA, not SPE). No `PPC_INS_VCIPHER`.
+- SPARC quad IEEE (`FADDQ`/…, `Q0`–`Q15` as `fp128`) plus `LDQ`/`STQ`/
+  `LDQA`/`STQA` and V8 `MULSCC`.
+- ARM64 SVE remainder (FP/shift/permute/compare/pred/INC/DEC/LDNT1) on
+  private Z/P (`<16 x i8>`/`<16 x i1>`, vscale=1). SME: `ZA` is private
+  `i2048`; `FMOPA` is a real outer product; `ALIAS_SMSTART`/`SMSTOP` are NOP.
+- ARM64 leftover NEON (`FABD`, `FRECPE`/`FRSQRTE`, `CMLE`/`CMLT`, `CLS`,
+  `FMLAL`, saturating doubling, lane/widen shifts). ARM32 leftover NEON
+  (`VCLZ`/`VCNT`/`VCLS`, `VRECPE`/`VRSQRTE`, `VQDMULH`, `VSEL*`).
+- RISC-V RVV: mask logicals as i32 bitwise on `V0`–`V31`; unsigned
+  compares; remaining FP/FMA/converts; merge/compress/slide1; widening
+  mul/acc; strided and indexed loads; reductions; `VAES*`/`VSHA2*`/`VSM3*`/
+  `VSM4*` named `llvm.riscv.*` helpers; segmented `VLSEG*`/`VSSEG*` (nf
+  consecutive `V0`–`V31`); whole-reg `VL*RE*`/`VS*R`; integer MAC;
+  `VMFEQ*`/`VFMV*`; mask-pop; fault-only-first `VLE*FF`/`VLSEG*FF`;
+  `VLM`/`VSM`; widening FP `VFWADD*`/`VFWMUL*`/`VFWMACC*`; `VFREC7`/
+  `VFRSQRT7`; RVV BF16 `VFWCVTBF16`/`VFNCVTBF16`/`VFWMACCBF16`. SEW/LMUL
+  switch stays unmapped.
+- x86 `CMPPS`/`CMPPD`/`CMPSS`/`VCMP*`; AVX2 twins; AVX-512 align/blendm/
+  unsigned cvt/`VPANDD`/`VRNDSCALE`/`VRCP14`/compress/scatter; AVX-512
+  `VPMOV*` narrowing/`VPMOVM2*`/`VPERMI2*`/`VPERMT2*` (D/PS/Q/PD);
+  `VPBROADCASTMB2Q`/`VPCONFLICT*`; XOP `VFRCZ`/`VPCMOV`/`VPROT`/`VPCOM*`;
+  TBM `BLCFILL`/`TZMSK`; MMX `PSHUFW`; 3DNow `PFADD`/`PFMUL`/`PSWAPD`;
+  `RDRAND`/`RDSEED` named helpers. PadLock `XSHA*`/`XCRYPT*`. CRC32
+  `r64,r/m8` stays pseudo.
+- PowerPC `ISEL`/`CMPB`/`DIVDE`; Altivec `VCLZ*`/`VMULE*`/`VSUM*`; scalar
+  VSX `XS*`; `XXSEL`; `LXVDSX`; FPSCR/VSCR; SPE `BRINC`; `MFOCRF`/`MTOCRF`.
+  MIPS MSA plus R6 compact plus R6 `CMP_*_S/D` plus DSP packed integer
+  (`ADDQ_S`/`DPAQ`/`EXTR`/`PRECR`/`SHLL_S`/`SHILO`/`SHILOV` on `AC0`–`AC3`)
+  plus Octeon `POP`/`DPOP`/`BADDU`/`CINS`/`EXTS` (`CS_MODE_OCTEON`). ARM64
+  `BFM`/`FCCMPE`/`CLREX`; ARM32 `VRINTR`/`CLREX`/`FLDM*X` and user-mode
+  `MRS`/`MSR`.
+- XCore remaining Capstone IDs (`CHKCT`/`FREET`/`CLRPT`/`DGETREG`/`GETST`/
+  `INIT`/`SETN`/`SETPSC`/`SETRDY`/`TESTLCL`/`TSETMR`) lift to named
+  `xcore.chan.*` / `xcore.thread.*` / `xcore.res.*` helpers. Only
+  `XCORE_INS_INVALID` stays `nullptr`.
+- SASS is still not Production — NVIDIA has not printed FMUL/FFMA/ISETP/
+  SHL/SHR/LOP3 encodings (reconfirmed 2026-09-20; CUDA Binary Utilities
+  13.3/13.3.1 still mnemonic-only, no 16-byte words).
+
 ## [2.0.26] — 2026-09-19
 
 ### Changed

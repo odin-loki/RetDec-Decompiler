@@ -23,8 +23,9 @@ Already lifted: EXIT, NOP, BRA, IMAD, MOV, LDG, STG, IADD3, FADD, S2R, LDC.
 **Still missing** for nvcc `-O1` kernels (ISA-table mnemonics, **no** printed
 encoding word — not invented): **FMUL, FFMA, ISETP, SHL, SHR, LOP3**, plus
 FSETP, MUFU, LEA, BRA displacement, S2R/S2UR SR selector. **Not Production.**
-A 2026-09-19 re-search of CUDA Binary Utilities 8.0–13.3 found **no** new
-16-byte words for those mnemonics (see § Citations / encoding search).
+A 2026-09-20 re-search of CUDA Binary Utilities current HTML plus
+archive 13.3.1, and a same-day re-fetch of 13.3 / 13.3.1, found **no**
+new 16-byte words for those mnemonics (see § Citations / encoding search).
 
 32 vs 64 is **GPU pointer width** (`SassConfig::pointerBits` / ELF class),
 not a CPU `-a` token. Do **not** add `-a sass` / `-a sass32` unless a later
@@ -47,7 +48,9 @@ Capstone.
   `…7c24`, IMAD.WIDE `…7825`, MOV `…7a02`, LDG `…7381`/`…7981`, STG `…7386`/
   `…7986`, FADD `…7221`, S2R `…7919`, LDC `…7b82`, SHFL `…f389`, S2UR `…79c3`,
   LDCU `…77ac`, BRA `…7947`). FMUL/FFMA/ISETP/SHL/SHR/LOP3/FSETP/MUFU/LEA
-  have **no** printed word in those listings (reconfirmed 2026-09-19).
+  have **no** printed word in those listings (reconfirmed 2026-09-20).
+  BRA is decoded as opcode `0x47`; the PC displacement field is **not**
+  published (self-loop samples `BRA 0xd0` / `BRA 0x110` only).
 - Pre-Volta 8-byte EXIT — CUDA Binary Utilities 9.1 (`0x8000000000001de7`).
   The same Fermi `-hex` sample also prints MOV (`…5de4` / `…9de4` / …),
   LDU.E (`…1c85` with high `0x8c…`), IADD (`…1c03`), ST.E (`…1c85` with
@@ -55,22 +58,25 @@ Capstone.
   words; LDU and ST share the low 16 bits, so they are **not** claimed on
   the SM_70 decoder. Not FMUL/FFMA/ISETP/SHL/SHR/LOP3/FSETP/MUFU/LEA.
 
-### Encoding search (2026-09-19) — no new 16-byte words
+### Encoding search (2026-09-20) — no new 16-byte words
 
-Consulted NVIDIA CUDA Binary Utilities (HTML and, where fetched, PDF).
-`nvdisasm` was **not** run. Third-party assemblers were **not** used.
+Consulted NVIDIA CUDA Binary Utilities HTML (PDF 12.8.2 returned HTTP 500
+this pass; 12.8.2 HTML was fetched instead). `nvdisasm` was **not** run.
+Third-party assemblers were **not** used.
 
 | Document | URL | Printed `/* 0x… */` next to a mnemonic? | FMUL/FFMA/ISETP/SHL/SHR/LOP3/FSETP/MUFU/LEA encoding word? |
 |----------|-----|------------------------------------------|-----------------------------------------------------------|
-| 13.3 current | https://docs.nvidia.com/cuda/cuda-binary-utilities/index.html | Yes — LDC/S2R/S2UR/LDCU/IMAD/IMAD.WIDE/LDG/FADD/STG/EXIT/BRA/NOP | **No.** ISA tables name them. A second sample lists FMUL.FTZ / FFMA.FTZ / FSETP / MUFU.SQRT / ISETP **without** hex words (not `-hex`). |
+| 13.3 current | https://docs.nvidia.com/cuda/cuda-binary-utilities/index.html | Yes — LDC/S2R/S2UR/LDCU/IMAD/IMAD.WIDE/LDG/FADD/STG/EXIT/BRA/NOP | **No.** ISA tables name them. A second sample lists FMUL.FTZ / FFMA.FTZ / FSETP / MUFU.SQRT / ISETP **without** hex words (not `-hex`). BRA displacement bits unpublished. |
+| 13.3.1 archive | https://docs.nvidia.com/cuda/archive/13.3.1/cuda-binary-utilities/index.html | Same 13.x `-hex` kernel as current | **No** |
 | 13.1.2 | https://docs.nvidia.com/cuda/archive/13.1.2/cuda-binary-utilities/index.html | Same 13.x `-hex` kernel as 13.3 | **No** |
 | 13.0.0 | https://docs.nvidia.com/cuda/archive/13.0.0/cuda-binary-utilities/index.html | Same 13.x `-hex` kernel | **No** |
-| 12.8.0 HTML | https://docs.nvidia.com/cuda/archive/12.8.0/cuda-binary-utilities/index.html | Yes — IMAD.MOV / SHFL / MOV / LDG / IADD3 / STG / EXIT / BRA / NOP | **No.** Same non-hex FMUL/FFMA/FSETP/MUFU/ISETP control-flow sample. |
-| 12.8.2 PDF | https://docs.nvidia.com/cuda/archive/12.8.2/pdf/CUDA_Binary_Utilities.pdf | Same 12.8 `-hex` kernel | **No** |
+| 12.8.2 HTML | https://docs.nvidia.com/cuda/archive/12.8.2/cuda-binary-utilities/index.html | Yes — IMAD.MOV / SHFL / MOV / LDG / IADD3 / STG / EXIT / BRA / NOP | **No.** Same non-hex FMUL/FFMA/FSETP/MUFU/ISETP control-flow sample. |
+| 12.8.2 PDF | https://docs.nvidia.com/cuda/archive/12.8.2/pdf/CUDA_Binary_Utilities.pdf | HTTP 500 on 2026-09-20; not re-fetched | (use 12.8.2 HTML) |
+| 12.8.0 HTML | https://docs.nvidia.com/cuda/archive/12.8.0/cuda-binary-utilities/index.html | Same 12.8 `-hex` kernel as 12.8.2 | **No** |
 | 12.6.0 | https://docs.nvidia.com/cuda/archive/12.6.0/cuda-binary-utilities/index.html | Same 12.x `-hex` kernel | **No** |
-| 12.4.0 / 12.4.1 PDF | https://docs.nvidia.com/cuda/archive/12.4.0/cuda-binary-utilities/index.html , https://docs.nvidia.com/cuda/archive/12.4.1/pdf/CUDA_Binary_Utilities.pdf | Same 12.x `-hex` kernel | **No.** FMUL/FFMA appear as mnemonics only. |
+| 12.4.0 | https://docs.nvidia.com/cuda/archive/12.4.0/cuda-binary-utilities/index.html | Same 12.x `-hex` kernel | **No.** FMUL/FFMA appear as mnemonics only. |
 | 12.1.0 | https://docs.nvidia.com/cuda/archive/12.1.0/cuda-binary-utilities/index.html | Same 12.x `-hex` kernel | **No** |
-| 10.2 | https://docs.nvidia.com/cuda/archive/10.2/cuda-binary-utilities/index.html | Fermi 8-byte MOV/LDU/IADD/ST/EXIT only | **No** 16-byte FMUL/… |
+| 10.2 | https://docs.nvidia.com/cuda/archive/10.2/cuda-binary-utilities/index.html | Fermi 8-byte MOV/LDU/IADD/ST/EXIT only | **No** 16-byte FMUL/… ISETP/FMUL/FFMA/FSETP/MUFU as mnemonics only. |
 | 9.1 | https://docs.nvidia.com/cuda/archive/9.1/cuda-binary-utilities/index.html | Same Fermi 8-byte sample (`EXIT` `0x8000000000001de7`) | **No** |
 | 8.0 | https://docs.nvidia.com/cuda/archive/8.0/cuda-binary-utilities/index.html | Same Fermi 8-byte sample | **No** |
 
@@ -94,8 +100,9 @@ Volta+ 16-byte words NVIDIA **did** print (already decoded; low 8 bits):
 | S2UR | `0x00000000000679c3` | `0xc3` | 13.3 |
 | LDCU.64 | `0x00006b00ff0477ac` | `0xac` | 13.3 |
 
-**Missing (not invented):** FMUL, FFMA, ISETP, SHL, SHR, LOP3, FSETP, MUFU, LEA.
-Until NVIDIA prints a 16-byte example for those, SASS stays **not Production**.
+**Missing (not invented):** FMUL, FFMA, ISETP, SHL, SHR, LOP3, FSETP, MUFU, LEA,
+BRA displacement field, S2R/S2UR SR selector. Until NVIDIA prints a 16-byte
+example (or a documented displacement/SR map) for those, SASS stays **not Production**.
 
 `fileinfo` already pretty-prints `EM_CUDA` in
 `src/fileinfo/file_detector/elf_detector.cpp`. `ElfFormat::getTargetArchitecture()`

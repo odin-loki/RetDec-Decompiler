@@ -86,7 +86,8 @@ the decompiler on a GPU.
   BRA, IMAD, IMAD.WIDE, MOV, LDG, STG, IADD3, FADD, S2R, LDC, SHFL, S2UR,
   LDCU. They **do not** print 16-byte words for FMUL, FFMA, ISETP, SHL,
   SHR, LOP3, FSETP, MUFU, or LEA (mnemonics / ISA tables only). Those
-  stay `Unknown`. Do not invent opcodes.
+  stay `Unknown`. Re-search 2026-09-20 of current HTML plus archive 13.3.1
+  printed **no** new 16-byte words for those leftovers. Do not invent opcodes.
 
 ## CPU-only (main decompile pipeline)
 

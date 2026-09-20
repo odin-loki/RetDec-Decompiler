@@ -224,6 +224,13 @@ class Capstone2LlvmIrTranslatorArm_impl :
 		void translateNeonWiden(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateNeonPairwise(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateNeonSatArith(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateCryptoAes(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateCryptoSha(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateCrc32(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateNeonCount(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateNeonRecip(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateNeonSatMul(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateVsel(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateQadd(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateDualMul(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateUmaal(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
@@ -260,6 +267,7 @@ class Capstone2LlvmIrTranslatorArm_impl :
 		void translateOrn(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateVfpPushPop(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateFence(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateMrsMsr(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateOrr(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateRev(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateSbc(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);

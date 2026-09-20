@@ -358,6 +358,145 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_BFXIL_preserves_the_rest)
 }
 
 //
+// ARM64_INS_UBFM, SBFM, BFM -- real encodings (Rd, Rn, #immr, #imms)
+//
+// Capstone 6 keeps these as i->id even when it prints the BFI/UBFX alias.
+// Same values as the alias tests above: UBFX #8,#8 is UBFM #immr=8,#imms=15;
+// UBFIZ #8,#8 is UBFM #56,#7; BFI #8,#8 is BFM #56,#7; BFXIL #8,#8 is BFM #8,#15.
+// Binaries are used so Keystone cannot rewrite the mnemonic before assemble.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UBFM_extracts_like_ubfx)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0xabcdef12},
+	});
+
+	emulate_bin("20 3c 48 d3"); // ubfm x0, x1, #8, #15
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_X1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0xef},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UBFM_inserts_like_ubfiz)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0xabcdef12},
+	});
+
+	emulate_bin("20 1c 78 d3"); // ubfm x0, x1, #56, #7
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_X1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0x1200},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SBFM_extracts_like_sbfx)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0xab80},
+	});
+
+	emulate_bin("20 3c 48 93"); // sbfm x0, x1, #8, #15
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_X1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0xffffffffffffffab},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SBFM_inserts_like_sbfiz)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0xf0},
+	});
+
+	emulate_bin("20 1c 7c 93"); // sbfm x0, x1, #60, #7  (sbfiz #4, #8)
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_X1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0xffffffffffffff00},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_BFM_inserts_like_bfi)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0xffffffffffffffff},
+		{ARM64_REG_X1, 0x00},
+	});
+
+	emulate_bin("20 1c 78 b3"); // bfm x0, x1, #56, #7
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_X0, ARM64_REG_X1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0xffffffffffff00ff},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_BFM_extracts_like_bfxil)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0xffffffffffffffff},
+		{ARM64_REG_X1, 0x0000},
+	});
+
+	emulate_bin("20 3c 48 b3"); // bfm x0, x1, #8, #15
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_X0, ARM64_REG_X1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0xffffffffffffff00},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UBFM_32_extracts_like_ubfx)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0xabcdef12},
+	});
+
+	emulate_bin("20 3c 08 53"); // ubfm w0, w1, #8, #15
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_X1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0xef},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UBFM_is_lsl_imm)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0x0000000000000001},
+	});
+
+	emulate_bin("20 00 41 d3"); // ubfm x0, x1, #1, #0  (lsl #63)
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_X1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0x8000000000000000},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
 // ARMv8.3 pointer authentication and ARMv8.5 BTI
 //
 // Current toolchains emit these in almost every prologue and the table had no
@@ -8058,6 +8197,54 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCCMP_d_d_f_false)
 }
 
 //
+// ARM64_INS_FCCMPE -- same NZCV as FCCMP; FPSR Invalid-Op is not modelled.
+// Bit 4 of the FCCMP encoding is set (s1,s2,#12,ne → 3c 14 22 1e).
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCCMPE_s_s_f_false)
+{
+	setRegisters({
+		{ARM64_REG_S1, 321.321_f32},
+		{ARM64_REG_S2, 321.321_f32},
+		{ARM64_REG_CPSR_Z, false},
+	});
+
+	emulate_bin("3c 14 22 1e"); // fccmpe s1, s2, #12, ne
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_S1, ARM64_REG_S2, ARM64_REG_CPSR_Z});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_CPSR_N, false},
+		{ARM64_REG_CPSR_Z, true},
+		{ARM64_REG_CPSR_C, true},
+		{ARM64_REG_CPSR_V, false},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCCMPE_s_s_f_true)
+{
+	setRegisters({
+		{ARM64_REG_S1, 321.321_f32},
+		{ARM64_REG_S2, 123.456_f32},
+		{ARM64_REG_CPSR_C, true},
+		{ARM64_REG_CPSR_Z, false},
+	});
+
+	emulate("fccmpe s1, s2, #12, hi");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_S1, ARM64_REG_S2, ARM64_REG_CPSR_C, ARM64_REG_CPSR_Z});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_CPSR_N, true},
+		{ARM64_REG_CPSR_Z, false},
+		{ARM64_REG_CPSR_C, false},
+		{ARM64_REG_CPSR_V, false},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
 // ARM64_INS_FCSEL
 //
 
@@ -12870,6 +13057,861 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SQSHRUN2_keeps_the_lower_h
 
 	EXPECT_EQ(0x0123456789abcdefULL, vLow(ARM64_REG_V0));
 	EXPECT_EQ(0x0000000000ff0001ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// Crypto / CRC: llvmir-emul cannot execute llvm.aarch64.crypto.* (IntrinsicLowering
+// aborts), so these pin the translator, not the emulator. Keystone 0.9.2 rejects
+// AES/SHA/SVE assembly; encodings are Capstone 6 disassembly of the A64 encoding
+// (same bytes Capstone prints as the comment).
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_AESE_emits_crypto_intrinsic)
+{
+	auto* f = translate(utils::hexStringToBytes("20 48 28 4e")); // aese v0.16b, v1.16b
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("llvm.aarch64.crypto.aese"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_aese"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_AESD_emits_crypto_intrinsic)
+{
+	auto* f = translate(utils::hexStringToBytes("20 58 28 4e")); // aesd v0.16b, v1.16b
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("llvm.aarch64.crypto.aesd"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_aesd"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_AESMC_emits_crypto_intrinsic)
+{
+	auto* f = translate(utils::hexStringToBytes("20 68 28 4e")); // aesmc v0.16b, v1.16b
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("llvm.aarch64.crypto.aesmc"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_aesmc"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_AESIMC_emits_crypto_intrinsic)
+{
+	auto* f = translate(utils::hexStringToBytes("20 78 28 4e")); // aesimc v0.16b, v1.16b
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("llvm.aarch64.crypto.aesimc"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_aesimc"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SHA1C_emits_crypto_intrinsic)
+{
+	auto* f = translate(utils::hexStringToBytes("20 00 02 5e")); // sha1c q0, s1, v2.4s
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("llvm.aarch64.crypto.sha1c"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_sha1c"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SHA1H_emits_crypto_intrinsic)
+{
+	auto* f = translate(utils::hexStringToBytes("20 08 28 5e")); // sha1h s0, s1
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("llvm.aarch64.crypto.sha1h"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_sha1h"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SHA256H_emits_crypto_intrinsic)
+{
+	auto* f = translate(utils::hexStringToBytes("20 40 02 5e")); // sha256h q0, q1, v2.4s
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("llvm.aarch64.crypto.sha256h"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_sha256h"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CRC32B_emits_crc_intrinsic)
+{
+	auto* f = translate(assemble("crc32b w0, w1, w2"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("llvm.aarch64.crc32b"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_crc32b"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CRC32X_emits_crc_intrinsic)
+{
+	auto* f = translate(assemble("crc32x w0, w1, x2"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("llvm.aarch64.crc32x"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_crc32x"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CRC32CB_emits_crc_intrinsic)
+{
+	auto* f = translate(assemble("crc32cb w0, w1, w2"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("llvm.aarch64.crc32cb"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_crc32cb"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_WHILELT_emits_predicate_icmp)
+{
+	auto* f = translate(utils::hexStringToBytes("00 14 a1 25")); // whilelt p0.s, x0, x1
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_whilelt"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LD1W_emits_masked_load)
+{
+	auto* f = translate(utils::hexStringToBytes("00 40 40 a5")); // ld1w {z0.s}, p0/z, [x0, x0, lsl #2]
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_ld1w"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ST1W_emits_masked_store)
+{
+	auto* f = translate(utils::hexStringToBytes("00 40 40 e5")); // st1w {z0.s}, p0, [x0, x0, lsl #2]
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_st1w"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ADD_sve_z_is_vector_add)
+{
+	auto* f = translate(utils::hexStringToBytes("20 00 a2 04")); // add z0.s, z1.s, z2.s
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_add"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_PMULL_emits_neon_pmull)
+{
+	auto* f = translate(utils::hexStringToBytes("20 e0 22 0e")); // pmull v0.8h, v1.8b, v2.8b
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("llvm.aarch64.neon.pmull.v8i16"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_pmull"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_PMULL2_emits_neon_pmull)
+{
+	auto* f = translate(utils::hexStringToBytes("20 e0 22 4e")); // pmull2 v0.8h, v1.16b, v2.16b
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("llvm.aarch64.neon.pmull.v8i16"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_pmull2"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_PMULL_1q_emits_pmull64)
+{
+	auto* f = translate(utils::hexStringToBytes("20 e0 e2 0e")); // pmull v0.1q, v1.1d, v2.1d
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("llvm.aarch64.neon.pmull64"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_pmull"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_PMULL2_1q_emits_pmull64)
+{
+	auto* f = translate(utils::hexStringToBytes("20 e0 e2 4e")); // pmull2 v0.1q, v1.2d, v2.2d
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("llvm.aarch64.neon.pmull64"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_pmull2"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_WHILELO_emits_predicate_icmp)
+{
+	auto* f = translate(utils::hexStringToBytes("00 1c a1 25")); // whilelo p0.s, x0, x1
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_whilelo"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_WHILEGE_emits_predicate_icmp)
+{
+	auto* f = translate(utils::hexStringToBytes("00 00 a1 25")); // whilege p0.s, w0, w1
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_whilege"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_PTRUE_emits_predicate)
+{
+	auto* f = translate(utils::hexStringToBytes("e0 e3 98 25")); // ptrue p0.s
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_ptrue"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CNTB_is_vl_over_elem)
+{
+	auto* f = translate(utils::hexStringToBytes("e0 e3 20 04")); // cntb x0
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_cntb"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CNTH_is_vl_over_elem)
+{
+	auto* f = translate(utils::hexStringToBytes("e0 e3 60 04")); // cnth x0
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_cnth"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CNTW_is_vl_over_elem)
+{
+	auto* f = translate(utils::hexStringToBytes("e0 e3 a0 04")); // cntw x0
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_cntw"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CNTD_is_vl_over_elem)
+{
+	auto* f = translate(utils::hexStringToBytes("e0 e3 e0 04")); // cntd x0
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_cntd"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LD1B_emits_masked_load)
+{
+	auto* f = translate(utils::hexStringToBytes("00 40 00 a4")); // ld1b {z0.b}, p0/z, [x0, x0]
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_ld1b"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ST1B_emits_masked_store)
+{
+	auto* f = translate(utils::hexStringToBytes("00 40 00 e4")); // st1b {z0.b}, p0, [x0, x0]
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_st1b"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ST1H_emits_masked_store)
+{
+	auto* f = translate(utils::hexStringToBytes("00 40 c0 e4")); // st1h {z0.s}, p0, [x0, x0, lsl #1]
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_st1h"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ST1D_emits_masked_store)
+{
+	auto* f = translate(utils::hexStringToBytes("00 40 c0 e5")); // st1d {z0.q}, p0, [x0, x0, lsl #3]
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_st1d"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SUB_sve_z_is_vector_sub)
+{
+	auto* f = translate(utils::hexStringToBytes("20 04 a2 04")); // sub z0.s, z1.s, z2.s
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_sub"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_AND_sve_z_is_vector_and)
+{
+	auto* f = translate(utils::hexStringToBytes("20 30 22 04")); // and z0.d, z1.d, z2.d
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_and"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ORR_sve_z_is_vector_or)
+{
+	auto* f = translate(utils::hexStringToBytes("20 30 62 04")); // orr z0.d, z1.d, z2.d
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_orr"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_EOR_sve_z_is_vector_xor)
+{
+	auto* f = translate(utils::hexStringToBytes("20 30 a2 04")); // eor z0.d, z1.d, z2.d
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_eor"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_AND_sve_p_is_pred_and)
+{
+	auto* f = translate(utils::hexStringToBytes("00 40 01 25")); // and p0.b, p0/z, p0.b, p1.b
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_and"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ORR_sve_p_is_pred_or)
+{
+	auto* f = translate(utils::hexStringToBytes("00 40 81 25")); // orr p0.b, p0/z, p0.b, p1.b
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_orr"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_EOR_sve_p_is_pred_xor)
+{
+	auto* f = translate(utils::hexStringToBytes("00 42 01 25")); // eor p0.b, p0/z, p0.b, p1.b
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_eor"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FADD_sve_z_is_vector_fadd)
+{
+	auto* f = translate(utils::hexStringToBytes("20 00 42 65")); // fadd z0.h, z1.h, z2.h
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_fadd"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FSUB_sve_z_is_vector_fsub)
+{
+	auto* f = translate(utils::hexStringToBytes("00 04 40 65")); // fsub z0.h, z0.h, z0.h
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_fsub"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FMUL_sve_z_is_vector_fmul)
+{
+	auto* f = translate(utils::hexStringToBytes("00 08 40 65")); // fmul z0.h, z0.h, z0.h
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_fmul"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FDIV_sve_z_is_vector_fdiv)
+{
+	auto* f = translate(utils::hexStringToBytes("00 80 4d 65")); // fdiv z0.h, p0/m, z0.h, z0.h
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_fdiv"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FMLA_sve_z_is_vector_fma)
+{
+	auto* f = translate(utils::hexStringToBytes("00 00 60 65")); // fmla z0.h, p0/m, z0.h, z0.h
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_fmla"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FNEG_sve_z_is_sign_xor)
+{
+	auto* f = translate(utils::hexStringToBytes("00 a0 5d 04")); // fneg z0.h, p0/m, z0.h
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_fneg"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FABS_sve_z_is_sign_and)
+{
+	auto* f = translate(utils::hexStringToBytes("00 a0 5c 04")); // fabs z0.h, p0/m, z0.h
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_fabs"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FADDA_is_horizontal_fadd)
+{
+	auto* f = translate(utils::hexStringToBytes("00 20 58 65")); // fadda h0, p0, h0, z0.h
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_fadda"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_INDEX_sve_emits_step)
+{
+	auto* f = translate(utils::hexStringToBytes("00 40 20 04")); // index z0.b, #0, #0
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_index"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SEL_sve_is_select)
+{
+	auto* f = translate(utils::hexStringToBytes("24 c0 20 05")); // sel z4.b, p0, z1.b, z0.b
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_sel"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_COMPACT_sve_is_pack)
+{
+	auto* f = translate(utils::hexStringToBytes("00 80 a1 05")); // compact z0.s, p0, z0.s
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_compact"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_TRN1_sve_z_is_shuffle)
+{
+	auto* f = translate(utils::hexStringToBytes("20 70 20 05")); // trn1 z0.b, z1.b, z0.b
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_trn1"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ZIP1_sve_p_is_shuffle)
+{
+	auto* f = translate(utils::hexStringToBytes("00 40 20 05")); // zip1 p0.b, p0.b, p0.b
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_zip1"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_DUP_sve_z_is_splat)
+{
+	auto* f = translate(utils::hexStringToBytes("00 38 20 05")); // mov z0.b, w0  (DUP)
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_dup"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CMPEQ_sve_emits_predicate)
+{
+	auto* f = translate(utils::hexStringToBytes("00 20 00 24")); // cmpeq p0.b, p0/z, z0.b, z0.d
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_cmpeq"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CMPGE_sve_emits_predicate)
+{
+	auto* f = translate(utils::hexStringToBytes("00 40 00 24")); // cmpge p0.b, p0/z, z0.b, z0.d
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_cmpge"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_PFALSE_emits_zero_pred)
+{
+	auto* f = translate(utils::hexStringToBytes("00 e4 18 25")); // pfalse p0.b
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_pfalse"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ORRS_sve_p_is_pred_or)
+{
+	auto* f = translate(utils::hexStringToBytes("00 40 c0 25")); // movs p0.b, p0.b  (ORRS)
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_orrs"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CNTP_is_popcount)
+{
+	auto* f = translate(utils::hexStringToBytes("00 80 20 25")); // cntp x0, p0, p0.b
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_cntp"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_INCB_adds_vl_bytes)
+{
+	auto* f = translate(utils::hexStringToBytes("e0 e3 30 04")); // incb x0
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_incb"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_DECB_subs_vl_bytes)
+{
+	auto* f = translate(utils::hexStringToBytes("00 e4 30 04")); // decb x0, pow2
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_decb"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ASR_sve_z_is_vector_ashr)
+{
+	auto* f = translate(utils::hexStringToBytes("20 80 20 04")); // asr z0.b, z1.b, z0.d
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_asr"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LSL_sve_z_is_vector_shl)
+{
+	auto* f = translate(utils::hexStringToBytes("00 8c 20 04")); // lsl z0.b, z0.b, z0.d
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_lsl"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LDNT1W_emits_masked_load)
+{
+	auto* f = translate(utils::hexStringToBytes("00 c0 00 a5")); // ldnt1w {z0.s}, p0/z, [x0, x0, lsl #2]
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_ldnt1w"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FMOPA_emits_outer_product)
+{
+	auto* f = translate(utils::hexStringToBytes("00 00 80 80")); // fmopa za0.s, p0/m, p0/m, z0.s, z0.s
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_fmopa"));
+}
+
+//
+// Leftover NEON: FP estimate / abs-diff, compares, CLS, polynomial mul,
+// lane shifts, widening shifts, saturating doubling, pairwise accumulate.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FABD_is_fabs_of_fsub)
+{
+	// 2.0 - 5.0 = -3.0; FABD is 3.0. Sign-bit clear, not vector fneg.
+	setV(ARM64_REG_V1, 0, 0x40000000ULL);
+	setV(ARM64_REG_V2, 0, 0x40a00000ULL);
+
+	emulate("fabd v0.4s, v1.4s, v2.4s");
+
+	EXPECT_EQ(0x40400000ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CMLE_against_zero)
+{
+	setV(ARM64_REG_V1, 0, 0x00000000000001ffULL);
+
+	emulate("cmle v0.16b, v1.16b, #0");
+
+	// 0xff is -1 (<= 0); 0x01 is not; every zero lane is also <= 0.
+	EXPECT_EQ(0xffffffffffff00ffULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0xffffffffffffffffULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CMLT_against_zero)
+{
+	setV(ARM64_REG_V1, 0, 0x00000000000001ffULL);
+
+	emulate("cmlt v0.16b, v1.16b, #0");
+
+	EXPECT_EQ(0x00000000000000ffULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CLS_scalar_zero_is_31)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0x0},
+	});
+
+	emulate("cls w0, w1");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 31},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CLS_vector_is_not_pseudo)
+{
+	auto* f = translate(assemble("cls v0.16b, v1.16b"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_cls"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SLI_inserts_shifted_bits)
+{
+	setV(ARM64_REG_V0, 0, 0x0f);
+	setV(ARM64_REG_V1, 0, 0x01);
+
+	emulate("sli v0.16b, v1.16b, #4");
+
+	EXPECT_EQ(0x1fULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SSRA_accumulates_ashr)
+{
+	setV(ARM64_REG_V0, 0, 0x01);
+	setV(ARM64_REG_V1, 0, 0xf0);
+
+	emulate("ssra v0.16b, v1.16b, #4");
+
+	// 0xf0 ashr 4 is 0xff; dest 1 + (-1) wraps to 0.
+	EXPECT_EQ(0ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_USRA_accumulates_lshr)
+{
+	setV(ARM64_REG_V0, 0, 0x01);
+	setV(ARM64_REG_V1, 0, 0xf0);
+
+	emulate("usra v0.16b, v1.16b, #4");
+
+	EXPECT_EQ(0x10ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SHLL_widens_then_shifts)
+{
+	setV(ARM64_REG_V1, 0, 0x01);
+
+	emulate("shll v0.8h, v1.8b, #8");
+
+	EXPECT_EQ(0x0100ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SSHLL_is_signed)
+{
+	setV(ARM64_REG_V1, 0, 0xf0);
+
+	emulate("sshll v0.8h, v1.8b, #4");
+
+	// 0xfff0 << 4 = 0xff00.
+	EXPECT_EQ(0xff00ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_USHLL2_uses_the_upper_half)
+{
+	setV(ARM64_REG_V1, 0x0100000000000000ULL, 0);
+
+	emulate("ushll2 v0.8h, v1.16b, #0");
+
+	EXPECT_EQ(0x0001000000000000ULL, vHigh(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vLow(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SABA_accumulates_absdiff)
+{
+	setV(ARM64_REG_V0, 0, 0x01);
+	setV(ARM64_REG_V1, 0, 0);
+	setV(ARM64_REG_V2, 0, 0xff);
+
+	emulate("saba v0.16b, v1.16b, v2.16b");
+
+	EXPECT_EQ(0x02ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SUBHN_keeps_the_high_half)
+{
+	setV(ARM64_REG_V1, 0, 0x0000000000001234ULL);
+	setV(ARM64_REG_V2, 0, 0);
+
+	emulate("subhn v0.8b, v1.8h, v2.8h");
+
+	EXPECT_EQ(0x12ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SADALP_adds_into_dest)
+{
+	setV(ARM64_REG_V0, 0, 0x00000001ULL);
+	setV(ARM64_REG_V1, 0, 0x00010001ULL);
+
+	emulate_bin("20 68 60 4e"); // saddalp v0.4s, v1.8h
+
+	EXPECT_EQ(0x00000003ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SQRSHRN_is_not_pseudo)
+{
+	auto* f = translate(assemble("sqrshrn v0.8b, v1.8h, #1"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_sqrshrn"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FRECPE_is_not_pseudo)
+{
+	auto* f = translate(assemble("frecpe v0.4s, v1.4s"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_frecpe"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FRSQRTE_is_not_pseudo)
+{
+	auto* f = translate(assemble("frsqrte v0.4s, v1.4s"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_frsqrte"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FRECPS_is_not_pseudo)
+{
+	auto* f = translate(assemble("frecps v0.4s, v1.4s, v2.4s"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_frecps"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FRINTI_is_not_pseudo)
+{
+	auto* f = translate(assemble("frinti v0.4s, v1.4s"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_frinti"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_PMUL_is_not_pseudo)
+{
+	auto* f = translate(assemble("pmul v0.16b, v1.16b, v2.16b"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_pmul"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SQDMULH_is_not_pseudo)
+{
+	auto* f = translate(assemble("sqdmulh v0.4s, v1.4s, v2.4s"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_sqdmulh"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SSHL_is_not_pseudo)
+{
+	auto* f = translate(assemble("sshl v0.16b, v1.16b, v2.16b"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_sshl"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SUQADD_is_not_pseudo)
+{
+	auto* f = translate(assemble("suqadd v0.16b, v1.16b"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_suqadd"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FMAXNMV_is_not_pseudo)
+{
+	auto* f = translate(assemble("fmaxnmv s0, v1.4s"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_fmaxnmv"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FMLAL_is_not_pseudo)
+{
+	auto* f = translate(utils::hexStringToBytes("20 ec 22 4e")); // fmlal v0.4s, v1.4h, v2.4h
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_fmlal"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SQDMULL_is_not_pseudo)
+{
+	auto* f = translate(assemble("sqdmull v0.4s, v1.4h, v2.4h"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_sqdmull"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LD1SB_sve_emits_sext_load)
+{
+	auto* f = translate(utils::hexStringToBytes("00 a0 a0 a5")); // ld1sb {z0.s}, p0/z, [x0]
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_ld1sb"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LD1SH_sve_emits_sext_load)
+{
+	auto* f = translate(utils::hexStringToBytes("00 a0 20 a5")); // ld1sh {z0.s}, p0/z, [x0]
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_ld1sh"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LD1SW_sve_emits_sext_load)
+{
+	auto* f = translate(utils::hexStringToBytes("00 a0 80 a4")); // ld1sw {z0.d}, p0/z, [x0]
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_ld1sw"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LDNT1SB_sve_emits_gather)
+{
+	auto* f = translate(utils::hexStringToBytes("00 80 00 84")); // ldnt1sb {z0.s}, p0/z, [z0.s, x0]
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_ldnt1sb"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LDNT1SH_sve_emits_gather)
+{
+	auto* f = translate(utils::hexStringToBytes("00 80 80 84")); // ldnt1sh {z0.s}, p0/z, [z0.s, x0]
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_ldnt1sh"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LDFF1W_sve_emits_masked_load)
+{
+	auto* f = translate(utils::hexStringToBytes("00 60 40 a5")); // ldff1w {z0.s}, p0/z, [x0, x0, lsl #2]
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_ldff1w"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LD1W_sve_gather_indexed)
+{
+	auto* f = translate(utils::hexStringToBytes("00 40 20 85")); // ld1w {z0.s}, p0/z, [x0, z0.s, uxtw #2]
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_ld1w"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ST1W_sve_scatter)
+{
+	auto* f = translate(utils::hexStringToBytes("00 a0 60 e5")); // st1w {z0.s}, p0, [z0.s]
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_st1w"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SETFFR_sets_all_true)
+{
+	auto* f = translate(utils::hexStringToBytes("00 90 2c 25")); // setffr
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_setffr"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_RDFFR_reads_ffr)
+{
+	auto* f = translate(utils::hexStringToBytes("00 f0 19 25")); // rdffr p0.b
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_rdffr"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_WRFFR_writes_ffr)
+{
+	auto* f = translate(utils::hexStringToBytes("00 90 28 25")); // wrffr p0.b
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_wrffr"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_PRFB_is_nop)
+{
+	auto* f = translate(utils::hexStringToBytes("00 00 c0 85")); // prfb pldl1keep, p0, [x0]
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_prfb"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CLASTA_sve_is_last_active)
+{
+	auto* f = translate(utils::hexStringToBytes("00 80 28 05")); // clasta z0.b, p0, z0.b, z0.b
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_clasta"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CLASTB_sve_is_first_active)
+{
+	auto* f = translate(utils::hexStringToBytes("00 80 29 05")); // clastb z0.b, p0, z0.b, z0.b
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_clastb"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SPLICE_sve_is_prefix)
+{
+	auto* f = translate(utils::hexStringToBytes("00 80 2c 05")); // splice z0.b, p0, z0.b, z0.b
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_splice"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_REV_sve_reverses_lanes)
+{
+	auto* f = translate(utils::hexStringToBytes("00 38 38 05")); // rev z0.b, z0.b
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_rev"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_REVB_sve_reverses_bytes)
+{
+	auto* f = translate(utils::hexStringToBytes("00 80 a4 05")); // revb z0.s, p0/m, z0.s
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_revb"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SADDV_sve_is_reduction)
+{
+	auto* f = translate(utils::hexStringToBytes("00 20 00 04")); // saddv d0, p0, z0.b
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_saddv"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UADDV_sve_is_reduction)
+{
+	auto* f = translate(utils::hexStringToBytes("00 20 01 04")); // uaddv d0, p0, z0.b
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_uaddv"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UMAXV_sve_is_reduction)
+{
+	auto* f = translate(utils::hexStringToBytes("00 20 09 04")); // umaxv b0, p0, z0.b
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_umaxv"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCMEQ_sve_emits_predicate)
+{
+	auto* f = translate(utils::hexStringToBytes("00 60 80 65")); // fcmeq p0.s, p0/z, z0.s, z0.s
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_fcmeq"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CLREX_is_nothing)
+{
+	emulate("clrex");
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();
 }
 

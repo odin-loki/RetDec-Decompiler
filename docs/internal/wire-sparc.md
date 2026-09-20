@@ -447,22 +447,30 @@ in Capstone 6. `lduw`/`stw` are `SPARC_INS_LD` / `SPARC_INS_ST`.
 Integer: `ADD`/`ADDCC`/`ADDX*`, `SUB`/`SUBCC`/`SUBX*`, `AND`/`ANDN`/`AND*CC`,
 `OR`/`ORN`/`OR*CC`, `XOR`/`XNOR`/`XOR*CC`, `SLL`/`SRL`/`SRA`/`SLLX`/`SRLX`/`SRAX`,
 `SETHI`, `NOP`, `MOV`, `SMUL`/`UMUL`/`MULX`, `SDIV`/`UDIV`/`SDIVX`/`UDIVX`,
-`RD`/`WR` (`%y`), `LD`/`LDSB`/`LDUB`/`LDSH`/`LDUH`/`LDSW`/`LDX`/`LDD`,
-`ST`/`STB`/`STH`/`STX`/`STD`, `SAVE`/`RESTORE`, `CALL`, `JMPL`, `RETT`,
+`RD`/`WR` (`%y`), `LD`/`LDSB`/`LDUB`/`LDSH`/`LDUH`/`LDSW`/`LDX`/`LDD`/`LDQ`,
+`ST`/`STB`/`STH`/`STX`/`STD`/`STQ`, `MULSCC`, `SAVE`/`RESTORE`, `CALL`, `JMPL`, `RETT`,
 `B`, `BR`, `CMP` (alias of `SUBCC`).
 
-FP: `FADDS`/`FADDD`/`FSUBS`/`FSUBD`/`FMULS`/`FMULD`/`FSMULD`/`FDIVS`/`FDIVD`,
-`FCMPS`/`FCMPD`/`FCMPES`/`FCMPED`, `FMOVS`/`FMOVD`, `FNEGS`/`FNEGD`,
-`FABSS`/`FABSD`, `FSQRTS`/`FSQRTD`, `FITOS`/`FITOD`/`FSTOI`/`FDTOI`/`FSTOD`/`FDTOS`,
-`FXTOS`/`FXTOD`/`FSTOX`/`FDTOX`, `MOVDTOX`/`MOVXTOD`/`MOVWTOS`/`MOVSTOSW`/`MOVSTOUW`,
-`FB`, `ld`/`ldd` to `F*`/`D*` (assembler `ldf`/`lddf`), `st`/`std` from `F*`/`D*`
-(assembler `stf`/`stdf`), `ld`/`st` `%fsr`.
+FP: `FADDS`/`FADDD`/`FADDQ`/`FSUBS`/`FSUBD`/`FSUBQ`/`FMULS`/`FMULD`/`FMULQ`/`FSMULD`/`FDMULQ`/`FDIVS`/`FDIVD`/`FDIVQ`,
+`FCMPS`/`FCMPD`/`FCMPQ`/`FCMPES`/`FCMPED`/`FCMPEQ` (and V9 `ALIAS_FCMPQ`/`ALIAS_FCMPEQ`),
+`FMOVS`/`FMOVD`/`FMOVQ`, `FNEGS`/`FNEGD`/`FNEGQ`,
+`FABSS`/`FABSD`/`FABSQ`, `FSQRTS`/`FSQRTD`/`FSQRTQ`,
+`FITOS`/`FITOD`/`FITOQ`/`FSTOI`/`FDTOI`/`FQTOI`/`FSTOD`/`FDTOS`/`FSTOQ`/`FDTOQ`/`FQTOS`/`FQTOD`,
+`FXTOS`/`FXTOD`/`FXTOQ`/`FSTOX`/`FDTOX`/`FQTOX`, `MOVDTOX`/`MOVXTOD`/`MOVWTOS`/`MOVSTOSW`/`MOVSTOUW`,
+`FB`, `ld`/`ldd`/`ldq` to `F*`/`D*`/`Q*` (assembler `ldf`/`lddf`/`ldq`),
+`st`/`std`/`stq` from `F*`/`D*`/`Q*` (assembler `stf`/`stdf`/`stq`), `ld`/`st` `%fsr`.
+Capstone 6 has `SPARC_INS_LDQ`/`STQ`/`LDQA`/`STQA` (no `LDQF`/`STQF` ids).
+TableGen predicates those four as V9 (`CheckPredicate`); CS_MODE_32 decode is empty
+or a different id (same as `FNEGQ`/`FABSQ`).
+`FQTOD`/`FQTOI`/`FQTOS`/`FQTOX` are mapped. `MULSCC` is the V8 33-bit multiply-step
+(`Y[0]` gates the addend; `N xor V` is the incoming sign; `Y`/`ICC` are LLVM globals).
 
 VIS (D* as i64 SIMD containers, `F*S` as i32): `FAND`/`FANDS`/`FOR`/`FORS`/`FXOR`/`FXORS`/
 `FXNOR`/`FXNORS`/`FNOT1`/`FNOT2`/`FZERO`/`FONE`/`FSRC1`/`FSRC2`/`FANDNOT1`/`FANDNOT2`
 and the `*S` single-width forms; `ALIGNADDR`/`ALIGNADDRL`/`FALIGNDATA` (GSR = `SPARC_REG_ASR19`);
 `FCMPGT16`/`FCMPGT32`/`FCMPLE16`/`FCMPLE32`/`FCMPEQ16`/`FCMPEQ32`/`FCMPNE16`/`FCMPNE32`;
 `FMUL8X16`/`FMUL8SUX16`/`FMUL8X16AL`/`FMUL8X16AU`; `FPACK16`/`FPACK32`;
+`XMULX`/`XMULXHI` (`llvm.clmul`, PCLMUL analogue);
 `FPADD16`/`FPADD16S`/`FPADD32`/`FPADD32S`/`FPSUB16`/`FPSUB16S`/`FPSUB32`/`FPSUB32S`;
 `FEXPAND`; `FPMERGE`; `PDIST`/`PDISTN`; `BSHUFFLE`; `ARRAY8`/`ARRAY16`/`ARRAY32`;
 `EDGE8`/`EDGE16`/`EDGE32` and `L`/`N`/`LN`.
@@ -483,20 +491,30 @@ IEEE bits to i32/i64 before the integer store.
 
 ### Remaining gaps (pseudo-asm)
 
-Quad (`FMOVQ`/`FADDq`/`FDMULQ`/`LDQ`/`STQ`/`FMOVRQ`/`Q0..` — Q regs exist in Capstone as
-`SPARC_REG_Q0` but are not a mapped LLVM register file; skip unless a later commit
-adds them),
-ASI loads/stores other than primary/`omitted` (`LDA`/`STA`/`LDDA`/`STDA` with
-`#ASI_P` / 0x80 *are* mapped, same as `LD`/`ST`/`LDD`/`STD`; `CASA`/`CASXA` *are*
+Quad IEEE 128-bit (`FADDQ`/`FSUBQ`/`FMULQ`/`FDIVQ`/`FDMULQ`/`FSQRTQ`/`FNEGQ`/`FABSQ`/`FMOVQ`/
+`FCMPQ`/`FCMPEQ`/`FQTOS`/`FQTOD`/`FSTOQ`/`FDTOQ`/`FITOQ`/`FQTOI`/`FQTOX`/`FXTOQ`/`FMOVRQ`)
+is mapped; `Q0`..`Q15` are fp128 LLVM globals (`SPARC_REG_FQ` is the deferred-trap
+queue, not a data register). `LDQ`/`STQ` are 16-byte load/store to `Q*` (i128 bits
+then `bitcast` to fp128). `LDQA`/`STQA` with `#ASI_P` / 0x80 *are* mapped.
+Still leftover: ICC/FCC
+conditional `FMOVQ_*` aliases (`ALIAS_FMOVQA` / `V9FMOVQ_FCC`),
+ASI loads/stores other than primary/`omitted` (`LDA`/`STA`/`LDDA`/`STDA`/`LDQA`/`STQA` with
+`#ASI_P` / 0x80 *are* mapped, same as `LD`/`ST`/`LDD`/`STD`/`LDQ`/`STQ`; `CASA`/`CASXA` *are*
 mapped; `LDSTUB`/`SWAP` and ASI-primary/`omitted` `LDSTUBA`/`SWAPA` *are* mapped —
 other ASI values stay pseudo),
 `FLUSHW` (privileged window; `FLUSH` I-cache is a nop like x86 `PREFETCH` — I-cache is not modelled),
 coprocessor `CB`, window state `DONE`/`RETRY`/`SAVED`/`RESTORED`,
-privileged `RDPR`/`WRPR`, leftover VIS 3 (AES and anything still unmapped;
+privileged `RDPR`/`WRPR`, leftover VIS 3 (Capstone 6 `sparc.h` has **no**
+`SPARC_INS_AES*` / `SHA*` / `CRC*` crypto IDs — grep AES/SHA/CRC/CAMELLIA
+matches only `SPARC_INS_LDSHA`, a load-signed-halfword-alternate; VIS3
+`SPARC_INS_XMULX` / `XMULXHI` *are* mapped via `llvm.clmul` as the PCLMUL
+analogue; anything still unmapped;
 `TADDCC`/`TADDCCTV`/`TSUBCC`/`TSUBCCTV` *are* mapped as add/sub + ICC like `ADDCC`/`SUBCC`
 (arithmetic NZVC only; tagged-overflow from operand[1:0] is not OR'd into `ICC.V`).
 TV forms have no trap side effect (same IR as CC; `T`/`TA` are mapped as `__asm_t`/`__asm_ta` like ARM64 SVC — no throw);
-`MULSCC` (V8 multiply-step: Y[0]/ICC-gated 33-bit add + 64-bit right shift of (rd:Y)) stays unmapped;
+`MULSCC` *is* mapped (V8 multiply-step: `Y[0]` gates the addend, `N xor V` is the
+incoming sign of the shifted partial product, `Y` := `rs1[0]||Y[31:1]`, ICC from
+the 32-bit add after the shift);
 `MOVR`/`FMOVRS`/`FMOVRD` *are* mapped — integer/FP CMOV on `SPARC_CC_REG_*` in
 `cs_sparc.cc`; aliases `ALIAS_MOVRZ`/`MOVRNZ`/`MOVRGZ`/`MOVRLEZ`/`MOVRLZ`/`MOVRGEZ`
 dispatch to the same translator; `FNOR`/`FNORS` *are* mapped via `translateVisLogical`;
@@ -505,5 +523,6 @@ dispatch to the same translator; `FNOR`/`FNORS` *are* mapped via `translateVisLo
 *are* mapped). `FCHKSM16` is a wrapping 16-bit lane add of rs1/rs2 then
 add-fold into `rd[15:0]` (no in-tree OSA helper). Annulled delay slots still
 execute (decoder is id-only).
-`F*`/`D*` are separate LLVM globals (no hardware even/odd aliasing); 64-bit VIS
-rewrites even `F*` names to the overlapping `D*` container.
+`F*`/`D*`/`Q*` are separate LLVM globals (no hardware even/odd/quad aliasing); 64-bit VIS
+rewrites even `F*` names to the overlapping `D*` container; `LDQ`/`STQ` rewrite
+4-aligned `F*` / even `D*` names to the overlapping `Q*` container.

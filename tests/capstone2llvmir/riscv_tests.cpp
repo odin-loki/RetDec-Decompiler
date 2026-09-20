@@ -4,7 +4,10 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek
  */
 
+#include <llvm/IR/GlobalVariable.h>
 #include <llvm/IR/InstIterator.h>
+#include <llvm/IR/Instructions.h>
+#include <llvm/IR/InstrTypes.h>
 
 #include <cstdint>
 #include <cstring>
@@ -38,16 +41,22 @@ class Capstone2LlvmIrTranslatorRiscvTests :
 							&_module,
 							static_cast<cs_mode>(
 									CS_MODE_RISCVC | CS_MODE_RISCV_FD | CS_MODE_RISCV_A
+									| CS_MODE_RISCV_V
 									| CS_MODE_RISCV_ZBA | CS_MODE_RISCV_ZBB
-									| CS_MODE_RISCV_ZBKB | CS_MODE_RISCV_ZBS));
+									| CS_MODE_RISCV_ZBKB | CS_MODE_RISCV_ZBKX
+									| CS_MODE_RISCV_ZBC | CS_MODE_RISCV_ZBS
+									| CS_MODE_RISCV_VENTANA));
 					break;
 				case CS_MODE_RISCV64:
 					_translator = Capstone2LlvmIrTranslator::createRiscv64(
 							&_module,
 							static_cast<cs_mode>(
 									CS_MODE_RISCVC | CS_MODE_RISCV_FD | CS_MODE_RISCV_A
+									| CS_MODE_RISCV_V
 									| CS_MODE_RISCV_ZBA | CS_MODE_RISCV_ZBB
-									| CS_MODE_RISCV_ZBKB | CS_MODE_RISCV_ZBS));
+									| CS_MODE_RISCV_ZBKB | CS_MODE_RISCV_ZBKX
+									| CS_MODE_RISCV_ZBC | CS_MODE_RISCV_ZBS
+									| CS_MODE_RISCV_VENTANA));
 					break;
 				default:
 					throw std::runtime_error("ERROR: unknown mode.\n");
@@ -80,6 +89,53 @@ class Capstone2LlvmIrTranslatorRiscvTests :
 #define ONLY_MODE_RV64 if (GetParam() != CS_MODE_RISCV64) return;
 #define SKIP_MODE_RV32 if (GetParam() == CS_MODE_RISCV32) return;
 #define SKIP_MODE_RV64 if (GetParam() == CS_MODE_RISCV64) return;
+
+		static bool hasScalableBinop(Function* f, unsigned opc)
+		{
+			for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+			{
+				if (auto* b = dyn_cast<BinaryOperator>(&*it))
+				{
+					if (b->getOpcode() == opc && b->getType()->isScalableTy())
+					{
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		static bool hasScalableMemLoad(Function* f)
+		{
+			for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+			{
+				if (auto* l = dyn_cast<LoadInst>(&*it))
+				{
+					if (l->getType()->isScalableTy()
+							&& !isa<GlobalVariable>(l->getPointerOperand()->stripPointerCasts()))
+					{
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		static bool hasScalableMemStore(Function* f)
+		{
+			for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+			{
+				if (auto* s = dyn_cast<StoreInst>(&*it))
+				{
+					if (s->getValueOperand()->getType()->isScalableTy()
+							&& !isa<GlobalVariable>(s->getPointerOperand()->stripPointerCasts()))
+					{
+						return true;
+					}
+				}
+			}
+			return false;
+		}
 };
 
 struct PrintCapstoneModeToString_Riscv
@@ -2648,7 +2704,1579 @@ TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_PACKW)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+//
+// Zbc CLMUL / CLMULH / CLMULR (x86 PCLMULQDQ is already mapped).
+// clmul/clmulh/clmulr a0, a1, a2. Keystone has no RISC-V; hex from the spec.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CLMUL)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_A1, 3},
+		{RISCV_REG_A2, 3},
+	});
+
+	emulate_bin("33 95 c5 0a");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A1, RISCV_REG_A2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 5},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CLMULR)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_A1, 3},
+		{RISCV_REG_A2, 3},
+	});
+
+	emulate_bin("33 a5 c5 0a");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A1, RISCV_REG_A2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 2},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CLMULH)
+{
+	ALL_MODES;
+
+	uint64_t hi = GetParam() == CS_MODE_RISCV64
+			? 0x8000000000000000ull
+			: 0x80000000ull;
+	setRegisters({
+		{RISCV_REG_A1, hi},
+		{RISCV_REG_A2, 2},
+	});
+
+	emulate_bin("33 b5 c5 0a");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A1, RISCV_REG_A2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 1},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// RVV compiler subset. Keystone 0.9.2 has no RISC-V vector assembler;
+// encodings are hand-written and fed to emulate_bin()/translate().
+// llvmir-emul cannot execute <vscale x 4 x i32>, so VADD/VMUL/VLE/VSE
+// inspect IR from translate() instead of emulating.
+//
+// vsetvli a0, a1, e32,m1,ta,ma   zimm=0xd0  bytes 57 f5 05 0d
+//
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSETVLI)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_A1, 7},
+	});
+
+	emulate_bin("57 f5 05 0d");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 7},
+		{RISCV_REG_VL, 7},
+		{RISCV_REG_VTYPE, 0xd0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// vadd.vv v1, v2, v3  (unmasked)  bytes d7 80 21 02
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VADD_VV)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xd7, 0x80, 0x21, 0x02});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::Add)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VADD_VX)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xd7, 0x40, 0x25, 0x02});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::Add)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VADD_VI)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xd7, 0xb0, 0x22, 0x02});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::Add)) << dumpFunction(f);
+}
+
+// vmul.vv v1, v2, v3  (unmasked)  bytes d7 a0 21 96
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMUL_VV)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xd7, 0xa0, 0x21, 0x96});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::Mul)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMUL_VX)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xd7, 0x60, 0x25, 0x96});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::Mul)) << dumpFunction(f);
+}
+
+// vle32.v v1, (a0)  (unmasked)  bytes 87 60 05 02
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VLE32_V)
+{
+	ALL_MODES;
+
+	auto* f = translate({0x87, 0x60, 0x05, 0x02});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableMemLoad(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VLE8_V)
+{
+	ALL_MODES;
+
+	auto* f = translate({0x87, 0x00, 0x05, 0x02});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableMemLoad(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VLE16_V)
+{
+	ALL_MODES;
+
+	auto* f = translate({0x87, 0x50, 0x05, 0x02});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableMemLoad(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VLE64_V)
+{
+	ALL_MODES;
+
+	auto* f = translate({0x87, 0x70, 0x05, 0x02});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableMemLoad(f)) << dumpFunction(f);
+}
+
+// vse32.v v1, (a0)  (unmasked)  bytes a7 60 05 02
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSE32_V)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xa7, 0x60, 0x05, 0x02});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableMemStore(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSE8_V)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xa7, 0x00, 0x05, 0x02});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableMemStore(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSE16_V)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xa7, 0x50, 0x05, 0x02});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableMemStore(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSE64_V)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xa7, 0x70, 0x05, 0x02});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableMemStore(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSUB_VV)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xd7, 0x80, 0x21, 0x0a});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::Sub)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSUB_VX)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xd7, 0x40, 0x25, 0x0a});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::Sub)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VAND_VV)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xd7, 0x80, 0x21, 0x26});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::And)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VAND_VX)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xd7, 0x40, 0x25, 0x26});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::And)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VAND_VI)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xd7, 0xb0, 0x22, 0x26});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::And)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VOR_VV)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xd7, 0x80, 0x21, 0x2a});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::Or)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VOR_VX)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xd7, 0x40, 0x25, 0x2a});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::Or)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VOR_VI)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xd7, 0xb0, 0x22, 0x2a});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::Or)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VXOR_VV)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xd7, 0x80, 0x21, 0x2e});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::Xor)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VXOR_VX)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xd7, 0x40, 0x25, 0x2e});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::Xor)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VXOR_VI)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xd7, 0xb0, 0x22, 0x2e});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::Xor)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMV_V_V)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xd7, 0x00, 0x01, 0x5e});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->getValueOperand()->getType()->isScalableTy()
+					&& isa<GlobalVariable>(s->getPointerOperand()->stripPointerCasts()))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMV_V_X)
+{
+	ALL_MODES;
+
+	auto* f = translate({0xd7, 0x40, 0x05, 0x5e});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (isa<ShuffleVectorInst>(&*it) && it->getType()->isScalableTy())
+		{
+			found = true;
+			break;
+		}
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->getValueOperand()->getType()->isScalableTy())
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSETIVLI)
+{
+	ALL_MODES;
+
+	emulate_bin("57 f5 03 cd");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 7},
+		{RISCV_REG_VL, 7},
+		{RISCV_REG_VTYPE, 0xd0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSETVL)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_A1, 7},
+		{RISCV_REG_A2, 0xd0},
+	});
+
+	emulate_bin("57 f5 c5 80");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A1, RISCV_REG_A2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 7},
+		{RISCV_REG_VL, 7},
+		{RISCV_REG_VTYPE, 0xd0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+static bool hasScalableICmp(Function* f)
+{
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* c = dyn_cast<ICmpInst>(&*it))
+		{
+			if (c->getOperand(0)->getType()->isScalableTy())
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+static bool hasScalableFBinop(Function* f, unsigned opc)
+{
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* b = dyn_cast<BinaryOperator>(&*it))
+		{
+			if (b->getOpcode() == opc && b->getType()->isScalableTy())
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+static bool hasScalableFCmp(Function* f)
+{
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* c = dyn_cast<FCmpInst>(&*it))
+		{
+			if (c->getOperand(0)->getType()->isScalableTy())
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VDIV_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0xa0, 0x21, 0x86});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::SDiv)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VDIV_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x60, 0x25, 0x86});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::SDiv)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VDIVU_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0xa0, 0x21, 0x82});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::UDiv)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VDIVU_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x60, 0x25, 0x82});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::UDiv)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VREM_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0xa0, 0x21, 0x8e});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::SRem)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VREM_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x60, 0x25, 0x8e});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::SRem)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VREMU_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0xa0, 0x21, 0x8a});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::URem)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VREMU_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x60, 0x25, 0x8a});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::URem)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VFADD_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x90, 0x21, 0x02});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableFBinop(f, Instruction::FAdd)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VFADD_VF)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x50, 0x25, 0x02});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableFBinop(f, Instruction::FAdd)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VFSUB_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x90, 0x21, 0x0a});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableFBinop(f, Instruction::FSub)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VFSUB_VF)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x50, 0x25, 0x0a});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableFBinop(f, Instruction::FSub)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VFMUL_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x90, 0x21, 0x92});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableFBinop(f, Instruction::FMul)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VFMUL_VF)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x50, 0x25, 0x92});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableFBinop(f, Instruction::FMul)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VFDIV_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x90, 0x21, 0x82});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableFBinop(f, Instruction::FDiv)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VFDIV_VF)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x50, 0x25, 0x82});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableFBinop(f, Instruction::FDiv)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VFMACC_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x90, 0x21, 0xb0});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableFBinop(f, Instruction::FMul)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VFMACC_VF)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x50, 0x25, 0xb0});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableFBinop(f, Instruction::FMul)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VFMADD_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x90, 0x21, 0xa0});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableFBinop(f, Instruction::FMul)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VFMADD_VF)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x50, 0x25, 0xa0});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableFBinop(f, Instruction::FMul)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSLL_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x80, 0x21, 0x96});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::Shl)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSLL_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x40, 0x25, 0x96});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::Shl)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSLL_VI)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0xb0, 0x22, 0x96});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::Shl)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSRL_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x80, 0x21, 0xa0});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::LShr)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSRL_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x40, 0x25, 0xa0});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::LShr)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSRL_VI)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0xb0, 0x22, 0xa0});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::LShr)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSRA_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x80, 0x21, 0xa4});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::AShr)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSRA_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x40, 0x25, 0xa4});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::AShr)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSRA_VI)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0xb0, 0x22, 0xa4});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::AShr)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMIN_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x80, 0x21, 0x16});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMIN_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x40, 0x25, 0x16});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMAX_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x80, 0x21, 0x1e});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMAX_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x40, 0x25, 0x1e});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMINU_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x80, 0x21, 0x12});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMINU_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x40, 0x25, 0x12});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMAXU_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x80, 0x21, 0x1a});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMAXU_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x40, 0x25, 0x1a});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMSEQ_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x80, 0x21, 0x62});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMSEQ_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x40, 0x25, 0x62});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMSEQ_VI)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0xb0, 0x22, 0x62});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMSNE_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x80, 0x21, 0x66});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMSNE_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x40, 0x25, 0x66});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMSNE_VI)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0xb0, 0x22, 0x66});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMSLT_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x80, 0x21, 0x6e});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMSLT_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x40, 0x25, 0x6e});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMSLT_VI)
+{
+	ALL_MODES;
+	// RVV has no vmslt.vi encoding (Capstone token is a TableGen pseudo).
+	// Exercise the shared SLT path with the valid vmslt.vx encoding.
+	auto* f = translate({0xd7, 0x40, 0x25, 0x6e});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMSLE_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x80, 0x21, 0x76});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMSLE_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x40, 0x25, 0x76});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMSLE_VI)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0xb0, 0x22, 0x76});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMSGT_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x40, 0x25, 0x7e});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VMSGT_VI)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0xb0, 0x22, 0x7e});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSLIDEUP_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x40, 0x25, 0x3a});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::Shl)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSLIDEUP_VI)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0xb0, 0x22, 0x3a});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::Shl)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSLIDEDOWN_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x40, 0x25, 0x3e});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::LShr)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VSLIDEDOWN_VI)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0xb0, 0x22, 0x3e});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::LShr)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VWADD_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0xa0, 0x21, 0xc6});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (isa<SExtInst>(&*it) || (isa<BinaryOperator>(&*it)
+				&& cast<BinaryOperator>(&*it)->getOpcode() == Instruction::Add))
+		{
+			found = true;
+			break;
+		}
+	}
+	EXPECT_TRUE(found) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VWADD_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x60, 0x25, 0xc6});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (isa<SExtInst>(&*it) || (isa<BinaryOperator>(&*it)
+				&& cast<BinaryOperator>(&*it)->getOpcode() == Instruction::Add))
+		{
+			found = true;
+			break;
+		}
+	}
+	EXPECT_TRUE(found) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VWADDU_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0xa0, 0x21, 0xc2});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (isa<ZExtInst>(&*it))
+		{
+			found = true;
+			break;
+		}
+	}
+	EXPECT_TRUE(found) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VWADDU_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x60, 0x25, 0xc2});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (isa<ZExtInst>(&*it))
+		{
+			found = true;
+			break;
+		}
+	}
+	EXPECT_TRUE(found) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VWSUB_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0xa0, 0x21, 0xce});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* b = dyn_cast<BinaryOperator>(&*it))
+		{
+			if (b->getOpcode() == Instruction::Sub)
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VWSUB_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x60, 0x25, 0xce});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* b = dyn_cast<BinaryOperator>(&*it))
+		{
+			if (b->getOpcode() == Instruction::Sub)
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VRGATHER_VV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x80, 0x21, 0x32});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VRGATHER_VX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x40, 0x25, 0x32});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableICmp(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VRGATHER_VI)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0xb0, 0x22, 0x32});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (isa<ExtractElementInst>(&*it) || isa<SelectInst>(&*it))
+		{
+			found = true;
+			break;
+		}
+	}
+	EXPECT_TRUE(found) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VNSRL_WV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x80, 0x21, 0xb0});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::LShr)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VNSRL_WX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x40, 0x25, 0xb0});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::LShr)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VNSRL_WI)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0xb0, 0x22, 0xb0});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::LShr)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VNSRA_WV)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x80, 0x21, 0xb4});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::AShr)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VNSRA_WX)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0x40, 0x25, 0xb4});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::AShr)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VNSRA_WI)
+{
+	ALL_MODES;
+	auto* f = translate({0xd7, 0xb0, 0x22, 0xb4});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasScalableBinop(f, Instruction::AShr)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_ZIP)
+{
+	ONLY_MODE_RV32;
+
+	setRegisters({
+		{RISCV_REG_A1, 0x0000ffff},
+	});
+	emulate_bin("13 95 f5 08");
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 0x55555555},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_UNZIP)
+{
+	ONLY_MODE_RV32;
+
+	setRegisters({
+		{RISCV_REG_A1, 0x55555555},
+	});
+	emulate_bin("13 d5 f5 08");
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 0x0000ffff},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_XPERM8)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_A1, 0x08070605},
+		{RISCV_REG_A2, 0},
+	});
+	emulate_bin("33 c5 c5 28");
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A1, RISCV_REG_A2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, GetParam() == CS_MODE_RISCV64 ? 0x0505050505050505ull : 0x05050505ull},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_XPERM4)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_A1, 0x21},
+		{RISCV_REG_A2, 0x10},
+	});
+	emulate_bin("33 a5 c5 28");
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A1, RISCV_REG_A2});
+	// a2=0x10: nibble0→rs1[0]=1, nibble1→rs1[1]=2; remaining control
+	// nibbles are 0 so they also pick rs1[0]=1 (not zero).
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, GetParam() == CS_MODE_RISCV64
+				? 0x1111111111111121ull
+				: 0x11111121ull},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+static bool hasExtractOrSelect(Function* f)
+{
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (isa<ExtractElementInst>(&*it) || isa<SelectInst>(&*it)
+				|| isa<InsertElementInst>(&*it))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool hasAnyLoad(Function* f)
+{
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (isa<LoadInst>(&*it))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool hasAnyStore(Function* f)
+{
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (isa<StoreInst>(&*it) && !cast<StoreInst>(&*it)->isVolatile())
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool hasCastOf(Function* f, unsigned opc)
+{
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* c = dyn_cast<CastInst>(&*it))
+		{
+			if (c->getOpcode() == opc)
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+static bool hasNamedCall(Function* f, const char* needle)
+{
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* c = dyn_cast<CallInst>(&*it))
+		{
+			if (auto* fn = c->getCalledFunction())
+			{
+				if (fn->getName().contains(needle))
+				{
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
+#define RVV_IR(name, bytes, pred) \
+	TEST_P(Capstone2LlvmIrTranslatorRiscvTests, name) \
+	{ \
+		ALL_MODES; \
+		auto* f = translate bytes; \
+		ASSERT_NE(nullptr, f); \
+		EXPECT_TRUE(pred) << dumpFunction(f); \
+	}
+
+RVV_IR(RISCV_INS_VMAND_MM, ({0xd7, 0xa0, 0x21, 0x66}), hasScalableBinop(f, Instruction::And))
+RVV_IR(RISCV_INS_VMOR_MM, ({0xd7, 0xa0, 0x21, 0x6a}), hasScalableBinop(f, Instruction::Or))
+RVV_IR(RISCV_INS_VMXOR_MM, ({0xd7, 0xa0, 0x21, 0x6e}), hasScalableBinop(f, Instruction::Xor))
+RVV_IR(RISCV_INS_VMNAND_MM, ({0xd7, 0xa0, 0x21, 0x76}), hasScalableBinop(f, Instruction::And))
+RVV_IR(RISCV_INS_VMANDN_MM, ({0xd7, 0xa0, 0x21, 0x62}), hasScalableBinop(f, Instruction::And))
+RVV_IR(RISCV_INS_VMNOR_MM, ({0xd7, 0xa0, 0x21, 0x7a}), hasScalableBinop(f, Instruction::Or))
+RVV_IR(RISCV_INS_VMORN_MM, ({0xd7, 0xa0, 0x21, 0x72}), hasScalableBinop(f, Instruction::Or))
+RVV_IR(RISCV_INS_VMXNOR_MM, ({0xd7, 0xa0, 0x21, 0x7e}), hasScalableBinop(f, Instruction::Xor))
+
+RVV_IR(RISCV_INS_VMSLTU_VV, ({0xd7, 0x80, 0x21, 0x6a}), hasScalableICmp(f))
+RVV_IR(RISCV_INS_VMSLTU_VX, ({0xd7, 0x40, 0x25, 0x6a}), hasScalableICmp(f))
+RVV_IR(RISCV_INS_VMSLEU_VV, ({0xd7, 0x80, 0x21, 0x72}), hasScalableICmp(f))
+RVV_IR(RISCV_INS_VMSLEU_VX, ({0xd7, 0x40, 0x25, 0x72}), hasScalableICmp(f))
+RVV_IR(RISCV_INS_VMSLEU_VI, ({0xd7, 0xb0, 0x22, 0x72}), hasScalableICmp(f))
+RVV_IR(RISCV_INS_VMSGTU_VX, ({0xd7, 0x40, 0x25, 0x7a}), hasScalableICmp(f))
+RVV_IR(RISCV_INS_VMSGTU_VI, ({0xd7, 0xb0, 0x22, 0x7a}), hasScalableICmp(f))
+
+RVV_IR(RISCV_INS_VFMIN_VV, ({0xd7, 0x90, 0x21, 0x12}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VFMIN_VF, ({0xd7, 0x50, 0x25, 0x12}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VFMAX_VV, ({0xd7, 0x90, 0x21, 0x1a}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VFMAX_VF, ({0xd7, 0x50, 0x25, 0x1a}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VFSQRT_V, ({0xd7, 0x10, 0x20, 0x4e}), (hasExtractOrSelect(f) || hasCastOf(f, Instruction::BitCast)))
+RVV_IR(RISCV_INS_VFRSUB_VF, ({0xd7, 0x50, 0x25, 0x9e}), hasScalableFBinop(f, Instruction::FSub))
+RVV_IR(RISCV_INS_VFRDIV_VF, ({0xd7, 0x50, 0x25, 0x86}), hasScalableFBinop(f, Instruction::FDiv))
+RVV_IR(RISCV_INS_VFSGNJ_VV, ({0xd7, 0x90, 0x21, 0x22}), hasScalableBinop(f, Instruction::And))
+RVV_IR(RISCV_INS_VFSGNJ_VF, ({0xd7, 0x50, 0x25, 0x22}), hasScalableBinop(f, Instruction::And))
+RVV_IR(RISCV_INS_VFSGNJN_VV, ({0xd7, 0x90, 0x21, 0x26}), hasScalableBinop(f, Instruction::Xor))
+RVV_IR(RISCV_INS_VFSGNJN_VF, ({0xd7, 0x50, 0x25, 0x26}), hasScalableBinop(f, Instruction::Xor))
+RVV_IR(RISCV_INS_VFSGNJX_VV, ({0xd7, 0x90, 0x21, 0x2a}), hasScalableBinop(f, Instruction::Xor))
+RVV_IR(RISCV_INS_VFSGNJX_VF, ({0xd7, 0x50, 0x25, 0x2a}), hasScalableBinop(f, Instruction::Xor))
+RVV_IR(RISCV_INS_VFCLASS_V, ({0xd7, 0x10, 0x28, 0x4e}), hasScalableICmp(f))
+RVV_IR(RISCV_INS_VFMSAC_VV, ({0xd7, 0x90, 0x21, 0xbc}), hasScalableFBinop(f, Instruction::FMul))
+RVV_IR(RISCV_INS_VFMSAC_VF, ({0xd7, 0x50, 0x25, 0xbc}), hasScalableFBinop(f, Instruction::FMul))
+RVV_IR(RISCV_INS_VFMSUB_VV, ({0xd7, 0x90, 0x21, 0xac}), hasScalableFBinop(f, Instruction::FMul))
+RVV_IR(RISCV_INS_VFMSUB_VF, ({0xd7, 0x50, 0x25, 0xac}), hasScalableFBinop(f, Instruction::FMul))
+RVV_IR(RISCV_INS_VFNMACC_VV, ({0xd7, 0x90, 0x21, 0xb6}), hasScalableFBinop(f, Instruction::FMul))
+RVV_IR(RISCV_INS_VFNMACC_VF, ({0xd7, 0x50, 0x25, 0xb6}), hasScalableFBinop(f, Instruction::FMul))
+RVV_IR(RISCV_INS_VFNMADD_VV, ({0xd7, 0x90, 0x21, 0xa6}), hasScalableFBinop(f, Instruction::FMul))
+RVV_IR(RISCV_INS_VFNMADD_VF, ({0xd7, 0x50, 0x25, 0xa6}), hasScalableFBinop(f, Instruction::FMul))
+RVV_IR(RISCV_INS_VFNMSAC_VV, ({0xd7, 0x90, 0x21, 0xbe}), hasScalableFBinop(f, Instruction::FMul))
+RVV_IR(RISCV_INS_VFNMSAC_VF, ({0xd7, 0x50, 0x25, 0xbe}), hasScalableFBinop(f, Instruction::FMul))
+RVV_IR(RISCV_INS_VFNMSUB_VV, ({0xd7, 0x90, 0x21, 0xae}), hasScalableFBinop(f, Instruction::FMul))
+RVV_IR(RISCV_INS_VFNMSUB_VF, ({0xd7, 0x50, 0x25, 0xae}), hasScalableFBinop(f, Instruction::FMul))
+
+RVV_IR(RISCV_INS_VSEXT_VF2, ({0xd7, 0xa0, 0x23, 0x4a}), hasCastOf(f, Instruction::SExt))
+RVV_IR(RISCV_INS_VSEXT_VF4, ({0xd7, 0xa0, 0x22, 0x4a}), hasCastOf(f, Instruction::SExt))
+RVV_IR(RISCV_INS_VSEXT_VF8, ({0xd7, 0xa0, 0x21, 0x4a}), hasCastOf(f, Instruction::SExt))
+RVV_IR(RISCV_INS_VZEXT_VF2, ({0xd7, 0x20, 0x23, 0x4a}), hasCastOf(f, Instruction::ZExt))
+RVV_IR(RISCV_INS_VZEXT_VF4, ({0xd7, 0x20, 0x22, 0x4a}), hasCastOf(f, Instruction::ZExt))
+RVV_IR(RISCV_INS_VZEXT_VF8, ({0xd7, 0x20, 0x21, 0x4a}), hasCastOf(f, Instruction::ZExt))
+RVV_IR(RISCV_INS_VFCVT_XU_F_V, ({0xd7, 0x10, 0x20, 0x4a}), hasCastOf(f, Instruction::FPToUI))
+RVV_IR(RISCV_INS_VFCVT_X_F_V, ({0xd7, 0x90, 0x20, 0x4a}), hasCastOf(f, Instruction::FPToSI))
+RVV_IR(RISCV_INS_VFCVT_F_XU_V, ({0xd7, 0x10, 0x21, 0x4a}), hasCastOf(f, Instruction::UIToFP))
+RVV_IR(RISCV_INS_VFCVT_F_X_V, ({0xd7, 0x90, 0x21, 0x4a}), hasCastOf(f, Instruction::SIToFP))
+RVV_IR(RISCV_INS_VFCVT_RTZ_XU_F_V, ({0xd7, 0x10, 0x23, 0x4a}), hasCastOf(f, Instruction::FPToUI))
+RVV_IR(RISCV_INS_VFCVT_RTZ_X_F_V, ({0xd7, 0x90, 0x23, 0x4a}), hasCastOf(f, Instruction::FPToSI))
+RVV_IR(RISCV_INS_VFWCVT_F_F_V, ({0xd7, 0x10, 0x26, 0x4a}), hasCastOf(f, Instruction::FPExt))
+RVV_IR(RISCV_INS_VFWCVT_XU_F_V, ({0xd7, 0x10, 0x24, 0x4a}), hasCastOf(f, Instruction::FPToUI))
+RVV_IR(RISCV_INS_VFWCVT_X_F_V, ({0xd7, 0x90, 0x24, 0x4a}), hasCastOf(f, Instruction::FPToSI))
+RVV_IR(RISCV_INS_VFWCVT_F_XU_V, ({0xd7, 0x10, 0x25, 0x4a}), hasCastOf(f, Instruction::UIToFP))
+RVV_IR(RISCV_INS_VFWCVT_F_X_V, ({0xd7, 0x90, 0x25, 0x4a}), hasCastOf(f, Instruction::SIToFP))
+RVV_IR(RISCV_INS_VFNCVT_F_F_W, ({0xd7, 0x10, 0x2a, 0x4a}), hasCastOf(f, Instruction::FPTrunc))
+RVV_IR(RISCV_INS_VFNCVT_XU_F_W, ({0xd7, 0x10, 0x28, 0x4a}), hasCastOf(f, Instruction::FPToUI))
+RVV_IR(RISCV_INS_VFNCVT_X_F_W, ({0xd7, 0x90, 0x28, 0x4a}), hasCastOf(f, Instruction::FPToSI))
+RVV_IR(RISCV_INS_VFNCVT_F_XU_W, ({0xd7, 0x10, 0x29, 0x4a}), hasCastOf(f, Instruction::UIToFP))
+RVV_IR(RISCV_INS_VFNCVT_F_X_W, ({0xd7, 0x90, 0x29, 0x4a}), hasCastOf(f, Instruction::SIToFP))
+
+RVV_IR(RISCV_INS_VMERGE_VVM, ({0xd7, 0x80, 0x21, 0x5c}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VMERGE_VXM, ({0xd7, 0x40, 0x25, 0x5c}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VMERGE_VIM, ({0xd7, 0xb0, 0x22, 0x5c}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VCOMPRESS_VM, ({0xd7, 0xa0, 0x21, 0x5e}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VSLIDE1UP_VX, ({0xd7, 0x60, 0x25, 0x3a}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VSLIDE1DOWN_VX, ({0xd7, 0x60, 0x25, 0x3e}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VFSLIDE1UP_VF, ({0xd7, 0x50, 0x25, 0x3a}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VFSLIDE1DOWN_VF, ({0xd7, 0x50, 0x25, 0x3e}), hasExtractOrSelect(f))
+
+RVV_IR(RISCV_INS_VWADD_WV, ({0xd7, 0xa0, 0x21, 0xd6}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWADD_WX, ({0xd7, 0x60, 0x25, 0xd6}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWADDU_WV, ({0xd7, 0xa0, 0x21, 0xd2}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWADDU_WX, ({0xd7, 0x60, 0x25, 0xd2}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWSUB_WV, ({0xd7, 0xa0, 0x21, 0xde}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWSUB_WX, ({0xd7, 0x60, 0x25, 0xde}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWSUBU_VV, ({0xd7, 0xa0, 0x21, 0xca}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWSUBU_VX, ({0xd7, 0x60, 0x25, 0xca}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWSUBU_WV, ({0xd7, 0xa0, 0x21, 0xda}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWSUBU_WX, ({0xd7, 0x60, 0x25, 0xda}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWMUL_VV, ({0xd7, 0xa0, 0x21, 0xee}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWMUL_VX, ({0xd7, 0x60, 0x25, 0xee}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWMULU_VV, ({0xd7, 0xa0, 0x21, 0xe2}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWMULU_VX, ({0xd7, 0x60, 0x25, 0xe2}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWMULSU_VV, ({0xd7, 0xa0, 0x21, 0xea}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWMULSU_VX, ({0xd7, 0x60, 0x25, 0xea}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWMACC_VV, ({0xd7, 0xa0, 0x21, 0xf6}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWMACC_VX, ({0xd7, 0x60, 0x25, 0xf6}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWMACCU_VV, ({0xd7, 0xa0, 0x21, 0xf2}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWMACCU_VX, ({0xd7, 0x60, 0x25, 0xf2}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWMACCSU_VV, ({0xd7, 0xa0, 0x21, 0xfe}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWMACCSU_VX, ({0xd7, 0x60, 0x25, 0xfe}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWMACCUS_VX, ({0xd7, 0x60, 0x25, 0xfa}), hasExtractOrSelect(f))
+
+RVV_IR(RISCV_INS_VLSE8_V, ({0x87, 0x00, 0xb5, 0x0a}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VLSE16_V, ({0x87, 0x50, 0xb5, 0x0a}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VLSE32_V, ({0x87, 0x60, 0xb5, 0x0a}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VLSE64_V, ({0x87, 0x70, 0xb5, 0x0a}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VSSE8_V, ({0xa7, 0x00, 0xb5, 0x0a}), hasAnyStore(f))
+RVV_IR(RISCV_INS_VSSE16_V, ({0xa7, 0x50, 0xb5, 0x0a}), hasAnyStore(f))
+RVV_IR(RISCV_INS_VSSE32_V, ({0xa7, 0x60, 0xb5, 0x0a}), hasAnyStore(f))
+RVV_IR(RISCV_INS_VSSE64_V, ({0xa7, 0x70, 0xb5, 0x0a}), hasAnyStore(f))
+
+RVV_IR(RISCV_INS_VREDSUM_VS, ({0xd7, 0xa0, 0x21, 0x02}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VREDAND_VS, ({0xd7, 0xa0, 0x21, 0x06}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VREDOR_VS, ({0xd7, 0xa0, 0x21, 0x0a}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VREDXOR_VS, ({0xd7, 0xa0, 0x21, 0x0e}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VFREDUSUM_VS, ({0xd7, 0x90, 0x21, 0x06}), hasExtractOrSelect(f))
+
+RVV_IR(RISCV_INS_VAESDM_VV, ({0xf7, 0x20, 0x20, 0xa2}), hasNamedCall(f, "llvm.riscv.vaesdm"))
+RVV_IR(RISCV_INS_VAESDM_VS, ({0xf7, 0x20, 0x20, 0xa6}), hasNamedCall(f, "llvm.riscv.vaesdm"))
+RVV_IR(RISCV_INS_VAESDF_VV, ({0xf7, 0xa0, 0x20, 0xa2}), hasNamedCall(f, "llvm.riscv.vaesdf"))
+RVV_IR(RISCV_INS_VAESDF_VS, ({0xf7, 0xa0, 0x20, 0xa6}), hasNamedCall(f, "llvm.riscv.vaesdf"))
+RVV_IR(RISCV_INS_VAESEM_VV, ({0xf7, 0x20, 0x21, 0xa2}), hasNamedCall(f, "llvm.riscv.vaesem"))
+RVV_IR(RISCV_INS_VAESEM_VS, ({0xf7, 0x20, 0x21, 0xa6}), hasNamedCall(f, "llvm.riscv.vaesem"))
+RVV_IR(RISCV_INS_VAESEF_VV, ({0xf7, 0xa0, 0x21, 0xa2}), hasNamedCall(f, "llvm.riscv.vaesef"))
+RVV_IR(RISCV_INS_VAESEF_VS, ({0xf7, 0xa0, 0x21, 0xa6}), hasNamedCall(f, "llvm.riscv.vaesef"))
+RVV_IR(RISCV_INS_VAESZ_VS, ({0xf7, 0xa0, 0x23, 0xa6}), hasNamedCall(f, "llvm.riscv.vaesz"))
+RVV_IR(RISCV_INS_VAESKF1_VI, ({0xf7, 0xa0, 0x20, 0x8a}), hasNamedCall(f, "llvm.riscv.vaeskf1"))
+RVV_IR(RISCV_INS_VAESKF2_VI, ({0xf7, 0x20, 0x21, 0xaa}), hasNamedCall(f, "llvm.riscv.vaeskf2"))
+RVV_IR(RISCV_INS_VSHA2CH_VV, ({0xf7, 0xa0, 0x21, 0xba}), hasNamedCall(f, "llvm.riscv.vsha2ch"))
+RVV_IR(RISCV_INS_VSHA2CL_VV, ({0xf7, 0xa0, 0x21, 0xbe}), hasNamedCall(f, "llvm.riscv.vsha2cl"))
+RVV_IR(RISCV_INS_VSHA2MS_VV, ({0xf7, 0xa0, 0x21, 0xb6}), hasNamedCall(f, "llvm.riscv.vsha2ms"))
+RVV_IR(RISCV_INS_VSM3ME_VV, ({0xf7, 0xa0, 0x21, 0x82}), hasNamedCall(f, "llvm.riscv.vsm3me"))
+RVV_IR(RISCV_INS_VSM3C_VI, ({0xf7, 0xa0, 0x23, 0xae}), hasNamedCall(f, "llvm.riscv.vsm3c"))
+RVV_IR(RISCV_INS_VSM4K_VI, ({0xf7, 0xa0, 0x23, 0x86}), hasNamedCall(f, "llvm.riscv.vsm4k"))
+RVV_IR(RISCV_INS_VSM4R_VV, ({0xf7, 0x20, 0x28, 0xa2}), hasNamedCall(f, "llvm.riscv.vsm4r"))
+RVV_IR(RISCV_INS_VSM4R_VS, ({0xf7, 0x20, 0x28, 0xa6}), hasNamedCall(f, "llvm.riscv.vsm4r"))
+
+RVV_IR(RISCV_INS_VLOXEI8_V, ({0x87, 0x00, 0x25, 0x0e}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VLOXEI16_V, ({0x87, 0x50, 0x25, 0x0e}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VLOXEI32_V, ({0x87, 0x60, 0x25, 0x0e}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VLOXEI64_V, ({0x87, 0x70, 0x25, 0x0e}), (hasAnyLoad(f) || GetParam() == CS_MODE_RISCV32))
+RVV_IR(RISCV_INS_VLUXEI8_V, ({0x87, 0x00, 0x25, 0x06}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VLUXEI16_V, ({0x87, 0x50, 0x25, 0x06}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VLUXEI32_V, ({0x87, 0x60, 0x25, 0x06}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VLUXEI64_V, ({0x87, 0x70, 0x25, 0x06}), (hasAnyLoad(f) || GetParam() == CS_MODE_RISCV32))
+RVV_IR(RISCV_INS_VSOXEI8_V, ({0xa7, 0x00, 0x25, 0x0e}), hasAnyStore(f))
+RVV_IR(RISCV_INS_VSOXEI16_V, ({0xa7, 0x50, 0x25, 0x0e}), hasAnyStore(f))
+RVV_IR(RISCV_INS_VSOXEI32_V, ({0xa7, 0x60, 0x25, 0x0e}), hasAnyStore(f))
+RVV_IR(RISCV_INS_VSOXEI64_V, ({0xa7, 0x70, 0x25, 0x0e}), (hasAnyStore(f) || GetParam() == CS_MODE_RISCV32))
+RVV_IR(RISCV_INS_VSUXEI8_V, ({0xa7, 0x00, 0x25, 0x06}), hasAnyStore(f))
+RVV_IR(RISCV_INS_VSUXEI16_V, ({0xa7, 0x50, 0x25, 0x06}), hasAnyStore(f))
+RVV_IR(RISCV_INS_VSUXEI32_V, ({0xa7, 0x60, 0x25, 0x06}), hasAnyStore(f))
+RVV_IR(RISCV_INS_VSUXEI64_V, ({0xa7, 0x70, 0x25, 0x06}), (hasAnyStore(f) || GetParam() == CS_MODE_RISCV32))
+
+RVV_IR(RISCV_INS_VMULH_VV, ({0xd7, 0xa0, 0x21, 0x9e}), hasCastOf(f, Instruction::SExt))
+RVV_IR(RISCV_INS_VMULH_VX, ({0xd7, 0x60, 0x25, 0x9e}), hasCastOf(f, Instruction::SExt))
+RVV_IR(RISCV_INS_VMULHU_VV, ({0xd7, 0xa0, 0x21, 0x92}), hasCastOf(f, Instruction::ZExt))
+RVV_IR(RISCV_INS_VMULHU_VX, ({0xd7, 0x60, 0x25, 0x92}), hasCastOf(f, Instruction::ZExt))
+RVV_IR(RISCV_INS_VMULHSU_VV, ({0xd7, 0xa0, 0x21, 0x9a}), hasCastOf(f, Instruction::SExt))
+RVV_IR(RISCV_INS_VMULHSU_VX, ({0xd7, 0x60, 0x25, 0x9a}), hasCastOf(f, Instruction::SExt))
+RVV_IR(RISCV_INS_VAADD_VV, ({0xd7, 0xa0, 0x21, 0x26}), hasCastOf(f, Instruction::SExt))
+RVV_IR(RISCV_INS_VAADD_VX, ({0xd7, 0x60, 0x25, 0x26}), hasCastOf(f, Instruction::SExt))
+RVV_IR(RISCV_INS_VAADDU_VV, ({0xd7, 0xa0, 0x21, 0x22}), hasCastOf(f, Instruction::ZExt))
+RVV_IR(RISCV_INS_VAADDU_VX, ({0xd7, 0x60, 0x25, 0x22}), hasCastOf(f, Instruction::ZExt))
+RVV_IR(RISCV_INS_VASUB_VV, ({0xd7, 0xa0, 0x21, 0x2e}), hasCastOf(f, Instruction::SExt))
+RVV_IR(RISCV_INS_VASUB_VX, ({0xd7, 0x60, 0x25, 0x2e}), hasCastOf(f, Instruction::SExt))
+RVV_IR(RISCV_INS_VASUBU_VV, ({0xd7, 0xa0, 0x21, 0x2a}), hasCastOf(f, Instruction::ZExt))
+RVV_IR(RISCV_INS_VASUBU_VX, ({0xd7, 0x60, 0x25, 0x2a}), hasCastOf(f, Instruction::ZExt))
+RVV_IR(RISCV_INS_VSADD_VV, ({0xd7, 0x80, 0x21, 0x86}), hasNamedCall(f, "llvm.sadd.sat"))
+RVV_IR(RISCV_INS_VSADD_VX, ({0xd7, 0x40, 0x25, 0x86}), hasNamedCall(f, "llvm.sadd.sat"))
+RVV_IR(RISCV_INS_VSADD_VI, ({0xd7, 0xb0, 0x22, 0x86}), hasNamedCall(f, "llvm.sadd.sat"))
+RVV_IR(RISCV_INS_VSADDU_VV, ({0xd7, 0x80, 0x21, 0x82}), hasNamedCall(f, "llvm.uadd.sat"))
+RVV_IR(RISCV_INS_VSADDU_VX, ({0xd7, 0x40, 0x25, 0x82}), hasNamedCall(f, "llvm.uadd.sat"))
+RVV_IR(RISCV_INS_VSADDU_VI, ({0xd7, 0xb0, 0x22, 0x82}), hasNamedCall(f, "llvm.uadd.sat"))
+RVV_IR(RISCV_INS_VSSUB_VV, ({0xd7, 0x80, 0x21, 0x8e}), hasNamedCall(f, "llvm.ssub.sat"))
+RVV_IR(RISCV_INS_VSSUB_VX, ({0xd7, 0x40, 0x25, 0x8e}), hasNamedCall(f, "llvm.ssub.sat"))
+RVV_IR(RISCV_INS_VSSUBU_VV, ({0xd7, 0x80, 0x21, 0x8a}), hasNamedCall(f, "llvm.usub.sat"))
+RVV_IR(RISCV_INS_VSSUBU_VX, ({0xd7, 0x40, 0x25, 0x8a}), hasNamedCall(f, "llvm.usub.sat"))
+RVV_IR(RISCV_INS_VNCLIP_WV, ({0xd7, 0x80, 0x21, 0xbe}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VNCLIP_WX, ({0xd7, 0x40, 0x25, 0xbe}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VNCLIP_WI, ({0xd7, 0xb0, 0x22, 0xbe}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VNCLIPU_WV, ({0xd7, 0x80, 0x21, 0xba}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VNCLIPU_WX, ({0xd7, 0x40, 0x25, 0xba}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VNCLIPU_WI, ({0xd7, 0xb0, 0x22, 0xba}), hasExtractOrSelect(f))
+
+RVV_IR(RISCV_INS_VID_V, ({0xd7, 0xa0, 0x08, 0x52}), hasAnyStore(f))
+RVV_IR(RISCV_INS_VIOTA_M, ({0xd7, 0x20, 0x28, 0x52}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VMV1R_V, ({0xd7, 0x30, 0x20, 0x9e}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VMV2R_V, ({0x57, 0xb1, 0x40, 0x9e}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VMV4R_V, ({0x57, 0xb2, 0x81, 0x9e}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VMV8R_V, ({0x57, 0xb4, 0x03, 0x9f}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VADC_VVM, ({0xd7, 0x80, 0x21, 0x40}), hasScalableBinop(f, Instruction::Add))
+RVV_IR(RISCV_INS_VADC_VXM, ({0xd7, 0x40, 0x25, 0x40}), hasScalableBinop(f, Instruction::Add))
+RVV_IR(RISCV_INS_VADC_VIM, ({0xd7, 0xb0, 0x22, 0x40}), hasScalableBinop(f, Instruction::Add))
+RVV_IR(RISCV_INS_VMADC_VV, ({0xd7, 0x80, 0x21, 0x46}), hasScalableICmp(f))
+RVV_IR(RISCV_INS_VMADC_VX, ({0xd7, 0x40, 0x25, 0x46}), hasScalableICmp(f))
+RVV_IR(RISCV_INS_VMADC_VI, ({0xd7, 0xb0, 0x22, 0x46}), hasScalableICmp(f))
+RVV_IR(RISCV_INS_VMADC_VVM, ({0xd7, 0x80, 0x21, 0x44}), hasScalableICmp(f))
+RVV_IR(RISCV_INS_VMADC_VXM, ({0xd7, 0x40, 0x25, 0x44}), hasScalableICmp(f))
+RVV_IR(RISCV_INS_VMADC_VIM, ({0xd7, 0xb0, 0x22, 0x44}), hasScalableICmp(f))
+RVV_IR(RISCV_INS_VSBC_VVM, ({0xd7, 0x80, 0x21, 0x48}), hasScalableBinop(f, Instruction::Sub))
+RVV_IR(RISCV_INS_VSBC_VXM, ({0xd7, 0x40, 0x25, 0x48}), hasScalableBinop(f, Instruction::Sub))
+RVV_IR(RISCV_INS_VMSBC_VV, ({0xd7, 0x80, 0x21, 0x4e}), hasScalableICmp(f))
+RVV_IR(RISCV_INS_VMSBC_VX, ({0xd7, 0x40, 0x25, 0x4e}), hasScalableICmp(f))
+RVV_IR(RISCV_INS_VMSBC_VVM, ({0xd7, 0x80, 0x21, 0x4c}), hasScalableICmp(f))
+RVV_IR(RISCV_INS_VMSBC_VXM, ({0xd7, 0x40, 0x25, 0x4c}), hasScalableICmp(f))
+
+RVV_IR(RISCV_INS_VREDMIN_VS, ({0xd7, 0xa0, 0x21, 0x16}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VREDMAX_VS, ({0xd7, 0xa0, 0x21, 0x1e}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VREDMINU_VS, ({0xd7, 0xa0, 0x21, 0x12}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VREDMAXU_VS, ({0xd7, 0xa0, 0x21, 0x1a}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VFREDMIN_VS, ({0xd7, 0x90, 0x21, 0x16}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VFREDMAX_VS, ({0xd7, 0x90, 0x21, 0x1e}), hasExtractOrSelect(f))
+
+RVV_IR(RISCV_INS_VLSEG2E32_V, ({0x87, 0x60, 0x05, 0x22}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VLSEG8E8_V, ({0x87, 0x00, 0x05, 0xe2}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VSSEG2E32_V, ({0xa7, 0x60, 0x05, 0x22}), hasAnyStore(f))
+RVV_IR(RISCV_INS_VLSSEG2E32_V, ({0x87, 0x60, 0xb5, 0x2a}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VSSSEG2E32_V, ({0xa7, 0x60, 0xb5, 0x2a}), hasAnyStore(f))
+RVV_IR(RISCV_INS_VLOXSEG2EI32_V, ({0x87, 0x60, 0x25, 0x2e}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VLUXSEG2EI32_V, ({0x87, 0x60, 0x25, 0x26}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VSOXSEG2EI32_V, ({0xa7, 0x60, 0x25, 0x2e}), hasAnyStore(f))
+RVV_IR(RISCV_INS_VSUXSEG2EI32_V, ({0xa7, 0x60, 0x25, 0x26}), hasAnyStore(f))
+RVV_IR(RISCV_INS_VL1RE8_V, ({0x87, 0x00, 0x85, 0x02}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VL2RE32_V, ({0x07, 0x61, 0x85, 0x22}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VS1R_V, ({0xa7, 0x00, 0x85, 0x02}), hasAnyStore(f))
+RVV_IR(RISCV_INS_VS2R_V, ({0x27, 0x01, 0x85, 0x22}), hasAnyStore(f))
+
+RVV_IR(RISCV_INS_VMACC_VV, ({0xd7, 0xa0, 0x21, 0xb6}), hasScalableBinop(f, Instruction::Mul))
+RVV_IR(RISCV_INS_VMACC_VX, ({0xd7, 0xe0, 0x25, 0xb6}), hasScalableBinop(f, Instruction::Mul))
+RVV_IR(RISCV_INS_VNMSAC_VV, ({0xd7, 0xa0, 0x21, 0xbc}), hasScalableBinop(f, Instruction::Mul))
+RVV_IR(RISCV_INS_VMADD_VV, ({0xd7, 0xa0, 0x21, 0xa4}), hasScalableBinop(f, Instruction::Mul))
+RVV_IR(RISCV_INS_VNMSUB_VV, ({0xd7, 0xa0, 0x21, 0xac}), hasScalableBinop(f, Instruction::Mul))
+
+RVV_IR(RISCV_INS_VMFEQ_VV, ({0xd7, 0x90, 0x21, 0x62}), hasScalableFCmp(f))
+RVV_IR(RISCV_INS_VMFEQ_VF, ({0xd7, 0x50, 0x25, 0x62}), hasScalableFCmp(f))
+RVV_IR(RISCV_INS_VMFNE_VV, ({0xd7, 0x90, 0x21, 0x72}), hasScalableFCmp(f))
+RVV_IR(RISCV_INS_VMFLT_VV, ({0xd7, 0x90, 0x21, 0x6e}), hasScalableFCmp(f))
+RVV_IR(RISCV_INS_VMFLE_VV, ({0xd7, 0x90, 0x21, 0x66}), hasScalableFCmp(f))
+RVV_IR(RISCV_INS_VMFGT_VF, ({0xd7, 0x50, 0x25, 0x76}), hasScalableFCmp(f))
+RVV_IR(RISCV_INS_VMFGE_VF, ({0xd7, 0x50, 0x25, 0x7e}), hasScalableFCmp(f))
+RVV_IR(RISCV_INS_VFMERGE_VFM, ({0xd7, 0x50, 0x25, 0x5c}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VFMV_V_F, ({0xd7, 0x50, 0x05, 0x5e}), hasAnyStore(f))
+RVV_IR(RISCV_INS_VFMV_F_S, ({0x57, 0x15, 0x10, 0x42}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VFMV_S_F, ({0xd7, 0x50, 0x05, 0x42}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VMV_S_X, ({0xd7, 0x60, 0x05, 0x42}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VMV_X_S, ({0x57, 0x25, 0x10, 0x42}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VMV_V_I, ({0xd7, 0xb0, 0x02, 0x5e}), hasAnyStore(f))
+
+RVV_IR(RISCV_INS_VCPOP_M, ({0x57, 0x25, 0x28, 0x42}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VFIRST_M, ({0x57, 0xa5, 0x28, 0x42}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VMSBF_M, ({0xd7, 0xa0, 0x20, 0x52}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VMSIF_M, ({0xd7, 0xa0, 0x21, 0x52}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VMSOF_M, ({0xd7, 0x20, 0x21, 0x52}), hasExtractOrSelect(f))
+
+RVV_IR(RISCV_INS_VSMUL_VV, ({0xd7, 0x80, 0x21, 0x9e}), hasCastOf(f, Instruction::SExt))
+RVV_IR(RISCV_INS_VSMUL_VX, ({0xd7, 0x40, 0x25, 0x9e}), hasCastOf(f, Instruction::SExt))
+RVV_IR(RISCV_INS_VSSRL_VV, ({0xd7, 0x80, 0x21, 0xaa}), hasScalableBinop(f, Instruction::LShr))
+RVV_IR(RISCV_INS_VSSRL_VX, ({0xd7, 0xc0, 0x25, 0xaa}), hasScalableBinop(f, Instruction::LShr))
+RVV_IR(RISCV_INS_VSSRL_VI, ({0xd7, 0xb0, 0x21, 0xaa}), hasScalableBinop(f, Instruction::LShr))
+RVV_IR(RISCV_INS_VSSRA_VV, ({0xd7, 0x80, 0x21, 0xae}), hasScalableBinop(f, Instruction::AShr))
+RVV_IR(RISCV_INS_VSSRA_VX, ({0xd7, 0xc0, 0x25, 0xae}), hasScalableBinop(f, Instruction::AShr))
+RVV_IR(RISCV_INS_VSSRA_VI, ({0xd7, 0xb0, 0x21, 0xae}), hasScalableBinop(f, Instruction::AShr))
+
+RVV_IR(RISCV_INS_VRGATHEREI16_VV, ({0xd7, 0x80, 0x21, 0x38}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VFREDOSUM_VS, ({0xd7, 0x90, 0x21, 0x0e}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VFWREDUSUM_VS, ({0xd7, 0x90, 0x21, 0xc6}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VFWREDOSUM_VS, ({0xd7, 0x90, 0x21, 0xcc}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VANDN_VV, ({0xd7, 0x80, 0x21, 0x04}), hasScalableBinop(f, Instruction::And))
+RVV_IR(RISCV_INS_VANDN_VX, ({0xd7, 0x40, 0x25, 0x04}), hasScalableBinop(f, Instruction::And))
+RVV_IR(RISCV_INS_VROR_VV, ({0xd7, 0x80, 0x21, 0x52}), hasScalableBinop(f, Instruction::Or))
+RVV_IR(RISCV_INS_VROR_VX, ({0xd7, 0xc0, 0x25, 0x52}), hasScalableBinop(f, Instruction::Or))
+RVV_IR(RISCV_INS_VROR_VI, ({0xd7, 0xb0, 0x21, 0x52}), hasScalableBinop(f, Instruction::Or))
+RVV_IR(RISCV_INS_VROL_VV, ({0xd7, 0x80, 0x21, 0x56}), hasScalableBinop(f, Instruction::Or))
+RVV_IR(RISCV_INS_VROL_VX, ({0xd7, 0xc0, 0x25, 0x56}), hasScalableBinop(f, Instruction::Or))
+RVV_IR(RISCV_INS_VRSUB_VX, ({0xd7, 0xc0, 0x25, 0x0e}), hasScalableBinop(f, Instruction::Sub))
+RVV_IR(RISCV_INS_VRSUB_VI, ({0xd7, 0xb0, 0x21, 0x0e}), hasScalableBinop(f, Instruction::Sub))
+RVV_IR(RISCV_INS_VWSLL_VV, ({0xd7, 0xa0, 0x21, 0xd6}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWSLL_VX, ({0xd7, 0xe0, 0x25, 0xd6}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWSLL_VI, ({0xd7, 0xb0, 0x21, 0xd6}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VCLMUL_VV, ({0xd7, 0xa0, 0x21, 0x32}), hasScalableBinop(f, Instruction::Xor))
+RVV_IR(RISCV_INS_VCLMUL_VX, ({0xd7, 0xe0, 0x25, 0x32}), hasScalableBinop(f, Instruction::Xor))
+RVV_IR(RISCV_INS_VCLMULH_VV, ({0xd7, 0xa0, 0x21, 0x36}), hasScalableBinop(f, Instruction::Xor))
+RVV_IR(RISCV_INS_VBREV_V, ({0xd7, 0x20, 0x25, 0x4a}), hasNamedCall(f, "llvm.bitreverse"))
+RVV_IR(RISCV_INS_VCLZ_V, ({0xd7, 0x20, 0x26, 0x4a}), hasNamedCall(f, "llvm.ctlz"))
+RVV_IR(RISCV_INS_VCTZ_V, ({0xd7, 0xa0, 0x26, 0x4a}), hasNamedCall(f, "llvm.cttz"))
+RVV_IR(RISCV_INS_VGHSH_VV, ({0xf7, 0xa0, 0x21, 0xb2}), hasNamedCall(f, "llvm.riscv.vghsh"))
+RVV_IR(RISCV_INS_VGMUL_VV, ({0xf7, 0xa0, 0x28, 0xa2}), hasNamedCall(f, "llvm.riscv.vgmul"))
+
+RVV_IR(RISCV_INS_VLE8FF_V, ({0x87, 0x00, 0x05, 0x03}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VLE16FF_V, ({0x87, 0x50, 0x05, 0x03}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VLE32FF_V, ({0x87, 0x60, 0x05, 0x03}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VLE64FF_V, ({0x87, 0x70, 0x05, 0x03}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VLSEG2E32FF_V, ({0x87, 0x60, 0x05, 0x23}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VLM_V, ({0x87, 0x00, 0xb5, 0x02}), hasAnyLoad(f))
+RVV_IR(RISCV_INS_VSM_V, ({0xa7, 0x00, 0xb5, 0x02}), hasAnyStore(f))
+RVV_IR(RISCV_INS_VCPOP_V, ({0xd7, 0x20, 0x27, 0x4a}), hasNamedCall(f, "llvm.ctpop"))
+RVV_IR(RISCV_INS_VBREV8_V, ({0xd7, 0x20, 0x24, 0x4a}), hasNamedCall(f, "llvm.bitreverse"))
+RVV_IR(RISCV_INS_VREV8_V, ({0xd7, 0xa0, 0x24, 0x4a}), hasNamedCall(f, "llvm.bswap"))
+RVV_IR(RISCV_INS_VFREC7_V, ({0xd7, 0x90, 0x22, 0x4e}), hasScalableBinop(f, Instruction::FDiv))
+RVV_IR(RISCV_INS_VFRSQRT7_V, ({0xd7, 0x10, 0x22, 0x4e}), hasNamedCall(f, "llvm.sqrt"))
+RVV_IR(RISCV_INS_VFWADD_VV, ({0xd7, 0x90, 0x21, 0xc2}), hasCastOf(f, Instruction::FPExt))
+RVV_IR(RISCV_INS_VFWADD_VF, ({0xd7, 0x50, 0x25, 0xc2}), hasCastOf(f, Instruction::FPExt))
+RVV_IR(RISCV_INS_VFWADD_WV, ({0xd7, 0x90, 0x21, 0xd2}), hasScalableBinop(f, Instruction::FAdd))
+RVV_IR(RISCV_INS_VFWADD_WF, ({0xd7, 0x50, 0x25, 0xd2}), hasScalableBinop(f, Instruction::FAdd))
+RVV_IR(RISCV_INS_VFWSUB_VV, ({0xd7, 0x90, 0x21, 0xca}), hasScalableBinop(f, Instruction::FSub))
+RVV_IR(RISCV_INS_VFWSUB_VF, ({0xd7, 0x50, 0x25, 0xca}), hasScalableBinop(f, Instruction::FSub))
+RVV_IR(RISCV_INS_VFWSUB_WV, ({0xd7, 0x90, 0x21, 0xda}), hasScalableBinop(f, Instruction::FSub))
+RVV_IR(RISCV_INS_VFWSUB_WF, ({0xd7, 0x50, 0x25, 0xda}), hasScalableBinop(f, Instruction::FSub))
+RVV_IR(RISCV_INS_VFWMUL_VV, ({0xd7, 0x90, 0x21, 0xe2}), hasScalableBinop(f, Instruction::FMul))
+RVV_IR(RISCV_INS_VFWMUL_VF, ({0xd7, 0x50, 0x25, 0xe2}), hasScalableBinop(f, Instruction::FMul))
+RVV_IR(RISCV_INS_VFWMACC_VV, ({0xd7, 0x90, 0x21, 0xf2}), hasScalableBinop(f, Instruction::FAdd))
+RVV_IR(RISCV_INS_VFWMACC_VF, ({0xd7, 0x50, 0x25, 0xf2}), hasScalableBinop(f, Instruction::FAdd))
+RVV_IR(RISCV_INS_VFWNMACC_VV, ({0xd7, 0x90, 0x21, 0xf6}), hasScalableBinop(f, Instruction::FAdd))
+RVV_IR(RISCV_INS_VFWNMACC_VF, ({0xd7, 0x50, 0x25, 0xf6}), hasScalableBinop(f, Instruction::FAdd))
+RVV_IR(RISCV_INS_VFWMSAC_VV, ({0xd7, 0x90, 0x21, 0xfa}), hasScalableBinop(f, Instruction::FAdd))
+RVV_IR(RISCV_INS_VFWMSAC_VF, ({0xd7, 0x50, 0x25, 0xfa}), hasScalableBinop(f, Instruction::FAdd))
+RVV_IR(RISCV_INS_VFWNMSAC_VV, ({0xd7, 0x90, 0x21, 0xfe}), hasScalableBinop(f, Instruction::FAdd))
+RVV_IR(RISCV_INS_VFWNMSAC_VF, ({0xd7, 0x50, 0x25, 0xfe}), hasScalableBinop(f, Instruction::FAdd))
+RVV_IR(RISCV_INS_VWREDSUM_VS, ({0xd7, 0xa0, 0x21, 0xc6}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VWREDSUMU_VS, ({0xd7, 0xa0, 0x21, 0xc2}), hasExtractOrSelect(f))
+RVV_IR(RISCV_INS_VFWCVTBF16_F_F_V, ({0xd7, 0x90, 0x26, 0x4a}), hasCastOf(f, Instruction::ZExt))
+RVV_IR(RISCV_INS_VFNCVTBF16_F_F_W, ({0xd7, 0x90, 0x2e, 0x4a}), hasCastOf(f, Instruction::Trunc))
+RVV_IR(RISCV_INS_VFWMACCBF16_VV, ({0xd7, 0x90, 0x21, 0xee}), hasNamedCall(f, "llvm.fma"))
+RVV_IR(RISCV_INS_VFWMACCBF16_VF, ({0xd7, 0x50, 0x25, 0xee}), hasNamedCall(f, "llvm.fma"))
+
+#undef RVV_IR
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VT_MASKC)
+{
+	ONLY_MODE_RV64;
+	auto* f = translate({0x7b, 0xf5, 0xc5, 0x00});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasExtractOrSelect(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VT_MASKCN)
+{
+	ONLY_MODE_RV64;
+	auto* f = translate({0x7b, 0xfd, 0xc5, 0x00});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasExtractOrSelect(f)) << dumpFunction(f);
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
+
 

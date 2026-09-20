@@ -11,6 +11,8 @@
 #include "retdec/capstone2llvmir/arm64/arm64.h"
 #include "capstone2llvmir/capstone2llvmir_impl.h"
 
+#include <llvm/IR/DerivedTypes.h>
+
 namespace retdec {
 namespace capstone2llvmir {
 
@@ -242,6 +244,13 @@ class Capstone2LlvmIrTranslatorArm64_impl :
 		void translateFMovLane(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateNeonWidenUpper(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateNeonAcross(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateCls(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateNeonFpEst(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateFRintExtra(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateNeonWidenShift(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateNeonSqdmull(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateNeonFmlal(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateNeonFpPair(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 
 		void translateAdd(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateAnd(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
@@ -313,6 +322,43 @@ class Capstone2LlvmIrTranslatorArm64_impl :
 		void translateFMulX(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateFMinMaxP(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateFCmpE(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+
+		void translateCrypto(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateCrc(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translatePmull(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateSveWhile(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateSveLdSt(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateSvePtrue(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateSveCnt(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		bool translateSveAdd(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		bool translateSveIntBin(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		bool translateSveLogic(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		bool translateSveFp(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateSveFadda(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		bool translateSvePermute(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		bool translateSveShift(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		bool translateSveDup(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateSveIndex(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateSveSel(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateSveCompact(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateSveUnpack(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateSveCmp(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateSvePfalse(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateSvePnot(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateSveCntp(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateSveIncDec(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateFmopa(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateSveFfr(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateSveClast(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateSveSplice(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateSveRev(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateSveReduce(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+
+		llvm::Value* loadAsFixedVec(uint32_t r, llvm::FixedVectorType* vecTy, llvm::IRBuilder<>& irb);
+		llvm::Value* loadSveZ(cs_arm64_op& op, llvm::IRBuilder<>& irb);
+		void storeSveZ(uint32_t r, llvm::Value* vec, llvm::IRBuilder<>& irb);
+		llvm::Value* svePredToLaneMask(llvm::Value* pred, unsigned elemBits, llvm::IRBuilder<>& irb);
+		llvm::Value* sveIcmpToPred(llvm::Value* icmp, unsigned elemBits, llvm::IRBuilder<>& irb);
 };
 
 } // namespace capstone2llvmir

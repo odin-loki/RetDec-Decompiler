@@ -6,6 +6,7 @@
  */
 
 #include <llvm/IR/InstIterator.h>
+#include <llvm/IR/Instructions.h>
 
 #include <cstring>
 #include <cstdint>
@@ -160,6 +161,9 @@ class Capstone2LlvmIrTranslatorArmTests :
 #define ONLY_MODE_THUMB if (GetParam() != CS_MODE_THUMB) return;
 #define SKIP_MODE_ARM if (GetParam() == CS_MODE_ARM) return;
 #define SKIP_MODE_THUMB if (GetParam() == CS_MODE_THUMB) return;
+
+		llvm::Function* liftAsmOrBin(const char* textAsm, const char* a32le, const char* t32le);
+		void expectCryptoIntrinsic(llvm::Function* f, const char* llvmName, const char* asmName);
 };
 
 struct PrintCapstoneModeToString_Arm
@@ -8914,6 +8918,60 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRINTZ_f32_thumb)
 	EXPECT_EQ(armFloatRegBits(-1.0f), armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRINTR_f32)
+{
+	ONLY_MODE_ARM;
+
+	// FPSCR is not modeled: default RN / ties-to-even, same as VRINTN.
+	setRegisters({
+		{ARM_REG_S1, 2.5f},
+	});
+
+	emulate_bin("60 0a b6 ee");
+
+	EXPECT_EQ(armFloatRegBits(2.0f), armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRINTR_f32_thumb)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_S1, 2.5f},
+	});
+
+	emulate_bin("b6 ee 60 0a");
+
+	EXPECT_EQ(armFloatRegBits(2.0f), armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRINTX_f32)
+{
+	ONLY_MODE_ARM;
+
+	// Inexact exception is not modeled; same nearbyint IR as VRINTR.
+	setRegisters({
+		{ARM_REG_S1, 2.5f},
+	});
+
+	emulate_bin("60 0a b7 ee");
+
+	EXPECT_EQ(armFloatRegBits(2.0f), armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRINTX_f32_thumb)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_S1, 2.5f},
+	});
+
+	emulate_bin("b7 ee 60 0a");
+
+	EXPECT_EQ(armFloatRegBits(2.0f), armFloatRegBits(getRegisterValueFloat(ARM_REG_S0)));
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCVT_s32_f32_neon)
 {
 	ALL_MODES;
@@ -9899,6 +9957,808 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRSUBHN_i16)
 
 	EXPECT_EQ(0x0101010101010101ULL, dBits(ARM_REG_D0));
 	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ARMv8 Crypto / CRC. llvmir-emul's IntrinsicLowering fatal-errors on
+// llvm.arm.neon.aes* / sha* / llvm.arm.crc32*, so these lift and inspect IR
+// (no emulate()). Keystone often rejects Crypto without KS_MODE_V8; binary
+// encodings are the fallback.
+//
+
+static std::string g_armCryptoKeystoneNote;
+
+llvm::Function* Capstone2LlvmIrTranslatorArmTests::liftAsmOrBin(
+		const char* textAsm,
+		const char* a32le,
+		const char* t32le)
+{
+	// Capstone 6 AES/SHA/CRC predicates require HasV8Ops (CS_MODE_V8 extra).
+	_translator->modifyExtraMode(CS_MODE_V8);
+
+	try
+	{
+		return translate(assemble(textAsm));
+	}
+	catch (const std::exception& ex)
+	{
+		ks_engine* ks = nullptr;
+		ks_mode mode = (GetParam() == CS_MODE_THUMB) ? KS_MODE_THUMB : KS_MODE_ARM;
+		mode = static_cast<ks_mode>(static_cast<unsigned>(mode) | static_cast<unsigned>(KS_MODE_V8));
+		if (ks_open(KS_ARCH_ARM, mode, &ks) == KS_ERR_OK)
+		{
+			size_t cnt = 0;
+			size_t sz = 0;
+			unsigned char* out = nullptr;
+			if (ks_asm(ks, textAsm, 0, &out, &sz, &cnt) == KS_ERR_OK && out && sz > 0)
+			{
+				std::vector<uint8_t> bytes(out, out + sz);
+				ks_free(out);
+				ks_close(ks);
+				if (g_armCryptoKeystoneNote.empty())
+				{
+					g_armCryptoKeystoneNote = std::string(textAsm)
+							+ ": fixture Keystone rejected (no V8); KS_MODE_V8 accepted";
+				}
+				return translate(bytes);
+			}
+			if (g_armCryptoKeystoneNote.empty())
+			{
+				g_armCryptoKeystoneNote = std::string(textAsm) + ": " + ex.what()
+						+ " KS_MODE_V8: " + ks_strerror(ks_errno(ks));
+			}
+			ks_close(ks);
+		}
+		else if (g_armCryptoKeystoneNote.empty())
+		{
+			g_armCryptoKeystoneNote = std::string(textAsm) + ": " + ex.what();
+		}
+		return translate(utils::hexStringToBytes(GetParam() == CS_MODE_THUMB ? t32le : a32le));
+	}
+}
+
+void Capstone2LlvmIrTranslatorArmTests::expectCryptoIntrinsic(
+		llvm::Function* f,
+		const char* llvmName,
+		const char* asmName)
+{
+	ASSERT_NE(nullptr, f);
+	auto* in = _module.getFunction(llvmName);
+	ASSERT_NE(nullptr, in) << "missing " << llvmName << (g_armCryptoKeystoneNote.empty() ? "" : (" keystone: " + g_armCryptoKeystoneNote));
+	bool hit = false;
+	for (llvm::inst_iterator I = llvm::inst_begin(f), E = llvm::inst_end(f); I != E; ++I)
+	{
+		if (auto* c = llvm::dyn_cast<llvm::CallInst>(&*I))
+		{
+			if (c->getCalledFunction() == in)
+			{
+				hit = true;
+			}
+		}
+	}
+	EXPECT_TRUE(hit) << "did not call " << llvmName;
+	EXPECT_EQ(nullptr, _module.getFunction(std::string("__asm_") + asmName));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_AESE)
+{
+	ALL_MODES;
+	// aese.8 q0, q1 — A32 0xF3B00302 / T32 0xFFB00302
+	auto* f = liftAsmOrBin("aese.8 q0, q1", "02 03 b0 f3", "b0 ff 02 03");
+	expectCryptoIntrinsic(f, "llvm.arm.neon.aese", "aese");
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_AESD)
+{
+	ALL_MODES;
+	// aesd.8 q0, q1 — A32 0xF3B00342 / T32 0xFFB00342
+	auto* f = liftAsmOrBin("aesd.8 q0, q1", "42 03 b0 f3", "b0 ff 42 03");
+	expectCryptoIntrinsic(f, "llvm.arm.neon.aesd", "aesd");
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_AESMC)
+{
+	ALL_MODES;
+	// aesmc.8 q0, q1 — A32 0xF3B00382 / T32 0xFFB00382
+	auto* f = liftAsmOrBin("aesmc.8 q0, q1", "82 03 b0 f3", "b0 ff 82 03");
+	expectCryptoIntrinsic(f, "llvm.arm.neon.aesmc", "aesmc");
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_AESIMC)
+{
+	ALL_MODES;
+	// aesimc.8 q0, q1 — A32 0xF3B003C2 / T32 0xFFB003C2
+	auto* f = liftAsmOrBin("aesimc.8 q0, q1", "c2 03 b0 f3", "b0 ff c2 03");
+	expectCryptoIntrinsic(f, "llvm.arm.neon.aesimc", "aesimc");
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SHA1C)
+{
+	ALL_MODES;
+	// sha1c.32 q0, q1, q2 — A32 0xF2020C44 / T32 0xEF020C44
+	auto* f = liftAsmOrBin("sha1c.32 q0, q1, q2", "44 0c 02 f2", "02 ef 44 0c");
+	expectCryptoIntrinsic(f, "llvm.arm.neon.sha1c", "sha1c");
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SHA1P)
+{
+	ALL_MODES;
+	auto* f = liftAsmOrBin("sha1p.32 q0, q1, q2", "44 0d 02 f2", "02 ef 44 0d");
+	expectCryptoIntrinsic(f, "llvm.arm.neon.sha1p", "sha1p");
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SHA1M)
+{
+	ALL_MODES;
+	auto* f = liftAsmOrBin("sha1m.32 q0, q1, q2", "44 0e 02 f2", "02 ef 44 0e");
+	expectCryptoIntrinsic(f, "llvm.arm.neon.sha1m", "sha1m");
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SHA1SU0)
+{
+	ALL_MODES;
+	auto* f = liftAsmOrBin("sha1su0.32 q0, q1, q2", "44 0f 02 f2", "02 ef 44 0f");
+	expectCryptoIntrinsic(f, "llvm.arm.neon.sha1su0", "sha1su0");
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SHA1H)
+{
+	ALL_MODES;
+	// sha1h.32 q0, q1 — A32 0xF3B902C2 / T32 0xFFB902C2
+	auto* f = liftAsmOrBin("sha1h.32 q0, q1", "c2 02 b9 f3", "b9 ff c2 02");
+	expectCryptoIntrinsic(f, "llvm.arm.neon.sha1h", "sha1h");
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SHA1SU1)
+{
+	ALL_MODES;
+	// sha1su1.32 q0, q1 — A32 0xF3BA0382 / T32 0xFFBA0382
+	auto* f = liftAsmOrBin("sha1su1.32 q0, q1", "82 03 ba f3", "ba ff 82 03");
+	expectCryptoIntrinsic(f, "llvm.arm.neon.sha1su1", "sha1su1");
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SHA256H)
+{
+	ALL_MODES;
+	// sha256h.32 q0, q1, q2 — A32 0xF3020C44 / T32 0xEF020C44 wait U=1 → EF? 
+	// A32 U=1 is F3; T32 first half is EF02 still? SHA256 3-reg uses 11101111 0000
+	// T32 SHA256H: EF02 0C44 is SHA1C. SHA256H T32 is FF02 0C44.
+	auto* f = liftAsmOrBin("sha256h.32 q0, q1, q2", "44 0c 02 f3", "02 ff 44 0c");
+	expectCryptoIntrinsic(f, "llvm.arm.neon.sha256h", "sha256h");
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SHA256H2)
+{
+	ALL_MODES;
+	auto* f = liftAsmOrBin("sha256h2.32 q0, q1, q2", "44 0d 02 f3", "02 ff 44 0d");
+	expectCryptoIntrinsic(f, "llvm.arm.neon.sha256h2", "sha256h2");
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SHA256SU1)
+{
+	ALL_MODES;
+	auto* f = liftAsmOrBin("sha256su1.32 q0, q1, q2", "44 0e 02 f3", "02 ff 44 0e");
+	expectCryptoIntrinsic(f, "llvm.arm.neon.sha256su1", "sha256su1");
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SHA256SU0)
+{
+	ALL_MODES;
+	// sha256su0.32 q0, q1 — A32 0xF3BA03C2 / T32 0xFFBA03C2
+	auto* f = liftAsmOrBin("sha256su0.32 q0, q1", "c2 03 ba f3", "ba ff c2 03");
+	expectCryptoIntrinsic(f, "llvm.arm.neon.sha256su0", "sha256su0");
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_CRC32B)
+{
+	ALL_MODES;
+	// crc32b r0, r1, r2 — A32 0xE1010042 / T32 0xFA81F082
+	auto* f = liftAsmOrBin("crc32b r0, r1, r2", "42 00 01 e1", "81 fa 82 f0");
+	expectCryptoIntrinsic(f, "llvm.arm.crc32b", "crc32b");
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_CRC32H)
+{
+	ALL_MODES;
+	auto* f = liftAsmOrBin("crc32h r0, r1, r2", "42 02 01 e1", "81 fa 82 f2");
+	expectCryptoIntrinsic(f, "llvm.arm.crc32h", "crc32h");
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_CRC32W)
+{
+	ALL_MODES;
+	auto* f = liftAsmOrBin("crc32w r0, r1, r2", "42 04 01 e1", "81 fa 82 f4");
+	expectCryptoIntrinsic(f, "llvm.arm.crc32w", "crc32w");
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_CRC32CB)
+{
+	ALL_MODES;
+	auto* f = liftAsmOrBin("crc32cb r0, r1, r2", "42 00 11 e1", "91 fa 82 f0");
+	expectCryptoIntrinsic(f, "llvm.arm.crc32cb", "crc32cb");
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_CRC32CH)
+{
+	ALL_MODES;
+	auto* f = liftAsmOrBin("crc32ch r0, r1, r2", "42 02 11 e1", "91 fa 82 f2");
+	expectCryptoIntrinsic(f, "llvm.arm.crc32ch", "crc32ch");
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_CRC32CW)
+{
+	ALL_MODES;
+	auto* f = liftAsmOrBin("crc32cw r0, r1, r2", "42 04 11 e1", "91 fa 82 f4");
+	expectCryptoIntrinsic(f, "llvm.arm.crc32cw", "crc32cw");
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMULL_p8)
+{
+	ALL_MODES;
+	// vmull.p8 q0, d2, d3 — A32 0xF2820E03 / T32 0xEF820E03
+	// ARM_INS_PMULL does not exist; this is the PCLMUL analogue.
+	const char* bytes = (GetParam() == CS_MODE_THUMB) ? "82 ef 03 0e" : "03 0e 82 f2";
+	auto* f = translate(utils::hexStringToBytes(bytes));
+	ASSERT_NE(nullptr, f) << dumpFunction(f);
+	// Overloaded: llvm.arm.neon.vmullp.v8i16, not the unsuffixed name.
+	bool hit = false;
+	for (llvm::inst_iterator I = llvm::inst_begin(f), E = llvm::inst_end(f); I != E; ++I)
+	{
+		if (auto* c = llvm::dyn_cast<llvm::CallInst>(&*I))
+		{
+			if (auto* cf = c->getCalledFunction())
+			{
+				if (cf->getName().starts_with("llvm.arm.neon.vmullp"))
+				{
+					hit = true;
+				}
+			}
+		}
+	}
+	EXPECT_TRUE(hit) << dumpFunction(f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_vmull"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCLZ_i32)
+{
+	ALL_MODES;
+	setRegisters({{ARM_REG_D1, armDBits(0x0000000800000001ULL)}});
+	emulate("vclz.i32 d0, d1");
+	EXPECT_EQ(0x0000001c0000001fULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCNT_8)
+{
+	ALL_MODES;
+	setRegisters({{ARM_REG_D1, armDBits(0x0f00030100ff0000ULL)}});
+	emulate("vcnt.8 d0, d1");
+	// popcount per byte of 0f 00 03 01 00 ff 00 00 → 04 00 02 01 00 08 00 00
+	EXPECT_EQ(0x0400020100080000ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCLS_s32)
+{
+	ALL_MODES;
+	setRegisters({{ARM_REG_D1, armDBits(0x0000000800000001ULL)}});
+	emulate("vcls.s32 d0, d1");
+	EXPECT_EQ(0x0000001b0000001eULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VPADAL_s16)
+{
+	ALL_MODES;
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x0000000100000002ULL)},
+		{ARM_REG_D1, armDBits(0x00040003ffff0001ULL)},
+	});
+	emulate("vpadal.s16 d0, d1");
+	EXPECT_EQ(0x0000000800000002ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQDMULH_s16)
+{
+	ALL_MODES;
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x4000400040004000ULL)},
+		{ARM_REG_D2, armDBits(0x4000400040004000ULL)},
+	});
+	emulate("vqdmulh.s16 d0, d1, d2");
+	EXPECT_EQ(0x2000200020002000ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQRDMULH_s16)
+{
+	ALL_MODES;
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x4001400140014001ULL)},
+		{ARM_REG_D2, armDBits(0x4000400040004000ULL)},
+	});
+	emulate("vqrdmulh.s16 d0, d1, d2");
+	// 2*0x4001*0x4000 = 0x20008000; +0x8000 >> 16 = 0x2001
+	EXPECT_EQ(0x2001200120012001ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQDMULL_s16)
+{
+	ALL_MODES;
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x0000000000004000ULL)},
+		{ARM_REG_D2, armDBits(0x0000000000004000ULL)},
+	});
+	emulate("vqdmull.s16 q0, d1, d2");
+	EXPECT_EQ(0x0000000000000000ULL, dBits(ARM_REG_D1));
+	EXPECT_EQ(0x20000000ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQDMLAL_s16)
+{
+	ALL_MODES;
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x0000000100000001ULL)},
+		{ARM_REG_D1, armDBits(0)},
+		{ARM_REG_D2, armDBits(0x0000000000004000ULL)},
+		{ARM_REG_D3, armDBits(0x0000000000004000ULL)},
+	});
+	emulate("vqdmlal.s16 q0, d2, d3");
+	EXPECT_EQ(0x0000000120000001ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQDMLSL_s16)
+{
+	ALL_MODES;
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x20000000ULL)},
+		{ARM_REG_D1, armDBits(0)},
+		{ARM_REG_D2, armDBits(0x0000000000004000ULL)},
+		{ARM_REG_D3, armDBits(0x0000000000004000ULL)},
+	});
+	emulate("vqdmlsl.s16 q0, d2, d3");
+	EXPECT_EQ(0x00000000ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRSHR_u32)
+{
+	ALL_MODES;
+	setRegisters({{ARM_REG_D1, armDBits(0x0000000500000004ULL)}});
+	emulate("vrshr.u32 d0, d1, #1");
+	EXPECT_EQ(0x0000000300000002ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRSRA_u32)
+{
+	ALL_MODES;
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x0000000100000001ULL)},
+		{ARM_REG_D1, armDBits(0x0000000500000004ULL)},
+	});
+	emulate("vrsra.u32 d0, d1, #1");
+	EXPECT_EQ(0x0000000400000003ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSLI_32)
+{
+	ALL_MODES;
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x1111111111111111ULL)},
+		{ARM_REG_D1, armDBits(0x2222222222222222ULL)},
+	});
+	emulate("vsli.32 d0, d1, #4");
+	EXPECT_EQ(0x2222222122222221ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSRI_32)
+{
+	ALL_MODES;
+	setRegisters({
+		{ARM_REG_D0, armDBits(0xF0000000F0000000ULL)},
+		{ARM_REG_D1, armDBits(0x0000001000000010ULL)},
+	});
+	emulate("vsri.32 d0, d1, #4");
+	EXPECT_EQ(0xF0000001F0000001ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQRSHL_s32)
+{
+	ALL_MODES;
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x0000000300000005ULL)},
+		{ARM_REG_D2, armDBits(0xffffffff00000001ULL)},
+	});
+	emulate("vqrshl.s32 d0, d1, d2");
+	// lane0: 5 << 1 = 10; lane1: 3 >> 1 with round = 2
+	EXPECT_EQ(0x000000020000000aULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRSHL_s32)
+{
+	ALL_MODES;
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x0000000300000005ULL)},
+		{ARM_REG_D2, armDBits(0xffffffff00000001ULL)},
+	});
+	emulate("vrshl.s32 d0, d1, d2");
+	EXPECT_EQ(0x000000020000000aULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQRSHRN_s32)
+{
+	ALL_MODES;
+	setRegisters({
+		{ARM_REG_D2, armDBits(0x0000000500000004ULL)},
+		{ARM_REG_D3, armDBits(0x0000000500000004ULL)},
+	});
+	emulate("vqrshrn.s32 d0, q1, #1");
+	EXPECT_EQ(0x0003000200030002ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQRSHRUN_s32)
+{
+	ALL_MODES;
+	setRegisters({
+		{ARM_REG_D2, armDBits(0x0000000500000004ULL)},
+		{ARM_REG_D3, armDBits(0x0000000500000004ULL)},
+	});
+	emulate("vqrshrun.s32 d0, q1, #1");
+	EXPECT_EQ(0x0003000200030002ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VACGE_f32)
+{
+	ALL_MODES;
+	setRegisters({
+		{ARM_REG_D1, armDBits(0xc00000003f800000ULL)}, // -2.0, 1.0
+		{ARM_REG_D2, armDBits(0x3f80000040000000ULL)}, // 1.0, 2.0
+	});
+	emulate("vacge.f32 d0, d1, d2");
+	// |1|>=|2| false, |-2|>=|1| true. llvm.fabs is a call the emulator records.
+	EXPECT_EQ(0xffffffff00000000ULL, dBits(ARM_REG_D0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VACGT_f32)
+{
+	ALL_MODES;
+	setRegisters({
+		{ARM_REG_D1, armDBits(0xc00000003f800000ULL)},
+		{ARM_REG_D2, armDBits(0x3f8000003f800000ULL)},
+	});
+	emulate("vacgt.f32 d0, d1, d2");
+	// |1|>|1| false, |-2|>|1| true
+	EXPECT_EQ(0xffffffff00000000ULL, dBits(ARM_REG_D0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRECPS_f32)
+{
+	ALL_MODES;
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x3f8000003f800000ULL)},
+		{ARM_REG_D2, armDBits(0x3f0000003f000000ULL)},
+	});
+	emulate("vrecps.f32 d0, d1, d2");
+	// 2 - 1*0.5 = 1.5 = 0x3fc00000
+	EXPECT_EQ(0x3fc000003fc00000ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRSQRTS_f32)
+{
+	ALL_MODES;
+	setRegisters({
+		{ARM_REG_D1, armDBits(0x3f8000003f800000ULL)},
+		{ARM_REG_D2, armDBits(0x3f8000003f800000ULL)},
+	});
+	emulate("vrsqrts.f32 d0, d1, d2");
+	// (3 - 1*1)/2 = 1.0
+	EXPECT_EQ(0x3f8000003f800000ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRECPE)
+{
+	ALL_MODES;
+	auto* f = translate(assemble("vrecpe.f32 d0, d1"));
+	ASSERT_NE(nullptr, f);
+	bool hit = false;
+	for (llvm::inst_iterator I = llvm::inst_begin(f), E = llvm::inst_end(f); I != E; ++I)
+	{
+		if (auto* c = llvm::dyn_cast<llvm::CallInst>(&*I))
+		{
+			if (auto* cf = c->getCalledFunction())
+			{
+				if (cf->getName().starts_with("llvm.arm.neon.vrecpe"))
+				{
+					hit = true;
+				}
+			}
+		}
+	}
+	EXPECT_TRUE(hit) << dumpFunction(f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_vrecpe"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRSQRTE)
+{
+	ALL_MODES;
+	auto* f = translate(assemble("vrsqrte.f32 d0, d1"));
+	ASSERT_NE(nullptr, f);
+	bool hit = false;
+	for (llvm::inst_iterator I = llvm::inst_begin(f), E = llvm::inst_end(f); I != E; ++I)
+	{
+		if (auto* c = llvm::dyn_cast<llvm::CallInst>(&*I))
+		{
+			if (auto* cf = c->getCalledFunction())
+			{
+				if (cf->getName().starts_with("llvm.arm.neon.vrsqrte"))
+				{
+					hit = true;
+				}
+			}
+		}
+	}
+	EXPECT_TRUE(hit) << dumpFunction(f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_vrsqrte"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSELEQ_f32)
+{
+	ALL_MODES;
+	_translator->modifyExtraMode(CS_MODE_V8);
+	setRegisters({
+		{ARM_REG_FPSCR_NZCV, 0x40000000}, // Z
+		{ARM_REG_S1, 1.0f},
+		{ARM_REG_S2, 2.0f},
+	});
+	// Keystone without V8: KS_ERR_ASM_MISSINGFEATURE. A32 FE000A81 / T32 halfword-swap.
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("00 fe 81 0a");
+	}
+	else
+	{
+		emulate_bin("81 0a 00 fe");
+	}
+	EXPECT_EQ(1.0f, getRegisterValueFloat(ARM_REG_S0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSELGE_f32)
+{
+	ALL_MODES;
+	_translator->modifyExtraMode(CS_MODE_V8);
+	setRegisters({
+		{ARM_REG_FPSCR_NZCV, 0}, // N=0 V=0 → GE
+		{ARM_REG_S1, 1.0f},
+		{ARM_REG_S2, 2.0f},
+	});
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("20 fe 81 0a");
+	}
+	else
+	{
+		emulate_bin("81 0a 20 fe");
+	}
+	EXPECT_EQ(1.0f, getRegisterValueFloat(ARM_REG_S0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSELGT_f32)
+{
+	ALL_MODES;
+	_translator->modifyExtraMode(CS_MODE_V8);
+	setRegisters({
+		{ARM_REG_FPSCR_NZCV, 0x40000000}, // Z → not GT
+		{ARM_REG_S1, 1.0f},
+		{ARM_REG_S2, 2.0f},
+	});
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("30 fe 81 0a");
+	}
+	else
+	{
+		emulate_bin("81 0a 30 fe");
+	}
+	EXPECT_EQ(2.0f, getRegisterValueFloat(ARM_REG_S0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSELVS_f32)
+{
+	ALL_MODES;
+	_translator->modifyExtraMode(CS_MODE_V8);
+	setRegisters({
+		{ARM_REG_FPSCR_NZCV, 0x10000000}, // V
+		{ARM_REG_S1, 1.0f},
+		{ARM_REG_S2, 2.0f},
+	});
+	if (GetParam() == CS_MODE_THUMB)
+	{
+		emulate_bin("10 fe 81 0a");
+	}
+	else
+	{
+		emulate_bin("81 0a 10 fe");
+	}
+	EXPECT_EQ(1.0f, getRegisterValueFloat(ARM_REG_S0));
+}
+
+//
+// ARM_INS_CLREX
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_CLREX_is_nothing)
+{
+	ALL_MODES;
+
+	emulate("clrex");
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ARM_INS_FLDMIAX / FLDMDBX / FSTMIAX / FSTMDBX
+// Same translation as VLDM/VSTM. Capstone 6 only decodes the X (odd-imm8)
+// form with D=0 (d0–d15); d16–d31 is ordinary VLDMIA, already mapped.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_FLDMIAX_d0)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_R0, 0x1000},
+	});
+	setMemory({
+		{0x1000, 1.5_f64},
+	});
+
+	emulate_bin("03 0b 90 ec");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_D0, 1.5_f64},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_FLDMIAX_d0_thumb)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R0, 0x1000},
+	});
+	setMemory({
+		{0x1000, 1.5_f64},
+	});
+
+	emulate_bin("90 ec 03 0b");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_D0, 1.5_f64},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_FSTMIAX_d0)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_R0, 0x1000},
+		{ARM_REG_D0, 2.5_f64},
+	});
+
+	emulate_bin("03 0b 80 ec");
+
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 2.5_f64},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_FLDMDBX_d0)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_R0, 0x1008},
+	});
+	setMemory({
+		{0x1000, 3.25_f64},
+	});
+
+	emulate_bin("03 0b 30 ed");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_D0, 3.25_f64},
+		{ARM_REG_R0, 0x1000},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_FSTMDBX_d0)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_R0, 0x1008},
+		{ARM_REG_D0, 4.5_f64},
+	});
+
+	emulate_bin("03 0b 20 ed");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x1000},
+	});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 4.5_f64},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ARM_INS_MRS / ARM_INS_MSR — user-mode APSR. Privileged SPSR/CPSR stay pseudo.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_MRS_apsr)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_APSR, 0xa0000000},
+	});
+
+	emulate("mrs r0, apsr");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0xa0000000},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_MSR_apsr_nzcvq)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R0, 0x50000000},
+	});
+
+	emulate("msr apsr_nzcvq, r0");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_APSR, 0x50000000},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_MRS_spsr_stays_pseudo)
+{
+	SKIP_MODE_THUMB;
+
+	emulate("mrs r0, spsr");
+
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_mrs"), {0}},
+	});
 }
 
 } // namespace tests

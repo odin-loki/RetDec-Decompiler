@@ -201,6 +201,10 @@ class Capstone2LlvmIrTranslatorXcore_impl :
 		void translateResUnary(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
 		void translateEventWait(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
 		void translateEventCond(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateFreet(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateDgetreg(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateInit(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
+		void translateTsetmr(cs_insn* i, cs_xcore* xi, llvm::IRBuilder<>& irb);
 };
 
 } // namespace capstone2llvmir

@@ -1594,6 +1594,75 @@ TEST_F(Capstone2LlvmIrTranslatorSyszTests, SYSZ_INS_VFENEB)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_F(Capstone2LlvmIrTranslatorSyszTests, SYSZ_INS_KM)
+{
+	setRegisters({
+		{SYSZ_REG_0, 0x12},
+		{SYSZ_REG_1, 0x2000},
+		{SYSZ_REG_2, 0x30},
+		{SYSZ_REG_4, 0x40},
+	});
+
+	emulate_bin("b9 2e 00 24");
+
+	EXPECT_JUST_REGISTERS_LOADED({SYSZ_REG_0, SYSZ_REG_1, SYSZ_REG_2, SYSZ_REG_4});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__sysz_km"), {0x12, 0x2000, 0x30, 0x40}},
+	});
+}
+
+TEST_F(Capstone2LlvmIrTranslatorSyszTests, SYSZ_INS_KIMD)
+{
+	setRegisters({
+		{SYSZ_REG_0, 1},
+		{SYSZ_REG_1, 0x1000},
+		{SYSZ_REG_2, 0x50},
+		{SYSZ_REG_4, 0x60},
+	});
+
+	emulate_bin("b9 3e 00 24");
+
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__sysz_kimd"), {1, 0x1000, 0x50, 0x60}},
+	});
+}
+
+TEST_F(Capstone2LlvmIrTranslatorSyszTests, SYSZ_INS_PCC)
+{
+	setRegisters({
+		{SYSZ_REG_0, 0x80},
+		{SYSZ_REG_1, 0x3000},
+	});
+
+	emulate_bin("b9 2c 00 00");
+
+	EXPECT_JUST_REGISTERS_LOADED({SYSZ_REG_0, SYSZ_REG_1});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__sysz_pcc"), {0x80, 0x3000}},
+	});
+}
+
+TEST_F(Capstone2LlvmIrTranslatorSyszTests, SYSZ_INS_KMCTR)
+{
+	setRegisters({
+		{SYSZ_REG_0, 2},
+		{SYSZ_REG_1, 0x4000},
+		{SYSZ_REG_2, 0xa},
+		{SYSZ_REG_4, 0xb},
+		{SYSZ_REG_6, 0xc},
+	});
+
+	emulate_bin("b9 2d 60 24");
+
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__sysz_kmctr"), {2, 0x4000, 0xa, 0xc, 0xb}},
+	});
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

@@ -240,6 +240,11 @@ bool Capstone2LlvmIrTranslatorSparc_impl::isFpDoubleRegister(uint32_t r) const
 	return SPARC_REG_D0 <= r && r <= SPARC_REG_D31;
 }
 
+bool Capstone2LlvmIrTranslatorSparc_impl::isFpQuadRegister(uint32_t r) const
+{
+	return SPARC_REG_Q0 <= r && r <= SPARC_REG_Q15;
+}
+
 bool Capstone2LlvmIrTranslatorSparc_impl::isFccRegister(uint32_t r) const
 {
 	return SPARC_REG_FCC0 <= r && r <= SPARC_REG_FCC3;
@@ -289,6 +294,24 @@ uint32_t Capstone2LlvmIrTranslatorSparc_impl::visContainerReg(uint32_t r, unsign
 	if (bitWidth == 64 && isFpSingleRegister(r) && ((r - SPARC_REG_F0) % 2) == 0)
 	{
 		return SPARC_REG_D0 + (r - SPARC_REG_F0) / 2;
+	}
+	return r;
+}
+
+uint32_t Capstone2LlvmIrTranslatorSparc_impl::quadContainerReg(uint32_t r) const
+{
+	// Q0 overlays F0/F4/... and D0/D2/.... Capstone may name the F or D alias.
+	if (isFpQuadRegister(r))
+	{
+		return r;
+	}
+	if (isFpSingleRegister(r) && ((r - SPARC_REG_F0) % 4) == 0)
+	{
+		return SPARC_REG_Q0 + (r - SPARC_REG_F0) / 4;
+	}
+	if (isFpDoubleRegister(r) && ((r - SPARC_REG_D0) % 2) == 0)
+	{
+		return SPARC_REG_Q0 + (r - SPARC_REG_D0) / 2;
 	}
 	return r;
 }
@@ -614,8 +637,9 @@ cs_sparc_op* Capstone2LlvmIrTranslatorSparc_impl::fpDestOperand(cs_sparc* si)
 			continue;
 		}
 		auto r = si->operands[k].reg;
-		if (isFpSingleRegister(r) || isFpDoubleRegister(r) || isFccRegister(r)
-				|| isGprPairRegister(r) || isGeneralPurposeRegister(r))
+		if (isFpSingleRegister(r) || isFpDoubleRegister(r) || isFpQuadRegister(r)
+				|| isFccRegister(r) || isGprPairRegister(r)
+				|| isGeneralPurposeRegister(r))
 		{
 			return &si->operands[k];
 		}
@@ -1152,7 +1176,8 @@ void Capstone2LlvmIrTranslatorSparc_impl::translateLoad(
 		return;
 	}
 
-	if ((i->id == SPARC_INS_LDA || i->id == SPARC_INS_LDDA)
+	if ((i->id == SPARC_INS_LDA || i->id == SPARC_INS_LDDA
+				|| i->id == SPARC_INS_LDQA)
 			&& !asiIsPrimaryOrOmitted(si))
 	{
 		throwUnexpectedOperands(i);
@@ -1164,6 +1189,16 @@ void Capstone2LlvmIrTranslatorSparc_impl::translateLoad(
 	cs_sparc_op* dst = lastRegOperand(si);
 	// LDFSR is SPARC_INS_LD with an implicit %fsr dest (Capstone has no LDFSR id).
 	uint32_t dr = (dst && dst->type == SPARC_OP_REG) ? dst->reg : SPARC_REG_FSR;
+	if (i->id == SPARC_INS_LDQ || i->id == SPARC_INS_LDQA)
+	{
+		dr = quadContainerReg(dr);
+		if (!isFpQuadRegister(dr))
+		{
+			throwUnexpectedOperands(i);
+			translatePseudoAsmGeneric(i, si, irb);
+			return;
+		}
+	}
 
 	llvm::Type* ty = nullptr;
 	eOpConv ct = eOpConv::SEXT_TRUNC_OR_BITCAST;
@@ -1203,11 +1238,24 @@ void Capstone2LlvmIrTranslatorSparc_impl::translateLoad(
 				ct = eOpConv::ZEXT_TRUNC_OR_BITCAST;
 			}
 			break;
+		case SPARC_INS_LDQ:
+		case SPARC_INS_LDQA:
+			ty = irb.getInt128Ty();
+			ct = eOpConv::THROW;
+			break;
 		default:
 			throw GenericError("Unhandled insn ID in translateLoad().");
 	}
 
 	auto* mem = loadOp(*memOp, irb, ty);
+
+	if ((i->id == SPARC_INS_LDQ || i->id == SPARC_INS_LDQA)
+			&& isFpQuadRegister(dr))
+	{
+		mem = irb.CreateBitCast(mem, llvm::Type::getFP128Ty(irb.getContext()));
+		storeRegister(dr, mem, irb, eOpConv::THROW);
+		return;
+	}
 
 	if ((i->id == SPARC_INS_LD || i->id == SPARC_INS_LDA
 				|| i->id == SPARC_INS_LDD || i->id == SPARC_INS_LDDA)
@@ -1255,7 +1303,8 @@ void Capstone2LlvmIrTranslatorSparc_impl::translateStore(
 		return;
 	}
 
-	if ((i->id == SPARC_INS_STA || i->id == SPARC_INS_STDA)
+	if ((i->id == SPARC_INS_STA || i->id == SPARC_INS_STDA
+				|| i->id == SPARC_INS_STQA)
 			&& !asiIsPrimaryOrOmitted(si))
 	{
 		throwUnexpectedOperands(i);
@@ -1282,6 +1331,16 @@ void Capstone2LlvmIrTranslatorSparc_impl::translateStore(
 	}
 
 	uint32_t sr = srcOp ? srcOp->reg : SPARC_REG_FSR;
+	if (i->id == SPARC_INS_STQ || i->id == SPARC_INS_STQA)
+	{
+		sr = quadContainerReg(sr);
+		if (!isFpQuadRegister(sr))
+		{
+			throwUnexpectedOperands(i);
+			translatePseudoAsmGeneric(i, si, irb);
+			return;
+		}
+	}
 
 	llvm::Type* ty = nullptr;
 	switch (i->id)
@@ -1298,8 +1357,28 @@ void Capstone2LlvmIrTranslatorSparc_impl::translateStore(
 		case SPARC_INS_STDA:
 			ty = irb.getInt64Ty();
 			break;
+		case SPARC_INS_STQ:
+		case SPARC_INS_STQA:
+			ty = irb.getInt128Ty();
+			break;
 		default:
 			throw GenericError("Unhandled insn ID in translateStore().");
+	}
+
+	if ((i->id == SPARC_INS_STQ || i->id == SPARC_INS_STQA)
+			&& isFpQuadRegister(sr))
+	{
+		op0 = loadRegister(sr, irb);
+		if (op0->getType()->isFloatingPointTy())
+		{
+			op0 = irb.CreateBitCast(op0, ty);
+		}
+		else if (op0->getType()->isIntegerTy())
+		{
+			op0 = irb.CreateZExtOrTrunc(op0, ty);
+		}
+		storeOp(*memOp, op0, irb);
+		return;
 	}
 
 	if ((i->id == SPARC_INS_STD || i->id == SPARC_INS_STDA)
@@ -1653,7 +1732,32 @@ void Capstone2LlvmIrTranslatorSparc_impl::translateMul(
 	llvm::Value* result = nullptr;
 	bool cc = (i->id == SPARC_INS_SMULCC || i->id == SPARC_INS_UMULCC);
 
-	if (i->id == SPARC_INS_MULX)
+	if (i->id == SPARC_INS_XMULX || i->id == SPARC_INS_XMULXHI)
+	{
+		// VIS3 carry-less multiply — PCLMULQDQ analogue. llvm.clmul is in
+		// LLVM 23 Intrinsics.td; there is no SPARC AES Capstone ID.
+		auto* i64 = irb.getInt64Ty();
+		auto* a = irb.CreateZExtOrTrunc(op0, i64);
+		auto* b = irb.CreateZExtOrTrunc(op1, i64);
+		if (i->id == SPARC_INS_XMULXHI)
+		{
+			auto* i128 = irb.getIntNTy(128);
+			auto* fn = llvm::Intrinsic::getOrInsertDeclaration(
+					_module, llvm::Intrinsic::clmul, {i128});
+			auto* prod = irb.CreateCall(
+					fn, {irb.CreateZExt(a, i128), irb.CreateZExt(b, i128)});
+			result = irb.CreateTrunc(
+					irb.CreateLShr(prod, llvm::ConstantInt::get(i128, 64)), i64);
+		}
+		else
+		{
+			auto* fn = llvm::Intrinsic::getOrInsertDeclaration(
+					_module, llvm::Intrinsic::clmul, {i64});
+			result = irb.CreateCall(fn, {a, b});
+		}
+		result = generateTypeConversion(irb, result, op0->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	}
+	else if (i->id == SPARC_INS_MULX)
 	{
 		result = irb.CreateMul(op0, op1);
 	}
@@ -1695,6 +1799,67 @@ void Capstone2LlvmIrTranslatorSparc_impl::translateMul(
 	{
 		storeIcc(result, op0, op1, /*isSub=*/false, irb);
 	}
+}
+
+void Capstone2LlvmIrTranslatorSparc_impl::translateMulscc(
+		cs_insn* i,
+		cs_sparc* si,
+		llvm::IRBuilder<>& irb)
+{
+	// V8 multiply-step (QEMU gen_op_mulscc / SPARC V8 B.20):
+	//   addend = Y[0] ? rs2 : 0
+	//   Y      = rs1[0] || Y[31:1]
+	//   lhs    = (N xor V) || rs1[31:1]
+	//   rd     = lhs + addend
+	//   ICC    from that 32-bit add
+	// Y and ICC are existing LLVM globals; this is a 33-bit signed step
+	// (incoming sign in the high bit) followed by a 64-bit (rd:Y) right shift.
+	if (si->op_count < 2)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, si, irb);
+		return;
+	}
+
+	std::tie(op0, op1) = loadOpRs1Rs2(si, irb);
+	auto* i32 = irb.getInt32Ty();
+	auto* rs1 = irb.CreateZExtOrTrunc(op0, i32);
+	auto* rs2 = irb.CreateZExtOrTrunc(op1, i32);
+	auto* one = llvm::ConstantInt::get(i32, 1);
+	auto* thirtyOne = llvm::ConstantInt::get(i32, 31);
+
+	auto* y = irb.CreateZExtOrTrunc(loadRegister(SPARC_REG_Y, irb), i32);
+	auto* y0 = irb.CreateICmpNE(irb.CreateAnd(y, one), llvm::ConstantInt::get(i32, 0));
+	auto* addend = irb.CreateSelect(y0, rs2, llvm::ConstantInt::get(i32, 0));
+
+	auto* newY = irb.CreateOr(
+			irb.CreateShl(irb.CreateAnd(rs1, one), thirtyOne),
+			irb.CreateLShr(y, one));
+	storeRegister(SPARC_REG_Y, newY, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+
+	auto* icc = irb.CreateZExtOrTrunc(loadRegister(SPARC_REG_ICC, irb), i32);
+	auto bit = [&](unsigned b)
+	{
+		auto* sh = irb.CreateLShr(icc, llvm::ConstantInt::get(i32, b));
+		return irb.CreateAnd(sh, one);
+	};
+	auto* nv = irb.CreateXor(bit(kIccN), bit(kIccV));
+	auto* lhs = irb.CreateOr(
+			irb.CreateShl(nv, thirtyOne),
+			irb.CreateLShr(rs1, one));
+	auto* sum = irb.CreateAdd(lhs, addend);
+	auto* result = generateTypeConversion(
+			irb, sum, op0->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
+
+	if (auto* d = destOperand(si))
+	{
+		storeOp(*d, result, irb);
+	}
+	else if (si->op_count >= 1 && si->operands[0].type == SPARC_OP_REG)
+	{
+		storeOp(si->operands[0], result, irb);
+	}
+	storeIcc(sum, lhs, addend, /*isSub=*/false, irb);
 }
 
 void Capstone2LlvmIrTranslatorSparc_impl::translateDiv(
@@ -1810,18 +1975,30 @@ void Capstone2LlvmIrTranslatorSparc_impl::translateFpArith(
 	switch (i->id)
 	{
 		case SPARC_INS_FADDS:
-		case SPARC_INS_FADDD: r = irb.CreateFAdd(op0, op1); break;
+		case SPARC_INS_FADDD:
+		case SPARC_INS_FADDQ: r = irb.CreateFAdd(op0, op1); break;
 		case SPARC_INS_FSUBS:
-		case SPARC_INS_FSUBD: r = irb.CreateFSub(op0, op1); break;
+		case SPARC_INS_FSUBD:
+		case SPARC_INS_FSUBQ: r = irb.CreateFSub(op0, op1); break;
 		case SPARC_INS_FMULS:
-		case SPARC_INS_FMULD: r = irb.CreateFMul(op0, op1); break;
+		case SPARC_INS_FMULD:
+		case SPARC_INS_FMULQ: r = irb.CreateFMul(op0, op1); break;
 		case SPARC_INS_FSMULD:
 			op0 = irb.CreateFPExt(op0, irb.getDoubleTy());
 			op1 = irb.CreateFPExt(op1, irb.getDoubleTy());
 			r = irb.CreateFMul(op0, op1);
 			break;
+		case SPARC_INS_FDMULQ:
+		{
+			auto* f128 = llvm::Type::getFP128Ty(_module->getContext());
+			op0 = irb.CreateFPExt(op0, f128);
+			op1 = irb.CreateFPExt(op1, f128);
+			r = irb.CreateFMul(op0, op1);
+			break;
+		}
 		case SPARC_INS_FDIVS:
-		case SPARC_INS_FDIVD: r = irb.CreateFDiv(op0, op1); break;
+		case SPARC_INS_FDIVD:
+		case SPARC_INS_FDIVQ: r = irb.CreateFDiv(op0, op1); break;
 		default:
 			throw GenericError("Unhandled insn ID in translateFpArith().");
 	}
@@ -1893,14 +2070,17 @@ void Capstone2LlvmIrTranslatorSparc_impl::translateFpUnary(
 	{
 		case SPARC_INS_FMOVS:
 		case SPARC_INS_FMOVD:
+		case SPARC_INS_FMOVQ:
 			r = op0;
 			break;
 		case SPARC_INS_FNEGS:
 		case SPARC_INS_FNEGD:
+		case SPARC_INS_FNEGQ:
 			r = irb.CreateFNeg(op0);
 			break;
 		case SPARC_INS_FABSS:
 		case SPARC_INS_FABSD:
+		case SPARC_INS_FABSQ:
 		{
 			auto* f = llvm::Intrinsic::getOrInsertDeclaration(
 					_module, llvm::Intrinsic::fabs, {op0->getType()});
@@ -1909,6 +2089,7 @@ void Capstone2LlvmIrTranslatorSparc_impl::translateFpUnary(
 		}
 		case SPARC_INS_FSQRTS:
 		case SPARC_INS_FSQRTD:
+		case SPARC_INS_FSQRTQ:
 		{
 			auto* f = llvm::Intrinsic::getOrInsertDeclaration(
 					_module, llvm::Intrinsic::sqrt, {op0->getType()});
@@ -1927,6 +2108,12 @@ void Capstone2LlvmIrTranslatorSparc_impl::translateFpUnary(
 			r = irb.CreateSIToFP(bits, irb.getDoubleTy());
 			break;
 		}
+		case SPARC_INS_FITOQ:
+		{
+			auto* bits = irb.CreateBitCast(op0, irb.getInt32Ty());
+			r = irb.CreateSIToFP(bits, llvm::Type::getFP128Ty(_module->getContext()));
+			break;
+		}
 		case SPARC_INS_FSTOI:
 		{
 			auto* si32 = irb.CreateFPToSI(op0, irb.getInt32Ty());
@@ -1934,6 +2121,12 @@ void Capstone2LlvmIrTranslatorSparc_impl::translateFpUnary(
 			break;
 		}
 		case SPARC_INS_FDTOI:
+		{
+			auto* si32 = irb.CreateFPToSI(op0, irb.getInt32Ty());
+			r = irb.CreateBitCast(si32, irb.getFloatTy());
+			break;
+		}
+		case SPARC_INS_FQTOI:
 		{
 			auto* si32 = irb.CreateFPToSI(op0, irb.getInt32Ty());
 			r = irb.CreateBitCast(si32, irb.getFloatTy());
@@ -1951,6 +2144,12 @@ void Capstone2LlvmIrTranslatorSparc_impl::translateFpUnary(
 			r = irb.CreateBitCast(si64, irb.getDoubleTy());
 			break;
 		}
+		case SPARC_INS_FQTOX:
+		{
+			auto* si64 = irb.CreateFPToSI(op0, irb.getInt64Ty());
+			r = irb.CreateBitCast(si64, irb.getDoubleTy());
+			break;
+		}
 		case SPARC_INS_FXTOS:
 		{
 			auto* bits = visIntegerBits(op0, 64, irb);
@@ -1963,11 +2162,29 @@ void Capstone2LlvmIrTranslatorSparc_impl::translateFpUnary(
 			r = irb.CreateSIToFP(bits, irb.getDoubleTy());
 			break;
 		}
+		case SPARC_INS_FXTOQ:
+		{
+			auto* bits = visIntegerBits(op0, 64, irb);
+			r = irb.CreateSIToFP(bits, llvm::Type::getFP128Ty(_module->getContext()));
+			break;
+		}
 		case SPARC_INS_FSTOD:
 			r = irb.CreateFPExt(op0, irb.getDoubleTy());
 			break;
+		case SPARC_INS_FSTOQ:
+			r = irb.CreateFPExt(op0, llvm::Type::getFP128Ty(_module->getContext()));
+			break;
+		case SPARC_INS_FDTOQ:
+			r = irb.CreateFPExt(op0, llvm::Type::getFP128Ty(_module->getContext()));
+			break;
 		case SPARC_INS_FDTOS:
 			r = irb.CreateFPTrunc(op0, irb.getFloatTy());
+			break;
+		case SPARC_INS_FQTOS:
+			r = irb.CreateFPTrunc(op0, irb.getFloatTy());
+			break;
+		case SPARC_INS_FQTOD:
+			r = irb.CreateFPTrunc(op0, irb.getDoubleTy());
 			break;
 		default:
 			throw GenericError("Unhandled insn ID in translateFpUnary().");

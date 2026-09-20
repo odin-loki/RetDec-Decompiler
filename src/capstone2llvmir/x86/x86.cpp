@@ -2383,6 +2383,60 @@ void Capstone2LlvmIrTranslatorX86_impl::translateBls(cs_insn* i, cs_x86* xi, llv
 }
 
 /**
+ * AMD TBM (BMI cousins). dest = f(src); flags like ANDN: ZF/SF from the
+ * result, CF and OF cleared.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateTbm(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	op1 = loadOpBinaryOp1(xi, irb);
+	auto* ty = llvm::cast<llvm::IntegerType>(op1->getType());
+	auto* one = llvm::ConstantInt::get(ty, 1);
+
+	llvm::Value* res = nullptr;
+	switch (i->id)
+	{
+	case X86_INS_BLCFILL:
+		res = irb.CreateAnd(op1, irb.CreateAdd(op1, one));
+		break;
+	case X86_INS_BLCI:
+		res = irb.CreateOr(op1, irb.CreateNot(irb.CreateAdd(op1, one)));
+		break;
+	case X86_INS_BLCIC:
+		res = irb.CreateAnd(irb.CreateNot(op1), irb.CreateAdd(op1, one));
+		break;
+	case X86_INS_BLCMSK:
+		res = irb.CreateXor(op1, irb.CreateAdd(op1, one));
+		break;
+	case X86_INS_BLCS:
+		res = irb.CreateOr(op1, irb.CreateAdd(op1, one));
+		break;
+	case X86_INS_BLSFILL:
+		res = irb.CreateOr(op1, irb.CreateSub(op1, one));
+		break;
+	case X86_INS_BLSIC:
+		res = irb.CreateOr(irb.CreateNot(op1), irb.CreateSub(op1, one));
+		break;
+	case X86_INS_T1MSKC:
+		res = irb.CreateOr(irb.CreateNot(op1), irb.CreateAdd(op1, one));
+		break;
+	case X86_INS_TZMSK:
+		res = irb.CreateAnd(irb.CreateNot(op1), irb.CreateSub(op1, one));
+		break;
+	default: throw GenericError("translateTbm(): unhandled instruction id");
+	}
+
+	storeRegisters(
+		irb,
+		{{X86_REG_CF, irb.getInt1(false)},
+		 {X86_REG_OF, irb.getInt1(false)},
+		 {X86_REG_ZF, generateZeroFlag(res, irb)},
+		 {X86_REG_SF, generateSignFlag(res, irb)}});
+	storeOp(xi->operands[0], res, irb);
+}
+
+/**
  * X86_INS_BEXTR — extract `len` bits starting at bit `start`.
  *
  *     start = ctrl[7:0], len = ctrl[15:8]
@@ -5198,6 +5252,33 @@ void Capstone2LlvmIrTranslatorX86_impl::translateScanString(cs_insn* i, cs_x86* 
  */
 void Capstone2LlvmIrTranslatorX86_impl::translateCompareString(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
 {
+	// Capstone uses X86_INS_CMPSD for both the string compare `cmpsd` and
+	// the SSE scalar-double compare `cmpsd xmm, xmm/m64, imm`. The string
+	// form is two memory operands; any XMM/YMM/ZMM operand or an immediate
+	// predicate is the FP compare.
+	if (i->id == X86_INS_CMPSD)
+	{
+		bool vector = false;
+		for (unsigned k = 0; k < xi->op_count; ++k)
+		{
+			auto& op = xi->operands[k];
+			if (op.type == X86_OP_IMM
+				|| (op.type == X86_OP_REG
+					&& ((op.reg >= X86_REG_XMM0 && op.reg <= X86_REG_XMM31)
+						|| (op.reg >= X86_REG_YMM0 && op.reg <= X86_REG_YMM31)
+						|| (op.reg >= X86_REG_ZMM0 && op.reg <= X86_REG_ZMM31))))
+			{
+				vector = true;
+				break;
+			}
+		}
+		if (vector)
+		{
+			translateSseCmpP(i, xi, irb);
+			return;
+		}
+	}
+
 	EXPECT_IS_BINARY(i, xi, irb);
 
 	// TODO: https://x86.puri.sm/html/file_module_x86_id_39.html

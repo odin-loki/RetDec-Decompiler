@@ -58,6 +58,12 @@ class Capstone2LlvmIrTranslatorRiscv_impl :
 //
 	protected:
 		bool isXlen64() const;
+		bool isRvvReg(uint32_t r) const;
+		llvm::Type* rvvRegType();
+		llvm::Type* rvvMemVecType(unsigned elemBits);
+		llvm::GlobalVariable* ensureRvvRegister(uint32_t r);
+		llvm::Value* splatToRvv(llvm::Value* s, llvm::IRBuilder<>& irb);
+		llvm::Value* rvvMemAddr(cs_riscv_op& op, llvm::IRBuilder<>& irb);
 		llvm::Value* getCurrentPc(cs_insn* i);
 		llvm::Value* pcRelativeTarget(cs_insn* i, llvm::Value* offset, llvm::IRBuilder<>& irb);
 		llvm::Value* maskShiftAmount(llvm::IRBuilder<>& irb, llvm::Value* val, llvm::Value* amount);
@@ -190,6 +196,42 @@ class Capstone2LlvmIrTranslatorRiscv_impl :
 		void translateBrev8(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateSextZext(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translatePack(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateClmul(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVsetvli(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		llvm::Type* rvvFpType();
+		llvm::Value* asRvvFp(llvm::Value* v, llvm::IRBuilder<>& irb);
+		llvm::Value* fromRvvFp(llvm::Value* v, llvm::IRBuilder<>& irb);
+		llvm::Value* splatToRvvFp(llvm::Value* s, llvm::IRBuilder<>& irb);
+		void translateVarith(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVload(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVstore(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVmv(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVfarith(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVfma(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVcmp(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVslide(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVwiden(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVnarrow(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVrgather(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVmask(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVmerge(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVcompress(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVslide1(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVext(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVfcvt(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVstrided(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVindexed(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVred(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVcrypto(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVid(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVmvnr(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVadc(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVseg(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVmaskop(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVmvscalar(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVfwiden(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateZip(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateXperm(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 };
 
 } // namespace capstone2llvmir

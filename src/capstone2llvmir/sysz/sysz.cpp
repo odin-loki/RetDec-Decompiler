@@ -10,6 +10,8 @@
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Intrinsics.h>
 
+#include <string>
+
 #include "capstone2llvmir/sysz/sysz_impl.h"
 
 namespace retdec {
@@ -3545,6 +3547,50 @@ void Capstone2LlvmIrTranslatorSysz_impl::translateVfee(
 		}
 		storeRegister(SYSZ_REG_CC, cc, irb);
 	}
+}
+
+/**
+ * SYSTEMZ_INS_KM / KMA / KMAC / KMC / KMCTR / KMF / KMO / KIMD / KLMD /
+ * KDSA / PCC / PCKMO — CPACF (MSA) AES/SHA analogues of x86 AES-NI.
+ *
+ * LLVM 23.1.0 has no llvm.s390.km* / kimd / pcc (IntrinsicsSystemZ.td /
+ * IntrinsicsS390.h). Named helpers `__sysz_<mnemonic>` take GR0 (function
+ * code), GR1 (parameter-block address), and the Capstone register operands
+ * (R*Q even-odd pairs folded to the even GPR).
+ */
+void Capstone2LlvmIrTranslatorSysz_impl::translateCpacf(
+		cs_insn* i,
+		cs_sysz* si,
+		llvm::IRBuilder<>& irb)
+{
+	auto* i64 = irb.getInt64Ty();
+	llvm::SmallVector<llvm::Value*, 8> args;
+	llvm::SmallVector<llvm::Type*, 8> tys;
+	auto push = [&](llvm::Value* v) {
+		args.push_back(v);
+		tys.push_back(v->getType());
+	};
+	push(loadRegister(SYSZ_REG_R0D, irb));
+	push(loadRegister(SYSZ_REG_R1D, irb));
+	for (unsigned o = 0; o < si->op_count; ++o)
+	{
+		if (si->operands[o].type != SYSZ_OP_REG)
+		{
+			throwUnexpectedOperands(i);
+			translatePseudoAsmGeneric(i, si, irb);
+			return;
+		}
+		llvm::Value* v = loadRegister(gpr64(gprIndex(si->operands[o].reg)), irb);
+		if (v->getType() != i64)
+		{
+			v = irb.CreateZExtOrTrunc(v, i64);
+		}
+		push(v);
+	}
+
+	std::string name = std::string("__sysz_") + i->mnemonic;
+	auto* fn = getPseudoAsmFunction(i, irb.getVoidTy(), tys, name);
+	irb.CreateCall(fn, args);
 }
 
 } // namespace capstone2llvmir
