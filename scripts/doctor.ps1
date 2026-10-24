@@ -169,7 +169,7 @@ foreach ($f in @("LICENSE", "LICENSE-AGPL", "LICENSE-COMMERCIAL", "NOTICE")) {
     if (Test-Path -LiteralPath $p) {
         Write-Pass "$f present"
     } else {
-        Write-Fail "missing $f — run install-licence-files.sh"
+        Write-Fail "missing $f — run scripts/install-licence-files.sh"
     }
 }
 

@@ -118,7 +118,7 @@ for f in LICENSE LICENSE-AGPL LICENSE-COMMERCIAL NOTICE; do
     if [ -f "${REPO_ROOT}/${f}" ]; then
         pass_check "${f} present"
     else
-        fail_check "missing ${f} — run install-licence-files.sh"
+        fail_check "missing ${f} — run scripts/install-licence-files.sh"
     fi
 done
 

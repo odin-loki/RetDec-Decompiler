@@ -29,7 +29,8 @@ Paths are relative to the **repository root**. See [docs/BUILD_REFERENCE.md](../
 | `Test-RetdecWindows.ps1` | Smoke tests against a dist folder |
 | `run_gui_with_procdump.ps1` / `windows_analyze_crash_dump.ps1` | Crash capture |
 | `profile_all.bat` | Baseline/verbose decompile profiling; defaults to `dist\windows`, falls back to `build-win\win-runtime` (`DECOMPILER_DIR` overrides) |
-| `compile/*.cmd` | MSVC incremental capstone2llvmir compile/run helpers ([compile/README.md](compile/README.md)); not CI |
+| `compile/*.{cmd,bat}` | MSVC incremental capstone2llvmir compile/run helpers only ([compile/README.md](compile/README.md)); not CI |
+| `install-licence-files.sh` | Split monolithic `LICENSE` → `LICENSE-AGPL`, `LICENSE-COMMERCIAL`, `NOTICE` |
 | `superbuild-build-all-windows.ps1` | Superbuild (MSVC): configure+build `superbuild-debug` and `superbuild-release` → `build\windows\<preset>\` |
 
 ## Linux / WSL

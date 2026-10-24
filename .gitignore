@@ -157,7 +157,13 @@ llama.zip
 _license_preamble.txt
 _license_section7.txt
 LICENSE.full
-scripts/compile/run-linux-release-build.cmd
+scripts/run-linux-release-build.cmd
+
+# No loose scripts at repo root (use scripts/).
+/*.bat
+/*.cmd
+/*.sh
+/*.ps1
 
 # Editor and merge leftovers -- never belong in the tree.
 *.bak
@@ -174,8 +180,18 @@ scripts/compile/run-linux-release-build.cmd
 /leak-*
 /slow-unit-*
 
-# Repo-root MSVC/link probe and dump scratch (not tracked sources).
+# Repo-root MSVC/link probe, scratch sources, and stray compile outputs.
 /*.obj
+/*.o
+/prog
+/testfile.cpp
+/other.cpp
+/debug_info.o
+/dwarf_extractor.o
+/libmain.o
+/other.o
+/pdb_extractor.o
+/testfile.o
 /dump_*.exe
 /dump_*.cpp
 /dump_*.cmd

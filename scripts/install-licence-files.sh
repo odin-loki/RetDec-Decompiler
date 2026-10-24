@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # install-licence-files.sh — Split monolithic LICENSE into condensed set.
-# Usage: bash install-licence-files.sh [REPO_ROOT]
+# Usage: bash scripts/install-licence-files.sh [REPO_ROOT]
 set -euo pipefail
 
-REPO="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+REPO="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 OLD="${REPO}/LICENSE"
 BACKUP="${REPO}/LICENSE.full"
 
