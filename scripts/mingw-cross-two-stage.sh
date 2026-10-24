@@ -5,7 +5,7 @@
 # Full maintainer notes: **docs/MINGW_CROSS_DEEP_DIVE.md**
 #
 # Prerequisites (Debian/Ubuntu examples):
-#   sudo apt-get install cmake ninja-build python3 g++ g++-mingw-w64-x86-64 perl make
+#   sudo apt-get install cmake ninja-build python3 g++ g++-mingw-w64-x86-64
 #
 # Usage:
 #   ./scripts/mingw-cross-two-stage.sh

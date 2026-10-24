@@ -1,21 +1,8 @@
-# Bundled OpenSSL (static): official tarball under ${CMAKE_BINARY_DIR}/external/openssl-ep/src,
-# install prefix ${EP_PREFIX}/openssl-install.
+# Bundled OpenSSL (static libcrypto): official tarball + Fsu0413/openssl-externalCMake.
+# Built with CMake only — no Perl Configure / nmake / GNU make for OpenSSL itself.
 #
-# Supported platforms:
-#   Linux (native)                     → Configure linux-x86_64 + make
-#   Windows via MinGW cross (Linux→Win) → Configure mingw64 + make
-#   Windows via MinGW native (MSYS2)    → Configure mingw64 + make
-#   Windows via MSVC (native)           → Configure VC-WIN64A + nmake
-#
-# MSVC path requires: Perl, NASM (optional — no-asm disables it), and a
-# Developer Command Prompt environment (cl.exe on PATH) — satisfied
-# automatically when CMake is invoked from the VS Developer PowerShell or
-# via cmake --build with the Visual Studio generator, or when Ninja is used
-# from the Developer Command Prompt.
-
-if(NOT PERL_EXECUTABLE)
-	find_program(PERL_EXECUTABLE NAMES perl perl.exe REQUIRED)
-endif()
+# Sources: ${CMAKE_BINARY_DIR}/external/openssl-ep/src/bundle
+# Install: ${EP_PREFIX}/openssl-install
 
 include(ExternalProject)
 include(ProcessorCount)
@@ -24,161 +11,104 @@ if(NOT CPUS GREATER 0)
 	set(CPUS 4)
 endif()
 
-set(RETDEC_OPENSSL_VERSION "3.5.8")
-set(RETDEC_OSSL_TARBALL "openssl-${RETDEC_OPENSSL_VERSION}.tar.gz")
-set(RETDEC_OSSL_URL "https://github.com/openssl/openssl/releases/download/openssl-${RETDEC_OPENSSL_VERSION}/${RETDEC_OSSL_TARBALL}")
-# Official GitHub release SHA256 for OpenSSL 3.5.8
-# (openssl-3.5.8.tar.gz.sha256; verified against the downloaded tarball).
-set(RETDEC_OSSL_SHA256 "a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2")
+if(NOT DEFINED OPENSSL_VERSION OR NOT OPENSSL_URL OR NOT OPENSSL_ARCHIVE_SHA256
+	OR NOT OPENSSL_EXTERNAL_CMAKE_URL OR NOT OPENSSL_EXTERNAL_CMAKE_ARCHIVE_SHA256)
+	message(FATAL_ERROR
+		"OpenSSL dependency pins missing — include cmake/deps.cmake before deps/openssl.")
+endif()
 
 set(RETDEC_OPENSSL_INSTALL_DIR "${EP_PREFIX}/openssl-install")
-# CMake 3.24+ may reject INTERFACE_INCLUDE_DIRECTORIES that do not exist yet;
-# ExternalProject populates this directory during the build.
 file(MAKE_DIRECTORY "${RETDEC_OPENSSL_INSTALL_DIR}/include")
 file(TO_CMAKE_PATH "${RETDEC_OPENSSL_INSTALL_DIR}" _ossl_inst)
 string(REPLACE "\\" "/" RETDEC_OSSL_PREFIX "${_ossl_inst}")
 
 set(_RETDEC_OSSL_EP_PREFIX "${CMAKE_BINARY_DIR}/external/openssl-ep")
+set(_RETDEC_OSSL_BUNDLE_DIR "${_RETDEC_OSSL_EP_PREFIX}/src/bundle")
+set(_RETDEC_OSSL_BUILD_DIR "${_RETDEC_OSSL_EP_PREFIX}/build")
 
-# ── MSVC native Windows build ──────────────────────────────────────────────
-if(MSVC AND CMAKE_SYSTEM_NAME STREQUAL "Windows" AND NOT CMAKE_CROSSCOMPILING)
-	# Need nmake (comes with Visual Studio / Build Tools).
-	find_program(RETDEC_NMAKE_EXECUTABLE NAMES nmake REQUIRED
-		DOC "nmake for OpenSSL VC-WIN64A build — must be on PATH (Developer Command Prompt)")
-
-	# OpenSSL VC-WIN64A uses .lib not .a; no-asm skips NASM requirement.
+if(MSVC)
 	set(_RETDEC_OSSL_CRYPTO_LIB "${RETDEC_OPENSSL_INSTALL_DIR}/lib/libcrypto.lib")
-
-	ExternalProject_Add(retdec-openssl
-		PREFIX "${_RETDEC_OSSL_EP_PREFIX}"
-		URL "${RETDEC_OSSL_URL}"
-		URL_HASH "SHA256=${RETDEC_OSSL_SHA256}"
-		DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-		# VC-WIN64A: 64-bit MSVC target; no-shared = static libs only;
-		# no-tests = skip test build; no-asm = no NASM dependency.
-		CONFIGURE_COMMAND
-			${CMAKE_COMMAND} -E chdir <SOURCE_DIR>
-			${PERL_EXECUTABLE} Configure VC-WIN64A
-				--prefix=${RETDEC_OSSL_PREFIX}
-				--openssldir=SSL
-				--libdir=lib
-				no-shared
-				no-tests
-				no-asm
-		BUILD_IN_SOURCE TRUE
-		# /FS lets parallel cl.exe share one PDB (needed when top-level MSBuild uses many /p jobs).
-		BUILD_COMMAND
-			${CMAKE_COMMAND} -E chdir <SOURCE_DIR>
-				${CMAKE_COMMAND} -E env "CL=/FS" ${RETDEC_NMAKE_EXECUTABLE}
-		INSTALL_COMMAND
-			${CMAKE_COMMAND} -E chdir <SOURCE_DIR>
-				${CMAKE_COMMAND} -E env "CL=/FS" ${RETDEC_NMAKE_EXECUTABLE} install_sw
-		# Tell Ninja about the output file so it can track the dependency
-		# without requiring a separate 'ninja retdec-openssl' pre-step.
-		BUILD_BYPRODUCTS "${_RETDEC_OSSL_CRYPTO_LIB}"
-	)
-
-# ── MinGW / cross to Windows ──────────────────────────────────────────────
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-	# Native MinGW (e.g. MSYS2) or Linux→Windows cross with MinGW-w64.
-	find_program(RETDEC_GNUMAKE_EXECUTABLE NAMES make mingw32-make REQUIRED)
-
-	# For MinGW cross-compilation: use ONLY --cross-compile-prefix.
-	# OpenSSL's Configure prepends CROSS_COMPILE to ALL tool variables
-	# (CC, AR, RANLIB…). Mixing --cross-compile-prefix with explicit CC/AR
-	# doubles the prefix (e.g. x86_64-w64-mingw32-x86_64-w64-mingw32-ar).
-	# So we pass NO env vars when cross-compiling.
-	set(_OSSL_CROSS "")
-	set(_OSSL_ENV_VARS "CC=${CMAKE_C_COMPILER}" "CXX=${CMAKE_CXX_COMPILER}")
-	if(CMAKE_AR)
-		list(APPEND _OSSL_ENV_VARS "AR=${CMAKE_AR}")
-	endif()
-	if(CMAKE_RANLIB)
-		list(APPEND _OSSL_ENV_VARS "RANLIB=${CMAKE_RANLIB}")
-	endif()
-	if(CMAKE_CROSSCOMPILING)
-		if(CMAKE_C_COMPILER MATCHES "x86_64-w64-mingw32")
-			set(_OSSL_CROSS "--cross-compile-prefix=x86_64-w64-mingw32-")
-		elseif(CMAKE_C_COMPILER MATCHES "i686-w64-mingw32")
-			set(_OSSL_CROSS "--cross-compile-prefix=i686-w64-mingw32-")
-		else()
-			set(_OSSL_CROSS "--cross-compile-prefix=x86_64-w64-mingw32-")
-		endif()
-		# No environment overrides — OpenSSL derives all tools from the
-		# cross-compile-prefix.
-		set(_OSSL_CONFIGURE_ENV "")
-	else()
-		set(_OSSL_CONFIGURE_ENV ${CMAKE_COMMAND} -E env ${_OSSL_ENV_VARS} --)
-	endif()
-
-	set(_RETDEC_OSSL_CRYPTO_LIB "${RETDEC_OPENSSL_INSTALL_DIR}/lib/libcrypto.a")
-
-	ExternalProject_Add(retdec-openssl
-		PREFIX "${_RETDEC_OSSL_EP_PREFIX}"
-		URL "${RETDEC_OSSL_URL}"
-		URL_HASH "SHA256=${RETDEC_OSSL_SHA256}"
-		DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-		CONFIGURE_COMMAND
-			${_OSSL_CONFIGURE_ENV}
-			${CMAKE_COMMAND} -E chdir <SOURCE_DIR>
-			${PERL_EXECUTABLE} Configure mingw64 ${_OSSL_CROSS}
-				--prefix=${RETDEC_OSSL_PREFIX}
-				--openssldir=SSL
-				--libdir=lib
-				no-shared
-				no-tests
-				no-asm
-		BUILD_IN_SOURCE TRUE
-		BUILD_COMMAND
-			${CMAKE_COMMAND} -E chdir <SOURCE_DIR>
-			${RETDEC_GNUMAKE_EXECUTABLE} -j${CPUS}
-		INSTALL_COMMAND
-			${CMAKE_COMMAND} -E chdir <SOURCE_DIR>
-			${RETDEC_GNUMAKE_EXECUTABLE} install_sw
-		BUILD_BYPRODUCTS "${_RETDEC_OSSL_CRYPTO_LIB}"
-	)
-
-# ── Linux native ────────────────────────────────────────────────────────────
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT CMAKE_CROSSCOMPILING)
-	find_program(RETDEC_GNUMAKE_EXECUTABLE NAMES make REQUIRED)
-	set(_RETDEC_OSSL_TARGET "linux-x86_64")
-	if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
-		set(_RETDEC_OSSL_TARGET "linux-generic64")
-	endif()
-
-	set(_RETDEC_OSSL_CRYPTO_LIB "${RETDEC_OPENSSL_INSTALL_DIR}/lib/libcrypto.a")
-
-	ExternalProject_Add(retdec-openssl
-		PREFIX "${_RETDEC_OSSL_EP_PREFIX}"
-		URL "${RETDEC_OSSL_URL}"
-		URL_HASH "SHA256=${RETDEC_OSSL_SHA256}"
-		DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-		CONFIGURE_COMMAND
-			${CMAKE_COMMAND} -E chdir <SOURCE_DIR>
-			${PERL_EXECUTABLE} Configure ${_RETDEC_OSSL_TARGET}
-				--prefix=${RETDEC_OSSL_PREFIX}
-				--openssldir=SSL
-				no-shared
-				no-tests
-		BUILD_IN_SOURCE TRUE
-		BUILD_COMMAND
-			${CMAKE_COMMAND} -E chdir <SOURCE_DIR>
-			${RETDEC_GNUMAKE_EXECUTABLE} -j${CPUS}
-		INSTALL_COMMAND
-			${CMAKE_COMMAND} -E chdir <SOURCE_DIR>
-			${RETDEC_GNUMAKE_EXECUTABLE} install_sw
-		BUILD_BYPRODUCTS "${_RETDEC_OSSL_CRYPTO_LIB}"
-	)
-
 else()
-	message(FATAL_ERROR
-		"RETDEC_BUNDLED_OPENSSL: no build rule for this platform "
-		"(CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}, "
-		"CMAKE_CROSSCOMPILING=${CMAKE_CROSSCOMPILING}, "
-		"MSVC=${MSVC}). "
-		"Set RETDEC_BUNDLED_OPENSSL=OFF and supply OpenSSL yourself, "
-		"or use a supported toolchain (MSVC, MinGW-w64, Linux GCC/Clang).")
+	set(_RETDEC_OSSL_CRYPTO_LIB "${RETDEC_OPENSSL_INSTALL_DIR}/lib/libcrypto.a")
 endif()
+
+set(_RETDEC_OSSL_CMAKE_CACHE_ARGS
+	-DCMAKE_INSTALL_PREFIX:PATH=${RETDEC_OSSL_PREFIX}
+	-DBUILD_SHARED_LIBS:BOOL=OFF
+	-DBUILD_TESTING:BOOL=OFF
+	-DOPENSSL_ASM:BOOL=OFF
+	-DOPENSSL_BUILD_DOCS:BOOL=OFF
+	-DOPENSSL_OPENSSLDIR:STRING=ssl
+)
+
+if(MSVC AND RETDEC_MSVC_STATIC_RUNTIME)
+	list(APPEND _RETDEC_OSSL_CMAKE_CACHE_ARGS
+		-DCMAKE_MSVC_RUNTIME_LIBRARY:STRING=MultiThreaded)
+endif()
+
+if(CMAKE_TOOLCHAIN_FILE)
+	list(APPEND _RETDEC_OSSL_CMAKE_CACHE_ARGS
+		-DCMAKE_TOOLCHAIN_FILE:FILEPATH=${CMAKE_TOOLCHAIN_FILE})
+endif()
+if(CMAKE_C_COMPILER)
+	list(APPEND _RETDEC_OSSL_CMAKE_CACHE_ARGS -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER})
+endif()
+if(CMAKE_CXX_COMPILER)
+	list(APPEND _RETDEC_OSSL_CMAKE_CACHE_ARGS -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER})
+endif()
+if(CMAKE_AR)
+	list(APPEND _RETDEC_OSSL_CMAKE_CACHE_ARGS -DCMAKE_AR:FILEPATH=${CMAKE_AR})
+endif()
+if(CMAKE_RANLIB)
+	list(APPEND _RETDEC_OSSL_CMAKE_CACHE_ARGS -DCMAKE_RANLIB:FILEPATH=${CMAKE_RANLIB})
+endif()
+
+# Prefer Ninja for the nested OpenSSL project (parallel, no nmake).
+set(_RETDEC_OSSL_EP_GENERATOR "Ninja")
+if(CMAKE_MAKE_PROGRAM AND EXISTS "${CMAKE_MAKE_PROGRAM}")
+	set(_RETDEC_OSSL_NINJA_EXECUTABLE "${CMAKE_MAKE_PROGRAM}")
+else()
+	find_program(_RETDEC_OSSL_NINJA_EXECUTABLE NAMES ninja ninja.exe)
+endif()
+if(_RETDEC_OSSL_NINJA_EXECUTABLE)
+	list(APPEND _RETDEC_OSSL_CMAKE_CACHE_ARGS
+		-DCMAKE_MAKE_PROGRAM:FILEPATH=${_RETDEC_OSSL_NINJA_EXECUTABLE})
+else()
+	set(_RETDEC_OSSL_EP_GENERATOR "${CMAKE_GENERATOR}")
+	if(CMAKE_GENERATOR_PLATFORM)
+		list(APPEND _RETDEC_OSSL_CMAKE_CACHE_ARGS
+			-A "${CMAKE_GENERATOR_PLATFORM}")
+	endif()
+endif()
+
+set(_RETDEC_OSSL_DOWNLOAD_ARGS
+	-DOPENSSL_URL=${OPENSSL_URL}
+	-DOPENSSL_ARCHIVE_SHA256=${OPENSSL_ARCHIVE_SHA256}
+	-DOPENSSL_EXTERNAL_CMAKE_URL=${OPENSSL_EXTERNAL_CMAKE_URL}
+	-DOPENSSL_EXTERNAL_CMAKE_ARCHIVE_SHA256=${OPENSSL_EXTERNAL_CMAKE_ARCHIVE_SHA256}
+	-DOPENSSL_VERSION=${OPENSSL_VERSION}
+	-DBUNDLE_DIR=${_RETDEC_OSSL_BUNDLE_DIR}
+)
+
+ExternalProject_Add(retdec-openssl
+	PREFIX "${_RETDEC_OSSL_EP_PREFIX}"
+	SOURCE_DIR "${_RETDEC_OSSL_BUNDLE_DIR}"
+	BINARY_DIR "${_RETDEC_OSSL_BUILD_DIR}"
+	DOWNLOAD_COMMAND
+		${CMAKE_COMMAND} ${_RETDEC_OSSL_DOWNLOAD_ARGS}
+		-P ${CMAKE_CURRENT_SOURCE_DIR}/assemble_openssl_cmake_bundle.cmake
+	UPDATE_COMMAND ""
+	CONFIGURE_COMMAND
+		${CMAKE_COMMAND}
+		-G ${_RETDEC_OSSL_EP_GENERATOR}
+		-S <SOURCE_DIR> -B <BINARY_DIR>
+		${_RETDEC_OSSL_CMAKE_CACHE_ARGS}
+	BUILD_COMMAND
+		${CMAKE_COMMAND} --build <BINARY_DIR> --parallel ${CPUS}
+	INSTALL_COMMAND
+		${CMAKE_COMMAND} --install <BINARY_DIR>
+	BUILD_BYPRODUCTS "${_RETDEC_OSSL_CRYPTO_LIB}"
+)
 
 add_library(OpenSSL::Crypto UNKNOWN IMPORTED GLOBAL)
 set_target_properties(OpenSSL::Crypto PROPERTIES
@@ -187,8 +117,6 @@ set_target_properties(OpenSSL::Crypto PROPERTIES
 	INTERFACE_INCLUDE_DIRECTORIES "${RETDEC_OPENSSL_INSTALL_DIR}/include"
 )
 if(WIN32)
-	# Static libcrypto pulls CAPI (crypt32) and sockets (ws2_32). fileformat
-	# already linked these privately; retdec-gui via retdec-neural did not.
 	if(MINGW)
 		set(_RETDEC_OSSL_WIN_LIBS crypt32 ws2_32)
 	else()
@@ -205,5 +133,5 @@ set(OPENSSL_SSL_LIBRARY "" CACHE FILEPATH "" FORCE)
 set(OPENSSL_LIBRARIES   "${_RETDEC_OSSL_CRYPTO_LIB}" CACHE STRING "" FORCE)
 
 message(STATUS
-	"RETDEC_BUNDLED_OPENSSL: sources under ${_RETDEC_OSSL_EP_PREFIX}/src, "
-	"install to ${RETDEC_OPENSSL_INSTALL_DIR}")
+	"RETDEC_BUNDLED_OPENSSL: CMake build (openssl-externalCMake), "
+	"sources ${_RETDEC_OSSL_BUNDLE_DIR}, install ${RETDEC_OPENSSL_INSTALL_DIR}")

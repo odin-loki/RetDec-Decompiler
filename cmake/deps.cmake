@@ -138,3 +138,24 @@ set(TREE_SITTER_ARCHIVE_SHA256
 option(RETDEC_SUPPORT_PKG_VERIFY_SHA256
 	"Verify SHA-256 of downloaded retdec-support archive (disable for custom mirrors/tarballs)"
 	ON)
+
+# OpenSSL — bundled via deps/openssl (Fsu0413/openssl-externalCMake + official tarball).
+# Bump OPENSSL_* together; external CMake branch must match the OpenSSL release series.
+set(OPENSSL_VERSION "3.5.8" CACHE STRING "Bundled OpenSSL version (official tarball + external CMake branch).")
+set(OPENSSL_URL
+	"https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_VERSION}/openssl-${OPENSSL_VERSION}.tar.gz"
+	CACHE STRING "URL of the official OpenSSL source tarball."
+)
+set(OPENSSL_ARCHIVE_SHA256
+	"a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2"
+	CACHE STRING "SHA-256 of OPENSSL_URL (openssl-3.5.8.tar.gz release asset)."
+)
+# Fsu0413/openssl-externalCMake branch 3.5 (Unlicense); Perl-free static libcrypto build.
+set(OPENSSL_EXTERNAL_CMAKE_URL
+	"https://github.com/Fsu0413/openssl-externalCMake/archive/81d86847a6074d9aabeb7ed76332fd9fccd4b583.zip"
+	CACHE STRING "URL of openssl-externalCMake archive (pinned commit on branch 3.5)."
+)
+set(OPENSSL_EXTERNAL_CMAKE_ARCHIVE_SHA256
+	"5936d5139a52ff4ce8cd9ee7d258adcddb8a6aad9dea581821ca4df4259d7ed0"
+	CACHE STRING "SHA-256 of OPENSSL_EXTERNAL_CMAKE_URL."
+)

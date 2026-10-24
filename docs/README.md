@@ -251,7 +251,7 @@ Outputs: `build\windows`, `install\windows`, staged portable tree under `dist\wi
 MSVC is **not** used on this path. Toolchains: `cmake/toolchains/windows-mingw-w64.cmake`. Full narrative: [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md).
 
 ```bash
-sudo apt install mingw-w64 g++-mingw-w64-x86-64 ninja-build perl make
+sudo apt install mingw-w64 g++-mingw-w64-x86-64 ninja-build
 bash scripts/wsl_configure_nosudo.sh
 cmake --build build/linux -j"$(nproc)"
 bash scripts/wsl_cross_configure.sh

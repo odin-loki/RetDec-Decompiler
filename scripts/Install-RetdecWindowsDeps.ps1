@@ -10,7 +10,6 @@
       - Qt 6 for Windows (MSVC 2019/2022 x64 build)
       - CMake 3.28+
       - Ninja build system
-      - Perl (Strawberry Perl — required for bundled OpenSSL configure)
       - Git
 
     After running this script, open a "Developer PowerShell for VS 2022"
@@ -111,22 +110,6 @@ Write-Check "Git" $hasGit "winget install --id Git.Git"
 if (-not $hasGit -and $hasWinget) {
     Write-Host "  Installing Git ..." -ForegroundColor Cyan
     winget install --id Git.Git --accept-package-agreements --accept-source-agreements
-}
-
-Write-Host ""
-
-# ── Perl (Strawberry) — required for bundled OpenSSL ─────────────────────
-Write-Host "--- Perl (Strawberry) ---" -ForegroundColor White
-$hasPerl = Test-Command "perl"
-if ($hasPerl) {
-    $perlVer = (perl --version 2>$null | Select-String "v\d+\.\d+\.\d+" | ForEach-Object { $_.Matches[0].Value })
-    Write-Check "Perl ($perlVer)" $true
-} else {
-    Write-Check "Perl" $false "winget install --id StrawberryPerl.StrawberryPerl"
-    if ($hasWinget) {
-        Write-Host "  Installing Strawberry Perl ..." -ForegroundColor Cyan
-        winget install --id StrawberryPerl.StrawberryPerl --accept-package-agreements --accept-source-agreements
-    }
 }
 
 Write-Host ""

@@ -31,7 +31,6 @@ This document is the **canonical guide** to configuring, compiling, installing, 
 | **Ninja** | any | Default generator in presets. |
 | **C++ compiler** | C++17 | MSVC 2019+ (Windows), GCC 11+ / Clang 14+ (Linux), Apple Clang (macOS). |
 | **Python 3** | 3.4+ | LLVM TableGen and scripts. Release packaging pins 3.12 (`support/install-share.py` / tarfile PEP 706). |
-| **Perl** | any | Bundled OpenSSL builds (Windows / MinGW). |
 | **Qt 6** | 6.4+ | Widgets, Core, Gui, Test — **required** for `full-linux-*` and `full-windows-*` (GUI). macOS CI uses Homebrew `qt@6`. |
 | **CUDA Toolkit** | 11.8+ (typical) | Optional and **opt-in** (`RETDEC_ENABLE_CUDA_ACCEL=OFF` by default, including full presets). The acceleration layer is experimental and not in the decompiler pipeline. |
 | **MinGW-w64** | Ubuntu packages | Only for Linux/WSL → Windows PE cross-compile. |
@@ -243,7 +242,7 @@ To customise components, use `-DRETDEC_ENABLE_*=ON/OFF` or `-DRETDEC_ENABLE_ALL=
 
 - **CUDA:** `RETDEC_ENABLE_CUDA_ACCEL` defaults **OFF** in full presets (`C-CUDA-PIPE` withdrawn). Pass `-DRETDEC_ENABLE_CUDA_ACCEL=ON` only for parked research builds. `windows_native_configure.ps1 -NoCuda` skips the NVCC probe.
 - **Qt6:** Full presets set `RETDEC_REQUIRE_QT6=ON`. Use `-AllowOptionalQt` on the Windows configure script or `-DRETDEC_REQUIRE_QT6=OFF` for CLI-only experiments.
-- **OpenSSL:** On Windows, `RETDEC_BUNDLED_OPENSSL` is typically ON (MSVC build). MinGW cross-compiles also use bundled OpenSSL with the MinGW toolchain.
+- **OpenSSL:** On Windows, `RETDEC_BUNDLED_OPENSSL` is typically ON (MSVC build via openssl-externalCMake + Ninja; no Perl). MinGW cross-compiles use the same CMake path with the MinGW toolchain file. Pins: `cmake/deps.cmake` (`OPENSSL_*`).
 
 ---
 
@@ -361,7 +360,7 @@ RETDEC_UPDATE_SNAPSHOTS=1 ./build/linux/tests/<suite>/retdec-*-tests
 | `retdec::ar-extractor` / similar not found | Partial `RETDEC_ENABLE_*` without dependencies | Use `full-*`, `RETDEC_ENABLE_ALL=ON`, or a recent `options.cmake` that ties `retdec-decompiler` deps. |
 | `llvm-tblgen` missing (MinGW cross) | No native Linux build | Run `wsl_configure_nosudo.sh` and build `build/linux` first; or set `RETDEC_LLVM_TABLEGEN`. |
 | Qt not found | Qt6 not installed or `Qt6_DIR` wrong | Install Qt MSVC x64; pass `-QtDir` to `windows_native_configure.ps1`. |
-| OpenSSL / nmake failures on Windows | Not in VS environment | Use Developer PowerShell or the provided configure script (vcvars). |
+| OpenSSL external project fails on Windows | `cl.exe` or Ninja missing | Developer PowerShell for VS 2022; `winget install Ninja-build.Ninja`. Inspect `build/windows/external/openssl-ep/build/`. |
 | CUDA not detected | `CUDA_PATH` / toolkit missing | Install CUDA; or disable `RETDEC_ENABLE_CUDA_ACCEL`. |
 | GitHub download fails during LLVM fetch | Network / HTTP2 | Retry build; clear `build/.../external/src/*-stamp/*-download` if needed. |
 | Manual ctest workflow fails | Heavy build / cache | Trigger [ctest-linux.yml](../.github/workflows/ctest-linux.yml), [ctest-macos.yml](../.github/workflows/ctest-macos.yml), or [ctest-windows.yml](../.github/workflows/ctest-windows.yml) from Actions; prefer local `ctest` for iteration. |

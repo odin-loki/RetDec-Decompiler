@@ -6,7 +6,7 @@
 #   ./scripts/doctor.sh
 #
 # Checks: CMake >= 3.26, fetch-large-files marker, Qt6 hint, git-lfs,
-#         python3, perl. On Windows Git Bash also reports NSIS/makensis.
+#         python3. On Windows Git Bash also reports NSIS/makensis.
 
 set -euo pipefail
 
@@ -187,13 +187,6 @@ if [[ -f "$baseline_ar" ]]; then
     pass_check "algorithm-recovery baseline present (results/baseline-algorithm-recovery.json)"
 else
     warn_check "missing results/baseline-algorithm-recovery.json"
-fi
-
-# ── perl ──────────────────────────────────────────────────────────────────────
-if command -v perl >/dev/null 2>&1; then
-    pass_check "perl $(perl -e 'print $^V' 2>/dev/null || perl --version 2>/dev/null | sed -n '2p')"
-else
-    fail_check "perl not on PATH - required for bundled OpenSSL configure"
 fi
 
 echo ""

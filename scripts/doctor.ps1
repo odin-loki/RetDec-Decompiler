@@ -5,7 +5,7 @@
 
 .DESCRIPTION
   Verifies CMake >= 3.26, fetch-large-files marker, Qt6 hint, NSIS/makensis,
-  EnVar NSIS plugin, git-lfs, python3, and perl. Prints a pass/fail summary.
+  EnVar NSIS plugin, git-lfs, and python3. Prints a pass/fail summary.
 
 .EXAMPLE
   .\scripts\doctor.ps1
@@ -204,16 +204,6 @@ if (Test-Path -LiteralPath $packaging) {
     } else {
         Write-Pass "no capstone2llvmirtool in packaging manifests"
     }
-}
-
-# ── perl ──────────────────────────────────────────────────────────────────────
-$perl = Get-Command perl -ErrorAction SilentlyContinue
-if ($perl) {
-    $perlVer = & perl -e 'print $^V' 2>$null
-    if (-not $perlVer) { $perlVer = (& perl --version 2>&1 | Select-Object -Skip 1 -First 1) }
-    Write-Pass "perl $perlVer"
-} else {
-    Write-Fail "perl not on PATH - required for bundled OpenSSL configure (Strawberry Perl)"
 }
 
 Write-Host ""

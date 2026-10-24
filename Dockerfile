@@ -23,7 +23,6 @@ RUN apt-get -y update && \
 	pkg-config \
 	m4 \
 	libtool \
-	perl \
 	make \
 	python-is-python3 \
 	&& rm -rf /var/lib/apt/lists/*

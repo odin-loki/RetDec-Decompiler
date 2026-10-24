@@ -24,9 +24,6 @@ jobs:
         with:
           arch: x64
 
-      - name: Install Perl
-        run: choco install strawberryperl -y --no-progress
-
       - uses: lukka/get-cmake@a89e43e22a96abafcd7a62db652a65ecd33052c9 # v4.4.4
         with:
           cmakeVersion: "3.31.6"
@@ -42,7 +39,6 @@ jobs:
       - name: Configure (core-debug-msvc, CPU-only)
         shell: pwsh
         run: |
-          $env:PATH = "C:\Strawberry\perl\bin;" + $env:PATH
           cmake --preset core-debug-msvc `
             -DRETDEC_ENABLE_CUDA_ACCEL=OFF `
             -DRETDEC_ENABLE_NEURAL=OFF
@@ -85,7 +81,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential ninja-build python3 perl gcc clang
+          sudo apt-get install -y build-essential ninja-build python3 gcc clang
 
       - uses: lukka/get-cmake@a89e43e22a96abafcd7a62db652a65ecd33052c9 # v4.4.4
         with:

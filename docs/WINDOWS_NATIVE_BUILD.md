@@ -35,8 +35,7 @@ This script checks for and installs (via `winget`) everything in the table below
 | **CUDA Toolkit** | 11.8 | **Optional.** Needed only if you pass `-DRETDEC_ENABLE_CUDA_ACCEL=ON`. Full presets leave that **OFF**. [developer.nvidia.com/cuda-downloads](https://developer.nvidia.com/cuda-downloads) |
 | **Qt 6 (MSVC x64)** | 6.4 | [qt.io/download-qt-installer](https://www.qt.io/download-qt-installer) — during install select: Qt 6.7.x > MSVC 2019 64-bit *or* MSVC 2022 64-bit |
 | **CMake** | **3.26+** | [cmake.org/download](https://cmake.org/download/) or `winget install Kitware.CMake`. Root `CMakeLists.txt` still has `cmake_minimum_required(VERSION 3.13)`; presets (`CMakePresets.json`) require 3.26. |
-| **Ninja** | any | `winget install Ninja-build.Ninja` |
-| **Strawberry Perl** | any | [strawberryperl.com](https://strawberryperl.com) — needed for bundled OpenSSL configure |
+| **Ninja** | any | `winget install Ninja-build.Ninja` (also used for bundled OpenSSL) |
 | **Git** | any | `winget install Git.Git` |
 
 After installing Visual Studio Build Tools, all subsequent commands must be
@@ -164,18 +163,13 @@ in the decompiler pipeline calls them. Default builds are CPU-only
 
 ---
 
-## OpenSSL — MSVC path (VC-WIN64A)
+## OpenSSL — MSVC (CMake, no Perl)
 
-The bundled OpenSSL build now supports MSVC via `VC-WIN64A`:
+Bundled OpenSSL 3.5.8 is built with [Fsu0413/openssl-externalCMake](https://github.com/Fsu0413/openssl-externalCMake) plus the official source tarball (pins in `cmake/deps.cmake`). The nested build uses **CMake + Ninja** — no Strawberry Perl, no `perl Configure`, no NASM (`OPENSSL_ASM=OFF`).
 
-- **Platform**: `VC-WIN64A` (64-bit, MSVC target)
-- **Build tool**: `nmake` (found via `find_program`)
-- **Library**: `libcrypto.lib` (static, installed into `external/openssl-install/lib/`)
-- **No NASM required**: `no-asm` is passed
-- **No extra env vars needed**: `nmake` finds `cl.exe` from the VS environment
-
-If `nmake` is not found, CMake will error out with a message. Ensure you are
-running from a Developer Command Prompt.
+- **Output**: static `libcrypto.lib` under `build/windows/external/openssl-install/lib/`
+- **Requirement**: Ninja on `PATH` (or the top-level generator falls back to MSVC)
+- Run from **Developer PowerShell for VS 2022** so `cl.exe` is available for the nested OpenSSL compile
 
 ---
 
@@ -218,7 +212,7 @@ Minimum driver versions (CUDA Toolkit → min driver):
 | `nmake not found` | Same — `nmake` is part of the VS Build Tools |
 | `Qt6Config.cmake not found` | Set `-QtDir` or `$env:Qt6_DIR` |
 | `nvcc not found` / CUDA not detected | Install CUDA Toolkit; ensure `CUDA_PATH` env var is set |
-| OpenSSL configure fails | Perl not on PATH — install Strawberry Perl |
+| OpenSSL external project fails | Ensure Ninja + MSVC env; see `build/windows/external/openssl-ep/build/CMakeFiles/CMakeError.log` |
 | `windeployqt` not found | Add Qt `bin\` to PATH |
 | `libcrypto.lib` not found after build | Check OpenSSL built correctly: `external\openssl-install\lib\libcrypto.lib` must exist |
 | Long build times | Normal for first build (LLVM + OpenSSL). Use `-Jobs` to control parallelism |

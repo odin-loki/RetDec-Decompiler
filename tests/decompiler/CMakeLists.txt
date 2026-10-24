@@ -93,8 +93,10 @@ if(MSVC)
     set(_MSVC_FIXTURE_LINK /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO /ENTRY:main /NODEFAULTLIB /SUBSYSTEM:CONSOLE /EXPORT:main)
     add_custom_command(
         OUTPUT "${_FIB_BIN}"
-        COMMAND ${CMAKE_C_COMPILER} ${_MSVC_FIXTURE_C} "/Fe${_FIB_BIN}" "${_FIB_SRC}" "${_MSVC_PRINTF_STUB}"
-            ${_MSVC_FIXTURE_LINK}
+        COMMAND ${CMAKE_C_COMPILER} ${_MSVC_FIXTURE_C}
+            "/Fo${CMAKE_CURRENT_BINARY_DIR}/fib_smoke_main.obj" "${_FIB_SRC}"
+            "/Fo${CMAKE_CURRENT_BINARY_DIR}/fib_smoke_printf.obj" "${_MSVC_PRINTF_STUB}"
+            "/Fe${_FIB_BIN}" ${_MSVC_FIXTURE_LINK}
         DEPENDS "${_FIB_SRC}" "${_MSVC_PRINTF_STUB}"
         COMMENT "Building fib_smoke test binary (MSVC)"
         VERBATIM
@@ -124,8 +126,10 @@ foreach(_name IN LISTS _CORPUS_NATIVE_SOURCES)
     if(MSVC)
         add_custom_command(
             OUTPUT "${_bin}"
-            COMMAND ${CMAKE_C_COMPILER} ${_MSVC_FIXTURE_C} "/Fe${_bin}" "${_src}" "${_MSVC_PRINTF_STUB}"
-                ${_MSVC_FIXTURE_LINK}
+            COMMAND ${CMAKE_C_COMPILER} ${_MSVC_FIXTURE_C}
+                "/Fo${_CORPUS_FIXTURES_DIR}/${_name}_main.obj" "${_src}"
+                "/Fo${_CORPUS_FIXTURES_DIR}/${_name}_printf.obj" "${_MSVC_PRINTF_STUB}"
+                "/Fe${_bin}" ${_MSVC_FIXTURE_LINK}
             DEPENDS "${_src}" "${_MSVC_PRINTF_STUB}"
             COMMENT "Building corpus fixture ${_name} (MSVC)"
             VERBATIM

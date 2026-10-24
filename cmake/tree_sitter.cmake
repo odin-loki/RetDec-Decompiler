@@ -23,6 +23,19 @@ set(_TS_CMAKE_ARGS
 if(CMAKE_C_COMPILER)
 	list(APPEND _TS_CMAKE_ARGS -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER})
 endif()
+# Nested ExternalProject configure must not inherit a stale CMAKE_MAKE_PROGRAM
+# from lukka/get-cmake's temp directory (macos-package cache restore hit
+# "ninja --version: no such file or directory" on tree-sitter-project).
+if(CMAKE_MAKE_PROGRAM AND EXISTS "${CMAKE_MAKE_PROGRAM}")
+	set(_RETDEC_TREE_SITTER_NINJA "${CMAKE_MAKE_PROGRAM}")
+else()
+	unset(_RETDEC_TREE_SITTER_NINJA)
+	find_program(_RETDEC_TREE_SITTER_NINJA NAMES ninja ninja.exe)
+endif()
+if(_RETDEC_TREE_SITTER_NINJA)
+	list(APPEND _TS_CMAKE_ARGS
+		-DCMAKE_MAKE_PROGRAM:FILEPATH=${_RETDEC_TREE_SITTER_NINJA})
+endif()
 
 set(TREE_SITTER_INSTALL_DIR ${CMAKE_BINARY_DIR}/deps/install/tree-sitter)
 set(TREE_SITTER_C_INSTALL_DIR ${CMAKE_BINARY_DIR}/deps/install/tree-sitter-c)

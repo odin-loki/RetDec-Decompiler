@@ -173,3 +173,16 @@ scripts/run-linux-release-build.cmd
 /timeout-*
 /leak-*
 /slow-unit-*
+
+# Repo-root MSVC/link probe and dump scratch (not tracked sources).
+/*.obj
+/dump_*.exe
+/dump_*.cpp
+/dump_*.cmd
+/.poll*.py
+/.tmp-gen-preconfig.*
+/tree-sitter.zip
+
+# Managed-integration .NET build outputs (fixture sources stay tracked).
+/tests/managed_integration/fixtures/*/bin/
+/tests/managed_integration/fixtures/*/obj/

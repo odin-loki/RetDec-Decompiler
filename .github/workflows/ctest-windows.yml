@@ -34,9 +34,6 @@ jobs:
         with:
           arch: x64
 
-      - name: Install Strawberry Perl
-        run: choco install strawberryperl -y --no-progress
-
       - name: Install Qt 6 (MSVC x64)
         uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4.4.1
         with:
@@ -62,7 +59,6 @@ jobs:
       - name: Configure (full-windows-debug, CPU-only CI)
         shell: pwsh
         run: |
-          $env:PATH = "C:\Strawberry\perl\bin;" + $env:PATH
           $py = Join-Path $env:pythonLocation "python.exe"
           if (-not (Test-Path -LiteralPath $py)) { throw "setup-python 3.12 missing: $py" }
           cmake --preset full-windows-debug `
@@ -74,7 +70,6 @@ jobs:
       - name: Build googletest
         shell: pwsh
         run: |
-          $env:PATH = "C:\Strawberry\perl\bin;" + $env:PATH
           cmake --build build/windows --parallel --target googletest
           if ($LASTEXITCODE -ne 0) { throw "googletest build failed" }
           # MSVC Debug ninja expects gtestd.lib; current googletest installs gtest.lib.
@@ -91,7 +86,6 @@ jobs:
       - name: Build integration targets
         shell: pwsh
         run: |
-          $env:PATH = "C:\Strawberry\perl\bin;" + $env:PATH
           cmake --build build/windows --parallel `
             --target retdec-decompiler retdec-gui retdec-gui-tests `
             fileinfo format_router_probe retdec-decompiler-fixture-fib `

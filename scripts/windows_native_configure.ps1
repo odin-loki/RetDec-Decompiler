@@ -124,28 +124,7 @@ if (-not (Get-Command "ninja" -ErrorAction SilentlyContinue)) {
     Write-Host "  [OK] Ninja: $(ninja --version)" -ForegroundColor Green
 }
 
-# ── Step 3: Add Perl to PATH if not found ────────────────────────────────
-Write-Host ""
-Write-Host "--- Perl ---" -ForegroundColor White
-if (-not (Get-Command "perl" -ErrorAction SilentlyContinue)) {
-    $perlCandidates = @(
-        "C:\Strawberry\perl\bin",
-        "C:\Perl\bin",
-        "C:\Perl64\bin"
-    )
-    $perlFound = $perlCandidates | Where-Object { Test-Path "$_\perl.exe" } | Select-Object -First 1
-    if ($perlFound) {
-        $env:PATH = $perlFound + ";" + $env:PATH
-        Write-Host "  [OK] Perl: $(perl --version | Select-String 'v\d' | Select-Object -First 1)" -ForegroundColor Green
-    } else {
-        Write-Error "perl not found. Install Strawberry Perl from https://strawberryperl.com"
-        exit 1
-    }
-} else {
-    Write-Host "  [OK] Perl: $(perl --version | Select-String 'v\d' | Select-Object -First 1)" -ForegroundColor Green
-}
-
-# ── Step 4: CMake ─────────────────────────────────────────────────────────
+# ── Step 3: CMake ─────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "--- CMake ---" -ForegroundColor White
 if (-not (Get-Command "cmake" -ErrorAction SilentlyContinue)) {

@@ -33,7 +33,6 @@ RUN apt-get -y update && \
 	pkg-config \
 	m4 \
 	libtool \
-	perl \
 	make \
 	qt6-base-dev \
 	qt6-base-dev-tools \

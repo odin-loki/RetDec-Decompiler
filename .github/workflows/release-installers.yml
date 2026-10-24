@@ -167,9 +167,9 @@ jobs:
         with:
           arch: x64
 
-      - name: Install Perl and NSIS
+      - name: Install NSIS
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
-        run: choco install strawberryperl nsis -y --no-progress
+        run: choco install nsis -y --no-progress
 
       - name: Install Qt 6 (MSVC x64)
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
@@ -229,7 +229,6 @@ jobs:
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
         shell: pwsh
         run: |
-          $env:PATH = "C:\Strawberry\perl\bin;" + $env:PATH
           cmake --preset full-windows-release `
             -DRETDEC_ENABLE_CUDA_ACCEL=OFF `
             -DRETDEC_TESTS=OFF `
@@ -245,7 +244,6 @@ jobs:
         id: win_pkg
         shell: pwsh
         run: |
-          $env:PATH = "C:\Strawberry\perl\bin;" + $env:PATH
           $env:CMAKE_BUILD_PARALLEL_LEVEL = "1"
           cmake --build build/windows --parallel 1 --target llvm-project
           if ($LASTEXITCODE -ne 0) { throw "llvm-project build failed" }
@@ -353,7 +351,6 @@ jobs:
             ninja-build \
             python3 \
             python3-yaml \
-            perl \
             flex \
             bison \
             libssl-dev \

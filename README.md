@@ -260,7 +260,7 @@ CLI flag.
 ### Prerequisites
 
 On Windows, run `.\scripts\doctor.ps1` first for a read-only check of CMake,
-Qt6, NSIS, Perl, Python, git-lfs, and other common build prerequisites.
+Qt6, NSIS, Python, git-lfs, and other common build prerequisites.
 
 | Dependency | Version | Required for |
 |------------|---------|-------------|
@@ -269,7 +269,6 @@ Qt6, NSIS, Perl, Python, git-lfs, and other common build prerequisites.
 | MinGW-w64 | `g++-mingw-w64-x86-64` | Windows cross-compile |
 | Qt 6 | 6.4+ (Widgets, Core, Gui, Test) | **Required** for `full-linux-*` / `full-windows-release` / `full-windows-debug` presets (`retdec-gui`) |
 | Python 3 | 3.4+ | LLVM TableGen scripts |
-| Perl | any | OpenSSL cross-build |
 | CUDA Toolkit | 11.8+ | **Optional / opt-in** (`RETDEC_ENABLE_CUDA_ACCEL` defaults **OFF**, including full presets). Experimental `cuda_accel` layer is unintegrated — not required to evaluate or build. |
 | Ninja | any | Recommended generator |
 
@@ -321,7 +320,6 @@ unintegrated and is not required to evaluate the product.
 | CUDA Toolkit 11.8+ (optional) | [developer.nvidia.com/cuda-downloads](https://developer.nvidia.com/cuda-downloads) — not required; `RETDEC_ENABLE_CUDA_ACCEL` defaults OFF |
 | Qt 6 for Windows (MSVC 2019/2022 x64) | [qt.io/download-qt-installer](https://www.qt.io/download-qt-installer) |
 | CMake **3.26+**, Ninja | via winget or [cmake.org](https://cmake.org) |
-| Strawberry Perl | [strawberryperl.com](https://strawberryperl.com) (needed for bundled OpenSSL) |
 
 **Build steps (from Developer PowerShell for VS 2022):**
 
@@ -364,7 +362,7 @@ Windows tools — everything runs from WSL. The toolchain is `x86_64-w64-mingw32
 **Install the toolchain (WSL Ubuntu):**
 
 ```bash
-sudo apt install mingw-w64 g++-mingw-w64-x86-64 ninja-build perl make
+sudo apt install mingw-w64 g++-mingw-w64-x86-64 ninja-build
 ```
 
 **Build using the provided scripts:**

@@ -19,12 +19,10 @@ For a shorter **preset and path reference** (`build/linux/mingw-w64-release`, `d
    `-DRETDEC_LLVM_TABLEGEN=/path/to/llvm-tblgen` explicitly.
 
 2. **OpenSSL** — With `fileformat` enabled, cross to Windows **requires**
-   `RETDEC_BUNDLED_OPENSSL=ON`. The build runs `Configure mingw64` in a
-   bundled OpenSSL 3.5.8 source tree. This needs **Perl** and **make** on the
-   host. The key requirement: pass **only** `--cross-compile-prefix` to
-   OpenSSL's configure, **not** explicit `CC`/`AR`/`RANLIB` env vars —
-   OpenSSL derives all tool names from the prefix, and mixing both causes it
-   to double-prefix the tools (e.g., `x86_64-w64-mingw32-x86_64-w64-mingw32-ar`).
+   `RETDEC_BUNDLED_OPENSSL=ON`. OpenSSL 3.5.8 is built via
+   [Fsu0413/openssl-externalCMake](https://github.com/Fsu0413/openssl-externalCMake)
+   (see `cmake/deps.cmake` pins). The nested CMake build inherits your MinGW
+   `CMAKE_TOOLCHAIN_FILE` — no Perl `Configure` step.
 
 3. **Tests** — The test suite links host gtest. When cross-compiling,
    `-DRETDEC_TESTS=OFF` must be set. The root `CMakeLists.txt` guards
@@ -40,8 +38,6 @@ sudo apt install \
     g++-mingw-w64-x86-64 \
     binutils-mingw-w64-x86-64 \
     ninja-build \
-    perl \
-    make \
     cmake
 ```
 
@@ -197,38 +193,14 @@ The script:
 
 ---
 
-## OpenSSL cross-compile — critical notes
+## OpenSSL cross-compile
 
-### Problem: doubled cross-compile prefix
+Bundled OpenSSL uses the same CMake external project as native builds
+(`deps/openssl/CMakeLists.txt`). The nested configure forwards your
+`CMAKE_TOOLCHAIN_FILE` and compiler paths, so you no longer need Perl or the
+legacy `Configure mingw64` / `--cross-compile-prefix` workarounds.
 
-OpenSSL's `Configure` script uses `--cross-compile-prefix` to **prepend** a
-prefix to all tool names (`CC`, `AR`, `RANLIB`, etc.). If you **also** set
-these in the environment (e.g. `CC=x86_64-w64-mingw32-gcc`), OpenSSL applies
-the prefix again, creating:
-
-```
-x86_64-w64-mingw32-x86_64-w64-mingw32-gcc   # WRONG
-```
-
-**Fix (in `deps/openssl/CMakeLists.txt`):** When `CMAKE_CROSSCOMPILING` is
-true, clear all environment tool variables and rely **solely** on
-`--cross-compile-prefix`:
-
-```cmake
-if(CMAKE_CROSSCOMPILING)
-    set(_OSSL_CONFIGURE_ENV "")   # no CC/AR/RANLIB env vars
-    set(_OSSL_CROSS "--cross-compile-prefix=x86_64-w64-mingw32-")
-endif()
-```
-
-### Problem: libraries installed to lib64/ not lib/
-
-Some OpenSSL versions install to `lib64/` by default. Add `--libdir=lib` to
-the OpenSSL `CONFIGURE_COMMAND`:
-
-```cmake
-... Configure mingw64 ${_OSSL_CROSS} --prefix=... --libdir=lib no-shared no-tests no-asm
-```
+Static `libcrypto.a` is installed under `external/openssl-install/lib/`.
 
 ---
 

@@ -18,7 +18,7 @@ Build the project first with CMake presets (Release recommended for distribution
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
-  build-essential cmake ninja-build python3 perl \
+  build-essential cmake ninja-build python3 \
   qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev libxkbcommon-dev
 
 # Presets need CMake 3.26+ (CMakePresets.json). Root CMakeLists.txt still

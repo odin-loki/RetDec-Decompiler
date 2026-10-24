@@ -95,6 +95,9 @@ jobs:
         with:
           cmakeVersion: "3.31.6"
 
+      - name: Prefer Homebrew Ninja (get-cmake temp ninja is not stable across cache restore)
+        run: echo "$(brew --prefix ninja)/bin" >> "$GITHUB_PATH"
+
       - name: Fetch large support files
         run: |
           bash scripts/fetch-large-files.sh || \

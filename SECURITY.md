@@ -65,8 +65,8 @@ Out of scope:
 
 ## FIPS
 
-This tree bundles OpenSSL 3.5.8 (`deps/openssl`). The default configure
-does **not** enable the OpenSSL FIPS provider. Shipped binaries are **not**
+This tree bundles OpenSSL 3.5.8 (`deps/openssl`, CMake build via
+openssl-externalCMake). The default build does **not** enable the OpenSSL FIPS provider. Shipped binaries are **not**
 FIPS 140-3 validated. Do not treat `libcrypto` here as a FIPS module.
 
 ## PGP

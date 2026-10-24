@@ -92,7 +92,7 @@ Paths are relative to the **repository root**. See [docs/BUILD_REFERENCE.md](../
 | Script / workflow | Role |
 |--------|------|
 | `ci/benchmark_rename_guard.sh` | B6: decompile named vs SHA-256-renamed corpus copies; fail if detections appear only on the named file |
-| `doctor.ps1` / `doctor.sh` | Read-only prerequisite check: CMake 3.26+, fetch-large-files marker, Qt6 hint, git-lfs, python3, perl; Windows also checks NSIS/makensis and EnVar |
+| `doctor.ps1` / `doctor.sh` | Read-only prerequisite check: CMake 3.26+, fetch-large-files marker, Qt6 hint, git-lfs, python3; Windows also checks NSIS/makensis and EnVar |
 | `fetch-large-files.ps1` / `fetch-large-files.sh` | Download support files omitted from git (~60 MiB; required before first build). Use `bash scripts/fetch-large-files.sh` when `.sh` is not executable |
 | `.github/workflows/ci-smoke.yml` | Lightweight CI on every push/PR: fetch-large-files, format, CMake/docs checks, ship checklist (no LLVM compile) |
 | `validate_pipeline_json.py` | Validate pipeline JSON against `docs/pipeline_builder_schema.json` (`python3 scripts/validate_pipeline_json.py --all-profiles`) |

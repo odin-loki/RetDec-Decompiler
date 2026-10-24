@@ -27,7 +27,6 @@ jobs:
             build-essential \
             ninja-build \
             python3 \
-            perl
 
       - uses: lukka/get-cmake@a89e43e22a96abafcd7a62db652a65ecd33052c9 # v4.4.4
         with:
