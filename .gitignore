@@ -157,7 +157,7 @@ llama.zip
 _license_preamble.txt
 _license_section7.txt
 LICENSE.full
-scripts/run-linux-release-build.cmd
+scripts/compile/run-linux-release-build.cmd
 
 # Editor and merge leftovers -- never belong in the tree.
 *.bak
