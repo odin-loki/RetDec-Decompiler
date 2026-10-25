@@ -113,9 +113,9 @@ BcStackEffect stackEffectOf(BcOpcode op) noexcept {
     case Op::PyImport:     return {2, 1};
     case Op::PyYield:      return {1, 0};
     case Op::PyAwait:      return {1, 1};
-    case Op::PyFormat:
-    case Op::PYTHON_FORMAT_VALUE:
-    case Op::PYTHON_PRINT_EXPR: return {1, 1};
+    case Op::PyFormat:            return {1, 1};
+    case Op::PYTHON_FORMAT_VALUE: return {1, 1};
+    case Op::PYTHON_PRINT_EXPR:   return {1, 1};
     // Wasm
     case Op::WasmMemorySize: return {0, 1};
     case Op::WasmMemoryGrow: return {1, 1};

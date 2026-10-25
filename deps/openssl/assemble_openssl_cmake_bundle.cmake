@@ -86,4 +86,74 @@ if(NOT EXISTS "${BUNDLE_DIR}/CMakeLists.txt")
 	message(FATAL_ERROR "Assembled bundle missing top-level CMakeLists.txt under ${BUNDLE_DIR}")
 endif()
 
+# OpenSSL 3.5+ tarballs omit generated headers and ssl_err.c; openssl-externalCMake
+# still lists them. Run Configure + build_generated once (Perl only, not the final link).
+set(_ossl_src "${BUNDLE_DIR}/openssl")
+find_program(_RETDEC_OSSL_PERL NAMES perl perl.exe
+	HINTS "C:/Program Files/Git/usr/bin" "C:/Program Files/Git/mingw64/bin")
+if(NOT _RETDEC_OSSL_PERL)
+	find_program(_RETDEC_OSSL_PERL NAMES perl)
+endif()
+if(NOT _RETDEC_OSSL_PERL)
+	message(FATAL_ERROR "OpenSSL bundle assembly needs Perl (Git for Windows usr/bin/perl.exe on Windows).")
+endif()
+
+if(CMAKE_HOST_WIN32)
+	set(_ossl_cfg_target "VC-WIN64A")
+	find_program(_RETDEC_OSSL_NMAKE nmake)
+	if(NOT _RETDEC_OSSL_NMAKE)
+		message(FATAL_ERROR "OpenSSL bundle assembly on Windows needs nmake (Visual Studio).")
+	endif()
+	set(_ossl_gen_cmd ${_RETDEC_OSSL_NMAKE} build_generated)
+elseif(CMAKE_HOST_APPLE)
+	execute_process(COMMAND uname -m OUTPUT_VARIABLE _host_cpu OUTPUT_STRIP_TRAILING_WHITESPACE)
+	if(_host_cpu STREQUAL "arm64")
+		set(_ossl_cfg_target "darwin64-arm64-cc")
+	else()
+		set(_ossl_cfg_target "darwin64-x86_64-cc")
+	endif()
+	find_program(_RETDEC_OSSL_MAKE NAMES gmake make)
+	set(_ossl_gen_cmd ${_RETDEC_OSSL_MAKE} build_generated)
+else()
+	set(_ossl_cfg_target "linux-x86_64")
+	find_program(_RETDEC_OSSL_MAKE NAMES gmake make)
+	set(_ossl_gen_cmd ${_RETDEC_OSSL_MAKE} build_generated)
+endif()
+
+message(STATUS "OpenSSL ${OPENSSL_VERSION}: running Configure ${_ossl_cfg_target} (generated sources only)...")
+execute_process(
+	COMMAND ${_RETDEC_OSSL_PERL} Configure ${_ossl_cfg_target} no-asm no-shared no-tests no-ui-console
+	WORKING_DIRECTORY "${_ossl_src}"
+	RESULT_VARIABLE _ossl_cfg_ec
+)
+if(_ossl_cfg_ec)
+	message(FATAL_ERROR "OpenSSL Configure failed (exit ${_ossl_cfg_ec}) while assembling bundle.")
+endif()
+
+if(NOT _ossl_gen_cmd)
+	message(FATAL_ERROR "OpenSSL bundle assembly needs make or nmake for build_generated.")
+endif()
+message(STATUS "OpenSSL ${OPENSSL_VERSION}: running build_generated...")
+execute_process(
+	COMMAND ${_ossl_gen_cmd}
+	WORKING_DIRECTORY "${_ossl_src}"
+	RESULT_VARIABLE _ossl_gen_ec
+)
+if(_ossl_gen_ec)
+	message(FATAL_ERROR "OpenSSL build_generated failed (exit ${_ossl_gen_ec}) while assembling bundle.")
+endif()
+
+if(EXISTS "${_ossl_src}/crypto/ssl_err.c" AND NOT EXISTS "${_ossl_src}/ssl/ssl_err.c")
+	file(COPY "${_ossl_src}/crypto/ssl_err.c" DESTINATION "${_ossl_src}/ssl/")
+endif()
+
+set(_ossl_crypto_cmake "${BUNDLE_DIR}/crypto/CMakeLists.txt")
+if(EXISTS "${_ossl_crypto_cmake}")
+	file(READ "${_ossl_crypto_cmake}" _ossl_crypto_cmake_txt)
+	string(REPLACE
+		"\${CMAKE_SOURCE_DIR}/openssl/include/openssl/asn1_mac.h\n"
+		"" _ossl_crypto_cmake_txt "${_ossl_crypto_cmake_txt}")
+	file(WRITE "${_ossl_crypto_cmake}" "${_ossl_crypto_cmake_txt}")
+endif()
+
 message(STATUS "OpenSSL CMake bundle ready at ${BUNDLE_DIR}")
