@@ -127,8 +127,8 @@ else()
 endif()
 
 message(STATUS "OpenSSL ${OPENSSL_VERSION}: running Configure ${_ossl_cfg_target} (generated sources only)...")
-execute_process(
-	COMMAND ${_RETDEC_OSSL_PERL} Configure ${_ossl_cfg_target} no-asm no-shared no-tests no-ui-console
+	execute_process(
+	COMMAND ${_RETDEC_OSSL_PERL} Configure ${_ossl_cfg_target} no-asm no-shared no-tests no-ui-console no-ml-dsa
 	WORKING_DIRECTORY "${_ossl_src}"
 	RESULT_VARIABLE _ossl_cfg_ec
 )
@@ -160,6 +160,18 @@ if(NOT EXISTS "${_ossl_src}/ssl/sslerr.h")
 	else()
 		message(FATAL_ERROR
 			"OpenSSL bundle assembly: missing sslerr.h (expected ssl/ or include/openssl/).")
+	endif()
+endif()
+
+# openssl-externalCMake predates OpenSSL 3.5.8 ML-DSA; teach configuration.h.cmake.in the knob.
+set(_ossl_cfg_h_in "${BUNDLE_DIR}/crypto/configuration.h.cmake.in")
+if(EXISTS "${_ossl_cfg_h_in}")
+	file(READ "${_ossl_cfg_h_in}" _ossl_cfg_h_in_txt)
+	if(NOT _ossl_cfg_h_in_txt MATCHES "OPENSSL_NO_ML_DSA")
+		string(REPLACE "#cmakedefine OPENSSL_NO_MODES"
+			"#cmakedefine OPENSSL_NO_ML_DSA\n#cmakedefine OPENSSL_NO_MODES"
+			_ossl_cfg_h_in_txt "${_ossl_cfg_h_in_txt}")
+		file(WRITE "${_ossl_cfg_h_in}" "${_ossl_cfg_h_in_txt}")
 	endif()
 endif()
 

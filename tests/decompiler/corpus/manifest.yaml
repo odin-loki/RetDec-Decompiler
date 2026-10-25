@@ -42,5 +42,5 @@ fixtures:
     format: managed
     output_ext: .py
     min_functions: 0
-    keyword: Hello
+    keyword: corpus
     skip_if_missing: true
