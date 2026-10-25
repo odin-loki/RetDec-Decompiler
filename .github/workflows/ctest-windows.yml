@@ -56,6 +56,13 @@ jobs:
             ctest-windows-py312-
             ctest-windows-
 
+      - name: Drop stale bundled OpenSSL ExternalProject tree
+        shell: pwsh
+        run: |
+          if (Test-Path build/windows/external/openssl-ep) {
+            Remove-Item -Recurse -Force build/windows/external/openssl-ep
+          }
+
       - name: Configure (full-windows-debug, CPU-only CI)
         shell: pwsh
         run: |

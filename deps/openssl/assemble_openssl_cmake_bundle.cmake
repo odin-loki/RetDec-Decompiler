@@ -153,6 +153,16 @@ if(EXISTS "${_ossl_src}/crypto/ssl_err.c" AND NOT EXISTS "${_ossl_src}/ssl/ssl_e
 	file(COPY "${_ossl_src}/crypto/ssl_err.c" DESTINATION "${_ossl_src}/ssl/")
 endif()
 
+# openssl-externalCMake lists ssl/sslerr.h; OpenSSL 3.5 ships it under include/openssl/.
+if(NOT EXISTS "${_ossl_src}/ssl/sslerr.h")
+	if(EXISTS "${_ossl_src}/include/openssl/sslerr.h")
+		file(COPY "${_ossl_src}/include/openssl/sslerr.h" DESTINATION "${_ossl_src}/ssl/")
+	else()
+		message(FATAL_ERROR
+			"OpenSSL bundle assembly: missing sslerr.h (expected ssl/ or include/openssl/).")
+	endif()
+endif()
+
 set(_ossl_crypto_cmake "${BUNDLE_DIR}/crypto/CMakeLists.txt")
 if(EXISTS "${_ossl_crypto_cmake}")
 	file(READ "${_ossl_crypto_cmake}" _ossl_crypto_cmake_txt)
