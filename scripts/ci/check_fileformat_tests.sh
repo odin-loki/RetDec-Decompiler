@@ -121,6 +121,7 @@ C_OBJS=()
 for f in "${C_SRCS[@]}"; do
 	o="${WORK}/obj/$(printf '%s' "$f" | tr '/' '_').o"
 	if ! "${CC_BIN}" -std=c11 -O0 -g0 -w \
+		-D_GNU_SOURCE -DOPENSSL_API_COMPAT=0x10100000L \
 		-Ideps/authenticode-parser/include -Ideps/stb/include \
 		-c "$f" -o "$o" > "${WORK}/cbuild.log" 2>&1
 	then

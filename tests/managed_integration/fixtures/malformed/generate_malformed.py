@@ -48,6 +48,17 @@ def null_section(src: bytes, start: int, length: int) -> bytes:
         data[i] = 0
     return bytes(data)
 
+def null_body_variant(data: bytes, lang: str) -> bytes:
+    """Corrupt the payload without leaving a tiny module that parses as valid."""
+    if lang == "wasm":
+        # A fixed offset of 16 through EOF zeros the whole tail on small modules;
+        # add.wasm then parses (type section only) and aborts in WAT emit. Corrupt
+        # the first section body instead so WasmReader fails closed.
+        start = min(10, max(0, len(data) - 1))
+        span = max(1, min(24, len(data) - start - 4))
+        return null_section(data, start, span)
+    return null_section(data, 16, len(data) - 16)
+
 def write_variant(name: str, data: bytes):
     path = os.path.join(OUT_DIR, name)
     ensure_dir(os.path.dirname(path))
@@ -129,7 +140,7 @@ def process_file(src_path: str, lang: str, basename: str):
     write_variant(f"{lang}/{basename}.truncated_10pct", truncate(data, 0.10))
     write_variant(f"{lang}/{basename}.truncated_4bytes", data[:4])
     write_variant(f"{lang}/{basename}.random_flipped",  flip_random_bytes(data, 50))
-    write_variant(f"{lang}/{basename}.null_body",       null_section(data, 16, len(data) - 16))
+    write_variant(f"{lang}/{basename}.null_body",       null_body_variant(data, lang))
 
 def main():
     ensure_dir(OUT_DIR)

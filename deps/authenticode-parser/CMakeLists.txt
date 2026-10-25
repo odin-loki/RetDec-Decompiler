@@ -23,6 +23,12 @@ if(IS_BIG_ENDIAN)
 	target_compile_definitions(authenticode PRIVATE WORDS_BIGENDIAN)
 endif()
 
+# OpenSSL 3.x exposes legacy struct fields only below 3.0 API compat; strdup on glibc needs _GNU_SOURCE.
+target_compile_definitions(authenticode PRIVATE OPENSSL_API_COMPAT=0x10100000L)
+if(UNIX AND NOT APPLE)
+	target_compile_definitions(authenticode PRIVATE _GNU_SOURCE)
+endif()
+
 # Disable all warnings from this 3rd party project.
 if(MSVC)
 	target_compile_options(authenticode PRIVATE "/w")

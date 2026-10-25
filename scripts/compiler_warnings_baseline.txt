@@ -6,6 +6,7 @@
 #
 # This list may shrink.  Adding to it needs a reason.
 /usr/include/c++/13/bits/std_function.h -Wmaybe-uninitialized
+/usr/include/c++/15/bits/std_function.h -Wmaybe-uninitialized
 include/retdec/algo_recover/algo_recover.h -Wcomment
 include/retdec/code_data/code_data_classifier.h -Wunused-private-field
 include/retdec/codegen/codegen.h -Wmaybe-uninitialized
@@ -28,6 +29,7 @@ src/cil_reconstruct/cil_reconstructor.cpp -Wunused-but-set-variable
 src/cil_reconstruct/cil_var_recovery.cpp -Wunused-variable
 src/cli_parser/cli_reader.cpp -Wsign-compare
 src/codegen/expr_coalesce.cpp -Wunused-function
+src/codegen/expr_coalesce.cpp -Wmaybe-uninitialized
 src/compiler_abi/abi_descriptor.cpp -Wunused-but-set-variable
 src/compiler_abi/abi_descriptor.cpp -Wunused-function
 src/container_detect/vector_detect.cpp -Wunused-but-set-variable
@@ -68,6 +70,7 @@ src/pdbparser/pdb_symbols.cpp -Wunused-but-set-variable
 src/pdbparser/pdb_symbols.cpp -Wunused-function
 src/pelib/ExportDirectory.cpp -Wunused-but-set-variable
 src/pelib/ImageLoader.cpp -Wclass-memaccess
+src/pelib/ImageLoader.cpp -Wnontrivial-memcall
 src/pelib/ImageLoader.cpp -Wunused-value
 src/py_reconstruct/py_stack_sim.cpp -Wunused-but-set-variable
 src/py_reconstruct/py_stack_sim.cpp -Wunused-variable

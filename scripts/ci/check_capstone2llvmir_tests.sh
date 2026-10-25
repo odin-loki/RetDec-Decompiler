@@ -56,7 +56,7 @@ readonly MIN_EMUL=25
 
 # The revisions cmake/deps.cmake pins. Kept in step with it by CI: if they
 # diverge, this gate is testing something the product does not use.
-readonly CAPSTONE_TAG=5.0.9
+readonly CAPSTONE_TAG=6.0.0-Alpha10
 readonly KEYSTONE_TAG=0.9.2
 
 while [ $# -gt 0 ]; do
@@ -77,7 +77,7 @@ cd "${ROOT}"
 # ── The pinned revisions must match cmake/deps.cmake ─────────────────────────
 # A gate that builds a different Capstone from the one the product ships is
 # measuring a different decompiler.
-cs_pinned="$(sed -n 's|.*capstone/archive/refs/tags/\([0-9.]*\)\.zip.*|\1|p' cmake/deps.cmake | head -1)"
+cs_pinned="$(sed -n 's|.*capstone/archive/refs/tags/\([^/]*\)\.zip.*|\1|p' cmake/deps.cmake | head -1)"
 ks_pinned="$(sed -n 's|.*keystone/archive/refs/tags/\([0-9.]*\)\.zip.*|\1|p' cmake/deps.cmake | head -1)"
 [ "${cs_pinned}" = "${CAPSTONE_TAG}" ] \
 	|| die "cmake/deps.cmake pins Capstone ${cs_pinned}, this gate builds ${CAPSTONE_TAG}"
