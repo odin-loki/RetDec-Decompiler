@@ -89,9 +89,15 @@ endif()
 # OpenSSL 3.5+ tarballs omit generated headers and ssl_err.c; openssl-externalCMake
 # still lists them. Run Configure + build_generated once (Perl only, not the final link).
 set(_ossl_src "${BUNDLE_DIR}/openssl")
-find_program(_RETDEC_OSSL_PERL NAMES perl perl.exe
-	HINTS "C:/Program Files/Git/usr/bin" "C:/Program Files/Git/mingw64/bin")
-if(NOT _RETDEC_OSSL_PERL)
+if(CMAKE_HOST_WIN32)
+	# OpenSSL Configure needs a full Perl (Strawberry on CI); Git's msys perl is too minimal.
+	find_program(_RETDEC_OSSL_PERL NAMES perl.exe
+		PATHS "C:/Strawberry/perl/bin" "C:/Program Files/Git/usr/bin"
+		NO_DEFAULT_PATH)
+	if(NOT _RETDEC_OSSL_PERL)
+		find_program(_RETDEC_OSSL_PERL NAMES perl perl.exe)
+	endif()
+else()
 	find_program(_RETDEC_OSSL_PERL NAMES perl)
 endif()
 if(NOT _RETDEC_OSSL_PERL)
@@ -150,9 +156,8 @@ endif()
 set(_ossl_crypto_cmake "${BUNDLE_DIR}/crypto/CMakeLists.txt")
 if(EXISTS "${_ossl_crypto_cmake}")
 	file(READ "${_ossl_crypto_cmake}" _ossl_crypto_cmake_txt)
-	string(REPLACE
-		"\${CMAKE_SOURCE_DIR}/openssl/include/openssl/asn1_mac.h\n"
-		"" _ossl_crypto_cmake_txt "${_ossl_crypto_cmake_txt}")
+	string(REPLACE "\${CMAKE_SOURCE_DIR}/openssl/include/openssl/asn1_mac.h" ""
+		_ossl_crypto_cmake_txt "${_ossl_crypto_cmake_txt}")
 	file(WRITE "${_ossl_crypto_cmake}" "${_ossl_crypto_cmake_txt}")
 endif()
 
