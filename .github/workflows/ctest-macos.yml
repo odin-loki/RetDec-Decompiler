@@ -125,6 +125,7 @@ jobs:
         run: >
           cmake --preset full-linux-release
           -DPython3_EXECUTABLE=${{ env.pythonLocation }}/bin/python3
+          -DRETDEC_BUNDLED_OPENSSL=ON
           -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
           -DRETDEC_ENABLE_CUDA_ACCEL=OFF
           -DRETDEC_ENABLE_NEURAL=OFF

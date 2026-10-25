@@ -71,6 +71,8 @@ else()
 	find_program(_RETDEC_OSSL_NINJA_EXECUTABLE NAMES ninja ninja.exe)
 endif()
 if(WIN32)
+	# openssl-externalCMake leaves LIBCRYPTO_SOURCES empty when arch is unset.
+	list(APPEND _RETDEC_OSSL_CMAKE_CACHE_ARGS -DOPENSSL_TARGET_ARCH:STRING=x64)
 	set(_RETDEC_GIT_PERL "C:/Program Files/Git/usr/bin/perl.exe")
 	if(EXISTS "${_RETDEC_GIT_PERL}")
 		list(APPEND _RETDEC_OSSL_CMAKE_CACHE_ARGS
