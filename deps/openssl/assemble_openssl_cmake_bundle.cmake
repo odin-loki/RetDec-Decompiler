@@ -183,4 +183,44 @@ if(EXISTS "${_ossl_crypto_cmake}")
 	file(WRITE "${_ossl_crypto_cmake}" "${_ossl_crypto_cmake_txt}")
 endif()
 
+# Fsu0413/openssl-externalCMake ships a frozen PARAM_NAMES list; OpenSSL 3.5.8 needs live paramnames.pm.
+set(_ossl_paramnames_cmake "${BUNDLE_DIR}/crypto/paramnames.cmake")
+file(WRITE "${_ossl_paramnames_cmake}" [[# SPDX-License-Identifier: Unlicense
+# RetDec: generate OSSL_PARAM / core_names headers via OpenSSL's Perl (matches bundled tarball).
+cmake_minimum_required(VERSION 3.13)
+if(NOT DEFINED OUTPUT_FILE_NAME)
+	message(FATAL_ERROR "paramnames.cmake: OUTPUT_FILE_NAME is required")
+endif()
+if(CMAKE_ARGC LESS 2)
+	message(FATAL_ERROR "paramnames.cmake: expected path to .in file")
+endif()
+set(_INPUT_IN "${CMAKE_ARGV1}")
+get_filename_component(_INPUT_IN "${_INPUT_IN}" ABSOLUTE)
+get_filename_component(_OSSL_SRC "${CMAKE_CURRENT_LIST_DIR}/../openssl" ABSOLUTE)
+file(RELATIVE_PATH _INPUT_REL "${_OSSL_SRC}" "${_INPUT_IN}")
+if(CMAKE_HOST_WIN32)
+	find_program(_PERL NAMES perl.exe
+		PATHS "C:/Strawberry/perl/bin" "C:/Program Files/Git/usr/bin"
+		NO_DEFAULT_PATH)
+	if(NOT _PERL)
+		find_program(_PERL NAMES perl perl.exe)
+	endif()
+else()
+	find_program(_PERL NAMES perl)
+endif()
+if(NOT _PERL)
+	message(FATAL_ERROR "paramnames.cmake: Perl is required to generate OpenSSL headers")
+endif()
+execute_process(
+	COMMAND ${_PERL} -I. -Mconfigdata -MOpenSSL::paramnames util/dofile.pl -omakefile ${_INPUT_REL}
+	WORKING_DIRECTORY "${_OSSL_SRC}"
+	OUTPUT_FILE "${OUTPUT_FILE_NAME}"
+	ERROR_VARIABLE _perl_err
+	RESULT_VARIABLE _perl_ec
+)
+if(_perl_ec OR NOT EXISTS "${OUTPUT_FILE_NAME}")
+	message(FATAL_ERROR "paramnames.cmake: dofile.pl failed (${_perl_ec}): ${_perl_err}")
+endif()
+]])
+
 message(STATUS "OpenSSL CMake bundle ready at ${BUNDLE_DIR}")
