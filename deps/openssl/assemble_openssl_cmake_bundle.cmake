@@ -183,10 +183,24 @@ if(EXISTS "${_ossl_crypto_cmake}")
 	file(WRITE "${_ossl_crypto_cmake}" "${_ossl_crypto_cmake_txt}")
 endif()
 
-# Fsu0413/openssl-externalCMake ships a frozen PARAM_NAMES list; OpenSSL 3.5.8 needs live paramnames.pm.
+# Snapshot param-name outputs from build_generated; nested MSVC CMake must not re-run dofile.pl.
+foreach(_pregen_rel IN ITEMS
+	"include/openssl/core_names.h"
+	"include/internal/param_names.h"
+	"crypto/params_idx.c"
+)
+	if(NOT EXISTS "${_ossl_src}/${_pregen_rel}")
+		message(FATAL_ERROR
+			"OpenSSL bundle assembly: missing ${_pregen_rel} after build_generated")
+	endif()
+	get_filename_component(_pregen_parent "${_pregen_rel}" DIRECTORY)
+	file(MAKE_DIRECTORY "${BUNDLE_DIR}/pregenerated/${_pregen_parent}")
+	file(COPY "${_ossl_src}/${_pregen_rel}" DESTINATION "${BUNDLE_DIR}/pregenerated/${_pregen_parent}")
+endforeach()
+
 set(_ossl_paramnames_cmake "${BUNDLE_DIR}/crypto/paramnames.cmake")
 file(WRITE "${_ossl_paramnames_cmake}" [[# SPDX-License-Identifier: Unlicense
-# RetDec: generate OSSL_PARAM / core_names headers via OpenSSL's Perl (matches bundled tarball).
+# RetDec: copy param-name artifacts from assemble-time build_generated (no nested Perl).
 cmake_minimum_required(VERSION 3.13)
 if(NOT DEFINED OUTPUT_FILE_NAME)
 	message(FATAL_ERROR "paramnames.cmake: OUTPUT_FILE_NAME is required")
@@ -194,33 +208,18 @@ endif()
 if(CMAKE_ARGC LESS 2)
 	message(FATAL_ERROR "paramnames.cmake: expected path to .in file")
 endif()
-set(_INPUT_IN "${CMAKE_ARGV1}")
-get_filename_component(_INPUT_IN "${_INPUT_IN}" ABSOLUTE)
+get_filename_component(_INPUT_IN "${CMAKE_ARGV1}" ABSOLUTE)
 get_filename_component(_OSSL_SRC "${CMAKE_CURRENT_LIST_DIR}/../openssl" ABSOLUTE)
 file(RELATIVE_PATH _INPUT_REL "${_OSSL_SRC}" "${_INPUT_IN}")
-if(CMAKE_HOST_WIN32)
-	find_program(_PERL NAMES perl.exe
-		PATHS "C:/Strawberry/perl/bin" "C:/Program Files/Git/usr/bin"
-		NO_DEFAULT_PATH)
-	if(NOT _PERL)
-		find_program(_PERL NAMES perl perl.exe)
-	endif()
-else()
-	find_program(_PERL NAMES perl)
+string(REPLACE ".in" "" _PREGEN_REL "${_INPUT_REL}")
+string(REPLACE "\\" "/" _PREGEN_REL "${_PREGEN_REL}")
+set(_PREGEN_FILE "${CMAKE_CURRENT_LIST_DIR}/../pregenerated/${_PREGEN_REL}")
+if(NOT EXISTS "${_PREGEN_FILE}")
+	message(FATAL_ERROR "paramnames.cmake: missing pregenerated ${_PREGEN_REL}")
 endif()
-if(NOT _PERL)
-	message(FATAL_ERROR "paramnames.cmake: Perl is required to generate OpenSSL headers")
-endif()
-execute_process(
-	COMMAND ${_PERL} -I. -Mconfigdata -MOpenSSL::paramnames util/dofile.pl -omakefile ${_INPUT_REL}
-	WORKING_DIRECTORY "${_OSSL_SRC}"
-	OUTPUT_FILE "${OUTPUT_FILE_NAME}"
-	ERROR_VARIABLE _perl_err
-	RESULT_VARIABLE _perl_ec
-)
-if(_perl_ec OR NOT EXISTS "${OUTPUT_FILE_NAME}")
-	message(FATAL_ERROR "paramnames.cmake: dofile.pl failed (${_perl_ec}): ${_perl_err}")
-endif()
+get_filename_component(_OUT_DIR "${OUTPUT_FILE_NAME}" DIRECTORY)
+file(MAKE_DIRECTORY "${_OUT_DIR}")
+file(COPY "${_PREGEN_FILE}" DESTINATION "${_OUT_DIR}")
 ]])
 
 message(STATUS "OpenSSL CMake bundle ready at ${BUNDLE_DIR}")
