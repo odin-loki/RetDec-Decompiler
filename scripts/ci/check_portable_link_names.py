@@ -164,12 +164,23 @@ def main():
     if "--self-test" in sys.argv[1:]:
         return self_test()
 
+    skip_prefixes = (
+        "deps/openssl/vendored/wrapper/",
+        "deps/openssl/vendored/bundle/",
+    )
+
+    def _include_cmake(p: Path) -> bool:
+        rel = p.relative_to(ROOT).as_posix()
+        if "build/" in rel:
+            return False
+        return not any(rel.startswith(prefix) for prefix in skip_prefixes)
+
     paths = sorted(
         p for p in list(ROOT.glob("src/**/CMakeLists.txt"))
         + list(ROOT.glob("deps/**/CMakeLists.txt"))
         + list(ROOT.glob("tests/**/CMakeLists.txt"))
         + [ROOT / "CMakeLists.txt"]
-        if p.is_file() and "build/" not in str(p.relative_to(ROOT))
+        if p.is_file() and _include_cmake(p)
     )
     if len(paths) < 50:
         print(f"PORT-01: FAIL only {len(paths)} CMakeLists.txt found; the glob "

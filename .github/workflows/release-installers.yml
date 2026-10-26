@@ -111,6 +111,8 @@ jobs:
       CMAKE_BUILD_PARALLEL_LEVEL: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
 
       - name: Resolve release metadata
         id: meta
@@ -225,6 +227,23 @@ jobs:
           if ($nsh) { Copy-Item $nsh.FullName (Join-Path $includeDir "EnVar.nsh") -Force }
           Write-Host "Installed EnVar from $($dll.FullName) into $pluginDir"
 
+      - name: Cache OpenSSL vendored bundle
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: deps/openssl/vendored/bundle
+          key: openssl-vendored-bundle-${{ hashFiles('scripts/bootstrap_openssl_bundle.cmake', 'deps/openssl/vendored/wrapper/**', '.gitmodules') }}-${{ hashFiles('deps/openssl/vendored/openssl-src/VERSION.dat') }}
+          restore-keys: openssl-vendored-bundle-
+
+      - name: Bootstrap bundled OpenSSL (if needed)
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        shell: pwsh
+        run: |
+          $bundle = "deps/openssl/vendored/bundle/CMakeLists.txt"
+          if ($env:RETDEC_FORCE_OPENSSL_BOOTSTRAP -eq "1" -or $env:OPENSSL_FORCE_BOOTSTRAP -eq "1" -or -not (Test-Path -LiteralPath $bundle)) {
+            cmake -P scripts/bootstrap_openssl_bundle.cmake
+          }
+
       - name: Configure (full-windows-release, CPU-only CI)
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
         shell: pwsh
@@ -324,6 +343,8 @@ jobs:
       CMAKE_BUILD_PARALLEL_LEVEL: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
 
       - name: Detect prebuilt Linux tarball
         id: prebuilt
@@ -388,6 +409,22 @@ jobs:
         run: |
           bash scripts/fetch-large-files.sh || \
             bash scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
+
+      - name: Cache OpenSSL vendored bundle
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: deps/openssl/vendored/bundle
+          key: openssl-vendored-bundle-${{ hashFiles('scripts/bootstrap_openssl_bundle.cmake', 'deps/openssl/vendored/wrapper/**', '.gitmodules') }}-${{ hashFiles('deps/openssl/vendored/openssl-src/VERSION.dat') }}
+          restore-keys: openssl-vendored-bundle-
+
+      - name: Bootstrap bundled OpenSSL (if needed)
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        run: |
+          bundle="deps/openssl/vendored/bundle/CMakeLists.txt"
+          if [ "${RETDEC_FORCE_OPENSSL_BOOTSTRAP}" = "1" ] || [ "${OPENSSL_FORCE_BOOTSTRAP}" = "1" ] || [ ! -f "$bundle" ]; then
+            cmake -P scripts/bootstrap_openssl_bundle.cmake
+          fi
 
       - name: Configure (full-linux-release, CPU-only CI)
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
@@ -518,6 +555,8 @@ jobs:
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
 
       - name: Detect prebuilt macOS tarball
         id: prebuilt
@@ -603,6 +642,22 @@ jobs:
         run: |
           bash scripts/fetch-large-files.sh || \
             bash scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
+
+      - name: Cache OpenSSL vendored bundle
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: deps/openssl/vendored/bundle
+          key: openssl-vendored-bundle-${{ hashFiles('scripts/bootstrap_openssl_bundle.cmake', 'deps/openssl/vendored/wrapper/**', '.gitmodules') }}-${{ hashFiles('deps/openssl/vendored/openssl-src/VERSION.dat') }}
+          restore-keys: openssl-vendored-bundle-
+
+      - name: Bootstrap bundled OpenSSL (if needed)
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        run: |
+          bundle="deps/openssl/vendored/bundle/CMakeLists.txt"
+          if [ "${RETDEC_FORCE_OPENSSL_BOOTSTRAP}" = "1" ] || [ "${OPENSSL_FORCE_BOOTSTRAP}" = "1" ] || [ ! -f "$bundle" ]; then
+            cmake -P scripts/bootstrap_openssl_bundle.cmake
+          fi
 
       # The same option set linux-installer configures with. RETDEC_ENABLE_FILEINFO
       # is the one that matters: it is OFF by default, the release turns it ON,

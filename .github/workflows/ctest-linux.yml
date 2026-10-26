@@ -25,6 +25,8 @@ jobs:
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
 
       # An LLVM debug build does not fit in the action's 500 MB default, and
       # the key keeps this job's objects out of the other workflows' caches.
@@ -81,9 +83,23 @@ jobs:
           # and two actions restoring and saving the same path is how one of
           # them ends up writing an empty cache over the other's.
           path: build/linux
-          key: ctest-linux-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}
+          key: ctest-linux-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'cmake/deps.cmake', 'deps/**/CMakeLists.txt', 'scripts/bootstrap_openssl_bundle.cmake', 'deps/openssl/vendored/**') }}
           restore-keys: |
             ctest-linux-
+
+      - name: Cache OpenSSL vendored bundle
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: deps/openssl/vendored/bundle
+          key: openssl-vendored-bundle-${{ hashFiles('scripts/bootstrap_openssl_bundle.cmake', 'deps/openssl/vendored/wrapper/**', '.gitmodules') }}-${{ hashFiles('deps/openssl/vendored/openssl-src/VERSION.dat') }}
+          restore-keys: openssl-vendored-bundle-
+
+      - name: Bootstrap bundled OpenSSL (if needed)
+        run: |
+          bundle="deps/openssl/vendored/bundle/CMakeLists.txt"
+          if [ "${RETDEC_FORCE_OPENSSL_BOOTSTRAP}" = "1" ] || [ "${OPENSSL_FORCE_BOOTSTRAP}" = "1" ] || [ ! -f "$bundle" ]; then
+            cmake -P scripts/bootstrap_openssl_bundle.cmake
+          fi
 
       # The compiler launcher is what makes the ccache step above do anything.
       # Without it nothing invoked ccache at all: this job's own log reported
