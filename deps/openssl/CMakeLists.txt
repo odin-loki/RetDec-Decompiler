@@ -107,7 +107,7 @@ ExternalProject_Add(retdec-openssl
 		-S <SOURCE_DIR> -B <BINARY_DIR>
 		${_RETDEC_OSSL_CMAKE_CACHE_ARGS}
 	BUILD_COMMAND
-		${CMAKE_COMMAND} --build <BINARY_DIR> --parallel ${CPUS}
+		${CMAKE_COMMAND} --build <BINARY_DIR> --parallel ${CPUS} --target crypto
 	INSTALL_COMMAND
 		${CMAKE_COMMAND} --install <BINARY_DIR>
 	BUILD_BYPRODUCTS "${_RETDEC_OSSL_CRYPTO_LIB}"
