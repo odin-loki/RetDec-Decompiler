@@ -91,11 +91,16 @@ if(MSVC)
     set(_MSVC_FIXTURE_C /nologo /Od /Ob0 /Oi- /GS- /Oy- /guard:cf- /D_NO_CRT_STDIO_INLINE)
     set(_MSVC_PRINTF_STUB "${CMAKE_CURRENT_SOURCE_DIR}/msvc_fixture_printf.c")
     set(_MSVC_FIXTURE_LINK /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO /ENTRY:main /NODEFAULTLIB /SUBSYSTEM:CONSOLE /EXPORT:main)
+    set(_FIB_MAIN_OBJ "${CMAKE_CURRENT_BINARY_DIR}/fib_smoke_main.obj")
+    set(_FIB_PRINTF_OBJ "${CMAKE_CURRENT_BINARY_DIR}/fib_smoke_printf.obj")
     add_custom_command(
         OUTPUT "${_FIB_BIN}"
-        COMMAND ${CMAKE_C_COMPILER} ${_MSVC_FIXTURE_C}
-            "/Fo${CMAKE_CURRENT_BINARY_DIR}/fib_smoke_main.obj" "${_FIB_SRC}"
-            "/Fo${CMAKE_CURRENT_BINARY_DIR}/fib_smoke_printf.obj" "${_MSVC_PRINTF_STUB}"
+        COMMAND ${CMAKE_C_COMPILER} ${_MSVC_FIXTURE_C} /c
+            "/Fo${_FIB_MAIN_OBJ}" "${_FIB_SRC}"
+        COMMAND ${CMAKE_C_COMPILER} ${_MSVC_FIXTURE_C} /c
+            "/Fo${_FIB_PRINTF_OBJ}" "${_MSVC_PRINTF_STUB}"
+        COMMAND ${CMAKE_C_COMPILER}
+            "${_FIB_MAIN_OBJ}" "${_FIB_PRINTF_OBJ}"
             "/Fe${_FIB_BIN}" ${_MSVC_FIXTURE_LINK}
         DEPENDS "${_FIB_SRC}" "${_MSVC_PRINTF_STUB}"
         COMMENT "Building fib_smoke test binary (MSVC)"
