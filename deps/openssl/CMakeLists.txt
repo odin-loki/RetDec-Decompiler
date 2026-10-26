@@ -1,7 +1,8 @@
-# Bundled OpenSSL (static libcrypto): official tarball + Fsu0413/openssl-externalCMake.
-# Built with CMake only — no Perl Configure / nmake / GNU make for OpenSSL itself.
+# Bundled OpenSSL (static libcrypto): vendored openssl-src + Fsu0413/openssl-externalCMake wrapper.
+# Bootstrap once: cmake -P scripts/bootstrap_openssl_bundle.cmake
+# Built with CMake only — no Perl Configure / nmake / GNU make during the main RetDec configure.
 #
-# Sources: ${CMAKE_BINARY_DIR}/external/openssl-ep/src/bundle
+# Sources: ${CMAKE_CURRENT_SOURCE_DIR}/vendored/bundle
 # Install: ${EP_PREFIX}/openssl-install
 
 include(ExternalProject)
@@ -11,10 +12,11 @@ if(NOT CPUS GREATER 0)
 	set(CPUS 4)
 endif()
 
-if(NOT DEFINED OPENSSL_VERSION OR NOT OPENSSL_URL OR NOT OPENSSL_ARCHIVE_SHA256
-	OR NOT OPENSSL_EXTERNAL_CMAKE_URL OR NOT OPENSSL_EXTERNAL_CMAKE_ARCHIVE_SHA256)
+set(_RETDEC_OSSL_BUNDLE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vendored/bundle")
+if(NOT EXISTS "${_RETDEC_OSSL_BUNDLE_DIR}/CMakeLists.txt")
 	message(FATAL_ERROR
-		"OpenSSL dependency pins missing — include cmake/deps.cmake before deps/openssl.")
+		"Bundled OpenSSL is not bootstrapped (missing ${_RETDEC_OSSL_BUNDLE_DIR}/CMakeLists.txt). "
+		"From the repository root run: cmake -P scripts/bootstrap_openssl_bundle.cmake")
 endif()
 
 set(RETDEC_OPENSSL_INSTALL_DIR "${EP_PREFIX}/openssl-install")
@@ -22,9 +24,7 @@ file(MAKE_DIRECTORY "${RETDEC_OPENSSL_INSTALL_DIR}/include")
 file(TO_CMAKE_PATH "${RETDEC_OPENSSL_INSTALL_DIR}" _ossl_inst)
 string(REPLACE "\\" "/" RETDEC_OSSL_PREFIX "${_ossl_inst}")
 
-set(_RETDEC_OSSL_EP_PREFIX "${CMAKE_BINARY_DIR}/external/openssl-ep")
-set(_RETDEC_OSSL_BUNDLE_DIR "${_RETDEC_OSSL_EP_PREFIX}/src/bundle")
-set(_RETDEC_OSSL_BUILD_DIR "${_RETDEC_OSSL_EP_PREFIX}/build")
+set(_RETDEC_OSSL_BUILD_DIR "${CMAKE_BINARY_DIR}/external/openssl-build")
 
 if(MSVC)
 	set(_RETDEC_OSSL_CRYPTO_LIB "${RETDEC_OPENSSL_INSTALL_DIR}/lib/libcrypto.lib")
@@ -64,7 +64,6 @@ if(CMAKE_RANLIB)
 	list(APPEND _RETDEC_OSSL_CMAKE_CACHE_ARGS -DCMAKE_RANLIB:FILEPATH=${CMAKE_RANLIB})
 endif()
 
-# Prefer Ninja for the nested OpenSSL project (parallel, no nmake).
 set(_RETDEC_OSSL_EP_GENERATOR "Ninja")
 if(CMAKE_MAKE_PROGRAM AND EXISTS "${CMAKE_MAKE_PROGRAM}")
 	set(_RETDEC_OSSL_NINJA_EXECUTABLE "${CMAKE_MAKE_PROGRAM}")
@@ -72,7 +71,6 @@ else()
 	find_program(_RETDEC_OSSL_NINJA_EXECUTABLE NAMES ninja ninja.exe)
 endif()
 if(WIN32)
-	# openssl-externalCMake leaves LIBCRYPTO_SOURCES empty when arch is unset.
 	list(APPEND _RETDEC_OSSL_CMAKE_CACHE_ARGS -DOPENSSL_TARGET_ARCH:STRING=x64)
 	set(_RETDEC_GIT_PERL "C:/Program Files/Git/usr/bin/perl.exe")
 	if(EXISTS "${_RETDEC_GIT_PERL}")
@@ -98,22 +96,10 @@ else()
 	endif()
 endif()
 
-set(_RETDEC_OSSL_DOWNLOAD_ARGS
-	-DOPENSSL_URL=${OPENSSL_URL}
-	-DOPENSSL_ARCHIVE_SHA256=${OPENSSL_ARCHIVE_SHA256}
-	-DOPENSSL_EXTERNAL_CMAKE_URL=${OPENSSL_EXTERNAL_CMAKE_URL}
-	-DOPENSSL_EXTERNAL_CMAKE_ARCHIVE_SHA256=${OPENSSL_EXTERNAL_CMAKE_ARCHIVE_SHA256}
-	-DOPENSSL_VERSION=${OPENSSL_VERSION}
-	-DBUNDLE_DIR=${_RETDEC_OSSL_BUNDLE_DIR}
-)
-
 ExternalProject_Add(retdec-openssl
-	PREFIX "${_RETDEC_OSSL_EP_PREFIX}"
 	SOURCE_DIR "${_RETDEC_OSSL_BUNDLE_DIR}"
 	BINARY_DIR "${_RETDEC_OSSL_BUILD_DIR}"
-	DOWNLOAD_COMMAND
-		${CMAKE_COMMAND} ${_RETDEC_OSSL_DOWNLOAD_ARGS}
-		-P ${CMAKE_CURRENT_SOURCE_DIR}/assemble_openssl_cmake_bundle.cmake
+	DOWNLOAD_COMMAND ""
 	UPDATE_COMMAND ""
 	CONFIGURE_COMMAND
 		${CMAKE_COMMAND}

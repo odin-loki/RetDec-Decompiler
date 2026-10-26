@@ -42,6 +42,8 @@ jobs:
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
 
       - name: ccache
         uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
@@ -112,13 +114,23 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: build/linux
-          key: ctest-macos-qt5-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'cmake/deps.cmake', 'deps/**/CMakeLists.txt', 'deps/openssl/assemble_openssl_cmake_bundle.cmake') }}-${{ github.run_id }}
+          key: ctest-macos-qt5-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'cmake/deps.cmake', 'deps/**/CMakeLists.txt', 'scripts/bootstrap_openssl_bundle.cmake', 'deps/openssl/vendored/**') }}-${{ github.run_id }}
           restore-keys: |
-            ctest-macos-qt5-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'cmake/deps.cmake', 'deps/**/CMakeLists.txt', 'deps/openssl/assemble_openssl_cmake_bundle.cmake') }}-
+            ctest-macos-qt5-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'cmake/deps.cmake', 'deps/**/CMakeLists.txt', 'scripts/bootstrap_openssl_bundle.cmake', 'deps/openssl/vendored/**') }}-
 
-      # Cached trees skip ExternalProject DOWNLOAD; rebundle OpenSSL when assembly changes.
-      - name: Drop stale bundled OpenSSL ExternalProject tree
-        run: rm -rf build/linux/external/openssl-ep
+      - name: Cache OpenSSL vendored bundle
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: deps/openssl/vendored/bundle
+          key: openssl-vendored-bundle-${{ hashFiles('scripts/bootstrap_openssl_bundle.cmake', 'deps/openssl/vendored/wrapper/**', '.gitmodules') }}-${{ hashFiles('deps/openssl/vendored/openssl-src/VERSION.dat') }}
+          restore-keys: openssl-vendored-bundle-
+
+      - name: Bootstrap bundled OpenSSL (if needed)
+        run: |
+          bundle="deps/openssl/vendored/bundle/CMakeLists.txt"
+          if [ "${RETDEC_FORCE_OPENSSL_BOOTSTRAP}" = "1" ] || [ "${OPENSSL_FORCE_BOOTSTRAP}" = "1" ] || [ ! -f "$bundle" ]; then
+            cmake -P scripts/bootstrap_openssl_bundle.cmake
+          fi
 
       # full-linux-release is the preset the documentation tells a macOS reader
       # to use, so it is the one measured. Interprocedural optimisation is off
@@ -211,7 +223,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: build/linux
-          key: ctest-macos-qt5-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'cmake/deps.cmake', 'deps/**/CMakeLists.txt', 'deps/openssl/assemble_openssl_cmake_bundle.cmake') }}-${{ github.run_id }}
+          key: ctest-macos-qt5-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'cmake/deps.cmake', 'deps/**/CMakeLists.txt', 'scripts/bootstrap_openssl_bundle.cmake', 'deps/openssl/vendored/**') }}-${{ github.run_id }}
 
       - name: Upload the build log on failure
         if: failure()

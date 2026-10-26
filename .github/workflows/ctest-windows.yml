@@ -15,6 +15,8 @@ jobs:
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
 
       - name: Fetch large support files
         shell: pwsh
@@ -56,11 +58,19 @@ jobs:
             ctest-windows-py312-
             ctest-windows-
 
-      - name: Drop stale bundled OpenSSL ExternalProject tree
+      - name: Cache OpenSSL vendored bundle
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: deps/openssl/vendored/bundle
+          key: openssl-vendored-bundle-${{ hashFiles('scripts/bootstrap_openssl_bundle.cmake', 'deps/openssl/vendored/wrapper/**', '.gitmodules') }}-${{ hashFiles('deps/openssl/vendored/openssl-src/VERSION.dat') }}
+          restore-keys: openssl-vendored-bundle-
+
+      - name: Bootstrap bundled OpenSSL (if needed)
         shell: pwsh
         run: |
-          if (Test-Path build/windows/external/openssl-ep) {
-            Remove-Item -Recurse -Force build/windows/external/openssl-ep
+          $bundle = "deps/openssl/vendored/bundle/CMakeLists.txt"
+          if ($env:RETDEC_FORCE_OPENSSL_BOOTSTRAP -eq "1" -or $env:OPENSSL_FORCE_BOOTSTRAP -eq "1" -or -not (Test-Path -LiteralPath $bundle)) {
+            cmake -P scripts/bootstrap_openssl_bundle.cmake
           }
 
       - name: Configure (full-windows-debug, CPU-only CI)

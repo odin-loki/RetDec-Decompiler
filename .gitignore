@@ -14,6 +14,7 @@
 /dist/
 /deps/lief-sdk/
 /deps/stock-retdec/
+/deps/openssl/vendored/bundle/
 /external/
 /tests/decompilebench/artifacts/
 /tests/decompilebench/corpus/*

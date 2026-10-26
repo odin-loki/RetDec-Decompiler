@@ -1,0 +1,9 @@
+/* no include guard? */
+
+static char compiler_flags[] = {
+    'c', 'o', 'm', 'p', 'i', 'l', 'e', 'r', ':', ' ',
+@LIBCRYPTO_CFLAGS_SOOOOOOOOLONG@
+    '\0'
+};
+#define PLATFORM "platform: @OPENSSL_BUILD_PLATFORM@"
+#define DATE "built on: @OPENSSL_BUILD_TIMESTAMP@"

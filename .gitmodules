@@ -1,0 +1,3 @@
+[submodule "deps/openssl/vendored/openssl-src"]
+	path = deps/openssl/vendored/openssl-src
+	url = https://github.com/openssl/openssl.git
