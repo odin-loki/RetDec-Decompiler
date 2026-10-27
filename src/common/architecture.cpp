@@ -93,9 +93,9 @@ void Architecture::setIsArm32()          { setName(ARCH_ARM); setBitSize(32); }
 void Architecture::setIsArm64()          { setName(ARCH_ARM64); setBitSize(64); }
 void Architecture::setIsX86()            { setName(ARCH_x86); }
 void Architecture::setIsPpc()            { setName(ARCH_PPC); }
-void Architecture::setIsRiscv()          { setName(ARCH_RISCV); }
+void Architecture::setIsRiscv()          { setName(ARCH_RISCV); setBitSize(32); }
 void Architecture::setIsRiscv64()        { setName(ARCH_RISCV64); setBitSize(64); }
-void Architecture::setIsSparc()          { setName(ARCH_SPARC); }
+void Architecture::setIsSparc()          { setName(ARCH_SPARC); setBitSize(32); }
 void Architecture::setIsSparc64()        { setName(ARCH_SPARC64); setBitSize(64); }
 void Architecture::setIsSysz()           { setName(ARCH_SYSZ); setBitSize(64); }
 void Architecture::setIsXcore()          { setName(ARCH_XCORE); setBitSize(32); }

@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: recursive
+          submodules: true
 
       # An LLVM debug build does not fit in the action's 500 MB default, and
       # the key keeps this job's objects out of the other workflows' caches.

@@ -38,6 +38,20 @@ if(NOT EXISTS "${_OPENSSL_SRC_VENDOR}/VERSION.dat")
 		"bootstrap_openssl_bundle.cmake: ${_OPENSSL_SRC_VENDOR}/VERSION.dat missing (wrong submodule ref?)")
 endif()
 
+function(_retdec_openssl_apply_crypto_only_patch _bundle_dir)
+	set(_top "${_bundle_dir}/CMakeLists.txt")
+	if(NOT EXISTS "${_top}")
+		return()
+	endif()
+	file(READ "${_top}" _txt)
+	foreach(_subdir IN ITEMS ssl apps engines tools exporters)
+		string(REPLACE "add_subdirectory(${_subdir})"
+			"# RetDec: libcrypto only\n# add_subdirectory(${_subdir})"
+			_txt "${_txt}")
+	endforeach()
+	file(WRITE "${_top}" "${_txt}")
+endfunction()
+
 function(_retdec_openssl_write_paramnames_stub _bundle_dir)
 	set(_ossl_paramnames_cmake "${_bundle_dir}/crypto/paramnames.cmake")
 	file(MAKE_DIRECTORY "${_bundle_dir}/crypto")
@@ -81,8 +95,9 @@ endfunction()
 set(_bundle_ready_marker "${BUNDLE_DIR}/pregenerated/include/openssl/core_names.h")
 if(EXISTS "${_bundle_ready_marker}" AND NOT "$ENV{RETDEC_FORCE_OPENSSL_BOOTSTRAP}" STREQUAL "1"
 	AND NOT "$ENV{OPENSSL_FORCE_BOOTSTRAP}" STREQUAL "1")
+	_retdec_openssl_apply_crypto_only_patch("${BUNDLE_DIR}")
 	_retdec_openssl_write_paramnames_stub("${BUNDLE_DIR}")
-	message(STATUS "OpenSSL bundle already present at ${BUNDLE_DIR} (refreshed paramnames.cmake; set RETDEC_FORCE_OPENSSL_BOOTSTRAP=1 to rebuild)")
+	message(STATUS "OpenSSL bundle already present at ${BUNDLE_DIR} (refreshed patches; set RETDEC_FORCE_OPENSSL_BOOTSTRAP=1 to rebuild)")
 	return()
 endif()
 
@@ -214,6 +229,7 @@ foreach(_pregen_rel IN ITEMS
 	file(COPY "${_ossl_src}/${_pregen_rel}" DESTINATION "${BUNDLE_DIR}/pregenerated/${_pregen_parent}")
 endforeach()
 
+_retdec_openssl_apply_crypto_only_patch("${BUNDLE_DIR}")
 _retdec_openssl_write_paramnames_stub("${BUNDLE_DIR}")
 
 message(STATUS "OpenSSL CMake bundle ready at ${BUNDLE_DIR}")

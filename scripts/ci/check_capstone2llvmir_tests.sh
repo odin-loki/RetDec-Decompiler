@@ -182,12 +182,19 @@ build_dep() {
 
 CS_PREFIX="${DEPS_DIR}/capstone-install"
 KS_PREFIX="${DEPS_DIR}/keystone-install"
+KS_CMAKE_EXTRA=()
+if command -v llvm-config-20 >/dev/null 2>&1; then
+	_ks_llvm_prefix="$(llvm-config-20 --prefix)"
+	if [ -d "${_ks_llvm_prefix}/lib/cmake/llvm" ]; then
+		KS_CMAKE_EXTRA+=(-DLLVM_DIR="${_ks_llvm_prefix}/lib/cmake/llvm")
+	fi
+fi
 build_dep capstone "${CAPSTONE_TAG}" \
 	"https://github.com/capstone-engine/capstone" "${CS_PREFIX}" \
 	-DCAPSTONE_BUILD_SHARED_LIBS=OFF -DCAPSTONE_BUILD_TESTS=OFF -DCAPSTONE_BUILD_CSTOOL=OFF
 build_dep keystone "${KEYSTONE_TAG}" \
 	"https://github.com/keystone-engine/keystone" "${KS_PREFIX}" \
-	-DBUILD_LIBS_ONLY=1
+	-DBUILD_LIBS_ONLY=1 "${KS_CMAKE_EXTRA[@]}"
 
 # ── Every vector arrangement capstone defines is handled ─────────────────────
 # extractVectorValue() switches on the ARM64 vector arrangement specifier and
