@@ -86,7 +86,7 @@ jobs:
       #   * CMake had selected Homebrew's python 3.14. ctest-windows pins 3.12
       #     because the pyc opcode tables cover 3.8-3.12, and hello.pyc is a
       #     fixture here too. Same pin, same reason.
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
 
