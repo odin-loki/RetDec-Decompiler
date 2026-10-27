@@ -49,6 +49,15 @@ function(_retdec_openssl_apply_crypto_only_patch _bundle_dir)
 			"# RetDec: libcrypto only\n# add_subdirectory(${_subdir})"
 			_txt "${_txt}")
 	endforeach()
+	if(NOT _txt MATCHES "RetDec crypto-only: fipskey.h")
+		set(_fipskey_snippet [[
+# RetDec crypto-only: fipskey.h is normally generated under apps/.
+configure_file(
+	"${CMAKE_CURRENT_SOURCE_DIR}/apps/fipskey.h.cmake.in"
+	"${CMAKE_BINARY_DIR}/include/openssl/fipskey.h" @ONLY)
+]])
+		string(REPLACE "add_subdirectory(crypto)" "${_fipskey_snippet}\nadd_subdirectory(crypto)" _txt "${_txt}")
+	endif()
 	file(WRITE "${_top}" "${_txt}")
 endfunction()
 
