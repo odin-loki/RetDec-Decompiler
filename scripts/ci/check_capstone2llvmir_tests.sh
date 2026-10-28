@@ -171,23 +171,26 @@ build_dep() {
 			>/dev/null 2>&1 || die "could not clone ${name} ${tag} from ${url}"
 	fi
 	if [ "${name}" = "keystone" ]; then
-		# armv7's default CPU has no integer divide, so sdiv/udiv never
-		# assemble. cortex-a15 has hwdiv in both ARM and Thumb.
+		# armv7's default CPU has no integer divide, crypto, or CRC, so
+		# sdiv/udiv/aese/sha/crc32 never assemble. cortex-a15 has hwdiv;
+		# the feature string adds the rest on top of that CPU.
 		python3 - "${src}/llvm/keystone/ks.cpp" <<'PY'
-import re, sys
+import sys
 path = sys.argv[1]
 text = open(path, encoding="utf-8").read()
-if "cortex-a15" not in text:
-    m = re.search(
-        r'^([ \t]*)if \(ks->arch == KS_ARCH_X86\)\n\1([ \t]+)MCPU = "knl";',
-        text,
-        re.M,
+marker = "/* retdec: arm features */"
+needle = "ks->STI = ks->TheTarget->createMCSubtargetInfo"
+if marker not in text:
+    if needle not in text:
+        sys.exit("keystone ks.cpp has no subtarget hook")
+    hook = (
+        "    " + marker + "\n"
+        "    if (ks->arch == KS_ARCH_ARM) {\n"
+        '        MCPU = "cortex-a15";\n'
+        '        ks->FeaturesStr = "+crypto,+crc,+hwdiv,+hwdiv-arm";\n'
+        "    }\n"
     )
-    if not m:
-        sys.exit("keystone ks.cpp has no X86 CPU hook to hang ARM hwdiv on")
-    ind, deeper = m.group(1), m.group(2)
-    hook = f'{ind}if (ks->arch == KS_ARCH_ARM)\n{ind}{deeper}MCPU = "cortex-a15";\n\n'
-    text = text[: m.start()] + hook + text[m.start() :]
+    text = text.replace(needle, hook + needle, 1)
     open(path, "w", encoding="utf-8", newline="\n").write(text)
 PY
 	fi
@@ -336,9 +339,19 @@ lines = open(sys.argv[1], encoding="utf-8", errors="replace").read().splitlines(
 fail_at = [i for i, line in enumerate(lines) if line.startswith("[  FAILED  ]")]
 print(f"--- failed names ({len(fail_at)}) ---")
 for i in fail_at:
+    reason = ""
+    for j in range(i - 1, max(-1, i - 12), -1):
+        s = lines[j].strip()
+        if s.startswith("[  FAILED  ]") or s.startswith("[ RUN      ]"):
+            break
+        if s.startswith("missing ") or s.startswith("ERROR:") or "Which is:" in s or s.startswith("Expected"):
+            reason = s
+            break
     print(lines[i])
+    if reason:
+        print("   ", reason)
 print("--- failure detail ---")
-for n, i in enumerate(fail_at[:15]):
+for n, i in enumerate(fail_at[:8]):
     start = max(0, i - 25)
     for j in range(i - 1, start - 1, -1):
         if lines[j].startswith("[ RUN      ]") or lines[j].startswith("[       OK ]"):

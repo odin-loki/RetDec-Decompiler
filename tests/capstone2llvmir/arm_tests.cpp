@@ -7889,8 +7889,8 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UDIV_arm_bin)
 		{ARM_REG_R2, 4},
 	});
 
-	// A32 `udiv r0, r1, r2` = 0xE7310F12
-	emulate_bin("12 0f 31 e7");
+	// A32 `udiv r0, r1, r2` = 0xE730F211
+	emulate_bin("11 f2 30 e7");
 
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM_REG_R0, 5},
@@ -7907,8 +7907,8 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SDIV_arm_bin)
 		{ARM_REG_R2, 4},
 	});
 
-	// A32 `sdiv r0, r1, r2` = 0xE7110F12
-	emulate_bin("12 0f 11 e7");
+	// A32 `sdiv r0, r1, r2` = 0xE710F211
+	emulate_bin("11 f2 10 e7");
 
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM_REG_R0, 5},
