@@ -3404,6 +3404,8 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::loadOp(
 	{
 		case ARM64_OP_PSTATE:
 		case ARM64_OP_SYS:
+		case ARM64_OP_SYSALIAS:
+		case ARM64_OP_SYSIMM:
 		case ARM64_OP_AT:
 		case ARM64_OP_DC:
 		case ARM64_OP_IC:
@@ -4184,8 +4186,11 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateMov(cs_insn* i, cs_arm64* ai,
 			op1 = irb.CreateBitCast(op1, dstTy);
 	}
 
-	if (arm64IdIs(i, ARM64_INS_MVN) || arm64IdIs(i, ARM64_INS_MOVN)
-		|| (i->is_alias && static_cast<unsigned>(i->alias_id) == ARM64_INS_ALIAS_MOVN))
+	// A MOVN that Capstone can spell as `mov` already has the inverted
+	// immediate in the operand. Inverting again restores the encoding
+	// immediate. A raw `movn` still carries that encoding immediate.
+	const bool logicalMov = i->is_alias && static_cast<unsigned>(i->alias_id) == ARM64_INS_ALIAS_MOV;
+	if (arm64IdIs(i, ARM64_INS_MVN) || (!logicalMov && arm64IdIs(i, ARM64_INS_MOVN)))
 	{
 		op1 = generateValueNegate(irb, op1);
 	}
