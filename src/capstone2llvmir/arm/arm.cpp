@@ -556,8 +556,9 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadMemIndexTerm(cs_arm_op& op, 
 	default: break;
 	}
 
-	// The sign is op.subtracted, not mem.scale; see loadOp().
-	if (op.subtracted)
+	// Register form sets scale to -1 and leaves subtracted false.
+	// Immediate form sets subtracted and leaves scale at 1. Either is a minus.
+	if (op.subtracted || op.mem.scale < 0)
 	{
 		idx = irb.CreateNeg(idx);
 	}
@@ -1942,14 +1943,9 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadOp(
 			auto* idxR = loadRegister(op.mem.index, irb);
 			if (idxR)
 			{
-				// The sign of a register offset is op.subtracted, NOT
-				// mem.scale. arm.h documents scale as 1 or -1, but this
-				// capstone never writes -1 for ARM: disassembling
-				// `ldr r0, [r1, -r2]` gives scale = 1 and subtracted = 1, and
-				// so does every other negated-index form. So this branch was
-				// dead and the minus sign was dropped -- `ldr r0, [r1, -r2]`
-				// loaded from r1 + r2.
-				if (op.subtracted)
+				// `ldr r0, [r1, -r2]` is scale -1 and subtracted left false.
+				// An immediate minus sets subtracted and keeps scale at 1.
+				if (op.subtracted || op.mem.scale < 0)
 				{
 					idxR = irb.CreateNeg(idxR);
 				}
@@ -1959,7 +1955,7 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadOp(
 				// amount lives in op.shift.
 				idxR = generateOperandShift(irb, op, idxR);
 			}
-			else if (op.subtracted && disp)
+			else if ((op.subtracted || op.mem.scale < 0) && disp)
 			{
 				// Capstone 6.x reports `ldr r0, [r1, #-8]` as disp=+8 and
 				// subtracted=1 (5.x wrote disp=-8). Apply the minus here
@@ -2127,14 +2123,9 @@ llvm::Instruction* Capstone2LlvmIrTranslatorArm_impl::storeOp(
 			auto* idxR = loadRegister(op.mem.index, irb);
 			if (idxR)
 			{
-				// The sign of a register offset is op.subtracted, NOT
-				// mem.scale. arm.h documents scale as 1 or -1, but this
-				// capstone never writes -1 for ARM: disassembling
-				// `ldr r0, [r1, -r2]` gives scale = 1 and subtracted = 1, and
-				// so does every other negated-index form. So this branch was
-				// dead and the minus sign was dropped -- `ldr r0, [r1, -r2]`
-				// loaded from r1 + r2.
-				if (op.subtracted)
+				// `ldr r0, [r1, -r2]` is scale -1 and subtracted left false.
+				// An immediate minus sets subtracted and keeps scale at 1.
+				if (op.subtracted || op.mem.scale < 0)
 				{
 					idxR = irb.CreateNeg(idxR);
 				}
@@ -2143,7 +2134,7 @@ llvm::Instruction* Capstone2LlvmIrTranslatorArm_impl::storeOp(
 				// the index register.
 				idxR = generateOperandShift(irb, op, idxR);
 			}
-			else if (op.subtracted && disp)
+			else if ((op.subtracted || op.mem.scale < 0) && disp)
 			{
 				disp = irb.CreateNeg(disp);
 			}
@@ -3148,6 +3139,13 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMrc(cs_insn* i, cs_arm* ai, llv
 
 	if (!isThreadPointer)
 	{
+		// Capstone 6 marks Rt write-only, so the generic path stores the
+		// call there and drops Rt from the arguments. An opaque read passes
+		// every operand and returns void.
+		for (unsigned n = 0; n < ai->op_count; ++n)
+		{
+			ai->operands[n].access = CS_AC_READ;
+		}
 		translatePseudoAsmGeneric(i, ai, irb);
 		return;
 	}
@@ -4201,8 +4199,24 @@ void Capstone2LlvmIrTranslatorArm_impl::translateStr(cs_insn* i, cs_arm* ai, llv
 			storeOp(ai->operands[2], op0, irb);
 
 			auto op3 = ai->operands[2];
-			op3.mem.disp += 4;
-			storeOp(op3, op1, irb);
+			// Post-index clears disp inside storeOp, so the second word
+			// would land on the same address as the first. It is base+4;
+			// the displacement is the writeback, applied below.
+			if (_insn && _insn->detail && _insn->detail->arm.post_index)
+			{
+				op3.mem.disp = 4;
+				op3.mem.index = ARM_REG_INVALID;
+				op3.subtracted = false;
+				op3.mem.scale = 1;
+				_insn->detail->arm.post_index = false;
+				storeOp(op3, op1, irb);
+				_insn->detail->arm.post_index = true;
+			}
+			else
+			{
+				op3.mem.disp += 4;
+				storeOp(op3, op1, irb);
+			}
 
 			baseR = ai->operands[2].mem.base;
 			if (auto disp = ai->operands[2].mem.disp)
@@ -4222,10 +4236,24 @@ void Capstone2LlvmIrTranslatorArm_impl::translateStr(cs_insn* i, cs_arm* ai, llv
 			storeOp(ai->operands[2], op0, irb);
 
 			// We don't use op4 here, post-index offset is applied to source
-			// address only after the transfers at writeback.
+			// address only after the transfers at writeback. The second word
+			// is still four bytes on from the address that was stored.
 			auto op3 = ai->operands[2];
-			op3.mem.disp += 4;
-			storeOp(op3, op1, irb);
+			if (_insn && _insn->detail && _insn->detail->arm.post_index)
+			{
+				op3.mem.disp = 4;
+				op3.mem.index = ARM_REG_INVALID;
+				op3.subtracted = false;
+				op3.mem.scale = 1;
+				_insn->detail->arm.post_index = false;
+				storeOp(op3, op1, irb);
+				_insn->detail->arm.post_index = true;
+			}
+			else
+			{
+				op3.mem.disp += 4;
+				storeOp(op3, op1, irb);
+			}
 
 			baseR = ai->operands[2].mem.base;
 			idx = loadOp(ai->operands[3], irb);

@@ -4198,6 +4198,14 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateMov(cs_insn* i, cs_arm64* ai,
 		return;
 	}
 
+	// `mov v0.s[1], w1` is the preferred spelling of INS. Storing the lane
+	// as the whole register zeros every other lane.
+	if (isVectorRegister(ai->operands[0]) && ai->operands[0].vector_index >= 0)
+	{
+		translateNeonIns(i, ai, irb);
+		return;
+	}
+
 	op1 = loadOp(ai->operands[1], irb);
 	auto* dstTy = getRegisterType(ai->operands[0].reg);
 	if (op1->getType() != dstTy)

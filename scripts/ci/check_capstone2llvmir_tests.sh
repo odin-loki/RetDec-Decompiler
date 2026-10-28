@@ -170,6 +170,27 @@ build_dep() {
 		GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --branch "${tag}" "${url}" "${src}" \
 			>/dev/null 2>&1 || die "could not clone ${name} ${tag} from ${url}"
 	fi
+	if [ "${name}" = "keystone" ]; then
+		# armv7's default CPU has no integer divide, so sdiv/udiv never
+		# assemble. cortex-a15 has hwdiv in both ARM and Thumb.
+		python3 - "${src}/llvm/keystone/ks.cpp" <<'PY'
+import re, sys
+path = sys.argv[1]
+text = open(path, encoding="utf-8").read()
+if "cortex-a15" not in text:
+    m = re.search(
+        r'^([ \t]*)if \(ks->arch == KS_ARCH_X86\)\n\1([ \t]+)MCPU = "knl";',
+        text,
+        re.M,
+    )
+    if not m:
+        sys.exit("keystone ks.cpp has no X86 CPU hook to hang ARM hwdiv on")
+    ind, deeper = m.group(1), m.group(2)
+    hook = f'{ind}if (ks->arch == KS_ARCH_ARM)\n{ind}{deeper}MCPU = "cortex-a15";\n\n'
+    text = text[: m.start()] + hook + text[m.start() :]
+    open(path, "w", encoding="utf-8", newline="\n").write(text)
+PY
+	fi
 	echo "C2L-01: building ${name} ${tag}"
 	cmake -S "${src}" -B "${src}/build" -DCMAKE_BUILD_TYPE=Release \
 		-DCMAKE_INSTALL_PREFIX="${prefix}" -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
