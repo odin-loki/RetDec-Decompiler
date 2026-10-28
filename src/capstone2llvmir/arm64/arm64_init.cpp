@@ -2258,6 +2258,13 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorArm64_impl::*)(cs_insn* i, 
 		{ARM64_INS_ZIP2, &Capstone2LlvmIrTranslatorArm64_impl::translateNeonLaneBinary},
 
 		// alias insn
+		// Capstone 6's alias ids are distinct from ARM64_INS_ASR / ROR / NEG.
+		// The encoding id stays in i->id; these keys are what alias_id holds.
+		{ARM64_INS_ALIAS_ASR, &Capstone2LlvmIrTranslatorArm64_impl::translateShifts},
+		{ARM64_INS_ALIAS_LSL, &Capstone2LlvmIrTranslatorArm64_impl::translateShifts},
+		{ARM64_INS_ALIAS_LSR, &Capstone2LlvmIrTranslatorArm64_impl::translateShifts},
+		{ARM64_INS_ALIAS_ROR, &Capstone2LlvmIrTranslatorArm64_impl::translateShifts},
+		{ARM64_INS_ALIAS_NEG, &Capstone2LlvmIrTranslatorArm64_impl::translateNeg},
 		{ARM64_INS_MNEG, &Capstone2LlvmIrTranslatorArm64_impl::translateMul},
 		{ARM64_INS_UMNEGL, &Capstone2LlvmIrTranslatorArm64_impl::translateMulOpl},
 		{ARM64_INS_SMNEGL, &Capstone2LlvmIrTranslatorArm64_impl::translateMulOpl},

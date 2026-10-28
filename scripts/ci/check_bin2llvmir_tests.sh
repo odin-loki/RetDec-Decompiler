@@ -261,12 +261,16 @@ export -f compile_test
 export B2L_TOBJ="${WORKDIR}/tobj"
 printf '%s\n' "${TEST_SRCS[@]}" | xargs -P "${JOBS}" -I{} bash -c 'compile_test "$@"' _ {}
 
+test_compile_failed=0
 for e in "${WORKDIR}"/tobj/*.o.err; do
 	[ -e "$e" ] || continue
+	test_compile_failed=1
 	echo "--- $(basename "$e" .o.err) ---" >&2
 	grep -m 3 -E 'error:' "$e" >&2 || true
-	die "a tests/bin2llvmir source did not compile"
 done
+if [ "${test_compile_failed}" -ne 0 ]; then
+	die "a tests/bin2llvmir source did not compile"
+fi
 
 g++ -std=c++17 -O0 -w "${WORKDIR}"/tobj/*.o "${WORKDIR}/dwarf_stub.o" \
 	-o "${WORKDIR}/b2ltest" \

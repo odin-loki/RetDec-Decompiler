@@ -7,6 +7,7 @@
 
 #include <cmath>
 #include <iomanip>
+#include <string>
 
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -27,6 +28,21 @@ static bool isSveZReg(uint32_t r);
 static bool isSvePReg(uint32_t r);
 static bool isSvePredOp(const cs_arm64_op& op);
 static bool isZaReg(uint32_t r);
+
+// Capstone 6 keeps the encoding id (ADDS, SUB, …) and puts CMN/NEG/… in
+// alias_id. Tests compare against the alias, so either field has to count.
+static bool arm64IdIs(cs_insn* i, unsigned id)
+{
+	return i->id == id || (i->is_alias && static_cast<unsigned>(i->alias_id) == id);
+}
+
+// `extr Xd, Xn, Xn, #imm` is printed as ror, and the id is the alias, which
+// is not the ARM64_INS_ROR key. The mnemonic is what the pseudo call is named.
+static bool arm64ShiftMnemonic(const char* m)
+{
+	const std::string name(m);
+	return name == "asr" || name == "lsl" || name == "lsr" || name == "ror";
+}
 
 Capstone2LlvmIrTranslatorArm64_impl::Capstone2LlvmIrTranslatorArm64_impl(
 		llvm::Module* m,
@@ -331,12 +347,38 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateInstruction(
 
 	//std::cout << i->mnemonic << " " << i->op_str << std::endl;
 
-	auto fIt = _i2fm.find(i->id);
+	// Capstone 6 keeps SUB/SBC and puts NEG/NGC in alias_id. The encoding id
+	// is mapped, so a plain lookup subtracts the wrong registers. NEG and NGC
+	// have their own translators; prefer those.
+	std::size_t id = i->id;
+	if (i->is_alias)
+	{
+		const auto alias = static_cast<std::size_t>(i->alias_id);
+		auto aIt = _i2fm.find(alias);
+		auto rIt = _i2fm.find(static_cast<std::size_t>(i->id));
+		const bool aliasMapped = aIt != _i2fm.end() && aIt->second != nullptr;
+		const bool realMapped = rIt != _i2fm.end() && rIt->second != nullptr;
+		const bool negFamily = alias == ARM64_INS_ALIAS_NEG || alias == ARM64_INS_NEGS
+				|| alias == ARM64_INS_NGC || alias == ARM64_INS_NGCS;
+		if (aliasMapped && (!realMapped || negFamily))
+		{
+			id = alias;
+		}
+	}
+
+	auto fIt = _i2fm.find(id);
 	if (fIt != _i2fm.end() && fIt->second != nullptr)
 	{
 		auto f = fIt->second;
 
 		(this->*f)(i, ai, irb);
+	}
+	else if (ai->op_count == 2 && ai->operands[1].shift.type != ARM64_SFT_INVALID
+			&& arm64ShiftMnemonic(i->mnemonic))
+	{
+		// Unmapped alias (ror for extr-with-the-same-register). The source
+		// operand already carries the rotate; translateShifts stores it.
+		translateShifts(i, ai, irb);
 	}
 	else
 	{
@@ -535,42 +577,69 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::generateOperandShift(
 		llvm::Value* val,
 		bool updateFlags)
 {
-	llvm::Value* n = nullptr;
 	if (op.shift.type == ARM64_SFT_INVALID)
 	{
 		return val;
+	}
+
+	// `asr Xd, Xn, Xm` is two operands: Xn, and shift.value holding Xm with
+	// type ASR_REG (same for lsl/lsr/ror). The field is a register id. Treating
+	// it as an immediate shifted by that id and never read Xm.
+	const bool regShift = op.shift.type == ARM64_SFT_LSL_REG || op.shift.type == ARM64_SFT_LSR_REG
+			|| op.shift.type == ARM64_SFT_ASR_REG || op.shift.type == ARM64_SFT_ROR_REG
+			|| op.shift.type == ARM64_SFT_MSL_REG;
+
+	llvm::Value* n = nullptr;
+	if (regShift)
+	{
+		if (!val->getType()->isIntegerTy())
+		{
+			return val;
+		}
+		n = loadRegister(static_cast<uint32_t>(op.shift.value), irb);
+		if (n == nullptr)
+		{
+			return val;
+		}
 	}
 	else
 	{
 		n = llvm::ConstantInt::get(val->getType(), op.shift.value);
 	}
 
-	if (n == nullptr)
-	{
-		throw GenericError("generateOperandShift(): nullptr shift value");
-	}
-
 	n = irb.CreateZExtOrTrunc(n, val->getType());
+	if (regShift)
+	{
+		// Register amounts are reduced mod the width. An unmasked count of 64
+		// on i64 is poison, and the emulator aborts on it.
+		auto* ty = llvm::cast<llvm::IntegerType>(n->getType());
+		n = irb.CreateAnd(n, llvm::ConstantInt::get(ty, ty->getBitWidth() - 1));
+	}
 
 	switch (op.shift.type)
 	{
 		case ARM64_SFT_ASR:
+		case ARM64_SFT_ASR_REG:
 		{
 			return generateShiftAsr(irb, val, n, updateFlags);
 		}
 		case ARM64_SFT_LSL:
+		case ARM64_SFT_LSL_REG:
 		{
 			return generateShiftLsl(irb, val, n, updateFlags);
 		}
 		case ARM64_SFT_LSR:
+		case ARM64_SFT_LSR_REG:
 		{
 			return generateShiftLsr(irb, val, n, updateFlags);
 		}
 		case ARM64_SFT_ROR:
+		case ARM64_SFT_ROR_REG:
 		{
 			return generateShiftRor(irb, val, n, updateFlags);
 		}
 		case ARM64_SFT_MSL:
+		case ARM64_SFT_MSL_REG:
 		{
 			return generateShiftMsl(irb, val, n, updateFlags);
 		}
@@ -3844,15 +3913,19 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateAdd(cs_insn* i, cs_arm64* ai,
 	op2 = generateTypeConversion(irb, op2, op1->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
 
 	// For some reason it is possible to add two FP registers with integer add?
-	// This looks to be also true for sub
-	if (isFPRegister(ai->operands[0]) && i->id != ARM64_INS_CMN)
+	// This looks to be also true for sub.
+	//
+	// CMN is ADDS with the alias in alias_id. i->id stays ADDS, so the old
+	// comparison stored the destination register the alias does not write.
+	const bool isCmn = arm64IdIs(i, ARM64_INS_CMN);
+	if (isFPRegister(ai->operands[0]) && !isCmn)
 	{
 		op1 = generateFPBitCastToIntegerType(irb, op1);
 		op2 = generateFPBitCastToIntegerType(irb, op2);
 	}
 
 	auto *val = irb.CreateAdd(op1, op2);
-	if (i->id != ARM64_INS_CMN)
+	if (!isCmn)
 	{
 		storeOp(ai->operands[0], val, irb);
 	}
@@ -3894,15 +3967,19 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateSub(cs_insn* i, cs_arm64* ai,
 	op2 = generateTypeConversion(irb, op2, op1->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
 
 	// For some reason it is possible to sub two FP registers with integer sub?
-	// This looks to be also true for add
-	if (isFPRegister(ai->operands[0]) && i->id != ARM64_INS_CMP)
+	// This looks to be also true for add.
+	//
+	// CMP is SUBS. Same as CMN: the alias id is not i->id, and storing the
+	// destination is the extra register the tests reject.
+	const bool isCmp = arm64IdIs(i, ARM64_INS_CMP);
+	if (isFPRegister(ai->operands[0]) && !isCmp)
 	{
 		op1 = generateFPBitCastToIntegerType(irb, op1);
 		op2 = generateFPBitCastToIntegerType(irb, op2);
 	}
 
 	auto* val = irb.CreateSub(op1, op2);
-	if (i->id != ARM64_INS_CMP)
+	if (!isCmp)
 	{
 		storeOp(ai->operands[0], val, irb);
 	}
@@ -4655,6 +4732,16 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateShifts(cs_insn* i, cs_arm64* 
 
 	EXPECT_IS_BINARY_OR_TERNARY(i, ai, irb);
 
+	// Capstone 6 folds `asr Xd, Xn, Xm` and `ror Xd, Xn, #imm` (the extr alias)
+	// into two operands. The source already carries the shift, so loadOp is
+	// the result. The last-two-operand load used Xd as the value instead.
+	if (ai->op_count == 2 && ai->operands[1].shift.type != ARM64_SFT_INVALID)
+	{
+		auto* shifted = loadOp(ai->operands[1], irb);
+		storeOp(ai->operands[0], shifted, irb);
+		return;
+	}
+
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(ai, irb);
 	op2 = irb.CreateZExtOrTrunc(op2, op1->getType());
 
@@ -4677,21 +4764,25 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateShifts(cs_insn* i, cs_arm64* 
 	switch(i->id)
 	{
 		case ARM64_INS_ASR:
+		case ARM64_INS_ALIAS_ASR:
 		{
 			val = irb.CreateAShr(op1, op2);
 			break;
 		}
 		case ARM64_INS_LSL:
+		case ARM64_INS_ALIAS_LSL:
 		{
 			val = irb.CreateShl(op1, op2);
 			break;
 		}
 		case ARM64_INS_LSR:
+		case ARM64_INS_ALIAS_LSR:
 		{
 			val = irb.CreateLShr(op1, op2);
 			break;
 		}
 		case ARM64_INS_ROR:
+		case ARM64_INS_ALIAS_ROR:
 		{
 			val = generateShiftRor(irb, op1, op2);
 			break;

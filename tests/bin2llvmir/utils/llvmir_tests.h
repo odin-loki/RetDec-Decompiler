@@ -31,6 +31,9 @@
 #include "retdec/loader/loader.h"
 #include "retdec/bin2llvmir/providers/abi/abi.h"
 #include "retdec/bin2llvmir/providers/asm_instruction.h"
+// Capstone 6 dropped ARM64_REG_V* (they are the Q registers). Tests name the
+// old enumerators; this header is included after capstone via asm_instruction.h.
+#include "capstone2llvmir/capstone6_compat.h"
 #include "retdec/bin2llvmir/providers/calling_convention/calling_convention.h"
 #include "retdec/bin2llvmir/providers/config.h"
 #include "retdec/bin2llvmir/providers/debugformat.h"
