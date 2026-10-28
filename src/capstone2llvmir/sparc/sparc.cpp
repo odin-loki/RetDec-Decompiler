@@ -1769,11 +1769,9 @@ void Capstone2LlvmIrTranslatorSparc_impl::translateMul(
 			for (unsigned bit = 0; bit < 64; ++bit)
 			{
 				auto* sel = irb.CreateICmpNE(
-						irb.CreateAnd(y, llvm::ConstantInt::get(wide, 1ULL << bit)),
-						llvm::ConstantInt::get(wide, 0));
+					irb.CreateAnd(y, llvm::ConstantInt::get(wide, 1ULL << bit)), llvm::ConstantInt::get(wide, 0));
 				auto* term = irb.CreateShl(x, bit);
-				acc = irb.CreateXor(acc, irb.CreateSelect(
-						sel, term, llvm::ConstantInt::get(wide, 0)));
+				acc = irb.CreateXor(acc, irb.CreateSelect(sel, term, llvm::ConstantInt::get(wide, 0)));
 			}
 			return acc;
 		};
@@ -1781,8 +1779,7 @@ void Capstone2LlvmIrTranslatorSparc_impl::translateMul(
 		{
 			auto* prod = clmul(a, b, 128);
 			auto* i128 = irb.getIntNTy(128);
-			result = irb.CreateTrunc(
-					irb.CreateLShr(prod, llvm::ConstantInt::get(i128, 64)), i64);
+			result = irb.CreateTrunc(irb.CreateLShr(prod, llvm::ConstantInt::get(i128, 64)), i64);
 		}
 		else
 		{
