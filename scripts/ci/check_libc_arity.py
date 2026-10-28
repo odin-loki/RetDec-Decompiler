@@ -360,7 +360,7 @@ def run_module(label: str, header_table: Path, arity_table: Path,
         for fn, got, exp in wrong[:20]:
             print(f"  {fn}: table says {got[0]} params variadic={got[1]}, "
                   f"the header says {exp[0]} params variadic={exp[1]}", file=sys.stderr)
-        for fn in missing[:20]:
+        for fn in missing:
             print(f"  {fn}: measurable from <{headers[fn]}> but absent from the table", file=sys.stderr)
         for fn in extra[:20]:
             print(f"  {fn}: in the table but NOT measurable here -- a macro, or not "

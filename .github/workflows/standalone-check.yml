@@ -167,7 +167,7 @@ jobs:
       # are measured from the real headers, not recalled -- a wrong entry would
       # silently delete a real argument from the emitted C, or cast a call that
       # did not need it. There is one per semantics that assigns C headers:
-      # libc (454 entries) and gcc_general (976), the latter because it is the
+      # libc (454 entries) and gcc_general (959), the latter because it is the
       # one that knows <pthread.h>. This fails if a table and the headers ever
       # disagree.
       - name: ARITY-01 libc arity table vs the C headers
