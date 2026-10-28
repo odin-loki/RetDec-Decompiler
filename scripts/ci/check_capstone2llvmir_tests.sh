@@ -189,9 +189,24 @@ if command -v llvm-config-20 >/dev/null 2>&1; then
 		KS_CMAKE_EXTRA+=(-DLLVM_DIR="${_ks_llvm_prefix}/lib/cmake/llvm")
 	fi
 fi
+# Same architecture set as deps/capstone/CMakeLists.txt. Capstone 6 leaves
+# AArch64 and SystemZ out of the headers unless these are on, and the
+# translators name CS_ARCH_ARM64 and cs_sysz.
 build_dep capstone "${CAPSTONE_TAG}" \
 	"https://github.com/capstone-engine/capstone" "${CS_PREFIX}" \
-	-DCAPSTONE_BUILD_SHARED_LIBS=OFF -DCAPSTONE_BUILD_TESTS=OFF -DCAPSTONE_BUILD_CSTOOL=OFF
+	-DCAPSTONE_BUILD_STATIC_LIBS=ON \
+	-DCAPSTONE_BUILD_SHARED_LIBS=OFF \
+	-DCAPSTONE_BUILD_TESTS=OFF \
+	-DCAPSTONE_BUILD_CSTOOL=OFF \
+	-DCAPSTONE_ARM_SUPPORT=ON \
+	-DCAPSTONE_MIPS_SUPPORT=ON \
+	-DCAPSTONE_PPC_SUPPORT=ON \
+	-DCAPSTONE_X86_SUPPORT=ON \
+	-DCAPSTONE_AARCH64_SUPPORT=ON \
+	-DCAPSTONE_RISCV_SUPPORT=ON \
+	-DCAPSTONE_SPARC_SUPPORT=ON \
+	-DCAPSTONE_SYSTEMZ_SUPPORT=ON \
+	-DCAPSTONE_XCORE_SUPPORT=ON
 build_dep keystone "${KEYSTONE_TAG}" \
 	"https://github.com/keystone-engine/keystone" "${KS_PREFIX}" \
 	-DBUILD_LIBS_ONLY=1 "${KS_CMAKE_EXTRA[@]}"

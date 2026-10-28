@@ -6,21 +6,21 @@
  * low 8 bits of the first little-endian 64-bit word are the opcode in every
  * NVIDIA CUDA Binary Utilities sample consulted:
  *
- *   EXIT  0x4d   /* 0x000000000000794d  0x000fea0003800000 *\/
- *   NOP   0x18   /* 0x0000000000007918  0x000fc00000000000 *\/
- *   BRA   0x47   /* 0xfffffff000007947  (12.8.2) / 0xfffffffc00fc7947 (13.3) *\/
- *   IMAD  0x24   /* 0x00000a00ff017624  (12.8.2) / 0x0000000600097c24 (13.3) *\/
- *   IMAD.WIDE 0x25 /* 0x0000000409027825  CUDA Binary Utilities 13.3 *\/
- *   MOV   0x02   /* 0x0000590000037a02 *\/
- *   LDG   0x81   /* 0x0000000002027381 / 0x0000000402027981 *\/
- *   STG   0x86   /* 0x0000000906007386 / 0x0000000906007986 *\/
- *   IADD3 0x10   /* 0x0000000502097210 *\/
- *   FADD  0x21   /* 0x0000000502097221 *\/
- *   S2R   0x19   /* 0x0000000000097919 *\/
- *   LDC   0x82   /* 0x0000df00ff017b82 *\/
- *   SHFL  0x89   /* 0x000000fffffff389  CUDA Binary Utilities 12.8.2 *\/
- *   S2UR  0xc3   /* 0x00000000000679c3  CUDA Binary Utilities 13.3 *\/
- *   LDCU  0xac   /* 0x00006b00ff0477ac  CUDA Binary Utilities 13.3 *\/
+ *   EXIT  0x4d   (0x000000000000794d  0x000fea0003800000)
+ *   NOP   0x18   (0x0000000000007918  0x000fc00000000000)
+ *   BRA   0x47   (0xfffffff000007947  (12.8.2) / 0xfffffffc00fc7947 (13.3))
+ *   IMAD  0x24   (0x00000a00ff017624  (12.8.2) / 0x0000000600097c24 (13.3))
+ *   IMAD.WIDE 0x25 (0x0000000409027825  CUDA Binary Utilities 13.3)
+ *   MOV   0x02   (0x0000590000037a02)
+ *   LDG   0x81   (0x0000000002027381 / 0x0000000402027981)
+ *   STG   0x86   (0x0000000906007386 / 0x0000000906007986)
+ *   IADD3 0x10   (0x0000000502097210)
+ *   FADD  0x21   (0x0000000502097221)
+ *   S2R   0x19   (0x0000000000097919)
+ *   LDC   0x82   (0x0000df00ff017b82)
+ *   SHFL  0x89   (0x000000fffffff389  CUDA Binary Utilities 12.8.2)
+ *   S2UR  0xc3   (0x00000000000679c3  CUDA Binary Utilities 13.3)
+ *   LDCU  0xac   (0x00006b00ff0477ac  CUDA Binary Utilities 13.3)
  *
  * Not claimed (ISA-table mnemonics, no printed encoding word in any
  * CUDA Binary Utilities -hex listing consulted — do not invent bytes):
@@ -34,7 +34,7 @@
  * src1 [32:39], pred [12:15] (7 = PT). IADD3/IMAD src2 is word1[7:0].
  *
  * Pre-Volta 8-byte EXIT from CUDA Binary Utilities 9.1:
- *   EXIT  /* 0x8000000000001de7 *\/  — matched on low 16 bits 0x1de7 only.
+ *   EXIT  (0x8000000000001de7)  — matched on low 16 bits 0x1de7 only.
  */
 
 #include "retdec/sass_decode/sass_decoder.h"
