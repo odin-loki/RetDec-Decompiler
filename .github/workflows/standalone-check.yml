@@ -87,7 +87,54 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq llvm-20-dev libgtest-dev libgmock-dev libcapstone-dev \
-                                      opencl-headers ocl-icd-opencl-dev pocl-opencl-icd
+                                      opencl-headers ocl-icd-opencl-dev pocl-opencl-icd cmake
+
+      # noble's libcapstone-dev is 4.0.2 and has no capstone/riscv.h. OPT-01
+      # and B2L include that header. The product pin is Capstone 6; build it
+      # once and let those two steps take it. SEM-01 keeps the apt package:
+      # it asks pkg-config, and this prefix is not on the default search path.
+      - name: Cache pinned Capstone
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .capstone-ci
+          key: capstone-ci-v1-${{ hashFiles('cmake/deps.cmake') }}
+
+      - name: Build pinned Capstone
+        run: |
+          set -euo pipefail
+          tag="$(sed -n 's|.*capstone/archive/refs/tags/\([^/]*\)\.zip.*|\1|p' cmake/deps.cmake | head -1)"
+          [ -n "${tag}" ] || { echo "capstone tag missing from cmake/deps.cmake" >&2; exit 1; }
+          prefix="$PWD/.capstone-ci"
+          lib="$(find "${prefix}" -name 'libcapstone.a' -print -quit 2>/dev/null || true)"
+          hdr="$(find "${prefix}" -path '*/include/capstone/riscv.h' -print -quit 2>/dev/null || true)"
+          if [ -z "${lib}" ] || [ -z "${hdr}" ]; then
+            rm -rf "${prefix}" "${RUNNER_TEMP}/capstone-src"
+            git clone --depth 1 --branch "${tag}" https://github.com/capstone-engine/capstone "${RUNNER_TEMP}/capstone-src"
+            cmake -S "${RUNNER_TEMP}/capstone-src" -B "${RUNNER_TEMP}/capstone-src/build" \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_INSTALL_PREFIX="${prefix}" \
+              -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+              -DCAPSTONE_BUILD_STATIC_LIBS=ON \
+              -DCAPSTONE_BUILD_SHARED_LIBS=OFF \
+              -DCAPSTONE_BUILD_TESTS=OFF \
+              -DCAPSTONE_BUILD_CSTOOL=OFF \
+              -DCAPSTONE_ARM_SUPPORT=ON \
+              -DCAPSTONE_MIPS_SUPPORT=ON \
+              -DCAPSTONE_PPC_SUPPORT=ON \
+              -DCAPSTONE_X86_SUPPORT=ON \
+              -DCAPSTONE_AARCH64_SUPPORT=ON \
+              -DCAPSTONE_RISCV_SUPPORT=ON \
+              -DCAPSTONE_SPARC_SUPPORT=ON \
+              -DCAPSTONE_SYSTEMZ_SUPPORT=ON \
+              -DCAPSTONE_XCORE_SUPPORT=ON
+            cmake --build "${RUNNER_TEMP}/capstone-src/build" -j "$(nproc)"
+            cmake --install "${RUNNER_TEMP}/capstone-src/build"
+            lib="$(find "${prefix}" -name 'libcapstone.a' -print -quit)"
+            hdr="$(find "${prefix}" -path '*/include/capstone/riscv.h' -print -quit)"
+          fi
+          [ -n "${lib}" ] && [ -n "${hdr}" ] || { echo "pinned Capstone install is incomplete" >&2; exit 1; }
+          echo "CAPSTONE_CI_INCLUDE=$(dirname "$(dirname "${hdr}")")" >> "$GITHUB_ENV"
+          echo "CAPSTONE_CI_LIB=$(dirname "${lib}")" >> "$GITHUB_ENV"
 
       # ADAPT-01. src/retdec/llvm_to_ssa.cpp is the single producer of the SSA
       # every structural detector consumes, and its tests were built by nothing.
@@ -279,10 +326,18 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install LLVM 20, gtest and cmake
+      - name: Install LLVM 20, LLVM 23, gtest and cmake
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq llvm-20-dev libgtest-dev libgmock-dev cmake
+          sudo apt-get install -y -qq llvm-20-dev libgtest-dev libgmock-dev cmake ca-certificates wget
+          # noble's archive stops at LLVM 20. XMULX needs llvm.clmul from LLVM 23,
+          # which is the revision the product builds. Keystone 0.9.2 still wants
+          # the LLVM 20 cmake package, so both stay installed.
+          sudo mkdir -p /etc/apt/keyrings
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/apt.llvm.org.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/apt.llvm.org.gpg] http://apt.llvm.org/noble/ llvm-toolchain-noble-23 main" | sudo tee /etc/apt/sources.list.d/llvm-23.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq llvm-23-dev
 
       # Keyed on the pinned revisions in cmake/deps.cmake, so bumping either
       # one rebuilds rather than silently testing the old library.

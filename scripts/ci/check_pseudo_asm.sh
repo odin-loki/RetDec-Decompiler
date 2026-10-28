@@ -66,7 +66,7 @@ die() { echo "PSEUDO-01: FAIL $*" >&2; exit 1; }
 	|| die "no capstone headers under ${CS_PREFIX}"
 
 if [ -z "${LLVM_CONFIG}" ]; then
-	for c in llvm-config-20 llvm-config; do
+	for c in llvm-config-23 llvm-config-22 llvm-config-21 llvm-config-20 llvm-config; do
 		if command -v "$c" >/dev/null 2>&1; then LLVM_CONFIG="$(command -v "$c")"; break; fi
 	done
 fi

@@ -111,14 +111,6 @@ fi
 EXPECTED_UNCOMPILABLE="
 src/bin2llvmir/optimizations/types_propagator/types_propagator.cpp|dead: resolveTypes() declared in no header; recorded in check_cmake_sources.sh UNBUILT_SRC
 src/rtti-finder/vtable/vtable_xref.cpp|dead: written against an API rtti-finder no longer has; recorded in check_cmake_sources.sh UNBUILT_SRC
-src/capstone2llvmir/arm/arm_init.cpp|needs the vendored Capstone; the distribution one has no ARM_INS_FCONSTD
-src/capstone2llvmir/arm64/arm64.cpp|needs the vendored Capstone; no ARM64_VAS_4B
-src/capstone2llvmir/arm64/arm64_init.cpp|needs the vendored Capstone; no ARM64_SYSREG_OSDTRRX_EL1
-src/capstone2llvmir/powerpc/powerpc.cpp|needs the vendored Capstone; no PPC_REG_CR0LT
-src/capstone2llvmir/powerpc/powerpc_init.cpp|needs the vendored Capstone; no PPC_REG_CR0LT
-src/capstone2llvmir/x86/x86.cpp|needs the vendored Capstone; no X86_REG_BND0
-src/capstone2llvmir/x86/x86_avx512.cpp|needs the vendored Capstone; no X86_INS_KADDB
-src/capstone2llvmir/x86/x86_init.cpp|needs the vendored Capstone; no X86_REG_BND0
 src/cli_parser/cil_lifter.cpp|C++20 (std::span); this harness compiles the tree as C++17
 src/cli_parser/cli_heaps.cpp|C++20 (std::span)
 src/cli_parser/cli_reader.cpp|C++20 (std::span)
@@ -138,6 +130,15 @@ LLVM_FLAGS="$("${LLVM_CONFIG}" --cxxflags | tr ' ' '\n' | grep -E '^-I|^-D' | tr
 INC="-Iinclude -Isrc -Itests -Ideps/rapidjson/include -Ideps/elfio/include \
 	-Ideps/tlsh/include -Ideps/tinyxml2/include -Ideps/stb/include \
 	-Ideps/authenticode-parser/include -Ideps/eigen -DRAPIDJSON_HAS_STDSTRING=1"
+# Same prefix OPT-01 uses. Without it, noble's Capstone 4 fails the include
+# of capstone/riscv.h in asm_instruction.h.
+if [ -n "${CAPSTONE_CI_INCLUDE:-}" ]; then
+	INC="-I${CAPSTONE_CI_INCLUDE} -DCAPSTONE_AARCH64_COMPAT_HEADER -DCAPSTONE_SYSTEMZ_COMPAT_HEADER ${INC}"
+fi
+CAPSTONE_LFLAG=""
+if [ -n "${CAPSTONE_CI_LIB:-}" ]; then
+	CAPSTONE_LFLAG="-L${CAPSTONE_CI_LIB}"
+fi
 
 # Tools carry their own main() and would collide with gtest_main.
 SKIP_RE='^src/(ar-extractortool|bin2pat|capstone2llvmirtool|demanglertool|fileinfo|getsig|gui|idr2pat|macho-extractortool|pat2yara|retdec-decompiler|retdectool|stacofintool|unpackertool)/'
@@ -272,7 +273,7 @@ g++ -std=c++17 -O0 -w "${WORKDIR}"/tobj/*.o "${WORKDIR}/dwarf_stub.o" \
 	-Wl,--start-group "${WORKDIR}/libretdec.a" "${WORKDIR}"/dep/*.o -Wl,--end-group \
 	-lgtest -lgtest_main -lgmock \
 	$("${LLVM_CONFIG}" --libs) $("${LLVM_CONFIG}" --system-libs) \
-	-lcapstone -lz -lcrypto -pthread \
+	${CAPSTONE_LFLAG} -lcapstone -lz -lcrypto -pthread \
 	2>"${WORKDIR}/link.err" \
 	|| { grep -m 20 -E 'undefined reference|error' "${WORKDIR}/link.err" >&2; \
 	     die "tests/bin2llvmir did not link"; }

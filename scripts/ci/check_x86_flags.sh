@@ -114,7 +114,7 @@ fi
 [ -d "${CS_PREFIX}/include" ] || die "no include/ under ${CS_PREFIX}"
 
 if [ -z "${LLVM_CONFIG}" ]; then
-	for c in llvm-config-20 llvm-config-19 llvm-config; do
+	for c in llvm-config-23 llvm-config-22 llvm-config-21 llvm-config-20 llvm-config-19 llvm-config; do
 		if command -v "$c" >/dev/null 2>&1; then LLVM_CONFIG="$c"; break; fi
 	done
 fi

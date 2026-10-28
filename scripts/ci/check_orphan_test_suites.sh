@@ -118,6 +118,13 @@ LLVM_FLAGS="$("${LLVM_CONFIG}" --cxxflags | tr ' ' '\n' | grep -E '^-I|^-D' | tr
 INC="-Iinclude -Isrc -Itests -Ideps/rapidjson/include -Ideps/elfio/include \
 	-Ideps/tlsh/include -Ideps/tinyxml2/include -Ideps/stb/include \
 	-Ideps/authenticode-parser/include -Ideps/eigen -DRAPIDJSON_HAS_STDSTRING=1"
+if [ -n "${CAPSTONE_CI_INCLUDE:-}" ]; then
+	INC="-I${CAPSTONE_CI_INCLUDE} -DCAPSTONE_AARCH64_COMPAT_HEADER -DCAPSTONE_SYSTEMZ_COMPAT_HEADER ${INC}"
+fi
+CAPSTONE_LFLAG=""
+if [ -n "${CAPSTONE_CI_LIB:-}" ]; then
+	CAPSTONE_LFLAG="-L${CAPSTONE_CI_LIB}"
+fi
 
 total=0
 for d in ${EXPECTED_ORPHANS}; do
@@ -134,7 +141,7 @@ for d in ${EXPECTED_ORPHANS}; do
 		-Wl,--start-group "${B2L_DIR}/libretdec.a" "${B2L_DIR}"/dep/*.o -Wl,--end-group \
 		-lgtest -lgtest_main -lgmock \
 		$("${LLVM_CONFIG}" --libs) $("${LLVM_CONFIG}" --system-libs) \
-		-lcapstone -lz -lcrypto -pthread 2>"${WORK}/$d.link" \
+		${CAPSTONE_LFLAG} -lcapstone -lz -lcrypto -pthread 2>"${WORK}/$d.link" \
 		|| { grep -m 10 -E 'undefined reference|error' "${WORK}/$d.link" >&2; \
 		     die "tests/$d did not link"; }
 

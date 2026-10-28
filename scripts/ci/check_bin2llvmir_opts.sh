@@ -80,6 +80,12 @@ mkdir -p "${WORKDIR}"
 
 LLVM_FLAGS="$("${LLVM_CONFIG}" --cxxflags | tr ' ' '\n' | grep -E '^-I|^-D' | tr '\n' ' ')"
 INC="-Iinclude -Isrc -Ideps/rapidjson/include -Ideps/elfio/include -DRAPIDJSON_HAS_STDSTRING=1"
+# noble libcapstone 4 has no riscv.h. The system-llvm job builds the pinned
+# Capstone and points these two variables at it. Left empty, the distro
+# headers are used, which is what a machine with Capstone 5+ already has.
+if [ -n "${CAPSTONE_CI_INCLUDE:-}" ]; then
+	INC="-I${CAPSTONE_CI_INCLUDE} -DCAPSTONE_AARCH64_COMPAT_HEADER -DCAPSTONE_SYSTEMZ_COMPAT_HEADER ${INC}"
+fi
 
 PASS_SRCS="
 	src/bin2llvmir/optimizations/inst_opt/inst_opt.cpp

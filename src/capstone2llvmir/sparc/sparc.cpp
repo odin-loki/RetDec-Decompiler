@@ -6,6 +6,7 @@
 
 #include <cstring>
 
+#include <llvm/Config/llvm-config.h>
 #include <llvm/IR/Intrinsics.h>
 
 #include "capstone2llvmir/sparc/sparc_impl.h"
@@ -1739,6 +1740,7 @@ void Capstone2LlvmIrTranslatorSparc_impl::translateMul(
 		auto* i64 = irb.getInt64Ty();
 		auto* a = irb.CreateZExtOrTrunc(op0, i64);
 		auto* b = irb.CreateZExtOrTrunc(op1, i64);
+#if LLVM_VERSION_MAJOR >= 23
 		if (i->id == SPARC_INS_XMULXHI)
 		{
 			auto* i128 = irb.getIntNTy(128);
@@ -1755,6 +1757,38 @@ void Capstone2LlvmIrTranslatorSparc_impl::translateMul(
 					_module, llvm::Intrinsic::clmul, {i64});
 			result = irb.CreateCall(fn, {a, b});
 		}
+#else
+		// llvm-20-dev, which the system-LLVM job compiles this file with,
+		// has no llvm.clmul. The product pin is LLVM 23 and takes the branch
+		// above; C2L-01 checks that the call is llvm.clmul.
+		auto clmul = [&](llvm::Value* x, llvm::Value* y, unsigned bits) {
+			auto* wide = irb.getIntNTy(bits);
+			x = irb.CreateZExtOrTrunc(x, wide);
+			y = irb.CreateZExtOrTrunc(y, wide);
+			llvm::Value* acc = llvm::ConstantInt::get(wide, 0);
+			for (unsigned bit = 0; bit < 64; ++bit)
+			{
+				auto* sel = irb.CreateICmpNE(
+						irb.CreateAnd(y, llvm::ConstantInt::get(wide, 1ULL << bit)),
+						llvm::ConstantInt::get(wide, 0));
+				auto* term = irb.CreateShl(x, bit);
+				acc = irb.CreateXor(acc, irb.CreateSelect(
+						sel, term, llvm::ConstantInt::get(wide, 0)));
+			}
+			return acc;
+		};
+		if (i->id == SPARC_INS_XMULXHI)
+		{
+			auto* prod = clmul(a, b, 128);
+			auto* i128 = irb.getIntNTy(128);
+			result = irb.CreateTrunc(
+					irb.CreateLShr(prod, llvm::ConstantInt::get(i128, 64)), i64);
+		}
+		else
+		{
+			result = clmul(a, b, 64);
+		}
+#endif
 		result = generateTypeConversion(irb, result, op0->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
 	}
 	else if (i->id == SPARC_INS_MULX)
