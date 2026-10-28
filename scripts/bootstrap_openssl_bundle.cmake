@@ -101,10 +101,88 @@ file(COPY "${_PREGEN_FILE}" DESTINATION "${_OUT_DIR}")
 ]])
 endfunction()
 
+# A restored CI bundle was copied from an older wrapper. These inserts are
+# idempotent so the early-return path still picks up OpenSSL 3.5 sources the
+# Fsu0413 lists omit (hashfunc, skeymgmt, the RFC 5755 v3 extensions, ssl_err).
+function(_retdec_openssl_ensure_source _file _anchor _rel)
+	if(NOT EXISTS "${_file}")
+		message(WARNING "OpenSSL bundle patch: missing ${_file}")
+		return()
+	endif()
+	file(READ "${_file}" _txt)
+	string(FIND "${_txt}" "${_rel}" _found)
+	if(NOT _found EQUAL -1)
+		return()
+	endif()
+	string(FIND "${_txt}" "${_anchor}" _anchor_at)
+	if(_anchor_at EQUAL -1)
+		message(WARNING "OpenSSL bundle patch: ${_file} has no anchor ${_anchor}")
+		return()
+	endif()
+	string(CONCAT _with "${_anchor}" "
+    \${CMAKE_SOURCE_DIR}/openssl/${_rel}")
+	string(REPLACE "${_anchor}" "${_with}" _txt "${_txt}")
+	file(WRITE "${_file}" "${_txt}")
+endfunction()
+
+function(_retdec_openssl_ensure_cmakedefine _file _name)
+	if(NOT EXISTS "${_file}")
+		return()
+	endif()
+	file(READ "${_file}" _txt)
+	string(FIND "${_txt}" "#cmakedefine ${_name}" _found)
+	if(NOT _found EQUAL -1)
+		return()
+	endif()
+	string(FIND "${_txt}" "#cmakedefine OPENSSL_NO_MODES" _anchor_at)
+	if(_anchor_at EQUAL -1)
+		message(WARNING "OpenSSL bundle patch: ${_file} has no OPENSSL_NO_MODES anchor")
+		return()
+	endif()
+	string(CONCAT _with "#cmakedefine ${_name}" "
+#cmakedefine OPENSSL_NO_MODES")
+	string(REPLACE "#cmakedefine OPENSSL_NO_MODES" "${_with}" _txt "${_txt}")
+	file(WRITE "${_file}" "${_txt}")
+endfunction()
+
+function(_retdec_openssl_apply_35_link_fixes _bundle_dir)
+	_retdec_openssl_ensure_source(
+		"${_bundle_dir}/crypto/hashtable/objects.cmake"
+		"openssl/crypto/hashtable/hashtable.c"
+		"crypto/hashtable/hashfunc.c")
+	_retdec_openssl_ensure_source(
+		"${_bundle_dir}/crypto/err/objects.cmake"
+		"openssl/crypto/err/err.c"
+		"crypto/ssl_err.c")
+	_retdec_openssl_ensure_source(
+		"${_bundle_dir}/crypto/evp/objects.cmake"
+		"openssl/crypto/evp/evp_enc.c"
+		"crypto/evp/s_lib.c")
+	foreach(_v3 IN ITEMS v3_authattid.c v3_rolespec.c v3_attrdesc.c v3_timespec.c v3_attrmap.c v3_aaa.c)
+		_retdec_openssl_ensure_source(
+			"${_bundle_dir}/crypto/x509/objects.cmake"
+			"openssl/crypto/x509/v3_iobo.c"
+			"crypto/x509/${_v3}")
+	endforeach()
+	_retdec_openssl_ensure_source(
+		"${_bundle_dir}/crypto/CMakeLists.txt"
+		"openssl/providers/defltprov.c"
+		"providers/implementations/skeymgmt/aes_skmgmt.c")
+	_retdec_openssl_ensure_source(
+		"${_bundle_dir}/crypto/CMakeLists.txt"
+		"openssl/providers/defltprov.c"
+		"providers/implementations/skeymgmt/generic.c")
+	set(_cfg "${_bundle_dir}/crypto/configuration.h.cmake.in")
+	foreach(_name IN ITEMS OPENSSL_NO_FIPS_JITTER OPENSSL_NO_ML_DSA OPENSSL_NO_ML_KEM OPENSSL_NO_SLH_DSA)
+		_retdec_openssl_ensure_cmakedefine("${_cfg}" "${_name}")
+	endforeach()
+endfunction()
+
 set(_bundle_ready_marker "${BUNDLE_DIR}/pregenerated/include/openssl/core_names.h")
 if(EXISTS "${_bundle_ready_marker}" AND NOT "$ENV{RETDEC_FORCE_OPENSSL_BOOTSTRAP}" STREQUAL "1"
 	AND NOT "$ENV{OPENSSL_FORCE_BOOTSTRAP}" STREQUAL "1")
 	_retdec_openssl_apply_crypto_only_patch("${BUNDLE_DIR}")
+	_retdec_openssl_apply_35_link_fixes("${BUNDLE_DIR}")
 	_retdec_openssl_write_paramnames_stub("${BUNDLE_DIR}")
 	message(STATUS "OpenSSL bundle already present at ${BUNDLE_DIR} (refreshed patches; set RETDEC_FORCE_OPENSSL_BOOTSTRAP=1 to rebuild)")
 	return()
@@ -205,16 +283,7 @@ if(NOT EXISTS "${_ossl_src}/ssl/sslerr.h")
 	endif()
 endif()
 
-set(_ossl_cfg_h_in "${BUNDLE_DIR}/crypto/configuration.h.cmake.in")
-if(EXISTS "${_ossl_cfg_h_in}")
-	file(READ "${_ossl_cfg_h_in}" _ossl_cfg_h_in_txt)
-	if(NOT _ossl_cfg_h_in_txt MATCHES "OPENSSL_NO_ML_DSA")
-		string(REPLACE "#cmakedefine OPENSSL_NO_MODES"
-			"#cmakedefine OPENSSL_NO_ML_DSA\n#cmakedefine OPENSSL_NO_MODES"
-			_ossl_cfg_h_in_txt "${_ossl_cfg_h_in_txt}")
-		file(WRITE "${_ossl_cfg_h_in}" "${_ossl_cfg_h_in_txt}")
-	endif()
-endif()
+_retdec_openssl_apply_35_link_fixes("${BUNDLE_DIR}")
 
 set(_ossl_crypto_cmake "${BUNDLE_DIR}/crypto/CMakeLists.txt")
 if(EXISTS "${_ossl_crypto_cmake}")

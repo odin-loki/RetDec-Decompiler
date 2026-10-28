@@ -129,6 +129,7 @@ extern "C"
 #cmakedefine OPENSSL_NO_FIPS
 #cmakedefine OPENSSL_NO_FIPS_POST
 #cmakedefine OPENSSL_NO_FIPS_SECURITYCHECKS
+#cmakedefine OPENSSL_NO_FIPS_JITTER
 #cmakedefine OPENSSL_NO_FUZZ_AFL
 #cmakedefine OPENSSL_NO_FUZZ_LIBFUZZER
 #cmakedefine OPENSSL_NO_GOST
@@ -151,6 +152,9 @@ extern "C"
 #cmakedefine OPENSSL_NO_MD4
 #cmakedefine OPENSSL_NO_MD5
 #cmakedefine OPENSSL_NO_MDC2
+#cmakedefine OPENSSL_NO_ML_DSA
+#cmakedefine OPENSSL_NO_ML_KEM
+#cmakedefine OPENSSL_NO_SLH_DSA
 #cmakedefine OPENSSL_NO_MODES
 #cmakedefine OPENSSL_NO_MSAN
 #cmakedefine OPENSSL_NO_MULTIBLOCK

@@ -126,11 +126,7 @@ jobs:
           restore-keys: openssl-vendored-bundle-
 
       - name: Bootstrap bundled OpenSSL (if needed)
-        run: |
-          bundle="deps/openssl/vendored/bundle/CMakeLists.txt"
-          if [ "${RETDEC_FORCE_OPENSSL_BOOTSTRAP}" = "1" ] || [ "${OPENSSL_FORCE_BOOTSTRAP}" = "1" ] || [ ! -f "$bundle" ]; then
-            cmake -P scripts/bootstrap_openssl_bundle.cmake
-          fi
+        run: cmake -P scripts/bootstrap_openssl_bundle.cmake
 
       # full-linux-release is the preset the documentation tells a macOS reader
       # to use, so it is the one measured. Interprocedural optimisation is off

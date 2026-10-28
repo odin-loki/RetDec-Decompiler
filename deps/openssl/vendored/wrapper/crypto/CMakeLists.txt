@@ -325,6 +325,8 @@ endif()
 
 set(LIBCRYPTO_PROVIDER_SOURCES
     ${CMAKE_SOURCE_DIR}/openssl/providers/defltprov.c
+    ${CMAKE_SOURCE_DIR}/openssl/providers/implementations/skeymgmt/aes_skmgmt.c
+    ${CMAKE_SOURCE_DIR}/openssl/providers/implementations/skeymgmt/generic.c
     ${CMAKE_SOURCE_DIR}/openssl/providers/baseprov.c
     ${CMAKE_SOURCE_DIR}/openssl/providers/nullprov.c
     ${CMAKE_SOURCE_DIR}/openssl/providers/prov_running.c

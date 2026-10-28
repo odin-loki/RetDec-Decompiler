@@ -74,7 +74,7 @@ readonly MODULES=(
 	idiom_reconstruct ipa java_emitter jvm_parser jvm_reconstruct kotlin_emitter
 	loader_sim lua_parser mini_emu module_cluster neural packer pattern_detect
 	pdbparser pelib profiling ptx_decompile py_emitter py_reconstruct pyc_parser
-	rtti serdes serial_detect sort_detect ssa string_detect testing
+	rtti sass_decode serdes serial_detect sort_detect ssa string_detect testing
 	type_inference type_seed utils var_recovery vbnet_emitter wasm_parser
 )
 
@@ -94,7 +94,7 @@ readonly SUITES=(
 	idiom_reconstruct
 	ipa java_emitter jvm_parser jvm_reconstruct kotlin_emitter loader_sim
 	lua_parser mini_emu module_cluster neural packer pattern_detect profiling
-	pdbparser pelib ptx_decompile py_emitter py_reconstruct pyc_parser retdec rtti serdes
+	pdbparser pelib ptx_decompile py_emitter py_reconstruct pyc_parser retdec rtti sass_decode serdes
 	serial_detect sort_detect ssa string_detect testing type_inference
 	type_seed utils var_recovery vbnet_emitter wasm_parser
 )

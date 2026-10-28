@@ -59,8 +59,11 @@ jobs:
 
   system-llvm:
     name: system-LLVM suites
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # ubuntu-24.04: on ubuntu-latest (26) `apt-get install llvm-20-dev` took
+    # 25 of the 30 minute budget, and the newest llvm-config on the image is
+    # 22, which this job is not written against.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -269,7 +272,10 @@ jobs:
   # Its own job because it wants a different LLVM from the one the
   # system-LLVM suites use, and because the dependency build caches.
   capstone2llvmir:
-    runs-on: ubuntu-latest
+    # ubuntu-24.04: apt cmake on ubuntu-latest is 4.x, which errors on
+    # Keystone 0.9.2 setting CMP0051 OLD, and gcc-mips-linux-gnu is gone, so
+    # PSEUDO-01 cannot build the parity corpus.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 

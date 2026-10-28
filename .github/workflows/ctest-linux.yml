@@ -21,7 +21,11 @@ concurrency:
 
 jobs:
   integration:
-    runs-on: ubuntu-latest
+    # ubuntu-24.04, not ubuntu-latest. ubuntu-latest moved to Ubuntu 26 in
+    # October 2026: gcc 15 treats the incompatible-pointer-type diagnostics
+    # that `cc -w` used to swallow as errors (CC-01 rate 0.0000), and
+    # gcc-mips-linux-gnu / libc6-dev-mips-cross left the archive (ARCH-01).
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -95,11 +99,7 @@ jobs:
           restore-keys: openssl-vendored-bundle-
 
       - name: Bootstrap bundled OpenSSL (if needed)
-        run: |
-          bundle="deps/openssl/vendored/bundle/CMakeLists.txt"
-          if [ "${RETDEC_FORCE_OPENSSL_BOOTSTRAP}" = "1" ] || [ "${OPENSSL_FORCE_BOOTSTRAP}" = "1" ] || [ ! -f "$bundle" ]; then
-            cmake -P scripts/bootstrap_openssl_bundle.cmake
-          fi
+        run: cmake -P scripts/bootstrap_openssl_bundle.cmake
 
       # The compiler launcher is what makes the ccache step above do anything.
       # Without it nothing invoked ccache at all: this job's own log reported

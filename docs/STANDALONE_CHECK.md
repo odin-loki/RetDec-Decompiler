@@ -21,23 +21,23 @@ Capstone, Keystone, YARA and YaraMod. That is hours of CPU and tens of
 gigabytes before a single assertion runs, and it is impossible in an
 environment without network access to those archives.
 
-<!-- standalone-check: modules=62 suites=64 -->
+<!-- standalone-check: modules=63 suites=65 -->
 <!-- scripts/standalone_check.sh --audit fails if the numbers above and the
      prose below disagree with the MODULES and SUITES arrays in the script. -->
 
-62 of the modules under `src/` do not need any of that. The Imortek detector,
+63 of the modules under `src/` do not need any of that. The Imortek detector,
 SSA, codegen, type-recovery and bytecode-parser layers are written against the
 in-house `retdec/ssa` IR and the C++17 standard library only. That is where
 almost all of this fork's own logic lives — and where its own regressions land.
 
-So the fast path compiles those 62 modules, links their existing GoogleTest
+So the fast path compiles those 63 modules, links their existing GoogleTest
 suites against a shim, and runs them.
 
 | | full CMake build | standalone check |
 |---|---|---|
 | Prerequisites | network, ~30 GB, CMake, Ninja | a C++17 compiler |
 | Cold time | hours | ~1 minute |
-| Coverage | whole product | 64 suites, ~4000 test cases over 62 modules, plus 493 GUI tests where Qt6 is installed and `gpu_scanner.cu`'s device half |
+| Coverage | whole product | 65 suites, ~4000 test cases over 63 modules, plus 493 GUI tests where Qt6 is installed and `gpu_scanner.cu`'s device half |
 
 ## The CUDA device half
 

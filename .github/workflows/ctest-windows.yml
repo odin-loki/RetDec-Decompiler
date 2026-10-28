@@ -50,6 +50,7 @@ jobs:
           cmakeVersion: "3.31.6"
 
       - name: Cache CMake build
+        id: win-build-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: build/windows
@@ -67,10 +68,21 @@ jobs:
 
       - name: Bootstrap bundled OpenSSL (if needed)
         shell: pwsh
+        run: cmake -P scripts/bootstrap_openssl_bundle.cmake
+
+      # restore-keys can hand back a libcrypto built from an older wrapper.
+      # cache-hit is true only for an exact key match, which already has this
+      # commit's library. A miss has nothing to delete.
+      - name: Drop stale bundled OpenSSL unless the build cache key matched
+        if: steps.win-build-cache.outputs.cache-hit != 'true'
+        shell: pwsh
         run: |
-          $bundle = "deps/openssl/vendored/bundle/CMakeLists.txt"
-          if ($env:RETDEC_FORCE_OPENSSL_BOOTSTRAP -eq "1" -or $env:OPENSSL_FORCE_BOOTSTRAP -eq "1" -or -not (Test-Path -LiteralPath $bundle)) {
-            cmake -P scripts/bootstrap_openssl_bundle.cmake
+          foreach ($p in @(
+            "build/windows/external/openssl-build",
+            "build/windows/external/openssl-install",
+            "build/windows/retdec-openssl-prefix"
+          )) {
+            if (Test-Path -LiteralPath $p) { Remove-Item -Recurse -Force $p }
           }
 
       - name: Configure (full-windows-debug, CPU-only CI)

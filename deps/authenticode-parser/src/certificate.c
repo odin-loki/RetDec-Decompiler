@@ -19,6 +19,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+#include "asn1_compat.h"
 #include "certificate.h"
 
 #include <openssl/asn1.h>
@@ -65,7 +66,7 @@ static void parse_name_attributes(X509_NAME* raw, Attributes* attr)
         const char* key = OBJ_nid2sn(OBJ_obj2nid(X509_NAME_ENTRY_get_object(entryName)));
 
         ByteArray array = {0};
-        if (byte_array_init(&array, asn1String->data, asn1String->length) == -1)
+        if (byte_array_init(&array, ac_asn1_data(asn1String), ac_asn1_len(asn1String)) == -1)
             break;
 
         if (strcmp(key, "C") == 0 && !attr->country.data)
