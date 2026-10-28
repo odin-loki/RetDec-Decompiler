@@ -12,6 +12,7 @@
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Intrinsics.h>
+#include <llvm/IR/IntrinsicsRISCV.h>
 
 #include "capstone2llvmir/riscv/riscv_impl.h"
 
@@ -5177,6 +5178,9 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateVcrypto(cs_insn* i, cs_riscv*
 	// and they take vl plus (except vaeskf1/vsm3me/vsm4k) a policy immediate.
 	// A two-argument function named llvm.riscv.vaesdm.vv does not match that
 	// prototype, so the verifier rejects the call.
+	// These IDs live in enum RISCVIntrinsics, not enum ID. The values are the
+	// same numbers getOrInsertDeclaration indexes.
+	auto zid = [](llvm::Intrinsic::RISCVIntrinsics id) { return static_cast<llvm::Intrinsic::ID>(id); };
 	llvm::Intrinsic::ID iid = llvm::Intrinsic::not_intrinsic;
 	bool vsForm = false;
 	bool wantExtra = false;
@@ -5184,79 +5188,79 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateVcrypto(cs_insn* i, cs_riscv*
 	bool policy = true;
 	switch (i->id)
 	{
-	case RISCV_INS_VAESDF_VV: iid = llvm::Intrinsic::riscv_vaesdf_vv; break;
+	case RISCV_INS_VAESDF_VV: iid = zid(llvm::Intrinsic::riscv_vaesdf_vv); break;
 	case RISCV_INS_VAESDF_VS:
-		iid = llvm::Intrinsic::riscv_vaesdf_vs;
+		iid = zid(llvm::Intrinsic::riscv_vaesdf_vs);
 		vsForm = true;
 		break;
-	case RISCV_INS_VAESDM_VV: iid = llvm::Intrinsic::riscv_vaesdm_vv; break;
+	case RISCV_INS_VAESDM_VV: iid = zid(llvm::Intrinsic::riscv_vaesdm_vv); break;
 	case RISCV_INS_VAESDM_VS:
-		iid = llvm::Intrinsic::riscv_vaesdm_vs;
+		iid = zid(llvm::Intrinsic::riscv_vaesdm_vs);
 		vsForm = true;
 		break;
-	case RISCV_INS_VAESEF_VV: iid = llvm::Intrinsic::riscv_vaesef_vv; break;
+	case RISCV_INS_VAESEF_VV: iid = zid(llvm::Intrinsic::riscv_vaesef_vv); break;
 	case RISCV_INS_VAESEF_VS:
-		iid = llvm::Intrinsic::riscv_vaesef_vs;
+		iid = zid(llvm::Intrinsic::riscv_vaesef_vs);
 		vsForm = true;
 		break;
-	case RISCV_INS_VAESEM_VV: iid = llvm::Intrinsic::riscv_vaesem_vv; break;
+	case RISCV_INS_VAESEM_VV: iid = zid(llvm::Intrinsic::riscv_vaesem_vv); break;
 	case RISCV_INS_VAESEM_VS:
-		iid = llvm::Intrinsic::riscv_vaesem_vs;
+		iid = zid(llvm::Intrinsic::riscv_vaesem_vs);
 		vsForm = true;
 		break;
 	case RISCV_INS_VAESZ_VS:
-		iid = llvm::Intrinsic::riscv_vaesz_vs;
+		iid = zid(llvm::Intrinsic::riscv_vaesz_vs);
 		vsForm = true;
 		break;
 	case RISCV_INS_VAESKF1_VI:
-		iid = llvm::Intrinsic::riscv_vaeskf1;
+		iid = zid(llvm::Intrinsic::riscv_vaeskf1);
 		wantExtra = true;
 		extraImm = true;
 		policy = false;
 		break;
 	case RISCV_INS_VAESKF2_VI:
-		iid = llvm::Intrinsic::riscv_vaeskf2;
+		iid = zid(llvm::Intrinsic::riscv_vaeskf2);
 		wantExtra = true;
 		extraImm = true;
 		break;
 	case RISCV_INS_VSHA2CH_VV:
-		iid = llvm::Intrinsic::riscv_vsha2ch;
+		iid = zid(llvm::Intrinsic::riscv_vsha2ch);
 		wantExtra = true;
 		break;
 	case RISCV_INS_VSHA2CL_VV:
-		iid = llvm::Intrinsic::riscv_vsha2cl;
+		iid = zid(llvm::Intrinsic::riscv_vsha2cl);
 		wantExtra = true;
 		break;
 	case RISCV_INS_VSHA2MS_VV:
-		iid = llvm::Intrinsic::riscv_vsha2ms;
+		iid = zid(llvm::Intrinsic::riscv_vsha2ms);
 		wantExtra = true;
 		break;
 	case RISCV_INS_VSM3C_VI:
-		iid = llvm::Intrinsic::riscv_vsm3c;
+		iid = zid(llvm::Intrinsic::riscv_vsm3c);
 		wantExtra = true;
 		extraImm = true;
 		break;
 	case RISCV_INS_VSM3ME_VV:
-		iid = llvm::Intrinsic::riscv_vsm3me;
+		iid = zid(llvm::Intrinsic::riscv_vsm3me);
 		wantExtra = true;
 		policy = false;
 		break;
 	case RISCV_INS_VSM4K_VI:
-		iid = llvm::Intrinsic::riscv_vsm4k;
+		iid = zid(llvm::Intrinsic::riscv_vsm4k);
 		wantExtra = true;
 		extraImm = true;
 		policy = false;
 		break;
-	case RISCV_INS_VSM4R_VV: iid = llvm::Intrinsic::riscv_vsm4r_vv; break;
+	case RISCV_INS_VSM4R_VV: iid = zid(llvm::Intrinsic::riscv_vsm4r_vv); break;
 	case RISCV_INS_VSM4R_VS:
-		iid = llvm::Intrinsic::riscv_vsm4r_vs;
+		iid = zid(llvm::Intrinsic::riscv_vsm4r_vs);
 		vsForm = true;
 		break;
 	case RISCV_INS_VGHSH_VV:
-		iid = llvm::Intrinsic::riscv_vghsh;
+		iid = zid(llvm::Intrinsic::riscv_vghsh);
 		wantExtra = true;
 		break;
-	case RISCV_INS_VGMUL_VV: iid = llvm::Intrinsic::riscv_vgmul_vv; break;
+	case RISCV_INS_VGMUL_VV: iid = zid(llvm::Intrinsic::riscv_vgmul_vv); break;
 	default: throw GenericError("Unhandled insn ID in translateVcrypto().");
 	}
 
