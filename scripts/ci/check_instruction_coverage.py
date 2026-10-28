@@ -116,6 +116,24 @@ def translator_sets(arch: str) -> tuple[set[str], set[str]]:
     init = ROOT / f"src/capstone2llvmir/{d}/{d}_init.cpp"
     s = init.read_text(encoding="utf-8")
     body = s[s.index("_i2fm"):]
+    # Capstone 6 does not declare every Capstone 5 id. The dispatch table
+    # keeps those rows inside #ifdef MIPS_INS_*, so they are not in the
+    # binary this helper is compiled against either.
+    kept = []
+    hidden = 0
+    for line in body.splitlines():
+        stripped = line.strip()
+        ifdef = re.match(r'#ifdef\s+(\w+)', stripped)
+        if ifdef and "_INS_" in ifdef.group(1):
+            hidden += 1
+            continue
+        if stripped.startswith('#endif') and hidden:
+            hidden -= 1
+            continue
+        if hidden:
+            continue
+        kept.append(line)
+    body = "\n".join(kept)
     impl, null = set(), set()
     for m in re.finditer(r'^\s*\{([A-Z0-9_]*INS_[A-Z0-9_]+),\s*(nullptr|&[^}]+)\}', body, re.M):
         (null if m.group(2) == "nullptr" else impl).add(m.group(1))

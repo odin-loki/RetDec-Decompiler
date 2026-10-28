@@ -39,6 +39,9 @@ add_executable(tests-bin2llvmir
 target_include_directories(tests-bin2llvmir
 	PRIVATE
 		${RETDEC_TESTS_DIR}
+		# llvmir_tests.h includes src/capstone2llvmir/capstone6_compat.h.
+		# That directory is private to the libraries, so the test must name it.
+		${RETDEC_SOURCE_DIR}
 )
 
 target_link_libraries(tests-bin2llvmir
