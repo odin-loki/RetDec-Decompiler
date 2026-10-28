@@ -303,6 +303,10 @@ run_status=$?
 set -e
 
 if [ "${run_status}" != 0 ]; then
+	# gtest_brief prints the assertion above each [  FAILED  ] line. The name
+	# alone does not say whether the value, the registers or an exception lost.
+	sed -n '1,160p' "${WORKDIR}/run.log" >&2
+	echo "--- failed names ---" >&2
 	grep -E '^\[  FAILED  \]' "${WORKDIR}/run.log" | head -20 >&2
 	die "tests/capstone2llvmir does not pass"
 fi
