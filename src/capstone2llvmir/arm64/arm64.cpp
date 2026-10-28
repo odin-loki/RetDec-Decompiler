@@ -57,6 +57,26 @@ arm64AccessAddr(cs_arm64* ai, const cs_arm64_op& mem, llvm::Value* addrWithDisp,
 	return irb.CreateSub(addrWithDisp, disp);
 }
 
+// D, S and H registers are floats. NEON lane code wants those bits as an
+// integer; zero-extending the float aborts.
+static llvm::Value* arm64ZExtOrTruncInt(llvm::IRBuilder<>& irb, llvm::Value* raw, llvm::Type* intTy)
+{
+	if (raw == nullptr || intTy == nullptr || !intTy->isIntOrIntVectorTy())
+	{
+		return intTy == nullptr ? nullptr : llvm::UndefValue::get(intTy);
+	}
+	if (!raw->getType()->isIntOrIntVectorTy())
+	{
+		unsigned bits = raw->getType()->getPrimitiveSizeInBits();
+		if (bits == 0)
+		{
+			bits = intTy->getScalarSizeInBits();
+		}
+		raw = irb.CreateBitCast(raw, irb.getIntNTy(bits));
+	}
+	return irb.CreateZExtOrTrunc(raw, intTy);
+}
+
 Capstone2LlvmIrTranslatorArm64_impl::Capstone2LlvmIrTranslatorArm64_impl(
 		llvm::Module* m,
 		cs_mode basic,
@@ -1558,8 +1578,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonExt(cs_insn* i, cs_arm64*
 
 	unsigned n = static_cast<unsigned>(ai->operands[3].imm);
 	auto* w = irb.getIntNTy(bytes * 8);
-	llvm::Value* vn = irb.CreateZExtOrTrunc(loadRegister(ai->operands[1].reg, irb), w);
-	llvm::Value* vm = irb.CreateZExtOrTrunc(loadRegister(ai->operands[2].reg, irb), w);
+	llvm::Value* vn = arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[1].reg, irb), w);
+	llvm::Value* vm = arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[2].reg, irb), w);
 
 	llvm::Value* res = n == 0 ? vn
 							  : irb.CreateOr(
@@ -1596,9 +1616,9 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonBitSel(cs_insn* i, cs_arm
 	}
 
 	auto* w = irb.getIntNTy(bytes * 8);
-	llvm::Value* d = irb.CreateZExtOrTrunc(loadRegister(ai->operands[0].reg, irb), w);
-	llvm::Value* n = irb.CreateZExtOrTrunc(loadRegister(ai->operands[1].reg, irb), w);
-	llvm::Value* m = irb.CreateZExtOrTrunc(loadRegister(ai->operands[2].reg, irb), w);
+	llvm::Value* d = arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[0].reg, irb), w);
+	llvm::Value* n = arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[1].reg, irb), w);
+	llvm::Value* m = arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[2].reg, irb), w);
 
 	llvm::Value* res = nullptr;
 	switch (i->id)
@@ -1648,10 +1668,10 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonCmp(cs_insn* i, cs_arm64*
 
 	auto* w = irb.getIntNTy(bytes * 8);
 	auto* vecTy = llvm::FixedVectorType::get(irb.getIntNTy(laneBits), lanes);
-	llvm::Value* a = irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(ai->operands[1].reg, irb), w), vecTy);
+	llvm::Value* a = irb.CreateBitCast(arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[1].reg, irb), w), vecTy);
 	llvm::Value* b = immZero
 					   ? llvm::Constant::getNullValue(vecTy)
-					   : irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(ai->operands[2].reg, irb), w), vecTy);
+					   : irb.CreateBitCast(arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[2].reg, irb), w), vecTy);
 
 	llvm::Value* cmp = nullptr;
 	switch (i->id)
@@ -1716,11 +1736,11 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonFpCmp(cs_insn* i, cs_arm6
 	auto* iVec = llvm::FixedVectorType::get(irb.getIntNTy(laneBits), lanes);
 
 	llvm::Value* a = irb.CreateBitCast(
-		irb.CreateZExtOrTrunc(loadRegister(getParentRegister(ai->operands[1].reg), irb), w), vecTy);
-	llvm::Value* b = vsZero
-					   ? llvm::Constant::getNullValue(vecTy)
-					   : irb.CreateBitCast(
-							 irb.CreateZExtOrTrunc(loadRegister(getParentRegister(ai->operands[2].reg), irb), w), vecTy);
+		arm64ZExtOrTruncInt(irb, loadRegister(getParentRegister(ai->operands[1].reg), irb), w), vecTy);
+	llvm::Value* b =
+		vsZero ? llvm::Constant::getNullValue(vecTy)
+			   : irb.CreateBitCast(
+					 arm64ZExtOrTruncInt(irb, loadRegister(getParentRegister(ai->operands[2].reg), irb), w), vecTy);
 
 	if (i->id == ARM64_INS_FACGE || i->id == ARM64_INS_FACGT)
 	{
@@ -2126,8 +2146,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonFpLaneBinary(cs_insn* i, 
 						 : static_cast<llvm::Type*>(irb.getDoubleTy());
 	auto* vecTy = llvm::FixedVectorType::get(elemTy, lanes);
 
-	llvm::Value* a = irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(ai->operands[1].reg, irb), w), vecTy);
-	llvm::Value* b = irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(ai->operands[2].reg, irb), w), vecTy);
+	llvm::Value* a = irb.CreateBitCast(arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[1].reg, irb), w), vecTy);
+	llvm::Value* b = irb.CreateBitCast(arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[2].reg, irb), w), vecTy);
 
 	llvm::Value* res = nullptr;
 	switch (i->id)
@@ -2540,7 +2560,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonIns(cs_insn* i, cs_arm64*
 	}
 	else if (src.type == ARM64_OP_REG && !isVectorRegister(src))
 	{
-		lane = irb.CreateZExtOrTrunc(loadRegister(src.reg, irb), laneTy);
+		lane = arm64ZExtOrTruncInt(irb, loadRegister(src.reg, irb), laneTy);
 	}
 	else
 	{
@@ -2775,7 +2795,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonDup(cs_insn* i, cs_arm64*
 	}
 	else if (src.type == ARM64_OP_REG && !isVectorRegister(src))
 	{
-		lane = irb.CreateZExtOrTrunc(loadRegister(src.reg, irb), laneTy);
+		lane = arm64ZExtOrTruncInt(irb, loadRegister(src.reg, irb), laneTy);
 	}
 	else
 	{
@@ -2920,7 +2940,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonNarrow(cs_insn* i, cs_arm
 	if (upper)
 	{
 		auto* i128 = irb.getIntNTy(128);
-		llvm::Value* dst = irb.CreateZExtOrTrunc(loadRegister(ai->operands[0].reg, irb), i128);
+		llvm::Value* dst = arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[0].reg, irb), i128);
 		dst = irb.CreateAnd(dst, llvm::ConstantInt::get(i128, 0xffffffffffffffffULL));
 		llvm::Value* top = irb.CreateShl(irb.CreateZExt(half, i128), llvm::ConstantInt::get(i128, 64));
 		storeRegister(ai->operands[0].reg, irb.CreateOr(dst, top), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
@@ -3058,7 +3078,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonAddhn(cs_insn* i, cs_arm6
 	if (upper)
 	{
 		auto* i128 = irb.getIntNTy(128);
-		llvm::Value* dst = irb.CreateZExtOrTrunc(loadRegister(ai->operands[0].reg, irb), i128);
+		llvm::Value* dst = arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[0].reg, irb), i128);
 		dst = irb.CreateAnd(dst, llvm::ConstantInt::get(i128, 0xffffffffffffffffULL));
 		llvm::Value* top = irb.CreateShl(irb.CreateZExt(half, i128), llvm::ConstantInt::get(i128, 64));
 		storeRegister(ai->operands[0].reg, irb.CreateOr(dst, top), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
@@ -6216,9 +6236,10 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFMla(cs_insn* i, cs_arm64* ai
 							 : static_cast<llvm::Type*>(irb.getDoubleTy());
 		auto* vecTy = llvm::FixedVectorType::get(elemTy, lanes);
 
-		llvm::Value* acc = irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(ai->operands[0].reg, irb), w), vecTy);
-		llvm::Value* a = irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(ai->operands[1].reg, irb), w), vecTy);
-		llvm::Value* b = irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(ai->operands[2].reg, irb), w), vecTy);
+		llvm::Value* acc =
+			irb.CreateBitCast(arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[0].reg, irb), w), vecTy);
+		llvm::Value* a = irb.CreateBitCast(arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[1].reg, irb), w), vecTy);
+		llvm::Value* b = irb.CreateBitCast(arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[2].reg, irb), w), vecTy);
 		if (negProduct)
 		{
 			a = irb.CreateFNeg(a);
@@ -6632,13 +6653,13 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFMovLane(cs_insn* i, cs_arm64
 	if (fromLane)
 	{
 		llvm::Value* v =
-			irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(src.reg, irb), irb.getIntNTy(128)), vecTy);
+			irb.CreateBitCast(arm64ZExtOrTruncInt(irb, loadRegister(src.reg, irb), irb.getIntNTy(128)), vecTy);
 		llvm::Value* lane = irb.CreateExtractElement(v, irb.getInt32(src.vector_index));
 		storeOp(dst, lane, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 		return;
 	}
 
-	llvm::Value* v = irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(dst.reg, irb), irb.getIntNTy(128)), vecTy);
+	llvm::Value* v = irb.CreateBitCast(arm64ZExtOrTruncInt(irb, loadRegister(dst.reg, irb), irb.getIntNTy(128)), vecTy);
 	llvm::Value* val = irb.CreateZExtOrTrunc(loadOp(src, irb), i64);
 	v = irb.CreateInsertElement(v, val, irb.getInt32(dst.vector_index));
 	storeRegister(dst.reg, irb.CreateBitCast(v, irb.getIntNTy(128)), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
@@ -6900,7 +6921,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonFpEst(cs_insn* i, cs_arm6
 							 : static_cast<llvm::Type*>(irb.getDoubleTy());
 		auto* vecTy = llvm::FixedVectorType::get(elemTy, lanes);
 		auto* w = irb.getIntNTy(laneBits * lanes);
-		llvm::Value* a = irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(ai->operands[1].reg, irb), w), vecTy);
+		llvm::Value* a = irb.CreateBitCast(arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[1].reg, irb), w), vecTy);
 		auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, nid, {vecTy});
 		storeRegister(ai->operands[0].reg, irb.CreateBitCast(irb.CreateCall(f, {a}), w), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 		return;
@@ -6934,7 +6955,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFRintExtra(cs_insn* i, cs_arm
 							 : static_cast<llvm::Type*>(irb.getDoubleTy());
 		auto* vecTy = llvm::FixedVectorType::get(elemTy, lanes);
 		auto* w = irb.getIntNTy(laneBits * lanes);
-		llvm::Value* a = irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(ai->operands[1].reg, irb), w), vecTy);
+		llvm::Value* a = irb.CreateBitCast(arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[1].reg, irb), w), vecTy);
 		auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, nid, {vecTy});
 		storeRegister(ai->operands[0].reg, irb.CreateBitCast(irb.CreateCall(f, {a}), w), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 		return;
@@ -7066,7 +7087,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonFmlal(cs_insn* i, cs_arm6
 	auto* accTy = llvm::FixedVectorType::get(irb.getFloatTy(), dstLanes);
 	auto* halfSrc = llvm::FixedVectorType::get(irb.getHalfTy(), dstLanes);
 	auto* w = irb.getIntNTy(dstBits * dstLanes);
-	llvm::Value* acc = irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(ai->operands[0].reg, irb), w), accTy);
+	llvm::Value* acc = irb.CreateBitCast(arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[0].reg, irb), w), accTy);
 	llvm::Value* a = irb.CreateBitCast(
 		loadNeonVector(getParentRegister(ai->operands[1].reg), 16, fullH, irb),
 		llvm::FixedVectorType::get(irb.getHalfTy(), fullH));
@@ -7112,7 +7133,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonFpPair(cs_insn* i, cs_arm
 							 : static_cast<llvm::Type*>(irb.getDoubleTy());
 		auto* vecTy = llvm::FixedVectorType::get(elemTy, 2);
 		llvm::Value* v = irb.CreateBitCast(
-			irb.CreateZExtOrTrunc(loadRegister(ai->operands[1].reg, irb), irb.getIntNTy(laneBits * 2)), vecTy);
+			arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[1].reg, irb), irb.getIntNTy(laneBits * 2)), vecTy);
 		llvm::Value* lo = irb.CreateExtractElement(v, irb.getInt32(0));
 		llvm::Value* hi = irb.CreateExtractElement(v, irb.getInt32(1));
 		auto nid = isMax ? llvm::Intrinsic::maxnum : llvm::Intrinsic::minnum;
@@ -7138,8 +7159,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonFpPair(cs_insn* i, cs_arm
 						 : static_cast<llvm::Type*>(irb.getDoubleTy());
 	auto* vecTy = llvm::FixedVectorType::get(elemTy, lanes);
 	auto* w = irb.getIntNTy(bytes * 8);
-	llvm::Value* a = irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(ai->operands[1].reg, irb), w), vecTy);
-	llvm::Value* b = irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(ai->operands[2].reg, irb), w), vecTy);
+	llvm::Value* a = irb.CreateBitCast(arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[1].reg, irb), w), vecTy);
+	llvm::Value* b = irb.CreateBitCast(arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[2].reg, irb), w), vecTy);
 	llvm::SmallVector<int, 16> evens;
 	llvm::SmallVector<int, 16> odds;
 	for (unsigned k = 0; k < lanes; ++k)
@@ -8472,7 +8493,7 @@ bool Capstone2LlvmIrTranslatorArm64_impl::translateSveDup(cs_insn* i, cs_arm64* 
 	}
 	else if (ai->operands[1].type == ARM64_OP_REG)
 	{
-		lane = irb.CreateZExtOrTrunc(loadRegister(ai->operands[1].reg, irb), eTy);
+		lane = arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[1].reg, irb), eTy);
 	}
 	else
 	{
@@ -8505,7 +8526,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateSveIndex(cs_insn* i, cs_arm64
 		}
 		if (op.type == ARM64_OP_REG)
 		{
-			return irb.CreateZExtOrTrunc(loadRegister(op.reg, irb), eTy);
+			return arm64ZExtOrTruncInt(irb, loadRegister(op.reg, irb), eTy);
 		}
 		return llvm::ConstantInt::get(eTy, 0);
 	};
