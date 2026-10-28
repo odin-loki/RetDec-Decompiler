@@ -5298,7 +5298,7 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateVcrypto(cs_insn* i, cs_riscv*
 		}
 		return v;
 	};
-	auto asXlen = [&](llvm::Value* v) {
+	auto asXlen = [&](llvm::Value* v) -> llvm::Value* {
 		if (!v)
 		{
 			return llvm::ConstantInt::get(xlen, 0);
