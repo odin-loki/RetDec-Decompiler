@@ -44,6 +44,22 @@ static bool arm64ShiftMnemonic(const char* m)
 	return name == "asr" || name == "lsl" || name == "lsr" || name == "ror";
 }
 
+// Capstone 6 folds a post-index displacement into the memory operand. The
+// access address is the base; write-back keeps base+disp (the value passed in).
+static llvm::Value* arm64AccessAddr(
+		cs_arm64* ai,
+		const cs_arm64_op& mem,
+		llvm::Value* addrWithDisp,
+		llvm::IRBuilder<>& irb)
+{
+	if (addrWithDisp == nullptr || !ai->post_index || mem.type != ARM64_OP_MEM || mem.mem.disp == 0)
+	{
+		return addrWithDisp;
+	}
+	auto* disp = llvm::ConstantInt::getSigned(addrWithDisp->getType(), mem.mem.disp);
+	return irb.CreateSub(addrWithDisp, disp);
+}
+
 Capstone2LlvmIrTranslatorArm64_impl::Capstone2LlvmIrTranslatorArm64_impl(
 		llvm::Module* m,
 		cs_mode basic,
@@ -347,22 +363,16 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateInstruction(
 
 	//std::cout << i->mnemonic << " " << i->op_str << std::endl;
 
-	// Capstone 6 keeps SUB/SBC and puts NEG/NGC in alias_id. The encoding id
-	// is mapped, so a plain lookup subtracts the wrong registers. NEG and NGC
-	// have their own translators; prefer those.
+	// Capstone 6 keeps the encoding id (ORR, EXTR, CSINC, …) and puts the
+	// printed alias in alias_id. The alias operands are the printed form, so
+	// a dedicated alias translator has to win when one is registered.
 	std::size_t id = i->id;
 	if (i->is_alias)
 	{
-		const auto alias = static_cast<std::size_t>(i->alias_id);
-		auto aIt = _i2fm.find(alias);
-		auto rIt = _i2fm.find(static_cast<std::size_t>(i->id));
-		const bool aliasMapped = aIt != _i2fm.end() && aIt->second != nullptr;
-		const bool realMapped = rIt != _i2fm.end() && rIt->second != nullptr;
-		const bool negFamily = alias == ARM64_INS_ALIAS_NEG || alias == ARM64_INS_NEGS
-				|| alias == ARM64_INS_NGC || alias == ARM64_INS_NGCS;
-		if (aliasMapped && (!realMapped || negFamily))
+		auto aIt = _i2fm.find(static_cast<std::size_t>(i->alias_id));
+		if (aIt != _i2fm.end() && aIt->second != nullptr)
 		{
-			id = alias;
+			id = static_cast<std::size_t>(i->alias_id);
 		}
 	}
 
@@ -373,11 +383,10 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateInstruction(
 
 		(this->*f)(i, ai, irb);
 	}
-	else if (ai->op_count == 2 && ai->operands[1].shift.type != ARM64_SFT_INVALID
-			&& arm64ShiftMnemonic(i->mnemonic))
+	else if (arm64ShiftMnemonic(i->mnemonic))
 	{
-		// Unmapped alias (ror for extr-with-the-same-register). The source
-		// operand already carries the rotate; translateShifts stores it.
+		// Unmapped shift alias. translateShifts stores a source that already
+		// carries the shift, and otherwise shifts the last two operands.
 		translateShifts(i, ai, irb);
 	}
 	else
@@ -485,6 +494,25 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::extractVectorValue(
 			val = irb.CreateLShr(val, llvm::ConstantInt::get(val->getType(), 128 * op.vector_index));
 			val = irb.CreateZExtOrTrunc(val, llvm::IntegerType::getInt128Ty(_module->getContext()));
 			return irb.CreateBitCast(val, llvm::Type::getFP128Ty(_module->getContext()));
+		// `mov s0, v1.s[0]` names the element size alone (VL_S), not VL_1S.
+		case ARM64LAYOUT_VL_B:
+			val = irb.CreateLShr(val, llvm::ConstantInt::get(val->getType(), 8 * op.vector_index));
+			return irb.CreateZExtOrTrunc(val, llvm::IntegerType::getInt8Ty(_module->getContext()));
+		case ARM64LAYOUT_VL_H:
+			val = irb.CreateLShr(val, llvm::ConstantInt::get(val->getType(), 16 * op.vector_index));
+			return irb.CreateZExtOrTrunc(val, llvm::IntegerType::getInt16Ty(_module->getContext()));
+		case ARM64LAYOUT_VL_S:
+			val = irb.CreateLShr(val, llvm::ConstantInt::get(val->getType(), 32 * op.vector_index));
+			val = irb.CreateZExtOrTrunc(val, llvm::IntegerType::getInt32Ty(_module->getContext()));
+			return irb.CreateBitCast(val, llvm::Type::getFloatTy(_module->getContext()));
+		case ARM64LAYOUT_VL_D:
+			val = irb.CreateLShr(val, llvm::ConstantInt::get(val->getType(), 64 * op.vector_index));
+			val = irb.CreateZExtOrTrunc(val, llvm::IntegerType::getInt64Ty(_module->getContext()));
+			return irb.CreateBitCast(val, llvm::Type::getDoubleTy(_module->getContext()));
+		case ARM64LAYOUT_VL_Q:
+			val = irb.CreateLShr(val, llvm::ConstantInt::get(val->getType(), 128 * op.vector_index));
+			val = irb.CreateZExtOrTrunc(val, llvm::IntegerType::getInt128Ty(_module->getContext()));
+			return irb.CreateBitCast(val, llvm::Type::getFP128Ty(_module->getContext()));
 		case ARM64_VAS_INVALID:
 			// Newer Capstone may leave VAS unset on `vN.d[i]`; still extract a D lane.
 			if (op.vector_index >= 0)
@@ -586,8 +614,8 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::generateOperandShift(
 	// type ASR_REG (same for lsl/lsr/ror). The field is a register id. Treating
 	// it as an immediate shifted by that id and never read Xm.
 	const bool regShift = op.shift.type == ARM64_SFT_LSL_REG || op.shift.type == ARM64_SFT_LSR_REG
-			|| op.shift.type == ARM64_SFT_ASR_REG || op.shift.type == ARM64_SFT_ROR_REG
-			|| op.shift.type == ARM64_SFT_MSL_REG;
+					   || op.shift.type == ARM64_SFT_ASR_REG || op.shift.type == ARM64_SFT_ROR_REG
+					   || op.shift.type == ARM64_SFT_MSL_REG;
 
 	llvm::Value* n = nullptr;
 	if (regShift)
@@ -619,28 +647,23 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::generateOperandShift(
 	switch (op.shift.type)
 	{
 		case ARM64_SFT_ASR:
-		case ARM64_SFT_ASR_REG:
-		{
+		case ARM64_SFT_ASR_REG: {
 			return generateShiftAsr(irb, val, n, updateFlags);
 		}
 		case ARM64_SFT_LSL:
-		case ARM64_SFT_LSL_REG:
-		{
+		case ARM64_SFT_LSL_REG: {
 			return generateShiftLsl(irb, val, n, updateFlags);
 		}
 		case ARM64_SFT_LSR:
-		case ARM64_SFT_LSR_REG:
-		{
+		case ARM64_SFT_LSR_REG: {
 			return generateShiftLsr(irb, val, n, updateFlags);
 		}
 		case ARM64_SFT_ROR:
-		case ARM64_SFT_ROR_REG:
-		{
+		case ARM64_SFT_ROR_REG: {
 			return generateShiftRor(irb, val, n, updateFlags);
 		}
 		case ARM64_SFT_MSL:
-		case ARM64_SFT_MSL_REG:
-		{
+		case ARM64_SFT_MSL_REG: {
 			return generateShiftMsl(irb, val, n, updateFlags);
 		}
 		case ARM64_SFT_INVALID:
@@ -3399,12 +3422,17 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::loadOp(
 	{
 		case ARM64_OP_PSTATE:
 		case ARM64_OP_SYS:
+		case ARM64_OP_AT:
+		case ARM64_OP_DC:
+		case ARM64_OP_IC:
+		case ARM64_OP_ISB:
+		case ARM64_OP_TLBI:
 		case ARM64_OP_SVCR:
 		case ARM64_OP_PREFETCH:
 		case ARM64_OP_BARRIER:
 			// Operation selectors (AT/IC/DC/TLBI, PSTATE, …), not GP/FP regs.
 			// Capstone's union aliases these onto op.reg and can collide with
-			// ARM64_REG_S10 etc.
+			// ARM64_REG_S10 etc. nullptr drops them from a pseudo call.
 			return nullptr;
 		case ARM64_OP_REG_MRS:
 		case ARM64_OP_REG_MSR:
@@ -4174,7 +4202,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateMov(cs_insn* i, cs_arm64* ai,
 			op1 = irb.CreateBitCast(op1, dstTy);
 	}
 
-	if (i->id == ARM64_INS_MVN || i->id == ARM64_INS_MOVN)
+	if (arm64IdIs(i, ARM64_INS_MVN) || arm64IdIs(i, ARM64_INS_MOVN)
+			|| (i->is_alias && static_cast<unsigned>(i->alias_id) == ARM64_INS_ALIAS_MOVN))
 	{
 		op1 = generateValueNegate(irb, op1);
 	}
@@ -4276,7 +4305,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateStr(cs_insn* i, cs_arm64* ai,
 		op0 = irb.CreateZExtOrTrunc(op0, ty);
 	}
 	auto* dest = generateGetOperandMemAddr(ai->operands[1], irb);
-	auto* st = storeIntPtr(irb, op0, dest, op0->getType());
+	auto* access = ai->op_count < 3 ? arm64AccessAddr(ai, ai->operands[1], dest, irb) : dest;
+	auto* st = storeIntPtr(irb, op0, access, op0->getType());
 	if (i->id == ARM64_INS_STLR || i->id == ARM64_INS_STLRB || i->id == ARM64_INS_STLRH)
 	{
 		st->setAtomic(llvm::AtomicOrdering::Release);
@@ -4402,9 +4432,17 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateStp(cs_insn* i, cs_arm64* ai,
 	uint32_t baseR = ARM64_REG_INVALID;
 	llvm::Value* wbAddr = nullptr;
 	auto* dest = generateGetOperandMemAddr(ai->operands[2], irb);
+	auto* access = ai->op_count < 4 ? arm64AccessAddr(ai, ai->operands[2], dest, irb) : dest;
 	auto* registerSize = llvm::ConstantInt::get(getDefaultType(), getRegisterByteSize(ai->operands[0].reg));
-	storeOp(ai->operands[2], op0, irb);
-	auto* second = irb.CreateAdd(dest, registerSize);
+	if (access == dest)
+	{
+		storeOp(ai->operands[2], op0, irb);
+	}
+	else
+	{
+		storeIntPtr(irb, op0, access, op0->getType());
+	}
+	auto* second = irb.CreateAdd(access, registerSize);
 	storeIntPtr(irb, op1, second, op1->getType());
 	if (ai->op_count == 3)
 	{
@@ -4514,7 +4552,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdr(cs_insn* i, cs_arm64* ai,
 
 	auto* regType = getRegisterType(ai->operands[0].reg);
 	auto* dest = loadOp(ai->operands[1], irb, nullptr, true);
-	llvm::Value* loaded_value = loadIntPtr(irb, dest, ty);
+	auto* access = ai->op_count < 3 ? arm64AccessAddr(ai, ai->operands[1], dest, irb) : dest;
+	llvm::Value* loaded_value = loadIntPtr(irb, access, ty);
 	if (auto* ld = llvm::dyn_cast<llvm::LoadInst>(loaded_value))
 	{
 		switch (i->id)
@@ -4549,11 +4588,11 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdr(cs_insn* i, cs_arm64* ai,
 	uint32_t baseR = ARM64_REG_INVALID;
 	if (ai->op_count == 2)
 	{
-		baseR = ai->operands[1].reg;
+		baseR = ai->operands[1].type == ARM64_OP_MEM ? ai->operands[1].mem.base : ai->operands[1].reg;
 	}
-	else if (ai->op_count == 3) // POST-index
+	else if (ai->op_count == 3) // POST-index, displacement still a separate operand
 	{
-		baseR = ai->operands[1].reg;
+		baseR = ai->operands[1].type == ARM64_OP_MEM ? ai->operands[1].mem.base : ai->operands[1].reg;
 
 		auto* disp = llvm::ConstantInt::get(getDefaultType(), ai->operands[2].imm);
 		dest = irb.CreateAdd(dest, disp);
@@ -4603,7 +4642,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdp(cs_insn* i, cs_arm64* ai,
 	}
 
 	auto* dest = loadOp(ai->operands[2], irb, nullptr, true);
-	auto* newReg1Value = loadIntPtr(irb, dest, ty);
+	auto* access = ai->op_count < 4 ? arm64AccessAddr(ai, ai->operands[2], dest, irb) : dest;
+	auto* newReg1Value = loadIntPtr(irb, access, ty);
 
 	llvm::Value* newDest = nullptr;
 	llvm::Value* newReg2Value = nullptr;
@@ -4611,7 +4651,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdp(cs_insn* i, cs_arm64* ai,
 	if (ai->op_count == 3)
 	{
 		storeRegister(ai->operands[0].reg, newReg1Value, irb, ct);
-		newDest = irb.CreateAdd(dest, data_size);
+		newDest = irb.CreateAdd(access, data_size);
 		newReg2Value = loadIntPtr(irb, newDest, ty);
 		storeRegister(ai->operands[1].reg, newReg2Value, irb, ct);
 
@@ -4621,7 +4661,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdp(cs_insn* i, cs_arm64* ai,
 	{
 
 		storeRegister(ai->operands[0].reg, newReg1Value, irb, ct);
-		newDest = irb.CreateAdd(dest, data_size);
+		newDest = irb.CreateAdd(access, data_size);
 		newReg2Value = loadIntPtr(irb, newDest, ty);
 		storeRegister(ai->operands[1].reg, newReg2Value, irb, ct);
 
@@ -4703,7 +4743,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateAnd(cs_insn* i, cs_arm64* ai,
 	}
 	auto* val = irb.CreateAnd(op1, op2);
 
-	if (i->id != ARM64_INS_TST)
+	if (!arm64IdIs(i, ARM64_INS_TST))
 	{
 		storeOp(ai->operands[0], val, irb);
 	}
@@ -4732,14 +4772,17 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateShifts(cs_insn* i, cs_arm64* 
 
 	EXPECT_IS_BINARY_OR_TERNARY(i, ai, irb);
 
-	// Capstone 6 folds `asr Xd, Xn, Xm` and `ror Xd, Xn, #imm` (the extr alias)
-	// into two operands. The source already carries the shift, so loadOp is
-	// the result. The last-two-operand load used Xd as the value instead.
-	if (ai->op_count == 2 && ai->operands[1].shift.type != ARM64_SFT_INVALID)
+	// Capstone 6 puts the shift on the source for asr/lsl/lsr, and sometimes
+	// for the ror alias of extr (which still has a third immediate). loadOp
+	// is already the result; shifting again would rotate twice.
+	for (uint8_t j = 1; j < ai->op_count; ++j)
 	{
-		auto* shifted = loadOp(ai->operands[1], irb);
-		storeOp(ai->operands[0], shifted, irb);
-		return;
+		if (ai->operands[j].shift.type != ARM64_SFT_INVALID)
+		{
+			auto* shifted = loadOp(ai->operands[j], irb);
+			storeOp(ai->operands[0], shifted, irb);
+			return;
+		}
 	}
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(ai, irb);
@@ -4760,30 +4803,38 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateShifts(cs_insn* i, cs_arm64* 
 		op2 = irb.CreateAnd(op2, llvm::ConstantInt::get(ty, ty->getBitWidth() - 1));
 	}
 
+	unsigned sid = i->id;
+	if (i->is_alias)
+	{
+		const auto alias = static_cast<unsigned>(i->alias_id);
+		if (alias == ARM64_INS_ALIAS_ASR || alias == ARM64_INS_ALIAS_LSL || alias == ARM64_INS_ALIAS_LSR
+				|| alias == ARM64_INS_ALIAS_ROR || alias == ARM64_INS_ASR || alias == ARM64_INS_LSL
+				|| alias == ARM64_INS_LSR || alias == ARM64_INS_ROR)
+		{
+			sid = alias;
+		}
+	}
+
 	llvm::Value* val = nullptr;
-	switch(i->id)
+	switch (sid)
 	{
 		case ARM64_INS_ASR:
-		case ARM64_INS_ALIAS_ASR:
-		{
+		case ARM64_INS_ALIAS_ASR: {
 			val = irb.CreateAShr(op1, op2);
 			break;
 		}
 		case ARM64_INS_LSL:
-		case ARM64_INS_ALIAS_LSL:
-		{
+		case ARM64_INS_ALIAS_LSL: {
 			val = irb.CreateShl(op1, op2);
 			break;
 		}
 		case ARM64_INS_LSR:
-		case ARM64_INS_ALIAS_LSR:
-		{
+		case ARM64_INS_ALIAS_LSR: {
 			val = irb.CreateLShr(op1, op2);
 			break;
 		}
 		case ARM64_INS_ROR:
-		case ARM64_INS_ALIAS_ROR:
-		{
+		case ARM64_INS_ALIAS_ROR: {
 			val = generateShiftRor(irb, op1, op2);
 			break;
 		}
@@ -5115,7 +5166,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateCsel(cs_insn* i, cs_arm64* ai
  */
 void Capstone2LlvmIrTranslatorArm64_impl::translateCondOp(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {
-	EXPECT_IS_BINARY(i, ai, irb);
+	// `cinc Xd, Xn, cond` is two registers; the condition may be a third operand.
+	EXPECT_IS_BINARY_OR_TERNARY(i, ai, irb);
 
 	op1 = loadOp(ai->operands[1], irb);
 
@@ -5131,21 +5183,22 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateCondOp(cs_insn* i, cs_arm64* 
 
 	//ELSE
 	llvm::Value *val = nullptr;
-	switch(i->id)
+	if (arm64IdIs(i, ARM64_INS_CINC))
 	{
-	case ARM64_INS_CINC:
 		val = bodyElse.CreateAdd(op1, llvm::ConstantInt::get(op1->getType(), 1));
-		break;
-	case ARM64_INS_CINV:
+	}
+	else if (arm64IdIs(i, ARM64_INS_CINV))
+	{
 		val = generateValueNegate(bodyElse, op1);
-		break;
-	case ARM64_INS_CNEG:
+	}
+	else if (arm64IdIs(i, ARM64_INS_CNEG))
+	{
 		val = generateValueNegate(bodyElse, op1);
 		val = bodyElse.CreateAdd(val, llvm::ConstantInt::get(val->getType(), 1));
-		break;
-	default:
+	}
+	else
+	{
 		throw GenericError("translateCondOp: Instruction id error");
-		break;
 	}
 	storeOp(ai->operands[0], val, bodyElse);
 	//ENDIF
@@ -5196,16 +5249,17 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateCondSelOp(cs_insn* i, cs_arm6
  */
 void Capstone2LlvmIrTranslatorArm64_impl::translateCset(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {
-	EXPECT_IS_UNARY(i, ai, irb);
+	// The condition lives in cc. Capstone 6 may still attach it as an operand.
+	EXPECT_IS_UNARY_OR_BINARY(i, ai, irb);
 
 	auto* rt = getRegisterType(ai->operands[0].reg);
 	auto* zero = llvm::ConstantInt::get(rt, 0);
 	llvm::Value* one = nullptr;
-	if (i->id == ARM64_INS_CSET)
+	if (arm64IdIs(i, ARM64_INS_CSET))
 	{
 		one = llvm::ConstantInt::get(rt, 1);
 	}
-	else if (i->id == ARM64_INS_CSETM)
+	else if (arm64IdIs(i, ARM64_INS_CSETM))
 	{
 		one = llvm::ConstantInt::getSigned(rt, -1);
 		// 0xffffffffffffffff - one in all bits
@@ -5662,20 +5716,35 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateMul(cs_insn* i, cs_arm64* ai,
 
 	auto* op1 = loadOp(ai->operands[1], irb);
 	auto* op2 = loadOp(ai->operands[2], irb);
+	auto* dstTy = getRegisterType(ai->operands[0].reg);
+	if (op1->getType()->isIntegerTy() && op2->getType()->isIntegerTy() && dstTy->isIntegerTy())
+	{
+		op1 = irb.CreateZExtOrTrunc(op1, dstTy);
+		op2 = irb.CreateZExtOrTrunc(op2, dstTy);
+	}
 
 	auto *val = irb.CreateMul(op1, op2);
-	if (i->id == ARM64_INS_MADD)
+	// `mul` / `mneg` are MADD / MSUB with XZR omitted from the alias operands.
+	if (i->id == ARM64_INS_MADD && ai->op_count >= 4)
 	{
 		auto* op3 = loadOp(ai->operands[3], irb);
+		if (op3->getType()->isIntegerTy() && val->getType()->isIntegerTy())
+		{
+			op3 = irb.CreateZExtOrTrunc(op3, val->getType());
+		}
 		val = irb.CreateAdd(val, op3);
 	}
-	else if (i->id == ARM64_INS_MSUB)
+	else if (i->id == ARM64_INS_MSUB && ai->op_count >= 4 && !arm64IdIs(i, ARM64_INS_MNEG))
 	{
 		auto* op3 = loadOp(ai->operands[3], irb);
+		if (op3->getType()->isIntegerTy() && val->getType()->isIntegerTy())
+		{
+			op3 = irb.CreateZExtOrTrunc(op3, val->getType());
+		}
 		val = irb.CreateSub(op3, val);
 	}
 
-	if (i->id == ARM64_INS_MNEG)
+	if (arm64IdIs(i, ARM64_INS_MNEG))
 	{
 		llvm::Value* zero = llvm::ConstantInt::get(val->getType(), 0);
 		val = irb.CreateSub(zero, val);
