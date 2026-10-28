@@ -298,7 +298,9 @@ g++ -o "${WORKDIR}/c2l_tests" "${WORKDIR}"/obj/*.o \
 		| sort -u | head -20 >&2; die "link failed"; }
 
 set +e
-"${WORKDIR}/c2l_tests" --gtest_brief=1 > "${WORKDIR}/run.log" 2>&1
+# Brief mode hides the running name, and an LLVM assert aborts before gtest
+# prints FAILED. The tail of this log is what names that test.
+"${WORKDIR}/c2l_tests" > "${WORKDIR}/run.log" 2>&1
 run_status=$?
 set -e
 
