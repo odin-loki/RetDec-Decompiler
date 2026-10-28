@@ -14,6 +14,30 @@
 namespace retdec {
 namespace capstone2llvmir {
 
+bool armRecoverThumbShaInsn(cs_insn* insn, const uint8_t* bytes, std::size_t size);
+
+namespace {
+
+bool recoverThumbSha(
+	cs_arch arch, cs_mode basic, cs_insn* insn, const uint8_t*& bytes, std::size_t& size, uint64_t& address)
+{
+	if (arch != CS_ARCH_ARM || basic != CS_MODE_THUMB || size < 4)
+	{
+		return false;
+	}
+	if (!armRecoverThumbShaInsn(insn, bytes, size))
+	{
+		return false;
+	}
+	insn->address = address;
+	bytes += 4;
+	size -= 4;
+	address += 4;
+	return true;
+}
+
+} // namespace
+
 template <typename CInsn, typename CInsnOp>
 Capstone2LlvmIrTranslator_impl<CInsn, CInsnOp>::Capstone2LlvmIrTranslator_impl(
 		cs_arch a,
@@ -231,6 +255,10 @@ Capstone2LlvmIrTranslator_impl<CInsn, CInsnOp>::translate(
 		disasmRes = cs_disasm_iter(_handle, &bytes, &size, &address, insn);
 		modifyBasicMode(CS_MODE_MIPS32);
 	}
+	if (!disasmRes)
+	{
+		disasmRes = recoverThumbSha(_arch, _basicMode, insn, bytes, size, address);
+	}
 
 	while (disasmRes)
 	{
@@ -264,6 +292,10 @@ Capstone2LlvmIrTranslator_impl<CInsn, CInsnOp>::translate(
 			disasmRes = cs_disasm_iter(_handle, &bytes, &size, &address, insn);
 			modifyBasicMode(CS_MODE_MIPS32);
 		}
+		if (!disasmRes)
+		{
+			disasmRes = recoverThumbSha(_arch, _basicMode, insn, bytes, size, address);
+		}
 	}
 
 	cs_free(insn, 1);
@@ -295,6 +327,10 @@ Capstone2LlvmIrTranslator_impl<CInsn, CInsnOp>::translateOne(
 		modifyBasicMode(CS_MODE_MIPS64);
 		disasmRes = cs_disasm_iter(_handle, &bytes, &size, &address, insn);
 		modifyBasicMode(CS_MODE_MIPS32);
+	}
+	if (!disasmRes)
+	{
+		disasmRes = recoverThumbSha(_arch, _basicMode, insn, bytes, size, address);
 	}
 
 	if (disasmRes)

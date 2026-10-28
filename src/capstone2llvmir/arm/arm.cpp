@@ -392,6 +392,40 @@ void armDropTiedQuad(uint32_t* quads, unsigned& nq, unsigned need)
 
 } // namespace
 
+// Capstone's Thumb tables reject the SHA256H2 fixture (opcode nibble in
+// bits 11:8, so DecoderTablev8Crypto32's bits 11:8 == 0xC check fails and
+// no other table claims the word). cs_disasm_iter then returns nothing and
+// the rewrite above never sees the bytes. Fill @p insn from those bytes
+// when they are one of the SHA/CRC words the rewrite already understands.
+bool armRecoverThumbShaInsn(cs_insn* insn, const uint8_t* bytes, std::size_t size)
+{
+	if (insn == nullptr || insn->detail == nullptr || bytes == nullptr || size < 4)
+	{
+		return false;
+	}
+	cs_arm saved = insn->detail->arm;
+	cs_insn tmp = *insn;
+	std::memcpy(tmp.bytes, bytes, 4);
+	tmp.size = 4;
+	tmp.id = 0;
+	tmp.alias_id = 0;
+	tmp.is_alias = false;
+	tmp.mnemonic[0] = '\0';
+	std::memset(&insn->detail->arm, 0, sizeof(cs_arm));
+	if (!armRewriteThumbCrypto(&tmp, &insn->detail->arm))
+	{
+		insn->detail->arm = saved;
+		return false;
+	}
+	std::memcpy(insn->bytes, bytes, 4);
+	insn->size = 4;
+	insn->id = tmp.id;
+	insn->alias_id = 0;
+	insn->is_alias = false;
+	insn->mnemonic[0] = '\0';
+	return true;
+}
+
 Capstone2LlvmIrTranslatorArm_impl::Capstone2LlvmIrTranslatorArm_impl(
 		llvm::Module* m,
 		cs_mode basic,
