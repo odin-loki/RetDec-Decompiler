@@ -197,7 +197,10 @@ bool armRewriteThumbCrypto(cs_insn* i, cs_arm* ai)
 		}
 	}
 
-	if (id == 0 || (i->id == id && ai->op_count >= nreg))
+	// Capstone can already name SHA256H2 and still hand back operands that are
+	// not three Q registers, so ready() bails out and the intrinsic is never
+	// declared. Installing the registers from the encoding covers that.
+	if (id == 0)
 	{
 		return false;
 	}

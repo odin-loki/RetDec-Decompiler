@@ -5173,51 +5173,95 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateVcrypto(cs_insn* i, cs_riscv*
 		throwUnexpectedOperands(i);
 	}
 
-	// Names contain the hasNamedCall needles (llvm.riscv.vaesdm, ...).
-	// Capstone 6 has no CS_MODE bit for Zvkned/Zvknh/Zvksed/Zvksh/Zvkg;
-	// RISCV_getFeatureBits default-enables them. The test bytes decode as
-	// these ids with the modes the fixture already sets.
-	const char* name = nullptr;
+	// LLVM 20's Zvk intrinsics are overloaded on the vector type and XLEN,
+	// and they take vl plus (except vaeskf1/vsm3me/vsm4k) a policy immediate.
+	// A two-argument function named llvm.riscv.vaesdm.vv does not match that
+	// prototype, so the verifier rejects the call.
+	llvm::Intrinsic::ID iid = llvm::Intrinsic::not_intrinsic;
+	bool vsForm = false;
+	bool wantExtra = false;
+	bool extraImm = false;
+	bool policy = true;
 	switch (i->id)
 	{
-	case RISCV_INS_VAESDF_VV: name = "llvm.riscv.vaesdf.vv"; break;
-	case RISCV_INS_VAESDF_VS: name = "llvm.riscv.vaesdf.vs"; break;
-	case RISCV_INS_VAESDM_VV: name = "llvm.riscv.vaesdm.vv"; break;
-	case RISCV_INS_VAESDM_VS: name = "llvm.riscv.vaesdm.vs"; break;
-	case RISCV_INS_VAESEF_VV: name = "llvm.riscv.vaesef.vv"; break;
-	case RISCV_INS_VAESEF_VS: name = "llvm.riscv.vaesef.vs"; break;
-	case RISCV_INS_VAESEM_VV: name = "llvm.riscv.vaesem.vv"; break;
-	case RISCV_INS_VAESEM_VS: name = "llvm.riscv.vaesem.vs"; break;
-	case RISCV_INS_VAESZ_VS: name = "llvm.riscv.vaesz.vs"; break;
-	case RISCV_INS_VAESKF1_VI: name = "llvm.riscv.vaeskf1"; break;
-	case RISCV_INS_VAESKF2_VI: name = "llvm.riscv.vaeskf2"; break;
-	case RISCV_INS_VSHA2CH_VV: name = "llvm.riscv.vsha2ch"; break;
-	case RISCV_INS_VSHA2CL_VV: name = "llvm.riscv.vsha2cl"; break;
-	case RISCV_INS_VSHA2MS_VV: name = "llvm.riscv.vsha2ms"; break;
-	case RISCV_INS_VSM3C_VI: name = "llvm.riscv.vsm3c"; break;
-	case RISCV_INS_VSM3ME_VV: name = "llvm.riscv.vsm3me"; break;
-	case RISCV_INS_VSM4K_VI: name = "llvm.riscv.vsm4k"; break;
-	case RISCV_INS_VSM4R_VV: name = "llvm.riscv.vsm4r.vv"; break;
-	case RISCV_INS_VSM4R_VS: name = "llvm.riscv.vsm4r.vs"; break;
-	case RISCV_INS_VGHSH_VV: name = "llvm.riscv.vghsh"; break;
-	case RISCV_INS_VGMUL_VV: name = "llvm.riscv.vgmul"; break;
+	case RISCV_INS_VAESDF_VV: iid = llvm::Intrinsic::riscv_vaesdf_vv; break;
+	case RISCV_INS_VAESDF_VS:
+		iid = llvm::Intrinsic::riscv_vaesdf_vs;
+		vsForm = true;
+		break;
+	case RISCV_INS_VAESDM_VV: iid = llvm::Intrinsic::riscv_vaesdm_vv; break;
+	case RISCV_INS_VAESDM_VS:
+		iid = llvm::Intrinsic::riscv_vaesdm_vs;
+		vsForm = true;
+		break;
+	case RISCV_INS_VAESEF_VV: iid = llvm::Intrinsic::riscv_vaesef_vv; break;
+	case RISCV_INS_VAESEF_VS:
+		iid = llvm::Intrinsic::riscv_vaesef_vs;
+		vsForm = true;
+		break;
+	case RISCV_INS_VAESEM_VV: iid = llvm::Intrinsic::riscv_vaesem_vv; break;
+	case RISCV_INS_VAESEM_VS:
+		iid = llvm::Intrinsic::riscv_vaesem_vs;
+		vsForm = true;
+		break;
+	case RISCV_INS_VAESZ_VS:
+		iid = llvm::Intrinsic::riscv_vaesz_vs;
+		vsForm = true;
+		break;
+	case RISCV_INS_VAESKF1_VI:
+		iid = llvm::Intrinsic::riscv_vaeskf1;
+		wantExtra = true;
+		extraImm = true;
+		policy = false;
+		break;
+	case RISCV_INS_VAESKF2_VI:
+		iid = llvm::Intrinsic::riscv_vaeskf2;
+		wantExtra = true;
+		extraImm = true;
+		break;
+	case RISCV_INS_VSHA2CH_VV:
+		iid = llvm::Intrinsic::riscv_vsha2ch;
+		wantExtra = true;
+		break;
+	case RISCV_INS_VSHA2CL_VV:
+		iid = llvm::Intrinsic::riscv_vsha2cl;
+		wantExtra = true;
+		break;
+	case RISCV_INS_VSHA2MS_VV:
+		iid = llvm::Intrinsic::riscv_vsha2ms;
+		wantExtra = true;
+		break;
+	case RISCV_INS_VSM3C_VI:
+		iid = llvm::Intrinsic::riscv_vsm3c;
+		wantExtra = true;
+		extraImm = true;
+		break;
+	case RISCV_INS_VSM3ME_VV:
+		iid = llvm::Intrinsic::riscv_vsm3me;
+		wantExtra = true;
+		policy = false;
+		break;
+	case RISCV_INS_VSM4K_VI:
+		iid = llvm::Intrinsic::riscv_vsm4k;
+		wantExtra = true;
+		extraImm = true;
+		policy = false;
+		break;
+	case RISCV_INS_VSM4R_VV: iid = llvm::Intrinsic::riscv_vsm4r_vv; break;
+	case RISCV_INS_VSM4R_VS:
+		iid = llvm::Intrinsic::riscv_vsm4r_vs;
+		vsForm = true;
+		break;
+	case RISCV_INS_VGHSH_VV:
+		iid = llvm::Intrinsic::riscv_vghsh;
+		wantExtra = true;
+		break;
+	case RISCV_INS_VGMUL_VV: iid = llvm::Intrinsic::riscv_vgmul_vv; break;
 	default: throw GenericError("Unhandled insn ID in translateVcrypto().");
 	}
 
 	auto* vecTy = rvvRegType();
-	llvm::Value* args[3];
-	llvm::Type* types[3];
-	unsigned argc = 0;
-
-	auto pushVec = [&](llvm::Value* v) {
-		if (!v || !v->getType()->isVectorTy() || v->getType() != vecTy)
-		{
-			v = v ? splatToRvv(v, irb) : llvm::UndefValue::get(vecTy);
-		}
-		args[argc] = v;
-		types[argc] = v->getType();
-		++argc;
-	};
+	auto* xlen = getDefaultType();
 
 	auto loadCrypto = [&](unsigned idx) -> llvm::Value* {
 		if (idx >= ri->op_count)
@@ -5243,44 +5287,69 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateVcrypto(cs_insn* i, cs_riscv*
 		return loadOp(op, irb);
 	};
 
-	// vd, vs2 are always vector operands. A short op_count used to fall
-	// through to __asm_<mnem>, whose name does not contain llvm.riscv.*.
-	pushVec(loadCrypto(0));
-	pushVec(loadCrypto(1));
-	if (ri->op_count >= 3)
+	auto asVec = [&](llvm::Value* v) {
+		if (!v || !v->getType()->isVectorTy() || v->getType() != vecTy)
+		{
+			v = v ? splatToRvv(v, irb) : llvm::UndefValue::get(vecTy);
+		}
+		return v;
+	};
+	auto asXlen = [&](llvm::Value* v) {
+		if (!v)
+		{
+			return llvm::ConstantInt::get(xlen, 0);
+		}
+		if (!v->getType()->isIntOrIntVectorTy())
+		{
+			unsigned bits = v->getType()->getPrimitiveSizeInBits();
+			v = irb.CreateBitCast(v, irb.getIntNTy(bits == 0 ? 32 : bits));
+		}
+		if (v->getType()->isVectorTy())
+		{
+			v = irb.CreateExtractElement(v, irb.getInt32(0));
+		}
+		return irb.CreateZExtOrTrunc(v, xlen);
+	};
+
+	// Overload types follow the intrinsic: return vector, then an independent
+	// vs2 (.vs) or the third operand, then XLEN for vl. Policy is not overloaded.
+	llvm::Type* ovr[3];
+	unsigned nOvr = 0;
+	ovr[nOvr++] = vecTy;
+	llvm::Value* args[5];
+	unsigned argc = 0;
+	args[argc++] = asVec(loadCrypto(0));
+	llvm::Value* vs2 = asVec(loadCrypto(1));
+	args[argc++] = vs2;
+	if (vsForm)
+	{
+		ovr[nOvr++] = vs2->getType();
+	}
+	if (wantExtra)
 	{
 		llvm::Value* extra = loadCrypto(2);
-		if (!extra)
+		if (extraImm || (extra && !extra->getType()->isVectorTy()))
 		{
-			extra = llvm::UndefValue::get(irb.getInt32Ty());
-		}
-		if (extra->getType()->isVectorTy())
-		{
-			pushVec(extra);
+			llvm::Value* imm = asXlen(extra);
+			args[argc++] = imm;
+			ovr[nOvr++] = xlen;
 		}
 		else
 		{
-			if (!extra->getType()->isIntOrIntVectorTy())
-			{
-				unsigned bits = extra->getType()->getPrimitiveSizeInBits();
-				if (bits == 0)
-				{
-					bits = 32;
-				}
-				extra = irb.CreateBitCast(extra, irb.getIntNTy(bits));
-			}
-			if (extra->getType()->isVectorTy())
-			{
-				extra = irb.CreateExtractElement(extra, irb.getInt32(0));
-			}
-			extra = irb.CreateZExtOrTrunc(extra, irb.getInt32Ty());
-			args[argc] = extra;
-			types[argc] = extra->getType();
-			++argc;
+			llvm::Value* vs1 = asVec(extra);
+			args[argc++] = vs1;
+			ovr[nOvr++] = vs1->getType();
 		}
 	}
+	ovr[nOvr++] = xlen;
+	args[argc++] = llvm::ConstantInt::get(xlen, 4);
+	if (policy)
+	{
+		// 3 is the unmasked policy operand clang emits for these intrinsics.
+		args[argc++] = llvm::ConstantInt::get(xlen, 3);
+	}
 
-	auto* fnc = getPseudoAsmFunction(i, vecTy, llvm::ArrayRef<llvm::Type*>(types, argc), name);
+	auto* fnc = llvm::Intrinsic::getOrInsertDeclaration(_module, iid, llvm::ArrayRef<llvm::Type*>(ovr, nOvr));
 	llvm::Value* call = irb.CreateCall(fnc, llvm::ArrayRef<llvm::Value*>(args, argc));
 	if (ri->op_count >= 1 && ri->operands[0].type == RISCV_OP_REG)
 	{
