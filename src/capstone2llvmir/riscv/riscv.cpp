@@ -298,7 +298,6 @@ bool riscvRewriteVcrypto(cs_insn* i, cs_riscv* ri)
 	case (0b101000u << 5) | 0b10000u: id = RISCV_INS_VSM4R_VV; break;
 	case (0b101001u << 5) | 0b10000u: id = RISCV_INS_VSM4R_VS; break;
 	case (0b101000u << 5) | 0b10001u: id = RISCV_INS_VGMUL_VV; break;
-	case (0b101001u << 5) | 0b10001u: id = RISCV_INS_VGMUL_VS; break;
 	default: break;
 	}
 	if (id == 0)
@@ -310,7 +309,6 @@ bool riscvRewriteVcrypto(cs_insn* i, cs_riscv* ri)
 		case 0b101111u: id = RISCV_INS_VSHA2CL_VV; break;
 		case 0b101101u: id = RISCV_INS_VSHA2MS_VV; break;
 		case 0b101100u: id = RISCV_INS_VGHSH_VV; break;
-		case 0b100011u: id = RISCV_INS_VGHSH_VS; break;
 		case 0b100000u: id = RISCV_INS_VSM3ME_VV; break;
 		case 0b100010u:
 			id = RISCV_INS_VAESKF1_VI;

@@ -407,6 +407,9 @@ def main() -> int:
         # against, so the comparison is on ids and not on spelling.
         names = sorted(impl | _null)
         src = [
+            '/* Capstone 6 hides ARM64_INS_* / CS_ARCH_ARM64 unless this is set first. */',
+            '#define CAPSTONE_AARCH64_COMPAT_HEADER',
+            '#define CAPSTONE_SYSTEMZ_COMPAT_HEADER',
             '#include <capstone/capstone.h>',
             '#include "capstone2llvmir/capstone6_compat.h"',
             '#include <stdio.h>',
