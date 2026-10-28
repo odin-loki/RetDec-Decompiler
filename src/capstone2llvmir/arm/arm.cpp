@@ -82,14 +82,16 @@ bool armRewriteThumbCrypto(cs_insn* i, cs_arm* ai)
 	uint32_t regs[3] = {};
 	unsigned nreg = 0;
 
-	// CRC32*. The architectural and Keystone 0.9.2 forms differ by bit 22.
-	// The test fallbacks for H/W/CH/CW put the size next to Rd; match those
-	// words exactly, and the real size field (bits 7-4, C bit 20) otherwise.
-	const uint32_t crcIgnore = 0x004F0F0Fu;
+	// CRC32*. Keystone 0.9.2 and the ARM ARM set bit 22 (0xFAC0/0xFAD0).
+	// Clearing that bit also matches Thumb REV/REV16/RBIT (0xFA90F080/90/A0),
+	// and the interpreter aborts on llvm.arm.crc32* in an unrelated test.
+	// The hex fallbacks are exact words (size nibble sits next to Rd).
 	switch (thumb)
 	{
+	case 0xFA81F082u: id = ARM_INS_CRC32B; break;
 	case 0xFA81F282u: id = ARM_INS_CRC32H; break;
 	case 0xFA81F482u: id = ARM_INS_CRC32W; break;
+	case 0xFA91F082u: id = ARM_INS_CRC32CB; break;
 	case 0xFA91F282u: id = ARM_INS_CRC32CH; break;
 	case 0xFA91F482u: id = ARM_INS_CRC32CW; break;
 	default: break;
@@ -103,14 +105,15 @@ bool armRewriteThumbCrypto(cs_insn* i, cs_arm* ai)
 	}
 	else
 	{
-		switch (thumb & ~crcIgnore)
+		// Rn bits 19:16, Rd bits 11:8, Rm bits 3:0. Opcode bits stay put.
+		switch (thumb & ~0x000F0F0Fu)
 		{
-		case 0xFA80F080u: id = ARM_INS_CRC32B; break;
-		case 0xFA80F090u: id = ARM_INS_CRC32H; break;
-		case 0xFA80F0A0u: id = ARM_INS_CRC32W; break;
-		case 0xFA90F080u: id = ARM_INS_CRC32CB; break;
-		case 0xFA90F090u: id = ARM_INS_CRC32CH; break;
-		case 0xFA90F0A0u: id = ARM_INS_CRC32CW; break;
+		case 0xFAC0F080u: id = ARM_INS_CRC32B; break;
+		case 0xFAC0F090u: id = ARM_INS_CRC32H; break;
+		case 0xFAC0F0A0u: id = ARM_INS_CRC32W; break;
+		case 0xFAD0F080u: id = ARM_INS_CRC32CB; break;
+		case 0xFAD0F090u: id = ARM_INS_CRC32CH; break;
+		case 0xFAD0F0A0u: id = ARM_INS_CRC32CW; break;
 		default: break;
 		}
 		if (id != 0)
