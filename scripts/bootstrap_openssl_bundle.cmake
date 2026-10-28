@@ -158,6 +158,12 @@ function(_retdec_openssl_apply_35_link_fixes _bundle_dir)
 		"${_bundle_dir}/crypto/evp/objects.cmake"
 		"openssl/crypto/evp/evp_enc.c"
 		"crypto/evp/s_lib.c")
+	# s_lib.c calls EVP_SKEYMGMT_fetch and the rest of this table. The
+	# provider skeymgmt objects do not define it.
+	_retdec_openssl_ensure_source(
+		"${_bundle_dir}/crypto/evp/objects.cmake"
+		"openssl/crypto/evp/s_lib.c"
+		"crypto/evp/skeymgmt_meth.c")
 	foreach(_v3 IN ITEMS v3_authattid.c v3_rolespec.c v3_attrdesc.c v3_timespec.c v3_attrmap.c v3_aaa.c)
 		_retdec_openssl_ensure_source(
 			"${_bundle_dir}/crypto/x509/objects.cmake"

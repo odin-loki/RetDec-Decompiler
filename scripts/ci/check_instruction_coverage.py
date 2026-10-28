@@ -77,6 +77,8 @@ DIS_EXTRA_MODES = {
 }
 
 DIS_C = r'''
+/* Capstone 6 hides CS_ARCH_ARM64 unless this is set before the header. */
+#define CAPSTONE_AARCH64_COMPAT_HEADER
 #include <capstone/capstone.h>
 #include <stdio.h>
 #include <stdlib.h>
