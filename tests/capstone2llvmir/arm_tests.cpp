@@ -9968,17 +9968,30 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VRSUBHN_i16)
 
 static std::string g_armCryptoKeystoneNote;
 
-llvm::Function* Capstone2LlvmIrTranslatorArmTests::liftAsmOrBin(
-		const char* textAsm,
-		const char* a32le,
-		const char* t32le)
+static void noteArmCryptoBytes(const std::vector<uint8_t>& bytes)
+{
+	static const char hexd[] = "0123456789abcdef";
+	std::string s;
+	s.reserve(bytes.size() * 2);
+	for (uint8_t b: bytes)
+	{
+		s.push_back(hexd[b >> 4]);
+		s.push_back(hexd[b & 0xF]);
+	}
+	g_armCryptoKeystoneNote = s;
+}
+
+llvm::Function*
+Capstone2LlvmIrTranslatorArmTests::liftAsmOrBin(const char* textAsm, const char* a32le, const char* t32le)
 {
 	// Capstone 6 AES/SHA/CRC predicates require HasV8Ops (CS_MODE_V8 extra).
 	_translator->modifyExtraMode(CS_MODE_V8);
 
 	try
 	{
-		return translate(assemble(textAsm));
+		auto bytes = assemble(textAsm);
+		noteArmCryptoBytes(bytes);
+		return translate(bytes);
 	}
 	catch (const std::exception& ex)
 	{
@@ -9995,17 +10008,13 @@ llvm::Function* Capstone2LlvmIrTranslatorArmTests::liftAsmOrBin(
 				std::vector<uint8_t> bytes(out, out + sz);
 				ks_free(out);
 				ks_close(ks);
-				if (g_armCryptoKeystoneNote.empty())
-				{
-					g_armCryptoKeystoneNote = std::string(textAsm)
-							+ ": fixture Keystone rejected (no V8); KS_MODE_V8 accepted";
-				}
+				noteArmCryptoBytes(bytes);
 				return translate(bytes);
 			}
 			if (g_armCryptoKeystoneNote.empty())
 			{
-				g_armCryptoKeystoneNote = std::string(textAsm) + ": " + ex.what()
-						+ " KS_MODE_V8: " + ks_strerror(ks_errno(ks));
+				g_armCryptoKeystoneNote =
+					std::string(textAsm) + ": " + ex.what() + " KS_MODE_V8: " + ks_strerror(ks_errno(ks));
 			}
 			ks_close(ks);
 		}
@@ -10013,30 +10022,39 @@ llvm::Function* Capstone2LlvmIrTranslatorArmTests::liftAsmOrBin(
 		{
 			g_armCryptoKeystoneNote = std::string(textAsm) + ": " + ex.what();
 		}
-		return translate(utils::hexStringToBytes(GetParam() == CS_MODE_THUMB ? t32le : a32le));
+		auto bytes = utils::hexStringToBytes(GetParam() == CS_MODE_THUMB ? t32le : a32le);
+		noteArmCryptoBytes(bytes);
+		return translate(bytes);
 	}
 }
 
 void Capstone2LlvmIrTranslatorArmTests::expectCryptoIntrinsic(
-		llvm::Function* f,
-		const char* llvmName,
-		const char* asmName)
+	llvm::Function* f, const char* llvmName, const char* asmName)
 {
 	ASSERT_NE(nullptr, f);
 	auto* in = _module.getFunction(llvmName);
-	ASSERT_NE(nullptr, in) << "missing " << llvmName << (g_armCryptoKeystoneNote.empty() ? "" : (" keystone: " + g_armCryptoKeystoneNote));
 	bool hit = false;
+	std::string calls;
 	for (llvm::inst_iterator I = llvm::inst_begin(f), E = llvm::inst_end(f); I != E; ++I)
 	{
 		if (auto* c = llvm::dyn_cast<llvm::CallInst>(&*I))
 		{
-			if (c->getCalledFunction() == in)
+			if (auto* cf = c->getCalledFunction())
 			{
-				hit = true;
+				if (!calls.empty())
+				{
+					calls += ",";
+				}
+				calls += cf->getName().str();
+				if (cf == in)
+				{
+					hit = true;
+				}
 			}
 		}
 	}
-	EXPECT_TRUE(hit) << "did not call " << llvmName;
+	ASSERT_NE(nullptr, in) << "missing " << llvmName << " bytes " << g_armCryptoKeystoneNote << " calls " << calls;
+	EXPECT_TRUE(hit) << "did not call " << llvmName << " bytes " << g_armCryptoKeystoneNote;
 	EXPECT_EQ(nullptr, _module.getFunction(std::string("__asm_") + asmName));
 }
 

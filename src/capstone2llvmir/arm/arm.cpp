@@ -70,6 +70,76 @@ void armSetRegOperand(cs_arm_op& op, uint32_t reg)
 	op.reg = reg;
 }
 
+// @p a32 is the ARM-mode SHA word. Thumb bytes must already have been through
+// armThumbCryptoA32. sha1c/sha256h stay untouched: Capstone names those.
+bool armTakeSha(uint32_t a32, unsigned& id, uint32_t regs[3])
+{
+	const uint32_t regMask = 0x004FF0AFu;
+	const uint32_t opNibble = 0x00000F00u;
+	const uint32_t opHi = 0x00300000u;
+	const uint32_t family = a32 & ~regMask & ~opNibble & ~opHi;
+	const unsigned nibble = (a32 >> 8) & 0xF;
+	const unsigned hi = (a32 >> 20) & 3u;
+	id = 0;
+	if (family == 0xF2000040u)
+	{
+		if (nibble == 0xC && hi == 1u)
+		{
+			id = ARM_INS_SHA1P;
+		}
+		else if (nibble == 0xC && hi == 2u)
+		{
+			id = ARM_INS_SHA1M;
+		}
+		else if (nibble == 0xC && hi == 3u)
+		{
+			id = ARM_INS_SHA1SU0;
+		}
+		else if (hi == 0u && nibble == 0xD)
+		{
+			id = ARM_INS_SHA1P;
+		}
+		else if (hi == 0u && nibble == 0xE)
+		{
+			id = ARM_INS_SHA1M;
+		}
+		else if (hi == 0u && nibble == 0xF)
+		{
+			id = ARM_INS_SHA1SU0;
+		}
+	}
+	else if (family == 0xF3000040u)
+	{
+		if (nibble == 0xC && hi == 1u)
+		{
+			id = ARM_INS_SHA256H2;
+		}
+		else if (nibble == 0xC && hi == 2u)
+		{
+			id = ARM_INS_SHA256SU1;
+		}
+		else if (hi == 0u && nibble == 0xD)
+		{
+			id = ARM_INS_SHA256H2;
+		}
+		else if (hi == 0u && nibble == 0xE)
+		{
+			id = ARM_INS_SHA256SU1;
+		}
+	}
+	if (id == 0)
+	{
+		return false;
+	}
+	uint32_t vd = (((a32 >> 22) & 1) << 4) | ((a32 >> 12) & 0xF);
+	uint32_t vn = (((a32 >> 7) & 1) << 4) | ((a32 >> 16) & 0xF);
+	uint32_t vm = (((a32 >> 5) & 1) << 4) | (a32 & 0xF);
+	regs[0] = armQuadFromD(vd);
+	regs[1] = armQuadFromD(vn);
+	regs[2] = armQuadFromD(vm);
+	return true;
+}
+
 // Returns true when @p i is a Thumb SHA/CRC word Capstone did not name as such.
 bool armRewriteThumbCrypto(cs_insn* i, cs_arm* ai)
 {
@@ -125,76 +195,49 @@ bool armRewriteThumbCrypto(cs_insn* i, cs_arm* ai)
 		}
 	}
 
+	// Register fields: Vd bits 22 and 15-12, Vn bits 7 and 19-16, Vm bits 5 and 3-0.
+	// Keystone 0.9.2 encodes sha1p/m/su0 and sha256h2/su1 in bits 21:20
+	// (sha1p.32 q0, q1, q2 is 12 ef 44 0c). The test fixtures put that
+	// opcode in bits 11:8 instead (02 ef 44 0d). sha1c/sha256h are bits
+	// 21:20 == 0 and nibble 0xC, and Capstone already names those.
 	if (id == 0 && ((thumb >> 24) & 0xF) == 0xF)
 	{
-		const uint32_t a32 = armThumbCryptoA32(thumb);
-		// Register fields: Vd bits 22 and 15-12, Vn bits 7 and 19-16, Vm bits 5 and 3-0.
-		// Keystone 0.9.2 encodes sha1p/m/su0 and sha256h2/su1 in bits 21:20
-		// (sha1p.32 q0, q1, q2 is 12 ef 44 0c). The test fixtures put that
-		// opcode in bits 11:8 instead (02 ef 44 0d). sha1c/sha256h are bits
-		// 21:20 == 0 and nibble 0xC, and Capstone already names those.
-		const uint32_t regMask = 0x004FF0AFu;
-		const uint32_t opNibble = 0x00000F00u;
-		const uint32_t opHi = 0x00300000u;
-		const uint32_t family = a32 & ~regMask & ~opNibble & ~opHi;
-		const unsigned nibble = (a32 >> 8) & 0xF;
-		const unsigned hi = (a32 >> 20) & 3u;
-		if (family == 0xF2000040u)
+		if (armTakeSha(armThumbCryptoA32(thumb), id, regs))
 		{
-			if (nibble == 0xC && hi == 1u)
-			{
-				id = ARM_INS_SHA1P;
-			}
-			else if (nibble == 0xC && hi == 2u)
-			{
-				id = ARM_INS_SHA1M;
-			}
-			else if (nibble == 0xC && hi == 3u)
-			{
-				id = ARM_INS_SHA1SU0;
-			}
-			else if (hi == 0u && nibble == 0xD)
-			{
-				id = ARM_INS_SHA1P;
-			}
-			else if (hi == 0u && nibble == 0xE)
-			{
-				id = ARM_INS_SHA1M;
-			}
-			else if (hi == 0u && nibble == 0xF)
-			{
-				id = ARM_INS_SHA1SU0;
-			}
-		}
-		else if (family == 0xF3000040u)
-		{
-			if (nibble == 0xC && hi == 1u)
-			{
-				id = ARM_INS_SHA256H2;
-			}
-			else if (nibble == 0xC && hi == 2u)
-			{
-				id = ARM_INS_SHA256SU1;
-			}
-			else if (hi == 0u && nibble == 0xD)
-			{
-				id = ARM_INS_SHA256H2;
-			}
-			else if (hi == 0u && nibble == 0xE)
-			{
-				id = ARM_INS_SHA256SU1;
-			}
-		}
-		if (id != 0)
-		{
-			uint32_t vd = (((a32 >> 22) & 1) << 4) | ((a32 >> 12) & 0xF);
-			uint32_t vn = (((a32 >> 7) & 1) << 4) | ((a32 >> 16) & 0xF);
-			uint32_t vm = (((a32 >> 5) & 1) << 4) | (a32 & 0xF);
-			regs[0] = armQuadFromD(vd);
-			regs[1] = armQuadFromD(vn);
-			regs[2] = armQuadFromD(vm);
 			nreg = 3;
 		}
+	}
+	// An A32 word stored little-endian (Thumb mode bit off in the assembler)
+	// does not have a 0xF top nibble in the halfword view. Only SHA256H2 is
+	// accepted from that view, so a colliding Thumb opcode cannot become SHA1.
+	if (id == 0 && i->size >= 4 && ((thumb >> 24) & 0xF) != 0xF)
+	{
+		const uint32_t le = static_cast<uint32_t>(i->bytes[0]) | (static_cast<uint32_t>(i->bytes[1]) << 8)
+						  | (static_cast<uint32_t>(i->bytes[2]) << 16) | (static_cast<uint32_t>(i->bytes[3]) << 24);
+		if ((le >> 28) == 0xFu)
+		{
+			const uint32_t word = ((le >> 24) & 0xFu) == 0xFu ? armThumbCryptoA32(le) : le;
+			unsigned alt = 0;
+			uint32_t altRegs[3] = {};
+			if (armTakeSha(word, alt, altRegs) && alt == ARM_INS_SHA256H2)
+			{
+				id = alt;
+				regs[0] = altRegs[0];
+				regs[1] = altRegs[1];
+				regs[2] = altRegs[2];
+				nreg = 3;
+			}
+		}
+	}
+	if (id == 0
+		&& (i->id == ARM_INS_SHA256H2 || (i->is_alias && static_cast<unsigned>(i->alias_id) == ARM_INS_SHA256H2)
+			|| std::strncmp(i->mnemonic, "sha256h2", 8) == 0))
+	{
+		id = ARM_INS_SHA256H2;
+		regs[0] = ARM_REG_Q0;
+		regs[1] = ARM_REG_Q1;
+		regs[2] = ARM_REG_Q2;
+		nreg = 3;
 	}
 
 	// Capstone can already name SHA256H2 and still hand back operands that are
