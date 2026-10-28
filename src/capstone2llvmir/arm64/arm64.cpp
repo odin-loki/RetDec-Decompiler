@@ -46,11 +46,8 @@ static bool arm64ShiftMnemonic(const char* m)
 
 // Capstone 6 folds a post-index displacement into the memory operand. The
 // access address is the base; write-back keeps base+disp (the value passed in).
-static llvm::Value* arm64AccessAddr(
-		cs_arm64* ai,
-		const cs_arm64_op& mem,
-		llvm::Value* addrWithDisp,
-		llvm::IRBuilder<>& irb)
+static llvm::Value*
+arm64AccessAddr(cs_arm64* ai, const cs_arm64_op& mem, llvm::Value* addrWithDisp, llvm::IRBuilder<>& irb)
 {
 	if (addrWithDisp == nullptr || !ai->post_index || mem.type != ARM64_OP_MEM || mem.mem.disp == 0)
 	{
@@ -466,6 +463,8 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::extractVectorValue(
 		case ARM64_VAS_4S:
 		case ARM64_VAS_2S:
 		case ARM64_VAS_1S:
+		// `mov s0, v1.s[0]` names the element size alone (VL_S = 32), not VL_1S.
+		case ARM64LAYOUT_VL_S:
 			val = irb.CreateLShr(val, llvm::ConstantInt::get(val->getType(), 32 * op.vector_index));
 			val = irb.CreateZExtOrTrunc(val, llvm::IntegerType::getInt32Ty(_module->getContext()));
 			return irb.CreateBitCast(val, llvm::Type::getFloatTy(_module->getContext()));
@@ -487,28 +486,11 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::extractVectorValue(
 				val, llvm::ConstantInt::get(val->getType(), 64u * static_cast<unsigned>(op.vector_index)));
 			return irb.CreateZExtOrTrunc(val, llvm::IntegerType::getInt64Ty(_module->getContext()));
 		case ARM64_VAS_1D:
-			val = irb.CreateLShr(val, llvm::ConstantInt::get(val->getType(), 64 * op.vector_index));
-			val = irb.CreateZExtOrTrunc(val, llvm::IntegerType::getInt64Ty(_module->getContext()));
-			return irb.CreateBitCast(val, llvm::Type::getDoubleTy(_module->getContext()));
-		case ARM64_VAS_1Q:
-			val = irb.CreateLShr(val, llvm::ConstantInt::get(val->getType(), 128 * op.vector_index));
-			val = irb.CreateZExtOrTrunc(val, llvm::IntegerType::getInt128Ty(_module->getContext()));
-			return irb.CreateBitCast(val, llvm::Type::getFP128Ty(_module->getContext()));
-		// `mov s0, v1.s[0]` names the element size alone (VL_S), not VL_1S.
-		case ARM64LAYOUT_VL_B:
-			val = irb.CreateLShr(val, llvm::ConstantInt::get(val->getType(), 8 * op.vector_index));
-			return irb.CreateZExtOrTrunc(val, llvm::IntegerType::getInt8Ty(_module->getContext()));
-		case ARM64LAYOUT_VL_H:
-			val = irb.CreateLShr(val, llvm::ConstantInt::get(val->getType(), 16 * op.vector_index));
-			return irb.CreateZExtOrTrunc(val, llvm::IntegerType::getInt16Ty(_module->getContext()));
-		case ARM64LAYOUT_VL_S:
-			val = irb.CreateLShr(val, llvm::ConstantInt::get(val->getType(), 32 * op.vector_index));
-			val = irb.CreateZExtOrTrunc(val, llvm::IntegerType::getInt32Ty(_module->getContext()));
-			return irb.CreateBitCast(val, llvm::Type::getFloatTy(_module->getContext()));
 		case ARM64LAYOUT_VL_D:
 			val = irb.CreateLShr(val, llvm::ConstantInt::get(val->getType(), 64 * op.vector_index));
 			val = irb.CreateZExtOrTrunc(val, llvm::IntegerType::getInt64Ty(_module->getContext()));
 			return irb.CreateBitCast(val, llvm::Type::getDoubleTy(_module->getContext()));
+		case ARM64_VAS_1Q:
 		case ARM64LAYOUT_VL_Q:
 			val = irb.CreateLShr(val, llvm::ConstantInt::get(val->getType(), 128 * op.vector_index));
 			val = irb.CreateZExtOrTrunc(val, llvm::IntegerType::getInt128Ty(_module->getContext()));
@@ -4203,7 +4185,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateMov(cs_insn* i, cs_arm64* ai,
 	}
 
 	if (arm64IdIs(i, ARM64_INS_MVN) || arm64IdIs(i, ARM64_INS_MOVN)
-			|| (i->is_alias && static_cast<unsigned>(i->alias_id) == ARM64_INS_ALIAS_MOVN))
+		|| (i->is_alias && static_cast<unsigned>(i->alias_id) == ARM64_INS_ALIAS_MOVN))
 	{
 		op1 = generateValueNegate(irb, op1);
 	}
@@ -4808,8 +4790,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateShifts(cs_insn* i, cs_arm64* 
 	{
 		const auto alias = static_cast<unsigned>(i->alias_id);
 		if (alias == ARM64_INS_ALIAS_ASR || alias == ARM64_INS_ALIAS_LSL || alias == ARM64_INS_ALIAS_LSR
-				|| alias == ARM64_INS_ALIAS_ROR || alias == ARM64_INS_ASR || alias == ARM64_INS_LSL
-				|| alias == ARM64_INS_LSR || alias == ARM64_INS_ROR)
+			|| alias == ARM64_INS_ALIAS_ROR || alias == ARM64_INS_ASR || alias == ARM64_INS_LSL
+			|| alias == ARM64_INS_LSR || alias == ARM64_INS_ROR)
 		{
 			sid = alias;
 		}
