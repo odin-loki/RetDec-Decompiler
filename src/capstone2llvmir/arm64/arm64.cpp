@@ -1863,7 +1863,23 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::loadNeonVector(
 	auto* w = irb.getIntNTy(laneBits * lanes);
 	auto* vecTy = llvm::FixedVectorType::get(irb.getIntNTy(laneBits), lanes);
 
-	return irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(reg, irb), w), vecTy);
+	// D and S registers are floats. A .8b/.4h source is that register, and
+	// zero-extending a float aborts. The lane bits are the float's bits.
+	llvm::Value* raw = loadRegister(reg, irb);
+	if (raw == nullptr)
+	{
+		raw = llvm::UndefValue::get(w);
+	}
+	else if (!raw->getType()->isIntOrIntVectorTy())
+	{
+		unsigned bits = raw->getType()->getPrimitiveSizeInBits();
+		if (bits == 0)
+		{
+			bits = laneBits * lanes;
+		}
+		raw = irb.CreateBitCast(raw, irb.getIntNTy(bits));
+	}
+	return irb.CreateBitCast(irb.CreateZExtOrTrunc(raw, w), vecTy);
 }
 
 /**
