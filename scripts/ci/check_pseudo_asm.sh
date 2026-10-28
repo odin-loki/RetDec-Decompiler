@@ -84,6 +84,9 @@ mkdir -p "${WORKDIR}/obj"
 
 LLVM_FLAGS="$("${LLVM_CONFIG}" --cxxflags | tr ' ' '\n' | grep -E '^-I|^-D' | tr '\n' ' ')"
 INC="-Iinclude -Isrc -I${CS_PREFIX}/include -Ideps/rapidjson/include -DRAPIDJSON_HAS_STDSTRING=1"
+# Same defines deps/capstone puts on the imported target. Without them
+# capstone.h hides CS_ARCH_ARM64, cs_arm64, CS_ARCH_SYSZ and cs_sysz.
+INC="${INC} -DCAPSTONE_AARCH64_COMPAT_HEADER -DCAPSTONE_SYSTEMZ_COMPAT_HEADER"
 
 srcs="${WORKDIR}/srcs.txt"
 {
