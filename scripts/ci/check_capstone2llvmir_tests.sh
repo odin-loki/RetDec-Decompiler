@@ -171,27 +171,34 @@ build_dep() {
 			>/dev/null 2>&1 || die "could not clone ${name} ${tag} from ${url}"
 	fi
 	if [ "${name}" = "keystone" ]; then
-		# armv7's default CPU has no integer divide, crypto, or CRC, so
-		# sdiv/udiv/aese/sha/crc32 never assemble. cortex-a15 has hwdiv;
-		# the feature string adds the rest on top of that CPU.
+		# armv7's default CPU has no integer divide. armv8's default CPU has
+		# no crypto or CRC, and it rejects cortex-a15 as its CPU. a15 is the
+		# v7 divide CPU; a57 is the v8 crypto/CRC CPU. The feature string
+		# covers either triple.
 		python3 - "${src}/llvm/keystone/ks.cpp" <<'PY'
 import sys
 path = sys.argv[1]
 text = open(path, encoding="utf-8").read()
 marker = "/* retdec: arm features */"
 needle = "ks->STI = ks->TheTarget->createMCSubtargetInfo"
-if marker not in text:
+hook = (
+    "    " + marker + "\n"
+    "    if (ks->arch == KS_ARCH_ARM) {\n"
+    '        MCPU = ks->TripleName.find("armv8") == std::string::npos ? "cortex-a15" : "cortex-a57";\n'
+    '        ks->FeaturesStr = "+crypto,+crc,+hwdiv,+hwdiv-arm";\n'
+    "    }\n"
+)
+if marker in text:
+    start = text.find("    " + marker)
+    end = text.find(needle, start)
+    if end < 0:
+        sys.exit("keystone ks.cpp marker has no subtarget hook after it")
+    text = text[:start] + hook + text[end:]
+else:
     if needle not in text:
         sys.exit("keystone ks.cpp has no subtarget hook")
-    hook = (
-        "    " + marker + "\n"
-        "    if (ks->arch == KS_ARCH_ARM) {\n"
-        '        MCPU = "cortex-a15";\n'
-        '        ks->FeaturesStr = "+crypto,+crc,+hwdiv,+hwdiv-arm";\n'
-        "    }\n"
-    )
     text = text.replace(needle, hook + needle, 1)
-    open(path, "w", encoding="utf-8", newline="\n").write(text)
+open(path, "w", encoding="utf-8", newline="\n").write(text)
 PY
 	fi
 	echo "C2L-01: building ${name} ${tag}"
