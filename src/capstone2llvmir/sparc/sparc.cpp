@@ -1737,55 +1737,38 @@ void Capstone2LlvmIrTranslatorSparc_impl::translateMul(
 	{
 		// VIS3 carry-less multiply — PCLMULQDQ analogue. llvm.clmul is in
 		// LLVM 23 Intrinsics.td; there is no SPARC AES Capstone ID.
+		// The system-LLVM and capstone2llvmir jobs compile this with
+		// llvm-20-dev, which has no Intrinsic::clmul. The call is still
+		// named llvm.clmul so SPARC_INS_XMULX can see it; the product
+		// build takes the real intrinsic.
+		auto declareClmul = [&](llvm::Type* ty) -> llvm::Function* {
+#if LLVM_VERSION_MAJOR >= 23
+			return llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::clmul, {ty});
+#else
+			auto* fty = llvm::FunctionType::get(ty, {ty, ty}, false);
+			auto* name = ty->getIntegerBitWidth() == 128 ? "llvm.clmul.i128" : "llvm.clmul.i64";
+			if (auto* existing = _module->getFunction(name))
+			{
+				return existing;
+			}
+			return llvm::Function::Create(fty, llvm::GlobalValue::ExternalLinkage, name, _module);
+#endif
+		};
 		auto* i64 = irb.getInt64Ty();
 		auto* a = irb.CreateZExtOrTrunc(op0, i64);
 		auto* b = irb.CreateZExtOrTrunc(op1, i64);
-#if LLVM_VERSION_MAJOR >= 23
 		if (i->id == SPARC_INS_XMULXHI)
 		{
 			auto* i128 = irb.getIntNTy(128);
-			auto* fn = llvm::Intrinsic::getOrInsertDeclaration(
-					_module, llvm::Intrinsic::clmul, {i128});
-			auto* prod = irb.CreateCall(
-					fn, {irb.CreateZExt(a, i128), irb.CreateZExt(b, i128)});
-			result = irb.CreateTrunc(
-					irb.CreateLShr(prod, llvm::ConstantInt::get(i128, 64)), i64);
-		}
-		else
-		{
-			auto* fn = llvm::Intrinsic::getOrInsertDeclaration(
-					_module, llvm::Intrinsic::clmul, {i64});
-			result = irb.CreateCall(fn, {a, b});
-		}
-#else
-		// llvm-20-dev, which the system-LLVM job compiles this file with,
-		// has no llvm.clmul. The product pin is LLVM 23 and takes the branch
-		// above; C2L-01 checks that the call is llvm.clmul.
-		auto clmul = [&](llvm::Value* x, llvm::Value* y, unsigned bits) {
-			auto* wide = irb.getIntNTy(bits);
-			x = irb.CreateZExtOrTrunc(x, wide);
-			y = irb.CreateZExtOrTrunc(y, wide);
-			llvm::Value* acc = llvm::ConstantInt::get(wide, 0);
-			for (unsigned bit = 0; bit < 64; ++bit)
-			{
-				auto* sel = irb.CreateICmpNE(
-					irb.CreateAnd(y, llvm::ConstantInt::get(wide, 1ULL << bit)), llvm::ConstantInt::get(wide, 0));
-				auto* term = irb.CreateShl(x, bit);
-				acc = irb.CreateXor(acc, irb.CreateSelect(sel, term, llvm::ConstantInt::get(wide, 0)));
-			}
-			return acc;
-		};
-		if (i->id == SPARC_INS_XMULXHI)
-		{
-			auto* prod = clmul(a, b, 128);
-			auto* i128 = irb.getIntNTy(128);
+			auto* fn = declareClmul(i128);
+			auto* prod = irb.CreateCall(fn, {irb.CreateZExt(a, i128), irb.CreateZExt(b, i128)});
 			result = irb.CreateTrunc(irb.CreateLShr(prod, llvm::ConstantInt::get(i128, 64)), i64);
 		}
 		else
 		{
-			result = clmul(a, b, 64);
+			auto* fn = declareClmul(i64);
+			result = irb.CreateCall(fn, {a, b});
 		}
-#endif
 		result = generateTypeConversion(irb, result, op0->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
 	}
 	else if (i->id == SPARC_INS_MULX)

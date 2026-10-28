@@ -326,18 +326,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install LLVM 20, LLVM 23, gtest and cmake
+      - name: Install LLVM 20, gtest and cmake
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq llvm-20-dev libgtest-dev libgmock-dev cmake ca-certificates wget
-          # noble's archive stops at LLVM 20. XMULX needs llvm.clmul from LLVM 23,
-          # which is the revision the product builds. Keystone 0.9.2 still wants
-          # the LLVM 20 cmake package, so both stay installed.
-          sudo mkdir -p /etc/apt/keyrings
-          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/apt.llvm.org.gpg
-          echo "deb [signed-by=/etc/apt/keyrings/apt.llvm.org.gpg] http://apt.llvm.org/noble/ llvm-toolchain-noble-23 main" | sudo tee /etc/apt/sources.list.d/llvm-23.list >/dev/null
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq llvm-23-dev
+          sudo apt-get install -y -qq llvm-20-dev libgtest-dev libgmock-dev cmake
 
       # Keyed on the pinned revisions in cmake/deps.cmake, so bumping either
       # one rebuilds rather than silently testing the old library.

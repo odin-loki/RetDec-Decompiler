@@ -146,10 +146,7 @@ PYCHECK
 
 # ── LLVM ─────────────────────────────────────────────────────────────────────
 if [ -z "${LLVM_CONFIG}" ]; then
-	# 23 first: sparc XMULX emits llvm.clmul, which Intrinsics.td gained in
-	# LLVM 23, the same revision cmake/deps.cmake pins. 20 is the fallback
-	# for everything that still compiles against noble's llvm-20-dev.
-	for c in llvm-config-23 llvm-config-22 llvm-config-21 llvm-config-20 llvm-config; do
+	for c in llvm-config-20 llvm-config-21 llvm-config; do
 		command -v "$c" >/dev/null 2>&1 && { LLVM_CONFIG="$c"; break; }
 	done
 fi
