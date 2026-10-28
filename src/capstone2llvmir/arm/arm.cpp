@@ -118,6 +118,58 @@ llvm::Value* armF32ToF16Bits(llvm::Value* f, llvm::IRBuilder<>& irb)
 	return irb.CreateTrunc(bits16, irb.getInt16Ty());
 }
 
+// Qn, or the even D that is its low half. Thumb details sometimes name D(2n)
+// for the same register the ARM form calls Qn.
+bool armCryptoQuad(uint32_t r, uint32_t& q)
+{
+	if (r >= ARM_REG_Q0 && r <= ARM_REG_Q15)
+	{
+		q = r;
+		return true;
+	}
+	if (r >= ARM_REG_D0 && r <= ARM_REG_D30 && ((r - ARM_REG_D0) & 1u) == 0)
+	{
+		q = ARM_REG_Q0 + (r - ARM_REG_D0) / 2;
+		return true;
+	}
+	return false;
+}
+
+// Whole-register quads in operand order. Lane index is ignored: SHA/AES
+// encodings are not lane-indexed, and a Thumb detail can leave neon_lane at 0.
+void armCollectCryptoQuads(const cs_arm* ai, uint32_t* quads, unsigned& nq)
+{
+	nq = 0;
+	for (unsigned i = 0; i < ai->op_count && nq < 4; ++i)
+	{
+		if (ai->operands[i].type != ARM_OP_REG)
+		{
+			continue;
+		}
+		uint32_t q = 0;
+		if (!armCryptoQuad(ai->operands[i].reg, q))
+		{
+			continue;
+		}
+		quads[nq++] = q;
+	}
+}
+
+// Capstone 6 RMW form is Vd, src(=Vd), Vn?, Vm. Drop the alias only when it
+// is an extra operand past the architectural 2- or 3-operand form, so
+// sha1c q0, q0, q2 (Vn really is Qd) is kept.
+void armDropTiedQuad(uint32_t* quads, unsigned& nq, unsigned need)
+{
+	if (nq > need && nq >= 2 && quads[1] == quads[0])
+	{
+		for (unsigned i = 1; i + 1 < nq; ++i)
+		{
+			quads[i] = quads[i + 1];
+		}
+		--nq;
+	}
+}
+
 } // namespace
 
 Capstone2LlvmIrTranslatorArm_impl::Capstone2LlvmIrTranslatorArm_impl(
@@ -6832,33 +6884,29 @@ void Capstone2LlvmIrTranslatorArm_impl::translateCryptoSha(cs_insn* i, cs_arm* a
 	auto* i32 = irb.getInt32Ty();
 	auto* i128 = irb.getIntNTy(128);
 	auto* v4i32 = llvm::FixedVectorType::get(i32, 4);
-	auto isQ = [&](unsigned op) {
-		return op < ai->op_count && ai->operands[op].type == ARM_OP_REG && isQuadView(ai->operands[op].reg)
-				&& operandLane(ai->operands[op]) < 0;
+	// Thumb T32 SHA is the A32 word with bit 24 moved to bit 28. Capstone
+	// inverts that and decodes the same QPR operands as ARM: MC is
+	// Vd, src(=Vd), Vn?, Vm; the printer omits the tied src, so the detail
+	// is Vd, Vn?, Vm. A D-low-half view of the same Q is accepted too.
+	uint32_t quads[4] = {};
+	unsigned nq = 0;
+	armCollectCryptoQuads(ai, quads, nq);
+	auto loadQ = [&](unsigned op) { return irb.CreateBitCast(loadNeonBits(quads[op], irb), v4i32); };
+	auto storeQ = [&](llvm::Value* v) { storeNeonBits(quads[0], irb.CreateBitCast(v, i128), irb); };
+	auto ready = [&](unsigned need) {
+		armDropTiedQuad(quads, nq, need);
+		return nq >= need;
 	};
-	auto loadQ = [&](unsigned op) {
-		return irb.CreateBitCast(loadNeonBits(ai->operands[op].reg, irb), v4i32);
-	};
-	auto storeQ = [&](llvm::Value* v) {
-		storeNeonBits(ai->operands[0].reg, irb.CreateBitCast(v, i128), irb);
-	};
-	// Capstone 6 RMW SHA is Vd, src(=Vd), Vn?, Vm. Architectural 2/3-op forms stay as-is.
-	unsigned src0 = 1;
-	if (ai->op_count >= 3 && isQ(0) && isQ(1) && ai->operands[1].reg == ai->operands[0].reg)
-	{
-		src0 = 2;
-	}
 
 	switch (i->id)
 	{
-	case ARM_INS_SHA1H:
-	{
-		if (!isQ(0) || !isQ(src0) || src0 + 1 != ai->op_count)
+	case ARM_INS_SHA1H: {
+		if (!ready(2))
 		{
 			translatePseudoAsmGeneric(i, ai, irb);
 			return;
 		}
-		auto* e = irb.CreateExtractElement(loadQ(src0), uint64_t(0));
+		auto* e = irb.CreateExtractElement(loadQ(1), uint64_t(0));
 		auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::arm_neon_sha1h);
 		auto* r = irb.CreateCall(f, {e});
 		storeQ(irb.CreateInsertElement(llvm::Constant::getNullValue(v4i32), r, uint64_t(0)));
@@ -6866,41 +6914,37 @@ void Capstone2LlvmIrTranslatorArm_impl::translateCryptoSha(cs_insn* i, cs_arm* a
 	}
 	case ARM_INS_SHA1C:
 	case ARM_INS_SHA1M:
-	case ARM_INS_SHA1P:
-	{
-		if (!isQ(0) || !isQ(src0) || !isQ(src0 + 1) || src0 + 2 != ai->op_count)
+	case ARM_INS_SHA1P: {
+		if (!ready(3))
 		{
 			translatePseudoAsmGeneric(i, ai, irb);
 			return;
 		}
 		llvm::Intrinsic::ID iid = (i->id == ARM_INS_SHA1C) ? llvm::Intrinsic::arm_neon_sha1c
-				: (i->id == ARM_INS_SHA1M) ? llvm::Intrinsic::arm_neon_sha1m
-										   : llvm::Intrinsic::arm_neon_sha1p;
+								: (i->id == ARM_INS_SHA1M) ? llvm::Intrinsic::arm_neon_sha1m
+														   : llvm::Intrinsic::arm_neon_sha1p;
 		auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, iid);
-		auto* e = irb.CreateExtractElement(loadQ(src0), uint64_t(0));
-		storeQ(irb.CreateCall(f, {loadQ(0), e, loadQ(src0 + 1)}));
+		auto* e = irb.CreateExtractElement(loadQ(1), uint64_t(0));
+		storeQ(irb.CreateCall(f, {loadQ(0), e, loadQ(2)}));
 		return;
 	}
 	case ARM_INS_SHA1SU1:
-	case ARM_INS_SHA256SU0:
-	{
-		if (!isQ(0) || !isQ(src0) || src0 + 1 != ai->op_count)
+	case ARM_INS_SHA256SU0: {
+		if (!ready(2))
 		{
 			translatePseudoAsmGeneric(i, ai, irb);
 			return;
 		}
-		auto iid = (i->id == ARM_INS_SHA1SU1) ? llvm::Intrinsic::arm_neon_sha1su1
-											 : llvm::Intrinsic::arm_neon_sha256su0;
+		auto iid = (i->id == ARM_INS_SHA1SU1) ? llvm::Intrinsic::arm_neon_sha1su1 : llvm::Intrinsic::arm_neon_sha256su0;
 		auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, iid);
-		storeQ(irb.CreateCall(f, {loadQ(0), loadQ(src0)}));
+		storeQ(irb.CreateCall(f, {loadQ(0), loadQ(1)}));
 		return;
 	}
 	case ARM_INS_SHA1SU0:
 	case ARM_INS_SHA256H:
 	case ARM_INS_SHA256H2:
-	case ARM_INS_SHA256SU1:
-	{
-		if (!isQ(0) || !isQ(src0) || !isQ(src0 + 1) || src0 + 2 != ai->op_count)
+	case ARM_INS_SHA256SU1: {
+		if (!ready(3))
 		{
 			translatePseudoAsmGeneric(i, ai, irb);
 			return;
@@ -6919,7 +6963,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateCryptoSha(cs_insn* i, cs_arm* a
 			iid = llvm::Intrinsic::arm_neon_sha256su1;
 		}
 		auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, iid);
-		storeQ(irb.CreateCall(f, {loadQ(0), loadQ(src0), loadQ(src0 + 1)}));
+		storeQ(irb.CreateCall(f, {loadQ(0), loadQ(1), loadQ(2)}));
 		return;
 	}
 	default: translatePseudoAsmGeneric(i, ai, irb); return;
@@ -6934,8 +6978,25 @@ void Capstone2LlvmIrTranslatorArm_impl::translateCryptoSha(cs_insn* i, cs_arm* a
  */
 void Capstone2LlvmIrTranslatorArm_impl::translateCrc32(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
 {
-	if (ai->op_count != 3 || ai->operands[0].type != ARM_OP_REG || ai->operands[1].type != ARM_OP_REG
-		|| ai->operands[2].type != ARM_OP_REG)
+	// A32 is Rd, Rn, Rm. Thumb t2CRC32* is the same three GPRs (Rd in bits
+	// 11:8, Rn in 19:16, Rm in 3:0). A tied dest-read or a trailing predicate
+	// register must not hide those three.
+	unsigned idx[4] = {};
+	unsigned n = 0;
+	for (unsigned op = 0; op < ai->op_count && n < 4; ++op)
+	{
+		if (ai->operands[op].type == ARM_OP_REG)
+		{
+			idx[n++] = op;
+		}
+	}
+	if (n > 3 && ai->operands[idx[1]].reg == ai->operands[idx[0]].reg)
+	{
+		idx[1] = idx[2];
+		idx[2] = idx[3];
+		n = 3;
+	}
+	if (n < 3)
 	{
 		translatePseudoAsmGeneric(i, ai, irb);
 		return;
@@ -6954,10 +7015,10 @@ void Capstone2LlvmIrTranslatorArm_impl::translateCrc32(cs_insn* i, cs_arm* ai, l
 	}
 
 	auto* i32 = irb.getInt32Ty();
-	auto* acc = irb.CreateZExtOrTrunc(loadOp(ai->operands[1], irb), i32);
-	auto* data = irb.CreateZExtOrTrunc(loadOp(ai->operands[2], irb), i32);
+	auto* acc = irb.CreateZExtOrTrunc(loadOp(ai->operands[idx[1]], irb), i32);
+	auto* data = irb.CreateZExtOrTrunc(loadOp(ai->operands[idx[2]], irb), i32);
 	auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, iid);
-	storeOp(ai->operands[0], irb.CreateCall(f, {acc, data}), irb);
+	storeOp(ai->operands[idx[0]], irb.CreateCall(f, {acc, data}), irb);
 }
 
 /**

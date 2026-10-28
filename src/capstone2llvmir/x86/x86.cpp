@@ -1011,6 +1011,15 @@ void Capstone2LlvmIrTranslatorX86_impl::storeRegistersPlusSflags(
 
 unsigned Capstone2LlvmIrTranslatorX86_impl::getAddrSpace(x86_reg segment)
 {
+	// Capstone 6's setSegmentOverride ignores an ES/CS/SS/DS prefix in
+	// 64-bit mode, so the memory operand's segment stays invalid. The
+	// prefix byte is still stored in prefix[1] (X86_PREFIX_SS is 0x36).
+	// FS and GS are not ignored and already arrive as op.mem.segment.
+	if (segment == X86_REG_INVALID && _insn && _insn->detail && _insn->detail->x86.prefix[1] == X86_PREFIX_SS)
+	{
+		segment = X86_REG_SS;
+	}
+
 	switch (segment)
 	{
 		case X86_REG_FS:

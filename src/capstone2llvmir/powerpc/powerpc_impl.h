@@ -186,6 +186,9 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		void translateLoadFloat(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateLoadFloatIndexed(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateLoadIndexed(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		/// Update-indexed X-form: Capstone 6 often folds rA into PPC_OP_MEM.
+		/// Write the effective address back to that base.
+		void storeIndexedUpdate(cs_ppc* pi, llvm::Value* ea, llvm::IRBuilder<>& irb);
 		void translateMcrf(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateMfctr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateMflr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);

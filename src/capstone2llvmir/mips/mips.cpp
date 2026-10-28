@@ -31,6 +31,125 @@ Capstone2LlvmIrTranslatorMips_impl::Capstone2LlvmIrTranslatorMips_impl(
 	initialize();
 }
 
+bool Capstone2LlvmIrTranslatorMips_impl::enableMipsR2ForDisasm()
+{
+	// CS_MODE_MIPS32 / CS_MODE_MIPS64 do not set FeatureMips32r2 or
+	// FeatureMips64r2, so synci, ext, ins, wsbh, rotr, rdhwr, m*hc1, dext
+	// and drotr fail to decode. OR the revision in only for a retry: leaving
+	// it on also sets FeatureFP64Bit and steals COP1 from the MIPS32 table.
+	cs_mode add = CS_MODE_LITTLE_ENDIAN;
+	if (_basicMode == CS_MODE_MIPS32 || _basicMode == CS_MODE_MIPS3)
+	{
+		add = CS_MODE_MIPS32R2;
+	}
+	else if (_basicMode == CS_MODE_MIPS64)
+	{
+		add = CS_MODE_MIPS64R2;
+	}
+	else
+	{
+		return false;
+	}
+
+	return cs_option(_handle, CS_OPT_MODE, _basicMode + _extraMode + add) == CS_ERR_OK;
+}
+
+void Capstone2LlvmIrTranslatorMips_impl::restoreDisasmMode()
+{
+	cs_option(_handle, CS_OPT_MODE, _basicMode + _extraMode);
+}
+
+typename Capstone2LlvmIrTranslatorMips_impl::TranslationResult Capstone2LlvmIrTranslatorMips_impl::translate(
+	const uint8_t* bytes,
+	std::size_t size,
+	retdec::common::Address a,
+	llvm::IRBuilder<>& irb,
+	std::size_t count,
+	bool stopOnBranch)
+{
+	using Base = Capstone2LlvmIrTranslator_impl<cs_mips, cs_mips_op>;
+
+	TranslationResult res;
+	const uint8_t* p = bytes;
+	std::size_t left = size;
+	retdec::common::Address addr = a;
+
+	while (left != 0 && (count == 0 || res.count < count))
+	{
+		std::size_t want = count == 0 ? 0 : count - res.count;
+		TranslationResult part = Base::translate(p, left, addr, irb, want, stopOnBranch);
+		if (part.count == 0)
+		{
+			// One R2 insn, then back to the base mode so the next COP1
+			// still decodes from the non-FP64 table.
+			if (!enableMipsR2ForDisasm())
+			{
+				break;
+			}
+			try
+			{
+				part = Base::translate(p, left, addr, irb, 1, stopOnBranch);
+			}
+			catch (...)
+			{
+				restoreDisasmMode();
+				throw;
+			}
+			restoreDisasmMode();
+		}
+		if (part.count == 0)
+		{
+			break;
+		}
+
+		res.insns.splice(res.insns.end(), part.insns);
+		res.count += part.count;
+		res.size += part.size;
+		if (part.size == 0 || part.size > left)
+		{
+			break;
+		}
+		p += part.size;
+		left -= part.size;
+		addr = retdec::common::Address(static_cast<uint64_t>(addr) + part.size);
+		if (stopOnBranch && part.branchCall != nullptr)
+		{
+			res.branchCall = part.branchCall;
+			res.inCondition = part.inCondition;
+			break;
+		}
+	}
+
+	return res;
+}
+
+typename Capstone2LlvmIrTranslatorMips_impl::TranslationResultOne Capstone2LlvmIrTranslatorMips_impl::translateOne(
+	const uint8_t*& bytes, std::size_t& size, retdec::common::Address& a, llvm::IRBuilder<>& irb)
+{
+	using Base = Capstone2LlvmIrTranslator_impl<cs_mips, cs_mips_op>;
+
+	TranslationResultOne res = Base::translateOne(bytes, size, a, irb);
+	if (!res.failed())
+	{
+		return res;
+	}
+	if (!enableMipsR2ForDisasm())
+	{
+		return res;
+	}
+	try
+	{
+		res = Base::translateOne(bytes, size, a, irb);
+	}
+	catch (...)
+	{
+		restoreDisasmMode();
+		throw;
+	}
+	restoreDisasmMode();
+	return res;
+}
+
 //
 //==============================================================================
 // Mode query & modification methods - from Capstone2LlvmIrTranslator.
@@ -1419,30 +1538,19 @@ void Capstone2LlvmIrTranslatorMips_impl::translateBcondal(cs_insn* i, cs_mips* m
 		case MIPS_INS_BLTZAL:
 		case MIPS_INS_BLTZALL:
 		case MIPS_INS_BLTZALC:
-		case MIPS_INS_BLTZALS:
-			cond = irb.CreateICmpSLT(op0, zero);
-			break;
-		case MIPS_INS_BGTZALC:
-			cond = irb.CreateICmpSGT(op0, zero);
-			break;
-		case MIPS_INS_BLEZALC:
-			cond = irb.CreateICmpSLE(op0, zero);
-			break;
-		case MIPS_INS_BEQZALC:
-			cond = irb.CreateICmpEQ(op0, zero);
-			break;
-		case MIPS_INS_BNEZALC:
-			cond = irb.CreateICmpNE(op0, zero);
-			break;
-		default:
-			throw GenericError("Unhandled insn ID in translateBcondal().");
-	}
+		case MIPS_INS_BLTZALS: cond = irb.CreateICmpSLT(op0, zero); break;
+		case MIPS_INS_BGTZALC: cond = irb.CreateICmpSGT(op0, zero); break;
+		case MIPS_INS_BLEZALC: cond = irb.CreateICmpSLE(op0, zero); break;
+		case MIPS_INS_BEQZALC: cond = irb.CreateICmpEQ(op0, zero); break;
+		case MIPS_INS_BNEZALC: cond = irb.CreateICmpNE(op0, zero); break;
+		default: throw GenericError("Unhandled insn ID in translateBcondal().");
+		}
 
-	llvm::IRBuilder<> bodyIrb(generateIfThen(cond, irb));
+		llvm::IRBuilder<> bodyIrb(generateIfThen(cond, irb));
 
-	llvm::Value* ra = mipsLinkAddress(i, getDefaultType());
-	storeRegister(MIPS_REG_RA, ra, bodyIrb);
-	generateCallFunctionCall(bodyIrb, op1);
+		llvm::Value* ra = mipsLinkAddress(i, getDefaultType());
+		storeRegister(MIPS_REG_RA, ra, bodyIrb);
+		generateCallFunctionCall(bodyIrb, op1);
 }
 
 /**
@@ -1453,12 +1561,14 @@ void Capstone2LlvmIrTranslatorMips_impl::translateBcondal(cs_insn* i, cs_mips* m
  * them `$29`, and the single largest unmodelled pseudo-assembly call on any of
  * the five architectures.
  *
- * The trap is in how Capstone reports it. The hardware-register number comes
- * back as an ordinary GPR id, and MIPS_REG_29 is the same id as MIPS_REG_SP --
+ * The trap is in how Capstone reports it. Capstone 5 put the hardware-register
+ * number in an ordinary GPR id, and MIPS_REG_29 is the same id as MIPS_REG_SP --
  * so a translation that took operand 1 at face value and loaded it would read
- * the stack pointer and produce something that looks entirely plausible. The
- * number is a selector into a different register file, and it is compared as a
- * number here rather than loaded.
+ * the stack pointer and produce something that looks entirely plausible.
+ * Capstone 6 prints three operands, `rt, hwr, sel`, and the selector is
+ * MIPS_REG_HWR29 rather than GPR 29. Either way it is a selector into a
+ * different register file, and it is compared as a number here rather than
+ * loaded.
  *
  * The other hardware registers ($0 CPUNum, $1 SYNCI_Step, $2 CC, $3 CCRes)
  * stay on the pseudo-assembly path: a cycle counter is not a value this
@@ -1466,10 +1576,28 @@ void Capstone2LlvmIrTranslatorMips_impl::translateBcondal(cs_insn* i, cs_mips* m
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateRdhwr(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
-	EXPECT_IS_BINARY(i, mi, irb);
+	// 2: rt, $29 (Capstone 5). 3: rt, HWR29, sel (Capstone 6).
+	if (mi->op_count != 2 && mi->op_count != 3)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
 
-	if (mi->operands[0].type != MIPS_OP_REG || mi->operands[1].type != MIPS_OP_REG
-		|| mi->operands[1].reg != MIPS_REG_29)
+	if (mi->operands[0].type != MIPS_OP_REG || mi->operands[1].type != MIPS_OP_REG)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+
+	uint32_t hw = mi->operands[1].reg;
+	bool ulr = hw == MIPS_REG_HWR29 || hw == MIPS_REG_29;
+	if (!ulr)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+	if (mi->op_count == 3 && (mi->operands[2].type != MIPS_OP_IMM || mi->operands[2].imm != 0))
 	{
 		translatePseudoAsmGeneric(i, mi, irb);
 		return;
@@ -1489,7 +1617,15 @@ void Capstone2LlvmIrTranslatorMips_impl::translateRdhwr(cs_insn* i, cs_mips* mi,
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateIns(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
-	EXPECT_IS_QUATERNARY(i, mi, irb);
+	// Printed form is rt, rs, pos, size. The MC instruction also carries a
+	// tied copy of rt; if that copy reaches the detail, it is a fifth operand
+	// and the immediates are still at slots 2 and 3.
+	if (mi->op_count != 4 && mi->op_count != 5)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
 
 	op1 = loadOp(mi->operands[1], irb);
 	op2 = loadOp(mi->operands[2], irb);
@@ -7108,20 +7244,31 @@ Capstone2LlvmIrTranslatorMips_impl::generateRotateRight(llvm::IRBuilder<>& irb, 
  * whole 0..63 x 1..64 range: DEXTM adds 32 to the size, DEXTU adds 32 to the
  * position, and DINSM and DINSU do the same for the write.
  *
- * Capstone does NOT apply those offsets. It reports the encoded fields with
- * only the `msbd + 1` arithmetic done, so
+ * Capstone 5 does NOT apply those offsets. It reports the encoded fields with
+ * only the `msbd + 1` arithmetic done, and keeps the M/U opcode, so
  *
  *     dextm $2, $3, 0, 33     arrives as    pos 0, size 1
  *     dextu $2, $3, 32, 8     arrives as    pos 0, size 8
  *
- * Taking its numbers at face value reads a one-bit field where a 33-bit one
- * was meant, and reads bit 0 where bit 32 was meant. Neither is a crash and
- * both look like a plausible bitfield, which is why the tests here use the M
- * and U forms with fields whose two readings cannot coincide.
+ * Capstone 6's DecodeDEXT / DecodeDINS apply the +32 themselves and then
+ * rename every form to DEXT or DINS. The switch below still adds 32 when the
+ * opcode is the M or U form, and adds nothing when the id was already
+ * collapsed and the immediate is the architectural one.
+ *
+ * Taking the Capstone 5 numbers at face value reads a one-bit field where a
+ * 33-bit one was meant, and reads bit 0 where bit 32 was meant. Neither is a
+ * crash and both look like a plausible bitfield, which is why the tests here
+ * use the M and U forms with fields whose two readings cannot coincide.
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateDoubleBitfield(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
-	EXPECT_IS_QUATERNARY(i, mi, irb);
+	// Four printed operands, or five when the tied destination is kept.
+	if (mi->op_count != 4 && mi->op_count != 5)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
 
 	if (mi->operands[2].type != MIPS_OP_IMM || mi->operands[3].type != MIPS_OP_IMM)
 	{
@@ -7642,27 +7789,58 @@ void Capstone2LlvmIrTranslatorMips_impl::translateMtc1(cs_insn* i, cs_mips* mi, 
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateMthc1(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
-	EXPECT_IS_BINARY(i, mi, irb);
+	// Printed order is GPR, FPR for both directions (mthc1's MC operands are
+	// FPR, tied FPR, GPR, and the printer emits the GPR first). Capstone 6
+	// names the FPR D0 or D0_64, not F0. Two operands, or three if the tied
+	// FPR is kept.
+	if (mi->op_count < 2 || mi->op_count > 3)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
 
 	auto* i32 = irb.getInt32Ty();
 	auto* i64 = irb.getInt64Ty();
 
-	if (mi->operands[1].type != MIPS_OP_REG)
+	cs_mips_op* gpr = nullptr;
+	cs_mips_op* fpr = nullptr;
+	for (unsigned k = 0; k < mi->op_count; ++k)
+	{
+		cs_mips_op& op = mi->operands[k];
+		if (op.type != MIPS_OP_REG)
+		{
+			continue;
+		}
+		if (isCanonicalFpReg(op.reg))
+		{
+			if (fpr == nullptr)
+			{
+				fpr = &op;
+			}
+		}
+		else if (gpr == nullptr)
+		{
+			gpr = &op;
+		}
+	}
+	if (gpr == nullptr || fpr == nullptr)
 	{
 		translatePseudoAsmGeneric(i, mi, irb);
 		return;
 	}
-	uint32_t fd = singlePrecisionToDoublePrecisionFpRegister(mi->operands[1].reg);
+
+	uint32_t fd = singlePrecisionToDoublePrecisionFpRegister(canonicalizeMipsReg(fpr->reg));
 
 	if (i->id == MIPS_INS_MFHC1)
 	{
 		auto* bits = irb.CreateBitCast(loadRegister(fd, irb), i64);
 		auto* hi = irb.CreateTrunc(irb.CreateLShr(bits, llvm::ConstantInt::get(i64, 32)), i32);
-		storeOp(mi->operands[0], hi, irb);
+		storeOp(*gpr, hi, irb);
 		return;
 	}
 
-	op0 = loadOpBinaryOp0(mi, irb);
+	op0 = loadOp(*gpr, irb);
 	op0 = irb.CreateZExtOrTrunc(op0, i32);
 
 	auto* bits = irb.CreateBitCast(loadRegister(fd, irb), i64);

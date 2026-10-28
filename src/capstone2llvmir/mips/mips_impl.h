@@ -50,11 +50,20 @@ class Capstone2LlvmIrTranslatorMips_impl :
 		virtual bool isAllowedBasicMode(cs_mode m) override;
 		virtual bool isAllowedExtraMode(cs_mode m) override;
 		virtual uint32_t getArchByteSize() override;
-//
-//==============================================================================
-// Capstone related getters - from Capstone2LlvmIrTranslator.
-//==============================================================================
-//
+		virtual TranslationResult translate(
+			const uint8_t* bytes,
+			std::size_t size,
+			retdec::common::Address a,
+			llvm::IRBuilder<>& irb,
+			std::size_t count = 0,
+			bool stopOnBranch = false) override;
+		virtual TranslationResultOne translateOne(
+			const uint8_t*& bytes, std::size_t& size, retdec::common::Address& a, llvm::IRBuilder<>& irb) override;
+		//
+		//==============================================================================
+		// Capstone related getters - from Capstone2LlvmIrTranslator.
+		//==============================================================================
+		//
 	public:
 		virtual bool hasDelaySlot(uint32_t id) const override;
 		virtual bool hasDelaySlotTypical(uint32_t id) const override;
@@ -326,6 +335,13 @@ class Capstone2LlvmIrTranslatorMips_impl :
 		void translateSyscall(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateXor(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateCrc32(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
+
+		/// Capstone 6 leaves MIPS32r2 / MIPS64r2 off for CS_MODE_MIPS32 and
+		/// CS_MODE_MIPS64. OR the revision bit in for one disassembly, then
+		/// put the handle back. Enabling it for every insn would also turn on
+		/// FP64 and retarget COP1.
+		bool enableMipsR2ForDisasm();
+		void restoreDisasmMode();
 };
 
 } // namespace capstone2llvmir

@@ -1534,7 +1534,9 @@ Capstone2LlvmIrTranslatorPowerpc_impl::_i2fm =
 		{PPC_INS_ALIAS_SRWI, &Capstone2LlvmIrTranslatorPowerpc_impl::translateSrwi},
 		{PPC_INS_ALIAS_SLDI, &Capstone2LlvmIrTranslatorPowerpc_impl::translateRotateDoubleMask},
 		{PPC_INS_ALIAS_CLRLDI, &Capstone2LlvmIrTranslatorPowerpc_impl::translateRotateDoubleMask},
+		{PPC_INS_ALIAS_CLRLDI_, &Capstone2LlvmIrTranslatorPowerpc_impl::translateRotateDoubleMask},
 		{PPC_INS_ALIAS_ROTLDI, &Capstone2LlvmIrTranslatorPowerpc_impl::translateRotateDoubleMask},
+		{PPC_INS_ALIAS_ROTLDI_, &Capstone2LlvmIrTranslatorPowerpc_impl::translateRotateDoubleMask},
 		{PPC_INS_ALIAS_ROTLD, &Capstone2LlvmIrTranslatorPowerpc_impl::translateRotateDoubleMask},
 
 		{PPC_INS_CRSET, &Capstone2LlvmIrTranslatorPowerpc_impl::translateCrSetClr},

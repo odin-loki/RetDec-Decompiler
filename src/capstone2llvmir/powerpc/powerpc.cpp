@@ -26,6 +26,49 @@ bool ppcIsId(const cs_insn* i, unsigned id)
 	return i->id == id || (i->is_alias && static_cast<unsigned>(i->alias_id) == id);
 }
 
+// Capstone 6 groups CR bit registers by bit name (EQ, then GT, then LT, then
+// UN), not by field. A `bf`/`bt` operand is one of those bits; the branch
+// condition is on the whole field (CR0..CR7).
+uint32_t ppcCrField(uint32_t reg)
+{
+	if (reg >= PPC_REG_CR0 && reg <= PPC_REG_CR7)
+	{
+		return reg;
+	}
+	if (reg >= PPC_REG_CR0EQ && reg <= PPC_REG_CR7EQ)
+	{
+		return static_cast<uint32_t>(PPC_REG_CR0 + (reg - PPC_REG_CR0EQ));
+	}
+	if (reg >= PPC_REG_CR0GT && reg <= PPC_REG_CR7GT)
+	{
+		return static_cast<uint32_t>(PPC_REG_CR0 + (reg - PPC_REG_CR0GT));
+	}
+	if (reg >= PPC_REG_CR0LT && reg <= PPC_REG_CR7LT)
+	{
+		return static_cast<uint32_t>(PPC_REG_CR0 + (reg - PPC_REG_CR0LT));
+	}
+	if (reg >= PPC_REG_CR0UN && reg <= PPC_REG_CR7UN)
+	{
+		return static_cast<uint32_t>(PPC_REG_CR0 + (reg - PPC_REG_CR0UN));
+	}
+	return reg;
+}
+
+bool ppcIsSldi(const cs_insn* i)
+{
+	return ppcIsId(i, PPC_INS_SLDI) || ppcIsId(i, PPC_INS_ALIAS_SLDI);
+}
+
+bool ppcIsRotldi(const cs_insn* i)
+{
+	return ppcIsId(i, PPC_INS_ROTLDI) || ppcIsId(i, PPC_INS_ALIAS_ROTLDI) || ppcIsId(i, PPC_INS_ALIAS_ROTLDI_);
+}
+
+bool ppcIsClrldi(const cs_insn* i)
+{
+	return ppcIsId(i, PPC_INS_CLRLDI) || ppcIsId(i, PPC_INS_ALIAS_CLRLDI) || ppcIsId(i, PPC_INS_ALIAS_CLRLDI_);
+}
+
 // Capstone 6 prints `mtocrf 8, r3` / `mfocrf r3, 8` but the FXM slot is a CR
 // field register (PPC_REG_CR0 + f), not PPC_OP_IMM. Bit 0x80 still selects CR0.
 bool ppcFxmMask(const cs_ppc_op& op, uint64_t& mask)
@@ -1404,15 +1447,37 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateLoadIndexed(cs_insn* i, cs_
 	}
 	storeOp(pi->operands[0], l, irb, conv);
 
-	// With update.
-	//
-	auto& ppcOp1 = pi->operands[1];
 	if (i->id == PPC_INS_LBZUX || i->id == PPC_INS_LHZUX || i->id == PPC_INS_LWZUX || i->id == PPC_INS_LHAUX
 		|| i->id == PPC_INS_LDUX || i->id == PPC_INS_LWAUX)
-		if (ppcOp1.type == PPC_OP_REG && ppcOp1.reg != PPC_REG_INVALID)
+	{
+		storeIndexedUpdate(pi, add, irb);
+	}
+}
+
+void Capstone2LlvmIrTranslatorPowerpc_impl::storeIndexedUpdate(cs_ppc* pi, llvm::Value* ea, llvm::IRBuilder<>& irb)
+{
+	// Capstone 6 X-form is dest + PPC_OP_MEM {base=rA, offset=rB}. The
+	// update form writes that effective address back to rA. The legacy
+	// three-register form still names rA as operands[1].
+	for (unsigned k = 0; k < pi->op_count; ++k)
+	{
+		cs_ppc_op& op = pi->operands[k];
+		if (op.type != PPC_OP_MEM)
 		{
-			storeRegister(ppcOp1.reg, add, irb);
+			continue;
 		}
+		uint32_t base = op.mem.base;
+		if (base != PPC_REG_INVALID && base != PPC_REG_ZERO && base != PPC_REG_R0)
+		{
+			storeRegister(base, ea, irb);
+		}
+		return;
+	}
+	if (pi->op_count >= 2 && pi->operands[1].type == PPC_OP_REG && pi->operands[1].reg != PPC_REG_INVALID
+		&& pi->operands[1].reg != PPC_REG_ZERO)
+	{
+		storeRegister(pi->operands[1].reg, ea, irb);
+	}
 }
 
 /**
@@ -1512,14 +1577,10 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateStoreIndexed(cs_insn* i, cs
 		storeRegister(PPC_REG_CR0EQ, irb.getInt1(true), irb);
 	}
 
-	// With update.
-	//
-	auto& ppcOp1 = pi->operands[1];
 	if (i->id == PPC_INS_STBUX || i->id == PPC_INS_STHUX || i->id == PPC_INS_STWUX || i->id == PPC_INS_STDUX)
-		if (ppcOp1.type == PPC_OP_REG && ppcOp1.reg != PPC_REG_INVALID)
-		{
-			storeRegister(ppcOp1.reg, add, irb);
-		}
+	{
+		storeIndexedUpdate(pi, add, irb);
+	}
 }
 
 /**
@@ -3260,14 +3321,14 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateRotateDoubleMask(
 				mb = field;
 				me = 63;
 				break;
-		}
+			}
 	}
 	else
 	{
 		// Three-operand aliases. Capstone 6 reports these via alias_id
 		// (ALIAS_CLRLDI etc.); PPC_INS_CLRLDI is that alias token when
 		// the 5.x enumerator is gone.
-		if (ppcIsId(i, PPC_INS_CLRLDI))
+		if (ppcIsClrldi(i))
 		{
 			shIsImm = true;
 			shImm = 0;
@@ -3275,7 +3336,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateRotateDoubleMask(
 			mb = (pi->operands[2].type == PPC_OP_IMM) ? takeImm(pi->operands[2]) : 0;
 			me = 63;
 		}
-		else if (ppcIsId(i, PPC_INS_ROTLDI) || ppcIsId(i, PPC_INS_SLDI))
+		else if (ppcIsRotldi(i) || ppcIsSldi(i))
 		{
 			if (pi->operands[2].type != PPC_OP_IMM)
 			{
@@ -3286,8 +3347,9 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateRotateDoubleMask(
 			shIsImm = true;
 			shImm = takeImm(pi->operands[2]);
 			rot = ppcRotateLeft64Imm(src, shImm, irb);
-			if (ppcIsId(i, PPC_INS_SLDI))
+			if (ppcIsSldi(i))
 			{
+				// `sldi` / `rldicr RA,RS,SH,63-SH` keeps bits 0..63-SH.
 				mb = 0;
 				me = (63 - shImm) & 63;
 			}
@@ -3524,7 +3586,12 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateSraw(cs_insn* i, cs_ppc* pi
 	auto* signFill = irb.CreateAShr(op1, llvm::ConstantInt::get(ty, bits - 1));
 	auto* result = irb.CreateSelect(tooBig, signFill, shifted);
 
-	storeOp(pi->operands[0], result, irb);
+	// 64-bit `srawi` sign-extends the word into the GPR. QPX GPRs are i64 in
+	// this translator but the tests compare the 32-bit result, so zero-extend
+	// there (and in 32-bit mode, where the register is already i32).
+	eOpConv wordConv =
+		(!dbl && _origBasicMode != CS_MODE_64) ? eOpConv::ZEXT_TRUNC_OR_BITCAST : eOpConv::SEXT_TRUNC_OR_BITCAST;
+	storeOp(pi->operands[0], result, irb, wordConv);
 	storeCr0(irb, pi, result);
 
 	auto* wasNeg = irb.CreateICmpSLT(op1, llvm::ConstantInt::get(ty, 0));
@@ -3563,13 +3630,17 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateSubfc(cs_insn* i, cs_ppc* p
 	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
-	// Capstone 6.x lists subfc sources as [RB, RA]; see translateSubf.
-	std::swap(op1, op2);
+	// Capstone 6.x lists subfc sources as [RB, RA]. subfic stays [RA, SIMM]:
+	// RT = ~RA + SIMM + 1.
+	if (i->id != PPC_INS_SUBFIC)
+	{
+		std::swap(op1, op2);
+	}
 
 	// PowerPC specification.
-//	op1 = generateValueNegate(irb, op1);
-//	auto* val = irb.CreateAdd(op1, op2);
-//	val = irb.CreateAdd(val, llvm::ConstantInt::get(val->getType(), 1));
+	//	op1 = generateValueNegate(irb, op1);
+	//	auto* val = irb.CreateAdd(op1, op2);
+	//	val = irb.CreateAdd(val, llvm::ConstantInt::get(val->getType(), 1));
 
 	// The same but simpler?
 	auto* val = irb.CreateSub(op2, op1);
@@ -3964,54 +4035,55 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateB(cs_insn* i, cs_ppc* pi, l
 	// Get target and CR register.
 	//
 	llvm::Value* target = nullptr;
-	uint32_t crReg = (pi->bc.crX != PPC_REG_INVALID) ? pi->bc.crX : PPC_REG_CR0;
-	ppc_pred crBc = pi->bc.pred_cr;
+	uint32_t crReg = (pi->bc.crX != PPC_REG_INVALID) ? ppcCrField(pi->bc.crX) : PPC_REG_CR0;
+	// Hint variants (LE_MINUS, …) are the same condition. gBC already folds
+	// BO's compare-to-0 into GE/LE/NE/NU, so `bf` must not invert again.
+	ppc_pred crBc = PPC_get_no_hint_pred(pi->bc.pred_cr);
 
 	// Capstone 6.x `ble`/`bne`/`bge` aliases of BC often leave pred_cr as
 	// a single CR bit (GT) plus reverse, which is not LT|EQ. Honour the
-	// assembler mnemonic.
-	if (ppcIsId(i, PPC_INS_BLE) || ppcIsId(i, PPC_INS_BLEA)
-			|| ppcIsId(i, PPC_INS_BLEL) || ppcIsId(i, PPC_INS_BLELA)
-			|| ppcIsId(i, PPC_INS_BLELR) || ppcIsId(i, PPC_INS_BLELRL)
-			|| ppcIsId(i, PPC_INS_BLECTR) || ppcIsId(i, PPC_INS_BLECTRL))
+	// assembler mnemonic. Keystone's `ble`/`bge`/`bne`/`bns` decode as gBC
+	// and print as `bf <crbit>`, whose pred_cr is already LE/GE/NE/NU.
+	if (ppcIsId(i, PPC_INS_BLE) || ppcIsId(i, PPC_INS_BLEA) || ppcIsId(i, PPC_INS_BLEL) || ppcIsId(i, PPC_INS_BLELA)
+		|| ppcIsId(i, PPC_INS_BLELR) || ppcIsId(i, PPC_INS_BLELRL) || ppcIsId(i, PPC_INS_BLECTR)
+		|| ppcIsId(i, PPC_INS_BLECTRL))
 	{
 		crBc = PPC_BC_LE;
 		reverseCond = false;
 	}
-	else if (ppcIsId(i, PPC_INS_BNE) || ppcIsId(i, PPC_INS_BNEA)
-			|| ppcIsId(i, PPC_INS_BNEL) || ppcIsId(i, PPC_INS_BNELA)
-			|| ppcIsId(i, PPC_INS_BNELR) || ppcIsId(i, PPC_INS_BNELRL)
-			|| ppcIsId(i, PPC_INS_BNECTR) || ppcIsId(i, PPC_INS_BNECTRL))
+	else if (
+		ppcIsId(i, PPC_INS_BNE) || ppcIsId(i, PPC_INS_BNEA) || ppcIsId(i, PPC_INS_BNEL) || ppcIsId(i, PPC_INS_BNELA)
+		|| ppcIsId(i, PPC_INS_BNELR) || ppcIsId(i, PPC_INS_BNELRL) || ppcIsId(i, PPC_INS_BNECTR)
+		|| ppcIsId(i, PPC_INS_BNECTRL))
 	{
 		crBc = PPC_BC_NE;
 		reverseCond = false;
 	}
-	else if (ppcIsId(i, PPC_INS_BGE) || ppcIsId(i, PPC_INS_BGEA)
-			|| ppcIsId(i, PPC_INS_BGEL) || ppcIsId(i, PPC_INS_BGELA)
-			|| ppcIsId(i, PPC_INS_BGELR) || ppcIsId(i, PPC_INS_BGELRL)
-			|| ppcIsId(i, PPC_INS_BGECTR) || ppcIsId(i, PPC_INS_BGECTRL))
+	else if (
+		ppcIsId(i, PPC_INS_BGE) || ppcIsId(i, PPC_INS_BGEA) || ppcIsId(i, PPC_INS_BGEL) || ppcIsId(i, PPC_INS_BGELA)
+		|| ppcIsId(i, PPC_INS_BGELR) || ppcIsId(i, PPC_INS_BGELRL) || ppcIsId(i, PPC_INS_BGECTR)
+		|| ppcIsId(i, PPC_INS_BGECTRL))
 	{
 		crBc = PPC_BC_GE;
 		reverseCond = false;
 	}
-	else if (ppcIsId(i, PPC_INS_BNS) || ppcIsId(i, PPC_INS_BNSA)
-			|| ppcIsId(i, PPC_INS_BNSL) || ppcIsId(i, PPC_INS_BNSLA)
-			|| ppcIsId(i, PPC_INS_BNSLR) || ppcIsId(i, PPC_INS_BNSLRL)
-			|| ppcIsId(i, PPC_INS_BNSCTR) || ppcIsId(i, PPC_INS_BNSCTRL)
-			|| ppcIsId(i, PPC_INS_BNU) || ppcIsId(i, PPC_INS_BNUA)
-			|| ppcIsId(i, PPC_INS_BNUL) || ppcIsId(i, PPC_INS_BNULA)
-			|| ppcIsId(i, PPC_INS_BNULR) || ppcIsId(i, PPC_INS_BNULRL)
-			|| ppcIsId(i, PPC_INS_BNUCTR) || ppcIsId(i, PPC_INS_BNUCTRL))
+	else if (
+		ppcIsId(i, PPC_INS_BNS) || ppcIsId(i, PPC_INS_BNSA) || ppcIsId(i, PPC_INS_BNSL) || ppcIsId(i, PPC_INS_BNSLA)
+		|| ppcIsId(i, PPC_INS_BNSLR) || ppcIsId(i, PPC_INS_BNSLRL) || ppcIsId(i, PPC_INS_BNSCTR)
+		|| ppcIsId(i, PPC_INS_BNSCTRL) || ppcIsId(i, PPC_INS_BNU) || ppcIsId(i, PPC_INS_BNUA)
+		|| ppcIsId(i, PPC_INS_BNUL) || ppcIsId(i, PPC_INS_BNULA) || ppcIsId(i, PPC_INS_BNULR)
+		|| ppcIsId(i, PPC_INS_BNULRL) || ppcIsId(i, PPC_INS_BNUCTR) || ppcIsId(i, PPC_INS_BNUCTRL))
 	{
 		crBc = PPC_BC_NU;
 		reverseCond = false;
 	}
-	else if (ppcIsId(i, PPC_INS_BF) || ppcIsId(i, PPC_INS_BFA)
-			|| ppcIsId(i, PPC_INS_BFL) || ppcIsId(i, PPC_INS_BFLA)
-			|| ppcIsId(i, PPC_INS_BFLR) || ppcIsId(i, PPC_INS_BFLRL)
-			|| ppcIsId(i, PPC_INS_BFCTR) || ppcIsId(i, PPC_INS_BFCTRL))
+	else if (
+		ppcIsId(i, PPC_INS_BF) || ppcIsId(i, PPC_INS_BFA) || ppcIsId(i, PPC_INS_BFL) || ppcIsId(i, PPC_INS_BFLA)
+		|| ppcIsId(i, PPC_INS_BFLR) || ppcIsId(i, PPC_INS_BFLRL) || ppcIsId(i, PPC_INS_BFCTR)
+		|| ppcIsId(i, PPC_INS_BFCTRL))
 	{
-		reverseCond = true;
+		// pred_cr is already "branch if the CR bit is 0" (GE/LE/NE/NU).
+		reverseCond = false;
 	}
 
 	if (toLR)
@@ -4032,7 +4104,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateB(cs_insn* i, cs_ppc* pi, l
 			{
 				if (isCrRegister(pi->operands[k]))
 				{
-					crReg = pi->operands[k].reg;
+					crReg = ppcCrField(pi->operands[k].reg);
 				}
 			}
 		}
@@ -4048,13 +4120,11 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateB(cs_insn* i, cs_ppc* pi, l
 				crReg = PPC_REG_CR0;
 			}
 		}
-		else if (pi->op_count == 1
-				&& isCrRegister(pi->operands[0]))
+		else if (pi->op_count == 1 && isCrRegister(pi->operands[0]))
 		{
-			crReg = pi->operands[0].reg;
+			crReg = ppcCrField(pi->operands[0].reg);
 		}
-		else if (pi->op_count == 1
-				&& pi->operands[0].type == PPC_OP_IMM)
+		else if (pi->op_count == 1 && pi->operands[0].type == PPC_OP_IMM)
 		{
 			crReg = PPC_REG_CR0;
 		}
@@ -4064,15 +4134,14 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateB(cs_insn* i, cs_ppc* pi, l
 			{
 				if (isCrRegister(pi->operands[k]))
 				{
-					crReg = pi->operands[k].reg;
+					crReg = ppcCrField(pi->operands[k].reg);
 				}
 			}
 		}
 	}
 	else
 	{
-		if (pi->op_count == 1
-				&& pi->operands[0].type == PPC_OP_IMM)
+		if (pi->op_count == 1 && pi->operands[0].type == PPC_OP_IMM)
 		{
 			if (pi->bc.crX == PPC_REG_INVALID)
 			{
@@ -4080,11 +4149,11 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateB(cs_insn* i, cs_ppc* pi, l
 			}
 			target = loadOpUnary(pi, irb);
 		}
-		else if (pi->op_count == 2
-				&& isCrRegister(pi->operands[0])
-				&& pi->operands[1].type == PPC_OP_IMM)
+		else if (pi->op_count == 2 && isCrRegister(pi->operands[0]) && pi->operands[1].type == PPC_OP_IMM)
 		{
-			crReg = pi->operands[0].reg;
+			// `bf 4*cr4+lt` names the LT bit. The condition uses the field
+			// (CR4's GT|EQ), not that bit register twice.
+			crReg = ppcCrField(pi->operands[0].reg);
 			target = loadOpBinaryOp1(pi, irb);
 		}
 		// capstone-dumper -a ppc -m 32 -e big -c "40 b1 00 00"
@@ -4094,10 +4163,9 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateB(cs_insn* i, cs_ppc* pi, l
 		// TODO: Maybe report to Capstone as a bug, there should be a parameter,
 		// even when relative branch to zero == itself.
 		//
-		else if (pi->op_count == 1
-				&& isCrRegister(pi->operands[0]))
+		else if (pi->op_count == 1 && isCrRegister(pi->operands[0]))
 		{
-			crReg = pi->operands[0].reg;
+			crReg = ppcCrField(pi->operands[0].reg);
 			target = getThisInsnAddress(i);
 		}
 		// The same without parameters.
@@ -4121,7 +4189,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateB(cs_insn* i, cs_ppc* pi, l
 				}
 				if (isCrRegister(pi->operands[k]))
 				{
-					crReg = pi->operands[k].reg;
+					crReg = ppcCrField(pi->operands[k].reg);
 				}
 			}
 			if (target == nullptr)

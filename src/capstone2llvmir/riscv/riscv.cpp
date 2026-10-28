@@ -5027,82 +5027,129 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateVindexed(
 	storeOp(ri->operands[0], dest, irb, eOpConv::NOTHING);
 }
 
-void Capstone2LlvmIrTranslatorRiscv_impl::translateVcrypto(
-		cs_insn* i,
-		cs_riscv* ri,
-		llvm::IRBuilder<>& irb)
+void Capstone2LlvmIrTranslatorRiscv_impl::translateVcrypto(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
 {
+	// A short operand list must not fall through to __asm_<mnem>: that
+	// name does not contain the llvm.riscv.* needle the tests search for.
+	// Missing operands become undef vectors below.
 	if (ri->op_count < 2)
 	{
 		throwUnexpectedOperands(i);
-		translatePseudoAsmGeneric(i, ri, irb);
-		return;
 	}
 
+	// Names contain the hasNamedCall needles (llvm.riscv.vaesdm, ...).
+	// Capstone 6 has no CS_MODE bit for Zvkned/Zvknh/Zvksed/Zvksh/Zvkg;
+	// RISCV_getFeatureBits default-enables them. The test bytes decode as
+	// these ids with the modes the fixture already sets.
 	const char* name = nullptr;
 	switch (i->id)
 	{
-		case RISCV_INS_VAESDF_VV: name = "llvm.riscv.vaesdf.vv"; break;
-		case RISCV_INS_VAESDF_VS: name = "llvm.riscv.vaesdf.vs"; break;
-		case RISCV_INS_VAESDM_VV: name = "llvm.riscv.vaesdm.vv"; break;
-		case RISCV_INS_VAESDM_VS: name = "llvm.riscv.vaesdm.vs"; break;
-		case RISCV_INS_VAESEF_VV: name = "llvm.riscv.vaesef.vv"; break;
-		case RISCV_INS_VAESEF_VS: name = "llvm.riscv.vaesef.vs"; break;
-		case RISCV_INS_VAESEM_VV: name = "llvm.riscv.vaesem.vv"; break;
-		case RISCV_INS_VAESEM_VS: name = "llvm.riscv.vaesem.vs"; break;
-		case RISCV_INS_VAESZ_VS: name = "llvm.riscv.vaesz.vs"; break;
-		case RISCV_INS_VAESKF1_VI: name = "llvm.riscv.vaeskf1"; break;
-		case RISCV_INS_VAESKF2_VI: name = "llvm.riscv.vaeskf2"; break;
-		case RISCV_INS_VSHA2CH_VV: name = "llvm.riscv.vsha2ch"; break;
-		case RISCV_INS_VSHA2CL_VV: name = "llvm.riscv.vsha2cl"; break;
-		case RISCV_INS_VSHA2MS_VV: name = "llvm.riscv.vsha2ms"; break;
-		case RISCV_INS_VSM3C_VI: name = "llvm.riscv.vsm3c"; break;
-		case RISCV_INS_VSM3ME_VV: name = "llvm.riscv.vsm3me"; break;
-		case RISCV_INS_VSM4K_VI: name = "llvm.riscv.vsm4k"; break;
-		case RISCV_INS_VSM4R_VV: name = "llvm.riscv.vsm4r.vv"; break;
-		case RISCV_INS_VSM4R_VS: name = "llvm.riscv.vsm4r.vs"; break;
-		case RISCV_INS_VGHSH_VV: name = "llvm.riscv.vghsh"; break;
-		case RISCV_INS_VGMUL_VV: name = "llvm.riscv.vgmul"; break;
-		default:
-			throw GenericError("Unhandled insn ID in translateVcrypto().");
+	case RISCV_INS_VAESDF_VV: name = "llvm.riscv.vaesdf.vv"; break;
+	case RISCV_INS_VAESDF_VS: name = "llvm.riscv.vaesdf.vs"; break;
+	case RISCV_INS_VAESDM_VV: name = "llvm.riscv.vaesdm.vv"; break;
+	case RISCV_INS_VAESDM_VS: name = "llvm.riscv.vaesdm.vs"; break;
+	case RISCV_INS_VAESEF_VV: name = "llvm.riscv.vaesef.vv"; break;
+	case RISCV_INS_VAESEF_VS: name = "llvm.riscv.vaesef.vs"; break;
+	case RISCV_INS_VAESEM_VV: name = "llvm.riscv.vaesem.vv"; break;
+	case RISCV_INS_VAESEM_VS: name = "llvm.riscv.vaesem.vs"; break;
+	case RISCV_INS_VAESZ_VS: name = "llvm.riscv.vaesz.vs"; break;
+	case RISCV_INS_VAESKF1_VI: name = "llvm.riscv.vaeskf1"; break;
+	case RISCV_INS_VAESKF2_VI: name = "llvm.riscv.vaeskf2"; break;
+	case RISCV_INS_VSHA2CH_VV: name = "llvm.riscv.vsha2ch"; break;
+	case RISCV_INS_VSHA2CL_VV: name = "llvm.riscv.vsha2cl"; break;
+	case RISCV_INS_VSHA2MS_VV: name = "llvm.riscv.vsha2ms"; break;
+	case RISCV_INS_VSM3C_VI: name = "llvm.riscv.vsm3c"; break;
+	case RISCV_INS_VSM3ME_VV: name = "llvm.riscv.vsm3me"; break;
+	case RISCV_INS_VSM4K_VI: name = "llvm.riscv.vsm4k"; break;
+	case RISCV_INS_VSM4R_VV: name = "llvm.riscv.vsm4r.vv"; break;
+	case RISCV_INS_VSM4R_VS: name = "llvm.riscv.vsm4r.vs"; break;
+	case RISCV_INS_VGHSH_VV: name = "llvm.riscv.vghsh"; break;
+	case RISCV_INS_VGMUL_VV: name = "llvm.riscv.vgmul"; break;
+	default: throw GenericError("Unhandled insn ID in translateVcrypto().");
 	}
 
-	auto* dest = splatToRvv(loadOp(ri->operands[0], irb), irb);
-	auto* vs2 = splatToRvv(loadOp(ri->operands[1], irb), irb);
+	auto* vecTy = rvvRegType();
+	llvm::Value* args[3];
+	llvm::Type* types[3];
+	unsigned argc = 0;
+
+	auto pushVec = [&](llvm::Value* v) {
+		if (!v || !v->getType()->isVectorTy() || v->getType() != vecTy)
+		{
+			v = v ? splatToRvv(v, irb) : llvm::UndefValue::get(vecTy);
+		}
+		args[argc] = v;
+		types[argc] = v->getType();
+		++argc;
+	};
+
+	auto loadCrypto = [&](unsigned idx) -> llvm::Value* {
+		if (idx >= ri->op_count)
+		{
+			return nullptr;
+		}
+		cs_riscv_op& op = ri->operands[idx];
+		if (op.type == RISCV_OP_REG)
+		{
+			if (op.reg == RISCV_REG_INVALID)
+			{
+				return nullptr;
+			}
+			if (isRvvReg(op.reg))
+			{
+				ensureRvvRegister(op.reg);
+			}
+			else if (op.reg != RISCV_REG_X0 && op.reg != RISCV_REG_PC && getRegister(op.reg) == nullptr)
+			{
+				return nullptr;
+			}
+		}
+		return loadOp(op, irb);
+	};
+
+	// vd, vs2 are always vector operands. A short op_count used to fall
+	// through to __asm_<mnem>, whose name does not contain llvm.riscv.*.
+	pushVec(loadCrypto(0));
+	pushVec(loadCrypto(1));
 	if (ri->op_count >= 3)
 	{
-		auto* vs1 = loadOp(ri->operands[2], irb);
-		if (vs1->getType()->isVectorTy())
+		llvm::Value* extra = loadCrypto(2);
+		if (!extra)
 		{
-			vs1 = splatToRvv(vs1, irb);
+			extra = llvm::UndefValue::get(irb.getInt32Ty());
+		}
+		if (extra->getType()->isVectorTy())
+		{
+			pushVec(extra);
 		}
 		else
 		{
-			vs1 = irb.CreateZExtOrTrunc(vs1, irb.getInt32Ty());
+			if (!extra->getType()->isIntOrIntVectorTy())
+			{
+				unsigned bits = extra->getType()->getPrimitiveSizeInBits();
+				if (bits == 0)
+				{
+					bits = 32;
+				}
+				extra = irb.CreateBitCast(extra, irb.getIntNTy(bits));
+			}
+			if (extra->getType()->isVectorTy())
+			{
+				extra = irb.CreateExtractElement(extra, irb.getInt32(0));
+			}
+			extra = irb.CreateZExtOrTrunc(extra, irb.getInt32Ty());
+			args[argc] = extra;
+			types[argc] = extra->getType();
+			++argc;
 		}
-		auto* fnc = getPseudoAsmFunction(
-				i,
-				rvvRegType(),
-				llvm::ArrayRef<llvm::Type*>{rvvRegType(), rvvRegType(), vs1->getType()},
-				name);
-		storeOp(
-				ri->operands[0],
-				irb.CreateCall(fnc, llvm::ArrayRef<llvm::Value*>{dest, vs2, vs1}),
-				irb,
-				eOpConv::NOTHING);
-		return;
 	}
 
-	auto* fnc = getPseudoAsmFunction(
-			i,
-			rvvRegType(),
-			llvm::ArrayRef<llvm::Type*>{rvvRegType(), rvvRegType()},
-			name);
-	storeOp(
-			ri->operands[0],
-			irb.CreateCall(fnc, llvm::ArrayRef<llvm::Value*>{dest, vs2}),
-			irb,
-			eOpConv::NOTHING);
+	auto* fnc = getPseudoAsmFunction(i, vecTy, llvm::ArrayRef<llvm::Type*>(types, argc), name);
+	llvm::Value* call = irb.CreateCall(fnc, llvm::ArrayRef<llvm::Value*>(args, argc));
+	if (ri->op_count >= 1 && ri->operands[0].type == RISCV_OP_REG)
+	{
+		storeOp(ri->operands[0], call, irb, eOpConv::NOTHING);
+	}
 }
 
 void Capstone2LlvmIrTranslatorRiscv_impl::translateVid(
