@@ -264,6 +264,106 @@ llvm::Value* bf16ScalarToF32Vec(llvm::Value* s, llvm::IRBuilder<>& irb)
 			f);
 }
 
+// OP-VE (opcode 0x77, funct3 = OPMVV) is Zvkned/Zvknh/Zvksed/Zvksh/Zvkg.
+// Capstone 6 does not report these ids under the modes the tests set, so the
+// llvm.riscv.* call was never created. vs1 is an opcode field for the .vv/.vs
+// forms and an immediate for the .vi forms.
+bool riscvRewriteVcrypto(cs_insn* i, cs_riscv* ri)
+{
+	if (i->size < 4)
+	{
+		return false;
+	}
+	const uint32_t w = static_cast<uint32_t>(i->bytes[0]) | (static_cast<uint32_t>(i->bytes[1]) << 8)
+					 | (static_cast<uint32_t>(i->bytes[2]) << 16) | (static_cast<uint32_t>(i->bytes[3]) << 24);
+	if ((w & 0x7fu) != 0x77u || ((w >> 12) & 7u) != 2u)
+	{
+		return false;
+	}
+	const unsigned f6 = (w >> 26) & 63u;
+	const unsigned vs1 = (w >> 15) & 31u;
+	unsigned id = 0;
+	unsigned kind = 0;
+	switch ((f6 << 5) | vs1)
+	{
+	case (0b101000u << 5) | 0b00000u: id = RISCV_INS_VAESDM_VV; break;
+	case (0b101001u << 5) | 0b00000u: id = RISCV_INS_VAESDM_VS; break;
+	case (0b101000u << 5) | 0b00001u: id = RISCV_INS_VAESDF_VV; break;
+	case (0b101001u << 5) | 0b00001u: id = RISCV_INS_VAESDF_VS; break;
+	case (0b101000u << 5) | 0b00010u: id = RISCV_INS_VAESEM_VV; break;
+	case (0b101001u << 5) | 0b00010u: id = RISCV_INS_VAESEM_VS; break;
+	case (0b101000u << 5) | 0b00011u: id = RISCV_INS_VAESEF_VV; break;
+	case (0b101001u << 5) | 0b00011u: id = RISCV_INS_VAESEF_VS; break;
+	case (0b101001u << 5) | 0b00111u: id = RISCV_INS_VAESZ_VS; break;
+	case (0b101000u << 5) | 0b10000u: id = RISCV_INS_VSM4R_VV; break;
+	case (0b101001u << 5) | 0b10000u: id = RISCV_INS_VSM4R_VS; break;
+	case (0b101000u << 5) | 0b10001u: id = RISCV_INS_VGMUL_VV; break;
+	case (0b101001u << 5) | 0b10001u: id = RISCV_INS_VGMUL_VS; break;
+	default: break;
+	}
+	if (id == 0)
+	{
+		kind = 1;
+		switch (f6)
+		{
+		case 0b101110u: id = RISCV_INS_VSHA2CH_VV; break;
+		case 0b101111u: id = RISCV_INS_VSHA2CL_VV; break;
+		case 0b101101u: id = RISCV_INS_VSHA2MS_VV; break;
+		case 0b101100u: id = RISCV_INS_VGHSH_VV; break;
+		case 0b100011u: id = RISCV_INS_VGHSH_VS; break;
+		case 0b100000u: id = RISCV_INS_VSM3ME_VV; break;
+		case 0b100010u:
+			id = RISCV_INS_VAESKF1_VI;
+			kind = 2;
+			break;
+		case 0b101010u:
+			id = RISCV_INS_VAESKF2_VI;
+			kind = 2;
+			break;
+		case 0b100001u:
+			id = RISCV_INS_VSM4K_VI;
+			kind = 2;
+			break;
+		case 0b101011u:
+			id = RISCV_INS_VSM3C_VI;
+			kind = 2;
+			break;
+		default: return false;
+		}
+	}
+	if (i->id == id || (i->is_alias && static_cast<unsigned>(i->alias_id) == id))
+	{
+		return false;
+	}
+
+	auto setReg = [&](unsigned n, unsigned regn) {
+		std::memset(&ri->operands[n], 0, sizeof(ri->operands[n]));
+		ri->operands[n].type = RISCV_OP_REG;
+		ri->operands[n].reg = static_cast<unsigned>(RISCV_REG_V0) + regn;
+	};
+	setReg(0, (w >> 7) & 31u);
+	setReg(1, (w >> 20) & 31u);
+	if (kind == 0)
+	{
+		ri->op_count = 2;
+	}
+	else if (kind == 1)
+	{
+		setReg(2, vs1);
+		ri->op_count = 3;
+	}
+	else
+	{
+		std::memset(&ri->operands[2], 0, sizeof(ri->operands[2]));
+		ri->operands[2].type = RISCV_OP_IMM;
+		ri->operands[2].imm = static_cast<int64_t>(vs1);
+		ri->op_count = 3;
+	}
+	i->id = id;
+	i->is_alias = false;
+	return true;
+}
+
 } // namespace
 
 
@@ -369,14 +469,52 @@ uint32_t Capstone2LlvmIrTranslatorRiscv_impl::getCarryRegister()
 	return RISCV_REG_INVALID;
 }
 
-void Capstone2LlvmIrTranslatorRiscv_impl::translateInstruction(
-		cs_insn* i,
-		llvm::IRBuilder<>& irb)
+typename Capstone2LlvmIrTranslator_impl<cs_riscv, cs_riscv_op>::TranslationResult
+Capstone2LlvmIrTranslatorRiscv_impl::translate(
+	const uint8_t* bytes,
+	std::size_t size,
+	retdec::common::Address a,
+	llvm::IRBuilder<>& irb,
+	std::size_t count,
+	bool stopOnBranch)
+{
+	auto res =
+		Capstone2LlvmIrTranslator_impl<cs_riscv, cs_riscv_op>::translate(bytes, size, a, irb, count, stopOnBranch);
+	// Decoder tables miss OP-VE. The word never becomes an instruction, so
+	// the id rewrite in translateInstruction has nothing to correct.
+	if (res.count != 0 || size < 4)
+	{
+		return res;
+	}
+	cs_insn* insn = cs_malloc(_handle);
+	if (!insn || !insn->detail)
+	{
+		if (insn)
+		{
+			cs_free(insn, 1);
+		}
+		return res;
+	}
+	insn->size = 4;
+	std::memcpy(insn->bytes, bytes, 4);
+	insn->address = a;
+	if (riscvRewriteVcrypto(insn, &insn->detail->riscv))
+	{
+		translateInstruction(insn, irb);
+		res.count = 1;
+		res.size = 4;
+	}
+	cs_free(insn, 1);
+	return res;
+}
+
+void Capstone2LlvmIrTranslatorRiscv_impl::translateInstruction(cs_insn* i, llvm::IRBuilder<>& irb)
 {
 	_insn = i;
 
 	cs_detail* d = i->detail;
 	cs_riscv* ri = &d->riscv;
+	riscvRewriteVcrypto(i, ri);
 
 	// Capstone 6 keeps the real id (ADDI/JAL/CSRRS) and puts nop/jal/frflags
 	// in alias_id. Prefer a dedicated alias translator (e.g. nop vs addi x0).

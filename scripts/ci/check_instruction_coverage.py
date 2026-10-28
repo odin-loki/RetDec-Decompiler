@@ -197,8 +197,12 @@ def mapping_regions(binary: Path, arch: str, ndx: int, addr: int, off: int, size
 def build(src: str, out: Path, inc: Path, lib: Path) -> None:
     p = out.with_suffix(".c")
     p.write_text(src, encoding="utf-8")
-    r = subprocess.run(["gcc", str(p), f"-I{inc}", f"-L{lib}", "-lcapstone", "-o", str(out)],
-                       capture_output=True, text=True)
+    # The translators spell Capstone 5 names. capstone6_compat.h is what
+    # turns those into the 6.x alias enumerators the headers actually have.
+    src_inc = Path(__file__).resolve().parents[2] / "src"
+    r = subprocess.run(
+        ["gcc", str(p), f"-I{inc}", f"-I{src_inc}", f"-L{lib}", "-lcapstone", "-o", str(out)],
+        capture_output=True, text=True)
     if r.returncode != 0:
         raise SystemExit(f"COV-01: FAIL could not build helper:\n{r.stderr[:2000]}")
 
@@ -402,7 +406,12 @@ def main() -> int:
         # enum name -> numeric id, via the same headers the translator compiles
         # against, so the comparison is on ids and not on spelling.
         names = sorted(impl | _null)
-        src = ['#include <capstone/capstone.h>', '#include <stdio.h>', 'int main(void){']
+        src = [
+            '#include <capstone/capstone.h>',
+            '#include "capstone2llvmir/capstone6_compat.h"',
+            '#include <stdio.h>',
+            'int main(void){',
+        ]
         src += [f'  printf("%d {n}\\n", (int){n});' for n in names]
         src += ['  return 0;}']
         idsbin = work / f"ids_{arch}"

@@ -54,6 +54,13 @@ uint32_t ppcCrField(uint32_t reg)
 	return reg;
 }
 
+// bdnzf/bdzf name one CR bit (CR4LT). Mapping that bit onto the whole field
+// makes the F form load GT|EQ. Keep the bit when the branch also tests CTR.
+uint32_t ppcBranchCr(uint32_t reg, bool singleBit)
+{
+	return singleBit ? reg : ppcCrField(reg);
+}
+
 bool ppcIsSldi(const cs_insn* i)
 {
 	return ppcIsId(i, PPC_INS_SLDI) || ppcIsId(i, PPC_INS_ALIAS_SLDI);
@@ -4035,7 +4042,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateB(cs_insn* i, cs_ppc* pi, l
 	// Get target and CR register.
 	//
 	llvm::Value* target = nullptr;
-	uint32_t crReg = (pi->bc.crX != PPC_REG_INVALID) ? ppcCrField(pi->bc.crX) : PPC_REG_CR0;
+	uint32_t crReg = (pi->bc.crX != PPC_REG_INVALID) ? ppcBranchCr(pi->bc.crX, ctrAndCond) : PPC_REG_CR0;
 	// Hint variants (LE_MINUS, …) are the same condition. gBC already folds
 	// BO's compare-to-0 into GE/LE/NE/NU, so `bf` must not invert again.
 	ppc_pred crBc = PPC_get_no_hint_pred(pi->bc.pred_cr);
@@ -4086,6 +4093,15 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateB(cs_insn* i, cs_ppc* pi, l
 		reverseCond = false;
 	}
 
+	// CTR+CR forms (bdnzf/bdzf) test the named bit, then the F mnemonic
+	// inverts it. pred_cr for the F form is already a field predicate, so
+	// using it loads GT|EQ and the boolean comes out the wrong way.
+	if (ctrAndCond)
+	{
+		crBc = PPC_BC_LT;
+		reverseCond = reverseCondIds.count(bid) || reverseCondIds.count(i->id);
+	}
+
 	if (toLR)
 	{
 		target = loadRegister(PPC_REG_LR, irb);
@@ -4104,7 +4120,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateB(cs_insn* i, cs_ppc* pi, l
 			{
 				if (isCrRegister(pi->operands[k]))
 				{
-					crReg = ppcCrField(pi->operands[k].reg);
+					crReg = ppcBranchCr(pi->operands[k].reg, ctrAndCond);
 				}
 			}
 		}
@@ -4122,7 +4138,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateB(cs_insn* i, cs_ppc* pi, l
 		}
 		else if (pi->op_count == 1 && isCrRegister(pi->operands[0]))
 		{
-			crReg = ppcCrField(pi->operands[0].reg);
+			crReg = ppcBranchCr(pi->operands[0].reg, ctrAndCond);
 		}
 		else if (pi->op_count == 1 && pi->operands[0].type == PPC_OP_IMM)
 		{
@@ -4134,7 +4150,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateB(cs_insn* i, cs_ppc* pi, l
 			{
 				if (isCrRegister(pi->operands[k]))
 				{
-					crReg = ppcCrField(pi->operands[k].reg);
+					crReg = ppcBranchCr(pi->operands[k].reg, ctrAndCond);
 				}
 			}
 		}
@@ -4153,7 +4169,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateB(cs_insn* i, cs_ppc* pi, l
 		{
 			// `bf 4*cr4+lt` names the LT bit. The condition uses the field
 			// (CR4's GT|EQ), not that bit register twice.
-			crReg = ppcCrField(pi->operands[0].reg);
+			crReg = ppcBranchCr(pi->operands[0].reg, ctrAndCond);
 			target = loadOpBinaryOp1(pi, irb);
 		}
 		// capstone-dumper -a ppc -m 32 -e big -c "40 b1 00 00"
@@ -4165,7 +4181,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateB(cs_insn* i, cs_ppc* pi, l
 		//
 		else if (pi->op_count == 1 && isCrRegister(pi->operands[0]))
 		{
-			crReg = ppcCrField(pi->operands[0].reg);
+			crReg = ppcBranchCr(pi->operands[0].reg, ctrAndCond);
 			target = getThisInsnAddress(i);
 		}
 		// The same without parameters.
@@ -4189,7 +4205,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateB(cs_insn* i, cs_ppc* pi, l
 				}
 				if (isCrRegister(pi->operands[k]))
 				{
-					crReg = ppcCrField(pi->operands[k].reg);
+					crReg = ppcBranchCr(pi->operands[k].reg, ctrAndCond);
 				}
 			}
 			if (target == nullptr)

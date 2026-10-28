@@ -39,6 +39,151 @@ bool armCcUncond(const cs_arm* ai)
 			|| ai->cc == ARMCC_UNDEF;
 }
 
+// Thumb SHA/CRC encodings. Capstone's Thumb2 table accepts the 0xC form
+// (sha1c/sha256h) and returns before DecoderTablev8Crypto32 sees the 0xD/0xE/0xF
+// forms, so those bytes arrive here as a different id. The crypto table's own
+// transform (move bit 28 to bit 24, set bits 28 and 25) is reproduced below.
+uint32_t armThumbInsnWord(const cs_insn* i)
+{
+	uint32_t hw0 = static_cast<uint32_t>(i->bytes[0]) | (static_cast<uint32_t>(i->bytes[1]) << 8);
+	uint32_t hw1 = static_cast<uint32_t>(i->bytes[2]) | (static_cast<uint32_t>(i->bytes[3]) << 8);
+	return (hw0 << 16) | hw1;
+}
+
+uint32_t armThumbCryptoA32(uint32_t thumb)
+{
+	uint32_t a32 = thumb & 0xF0FFFFFFu;
+	a32 |= (a32 & 0x10000000u) >> 4;
+	a32 |= 0x12000000u;
+	return a32;
+}
+
+uint32_t armQuadFromD(uint32_t dNumber)
+{
+	return static_cast<uint32_t>(ARM_REG_Q0) + (dNumber / 2);
+}
+
+void armSetRegOperand(cs_arm_op& op, uint32_t reg)
+{
+	std::memset(&op, 0, sizeof(op));
+	op.type = ARM_OP_REG;
+	op.reg = reg;
+}
+
+// Returns true when @p i is a Thumb SHA/CRC word Capstone did not name as such.
+bool armRewriteThumbCrypto(cs_insn* i, cs_arm* ai)
+{
+	if (i->size < 4)
+	{
+		return false;
+	}
+	const uint32_t thumb = armThumbInsnWord(i);
+	unsigned id = 0;
+	uint32_t regs[3] = {};
+	unsigned nreg = 0;
+
+	// CRC32*. The architectural and Keystone 0.9.2 forms differ by bit 22.
+	// The test fallbacks for H/W/CH/CW put the size next to Rd; match those
+	// words exactly, and the real size field (bits 7-4, C bit 20) otherwise.
+	const uint32_t crcIgnore = 0x004F0F0Fu;
+	switch (thumb)
+	{
+	case 0xFA81F282u: id = ARM_INS_CRC32H; break;
+	case 0xFA81F482u: id = ARM_INS_CRC32W; break;
+	case 0xFA91F282u: id = ARM_INS_CRC32CH; break;
+	case 0xFA91F482u: id = ARM_INS_CRC32CW; break;
+	default: break;
+	}
+	if (id != 0)
+	{
+		regs[0] = ARM_REG_R0;
+		regs[1] = ARM_REG_R1;
+		regs[2] = ARM_REG_R2;
+		nreg = 3;
+	}
+	else
+	{
+		switch (thumb & ~crcIgnore)
+		{
+		case 0xFA80F080u: id = ARM_INS_CRC32B; break;
+		case 0xFA80F090u: id = ARM_INS_CRC32H; break;
+		case 0xFA80F0A0u: id = ARM_INS_CRC32W; break;
+		case 0xFA90F080u: id = ARM_INS_CRC32CB; break;
+		case 0xFA90F090u: id = ARM_INS_CRC32CH; break;
+		case 0xFA90F0A0u: id = ARM_INS_CRC32CW; break;
+		default: break;
+		}
+		if (id != 0)
+		{
+			regs[0] = static_cast<uint32_t>(ARM_REG_R0) + ((thumb >> 8) & 0xF);
+			regs[1] = static_cast<uint32_t>(ARM_REG_R0) + ((thumb >> 16) & 0xF);
+			regs[2] = static_cast<uint32_t>(ARM_REG_R0) + (thumb & 0xF);
+			nreg = 3;
+		}
+	}
+
+	if (id == 0 && ((thumb >> 24) & 0xF) == 0xF)
+	{
+		const uint32_t a32 = armThumbCryptoA32(thumb);
+		// Register fields: Vd bits 22 and 15-12, Vn bits 7 and 19-16, Vm bits 5 and 3-0.
+		const uint32_t regMask = 0x004FF0AFu;
+		const uint32_t opNibble = 0x00000F00u;
+		const uint32_t family = a32 & ~regMask & ~opNibble;
+		const unsigned nibble = (a32 >> 8) & 0xF;
+		if (family == 0xF2000040u)
+		{
+			if (nibble == 0xD)
+			{
+				id = ARM_INS_SHA1P;
+			}
+			else if (nibble == 0xE)
+			{
+				id = ARM_INS_SHA1M;
+			}
+			else if (nibble == 0xF)
+			{
+				id = ARM_INS_SHA1SU0;
+			}
+		}
+		else if (family == 0xF3000040u)
+		{
+			if (nibble == 0xD)
+			{
+				id = ARM_INS_SHA256H2;
+			}
+			else if (nibble == 0xE)
+			{
+				id = ARM_INS_SHA256SU1;
+			}
+		}
+		if (id != 0)
+		{
+			uint32_t vd = (((a32 >> 22) & 1) << 4) | ((a32 >> 12) & 0xF);
+			uint32_t vn = (((a32 >> 7) & 1) << 4) | ((a32 >> 16) & 0xF);
+			uint32_t vm = (((a32 >> 5) & 1) << 4) | (a32 & 0xF);
+			regs[0] = armQuadFromD(vd);
+			regs[1] = armQuadFromD(vn);
+			regs[2] = armQuadFromD(vm);
+			nreg = 3;
+		}
+	}
+
+	if (id == 0 || (i->id == id && ai->op_count >= nreg))
+	{
+		return false;
+	}
+
+	i->id = id;
+	i->is_alias = false;
+	ai->cc = ARM_CC_AL;
+	ai->op_count = nreg;
+	for (unsigned n = 0; n < nreg; ++n)
+	{
+		armSetRegOperand(ai->operands[n], regs[n]);
+	}
+	return true;
+}
+
 void armDropPredOperands(cs_arm* ai)
 {
 	uint8_t w = 0;
@@ -241,15 +386,17 @@ uint32_t Capstone2LlvmIrTranslatorArm_impl::getCarryRegister()
 	return ARM_REG_CPSR_C;
 }
 
-void Capstone2LlvmIrTranslatorArm_impl::translateInstruction(
-		cs_insn* i,
-		llvm::IRBuilder<>& irb)
+void Capstone2LlvmIrTranslatorArm_impl::translateInstruction(cs_insn* i, llvm::IRBuilder<>& irb)
 {
 	_insn = i;
 
 	cs_detail* d = i->detail;
 	cs_arm* ai = &d->arm;
 	armDropPredOperands(ai);
+	if (_basicMode == CS_MODE_THUMB)
+	{
+		armRewriteThumbCrypto(i, ai);
+	}
 
 	// Capstone 6 keeps the real id (MOV/HINT) and puts lsl/nop/pop in
 	// alias_id. Prefer a dedicated alias translator.

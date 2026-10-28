@@ -48,14 +48,19 @@ class Capstone2LlvmIrTranslatorRiscv_impl :
 		virtual void generateRegisters() override;
 		virtual uint32_t getCarryRegister() override;
 
-		virtual void translateInstruction(
-				cs_insn* i,
-				llvm::IRBuilder<>& irb) override;
-//
-//==============================================================================
-// RISC-V-specific methods.
-//==============================================================================
-//
+		virtual void translateInstruction(cs_insn* i, llvm::IRBuilder<>& irb) override;
+		virtual typename Capstone2LlvmIrTranslator_impl<cs_riscv, cs_riscv_op>::TranslationResult translate(
+			const uint8_t* bytes,
+			std::size_t size,
+			retdec::common::Address a,
+			llvm::IRBuilder<>& irb,
+			std::size_t count = 0,
+			bool stopOnBranch = false) override;
+		//
+		//==============================================================================
+		// RISC-V-specific methods.
+		//==============================================================================
+		//
 	protected:
 		bool isXlen64() const;
 		bool isRvvReg(uint32_t r) const;
