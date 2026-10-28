@@ -305,13 +305,27 @@ run_status=$?
 set -e
 
 if [ "${run_status}" != 0 ]; then
-	# gtest_brief prints the assertion above each [  FAILED  ] line. The name
-	# alone does not say whether the value, the registers or an exception lost.
-	sed -n '1,120p' "${WORKDIR}/run.log" >&2
+	# The assertion is the lines above each [  FAILED  ]. An LLVM assert aborts
+	# before that summary, so the tail still names the running test.
 	echo "--- tail ---" >&2
-	tail -n 40 "${WORKDIR}/run.log" >&2
-	echo "--- failed names ---" >&2
-	grep -E '^\[  FAILED  \]' "${WORKDIR}/run.log" | head -40 >&2
+	tail -n 30 "${WORKDIR}/run.log" >&2
+	python3 - "${WORKDIR}/run.log" >&2 <<'PY'
+import sys
+lines = open(sys.argv[1], encoding="utf-8", errors="replace").read().splitlines()
+fail_at = [i for i, line in enumerate(lines) if line.startswith("[  FAILED  ]")]
+print(f"--- failed names ({len(fail_at)}) ---")
+for i in fail_at:
+    print(lines[i])
+print("--- failure detail ---")
+for n, i in enumerate(fail_at[:15]):
+    start = max(0, i - 25)
+    for j in range(i - 1, start - 1, -1):
+        if lines[j].startswith("[ RUN      ]") or lines[j].startswith("[       OK ]"):
+            start = j + 1
+            break
+    print(f"--- fail {n + 1} ---")
+    print("\n".join(lines[start:i + 1]))
+PY
 	die "tests/capstone2llvmir does not pass"
 fi
 

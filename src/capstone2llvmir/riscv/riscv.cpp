@@ -455,6 +455,16 @@ llvm::Value* Capstone2LlvmIrTranslatorRiscv_impl::splatToRvv(
 		}
 		return s;
 	}
+	// A scalar FP register is the lane's bits. Sign-extending the float aborts.
+	if (!s->getType()->isIntOrIntVectorTy())
+	{
+		unsigned bits = s->getType()->getPrimitiveSizeInBits();
+		if (bits == 0)
+		{
+			bits = vecTy->getElementType()->getIntegerBitWidth();
+		}
+		s = irb.CreateBitCast(s, irb.getIntNTy(bits));
+	}
 	s = irb.CreateSExtOrTrunc(s, vecTy->getElementType());
 	return irb.CreateVectorSplat(vecTy->getElementCount(), s);
 }
