@@ -126,32 +126,58 @@ bool armRewriteThumbCrypto(cs_insn* i, cs_arm* ai)
 	{
 		const uint32_t a32 = armThumbCryptoA32(thumb);
 		// Register fields: Vd bits 22 and 15-12, Vn bits 7 and 19-16, Vm bits 5 and 3-0.
+		// Keystone 0.9.2 encodes sha1p/m/su0 and sha256h2/su1 in bits 21:20
+		// (sha1p.32 q0, q1, q2 is 12 ef 44 0c). The test fixtures put that
+		// opcode in bits 11:8 instead (02 ef 44 0d). sha1c/sha256h are bits
+		// 21:20 == 0 and nibble 0xC, and Capstone already names those.
 		const uint32_t regMask = 0x004FF0AFu;
 		const uint32_t opNibble = 0x00000F00u;
-		const uint32_t family = a32 & ~regMask & ~opNibble;
+		const uint32_t opHi = 0x00300000u;
+		const uint32_t family = a32 & ~regMask & ~opNibble & ~opHi;
 		const unsigned nibble = (a32 >> 8) & 0xF;
+		const unsigned hi = (a32 >> 20) & 3u;
 		if (family == 0xF2000040u)
 		{
-			if (nibble == 0xD)
+			if (nibble == 0xC && hi == 1u)
 			{
 				id = ARM_INS_SHA1P;
 			}
-			else if (nibble == 0xE)
+			else if (nibble == 0xC && hi == 2u)
 			{
 				id = ARM_INS_SHA1M;
 			}
-			else if (nibble == 0xF)
+			else if (nibble == 0xC && hi == 3u)
+			{
+				id = ARM_INS_SHA1SU0;
+			}
+			else if (hi == 0u && nibble == 0xD)
+			{
+				id = ARM_INS_SHA1P;
+			}
+			else if (hi == 0u && nibble == 0xE)
+			{
+				id = ARM_INS_SHA1M;
+			}
+			else if (hi == 0u && nibble == 0xF)
 			{
 				id = ARM_INS_SHA1SU0;
 			}
 		}
 		else if (family == 0xF3000040u)
 		{
-			if (nibble == 0xD)
+			if (nibble == 0xC && hi == 1u)
 			{
 				id = ARM_INS_SHA256H2;
 			}
-			else if (nibble == 0xE)
+			else if (nibble == 0xC && hi == 2u)
+			{
+				id = ARM_INS_SHA256SU1;
+			}
+			else if (hi == 0u && nibble == 0xD)
+			{
+				id = ARM_INS_SHA256H2;
+			}
+			else if (hi == 0u && nibble == 0xE)
 			{
 				id = ARM_INS_SHA256SU1;
 			}
