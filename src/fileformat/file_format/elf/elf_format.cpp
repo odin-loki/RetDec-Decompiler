@@ -1332,7 +1332,24 @@ ELFIO::section* ElfFormat::addRelocationTable(ELFIO::section *dynamicSection, co
 	}
 
 	const auto *relSeg = getSegmentFromAddress(info.address);
-	if(!relSeg || !info.size || relSeg->getOffset() + (info.address - relSeg->getAddress()) + info.size > getLoadedFileLength())
+	if (!relSeg || !info.size || info.address < relSeg->getAddress())
+	{
+		return nullptr;
+	}
+
+	// DT_REL/DT_RELA size is attacker-controlled. Forming
+	// offset + delta + size before comparing it with the file length wraps,
+	// the check passes, and set_data() then does new char[size]. libFuzzer
+	// reached malloc(4294967088) from addPltRelocationTable that way.
+	const std::size_t relDelta = static_cast<std::size_t>(info.address - relSeg->getAddress());
+	const std::size_t relSegOff = static_cast<std::size_t>(relSeg->getOffset());
+	const std::size_t loadedLen = getLoadedFileLength();
+	if (!retdec::utils::bounds::addFits(relSegOff, relDelta))
+	{
+		return nullptr;
+	}
+	const std::size_t relFileOff = relSegOff + relDelta;
+	if (info.size > retdec::utils::bounds::remaining(relFileOff, loadedLen) || info.size > 0xffffffffull)
 	{
 		return nullptr;
 	}
@@ -1360,11 +1377,13 @@ ELFIO::section* ElfFormat::addRelocationTable(ELFIO::section *dynamicSection, co
 		if(seg)
 		{
 			relocationTable->set_addr_align(seg->get_align());
-			if(seg->get_data() && info.size + (info.address - relSeg->getAddress()) <= relSeg->getSizeInFile())
+			const std::size_t segRemaining =
+				retdec::utils::bounds::remaining(relDelta, static_cast<std::size_t>(relSeg->getSizeInFile()));
+			if (seg->get_data() && info.size <= segRemaining)
 			{
-				relocationTable->set_data(seg->get_data() + (info.address - relSeg->getAddress()), info.size);
+				relocationTable->set_data(seg->get_data() + relDelta, static_cast<ELFIO::Elf_Word>(info.size));
 			}
-			else if(reader.get_istream())
+			else if (reader.get_istream())
 			{
 				relocationTable->load(*reader.get_istream(), relocationTable->get_offset(), info.size);
 			}
