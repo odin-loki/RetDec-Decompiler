@@ -118,6 +118,14 @@ jobs:
           restore-keys: |
             ctest-macos-qt5-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'cmake/deps.cmake', 'deps/**/CMakeLists.txt', 'scripts/bootstrap_openssl_bundle.cmake', 'deps/openssl/vendored/**') }}-
 
+      # Same failure macos-package hit: a restored PCH does not match a newer
+      # MacOSX SDK, and clang stops on the first translation unit that uses it.
+      - name: Drop restored precompiled headers
+        run: |
+          if [ -d build/linux ]; then
+            find build/linux -name 'cmake_pch.*' -delete
+          fi
+
       - name: Cache OpenSSL vendored bundle
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

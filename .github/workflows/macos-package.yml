@@ -80,6 +80,15 @@ jobs:
             macos-package-deps-${{ hashFiles('cmake/deps.cmake', 'deps/**/CMakeLists.txt') }}-
             macos-package-deps-
 
+      # A restored tree can carry a PCH built against the previous Xcode SDK.
+      # Clang then refuses to compile (is_replaceable.h "has been modified
+      # since the precompiled header"). The objects rebuild; the header does not.
+      - name: Drop restored precompiled headers
+        run: |
+          if [ -d build/linux ]; then
+            find build/linux -name 'cmake_pch.*' -delete
+          fi
+
       # Byte for byte the flags release-installers.yml's macos-installer job
       # configures with. If these two ever drift, this rehearsal stops being
       # one; that is what the comment is for.
