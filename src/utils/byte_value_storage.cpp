@@ -4,6 +4,7 @@
  * @copyright (c) 2017 Avast Software, licensed under the MIT license
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 
@@ -409,6 +410,10 @@ bool ByteValueStorage::getFloat(std::uint64_t address, float& res) const
 		return false;
 	}
 
+	if (getEndianness() == Endianness::BIG)
+	{
+		std::reverse(d.begin(), d.end());
+	}
 	memcpy(&res, d.data(), d.size());
 	return true;
 }
@@ -445,6 +450,10 @@ bool ByteValueStorage::getDouble(std::uint64_t address, double& res) const
 	// Currently we use new kind for ARMs > version 5.
 	// To find relevant info, google: "ARM double mixed endian".
 
+	if (getEndianness() == Endianness::BIG)
+	{
+		std::reverse(d.begin(), d.end());
+	}
 	memcpy(&res, d.data(), d.size());
 	return true;
 }

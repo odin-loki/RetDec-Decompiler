@@ -97,6 +97,26 @@ HexToBigFailsIfUnknownEndian) {
 }
 
 TEST_F(ByteValueStorageTests,
+GetFloatAndDoubleHonourBigEndianFiles) {
+	MockByteValueStorage storage;
+	EXPECT_CALL(storage, getEndianness())
+		.WillRepeatedly(Return(Endianness::BIG));
+	EXPECT_CALL(storage, hasMixedEndianForDouble())
+		.WillRepeatedly(Return(false));
+	EXPECT_CALL(storage, getXBytes(0x10, 4, _))
+		.WillOnce(DoAll(SetArgReferee<2>(std::vector<std::uint8_t>{0x40, 0xe0, 0x00, 0x00}), Return(true)));
+	EXPECT_CALL(storage, getXBytes(0x20, 8, _))
+		.WillOnce(DoAll(SetArgReferee<2>(std::vector<std::uint8_t>{0x40, 0x1c, 0, 0, 0, 0, 0, 0}), Return(true)));
+
+	float f = 0;
+	double d = 0;
+	EXPECT_TRUE(storage.getFloat(0x10, f));
+	EXPECT_TRUE(storage.getDouble(0x20, d));
+	EXPECT_EQ(7.0f, f);
+	EXPECT_EQ(7.0, d);
+}
+
+TEST_F(ByteValueStorageTests,
 HexToBigIfAlreadyBigEndianWorks) {
 	MockByteValueStorage storage;
 
