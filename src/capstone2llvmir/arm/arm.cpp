@@ -7979,5 +7979,205 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMveReduce(cs_insn* i, cs_arm* a
 }
 
 
+/**
+ * MVE lane-shaping and multiply ops: VMOVL[BT], VMOVN[BT], VQMOV[U]N[BT],
+ * VSHLL[BT], VSHRN[BT], VRSHRN[BT], VMULL[BT] (integer), VMULH, VRMULH,
+ * VMAXA/VMINA and the multiply-accumulate reductions VMLADAV[A][X]/VMLSDAV[A][X].
+ * Predication (VPT blocks) is not modelled.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateMveVec(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	bool isFp = false, isSigned = false;
+	unsigned lb = vectorDataLaneBits(ai->vector_data, isFp, isSigned);
+	auto fallback = [&]() { translatePseudoAsmGeneric(i, ai, irb); };
+	if (lb == 0)
+	{
+		// Aliases (e.g. vmlav) may leave vector_data empty; parse the ".s32" suffix.
+		const char* dt = std::strchr(i->mnemonic, '.');
+		if (dt && (dt[1] == 's' || dt[1] == 'u' || dt[1] == 'i'))
+		{
+			lb = unsigned(std::atoi(dt + 2));
+			isSigned = dt[1] == 's';
+		}
+	}
+	if (isFp || lb == 0 || lb > 32 || ai->op_count < 2)
+	{
+		fallback();
+		return;
+	}
+	for (unsigned k = 0; k < ai->op_count; ++k)
+	{
+		if (ai->operands[k].type != ARM_OP_REG && ai->operands[k].type != ARM_OP_IMM)
+		{
+			fallback();
+			return;
+		}
+	}
+	std::string m = i->mnemonic;
+	auto dot = m.find('.');
+	std::string op = m.substr(0, dot);
+	if (!op.empty() && (op.back() == 't' || op.back() == 'e') && op.size() > 5 && op.compare(0, 2, "vp") != 0)
+	{
+		// Strip a VPT-block predicate suffix (e.g. vmovlbt / vmovlbe).
+		std::string base = op.substr(0, op.size() - 1);
+		static const char* known[] = {"vmovlb", "vmovlt", "vmovnb", "vmovnt", "vmullb", "vmullt", "vshllb", "vshllt",
+				"vshrnb", "vshrnt", "vrshrnb", "vrshrnt", "vqmovnb", "vqmovnt", "vqmovunb", "vqmovunt", "vmulh",
+				"vrmulh", "vmaxa", "vmina", "vmladav", "vmladava", "vmladavx", "vmladavax", "vmlsdav", "vmlsdava",
+				"vmlsdavx", "vmlsdavax", "vmlav", "vmlava"};
+		bool isKnown = false, baseKnown = false;
+		for (auto* k : known) { isKnown |= op == k; baseKnown |= base == k; }
+		if (!isKnown && baseKnown) op = base;
+	}
+	auto* i32 = irb.getInt32Ty();
+	auto ext = [&](llvm::Value* x, llvm::Type* t, bool s) {
+		return s ? irb.CreateSExtOrTrunc(x, t) : irb.CreateZExtOrTrunc(x, t);
+	};
+	auto lanesOf = [&](llvm::Value* v) {
+		return unsigned(llvm::cast<llvm::FixedVectorType>(v->getType())->getNumElements());
+	};
+	auto reg = [&](unsigned k) { return ai->operands[k].reg; };
+
+	// Widening: source lanes lb, result lanes 2*lb taken from even (B) or odd (T) lanes.
+	if (op == "vmovlb" || op == "vmovlt" || op == "vshllb" || op == "vshllt" || op == "vmullb" || op == "vmullt")
+	{
+		bool top = op.back() == 't';
+		bool mul = op.compare(0, 5, "vmull") == 0;
+		bool shl = op.compare(0, 5, "vshll") == 0;
+		if (mul && ai->op_count != 3) { fallback(); return; }
+		if (shl && (ai->op_count != 3 || ai->operands[2].type != ARM_OP_IMM)) { fallback(); return; }
+		if (lb > 16) { fallback(); return; }
+		auto* a = loadNeonVector(reg(1), lb, false, irb);
+		llvm::Value* b = mul ? loadNeonVector(reg(2), lb, false, irb) : nullptr;
+		unsigned n = lanesOf(a) / 2;
+		auto* wt = irb.getIntNTy(2 * lb);
+		llvm::Value* out = llvm::UndefValue::get(llvm::FixedVectorType::get(wt, n));
+		for (unsigned k = 0; k < n; ++k)
+		{
+			unsigned src = 2 * k + (top ? 1 : 0);
+			llvm::Value* e = ext(irb.CreateExtractElement(a, uint64_t(src)), wt, isSigned);
+			if (mul) e = irb.CreateMul(e, ext(irb.CreateExtractElement(b, uint64_t(src)), wt, isSigned));
+			if (shl) e = irb.CreateShl(e, uint64_t(ai->operands[2].imm));
+			out = irb.CreateInsertElement(out, e, uint64_t(k));
+		}
+		storeNeonVector(reg(0), out, irb);
+		return;
+	}
+
+	// Narrowing into the even (B) or odd (T) half-lanes of the destination.
+	if (op == "vmovnb" || op == "vmovnt" || op == "vqmovnb" || op == "vqmovnt" || op == "vqmovunb"
+			|| op == "vqmovunt" || op == "vshrnb" || op == "vshrnt" || op == "vrshrnb" || op == "vrshrnt")
+	{
+		bool top = op.back() == 't';
+		bool sat = op.compare(0, 3, "vqm") == 0;
+		bool usat = op.compare(0, 6, "vqmovu") == 0;
+		bool shr = op.find("shrn") != std::string::npos;
+		bool rnd = op.compare(0, 3, "vrs") == 0;
+		if (lb < 16 || (shr && (ai->op_count != 3 || ai->operands[2].type != ARM_OP_IMM)))
+		{
+			fallback();
+			return;
+		}
+		auto* a = loadNeonVector(reg(1), lb, false, irb);
+		auto* d = loadNeonVector(reg(0), lb / 2, false, irb);
+		unsigned n = lanesOf(a);
+		auto* nt = irb.getIntNTy(lb / 2);
+		auto* wt = irb.getIntNTy(lb);
+		for (unsigned k = 0; k < n; ++k)
+		{
+			llvm::Value* e = irb.CreateExtractElement(a, uint64_t(k));
+			if (shr)
+			{
+				uint64_t s = uint64_t(ai->operands[2].imm);
+				if (rnd && s) e = irb.CreateAdd(e, llvm::ConstantInt::get(wt, 1ull << (s - 1)));
+				e = irb.CreateLShr(e, s);
+			}
+			if (sat)
+			{
+				unsigned h = lb / 2;
+				bool srcSigned = isSigned || usat;
+				llvm::Value* lo;
+				llvm::Value* hi;
+				if (usat || !isSigned)
+				{
+					lo = llvm::ConstantInt::get(wt, 0);
+					hi = llvm::ConstantInt::get(wt, (1ull << h) - 1);
+				}
+				else
+				{
+					lo = llvm::ConstantInt::get(wt, llvm::APInt::getSignedMinValue(h).sext(lb));
+					hi = llvm::ConstantInt::get(wt, (1ull << (h - 1)) - 1);
+				}
+				auto* gt = srcSigned ? irb.CreateICmpSGT(e, hi) : irb.CreateICmpUGT(e, hi);
+				auto* lt = srcSigned ? irb.CreateICmpSLT(e, lo) : irb.CreateICmpULT(e, lo);
+				e = irb.CreateSelect(gt, hi, irb.CreateSelect(lt, lo, e));
+			}
+			d = irb.CreateInsertElement(d, irb.CreateTrunc(e, nt), uint64_t(2 * k + (top ? 1 : 0)));
+		}
+		storeNeonVector(reg(0), d, irb);
+		return;
+	}
+
+	if (op == "vmulh" || op == "vrmulh")
+	{
+		if (ai->op_count != 3) { fallback(); return; }
+		auto* a = loadNeonVector(reg(1), lb, false, irb);
+		auto* b = loadNeonVector(reg(2), lb, false, irb);
+		auto* wt = irb.getIntNTy(2 * lb);
+		llvm::Value* out = a;
+		for (unsigned k = 0; k < lanesOf(a); ++k)
+		{
+			auto* p = irb.CreateMul(ext(irb.CreateExtractElement(a, uint64_t(k)), wt, isSigned),
+					ext(irb.CreateExtractElement(b, uint64_t(k)), wt, isSigned));
+			llvm::Value* q = p;
+			if (op == "vrmulh") q = irb.CreateAdd(q, llvm::ConstantInt::get(wt, 1ull << (lb - 1)));
+			q = irb.CreateTrunc(irb.CreateLShr(q, lb), irb.getIntNTy(lb));
+			out = irb.CreateInsertElement(out, q, uint64_t(k));
+		}
+		storeNeonVector(reg(0), out, irb);
+		return;
+	}
+
+	if (op == "vmaxa" || op == "vmina")
+	{
+		if (ai->op_count != 2) { fallback(); return; }
+		auto* d = loadNeonVector(reg(0), lb, false, irb);
+		auto* a = loadNeonVector(reg(1), lb, false, irb);
+		auto* et = irb.getIntNTy(lb);
+		for (unsigned k = 0; k < lanesOf(a); ++k)
+		{
+			llvm::Value* x = irb.CreateExtractElement(d, uint64_t(k));
+			llvm::Value* y = irb.CreateExtractElement(a, uint64_t(k));
+			y = irb.CreateSelect(irb.CreateICmpSLT(y, llvm::ConstantInt::get(et, 0)), irb.CreateNeg(y), y);
+			auto* c = op == "vmaxa" ? irb.CreateICmpUGT(y, x) : irb.CreateICmpULT(y, x);
+			d = irb.CreateInsertElement(d, irb.CreateSelect(c, y, x), uint64_t(k));
+		}
+		storeNeonVector(reg(0), d, irb);
+		return;
+	}
+
+	if (op.rfind("vmladav", 0) == 0 || op.rfind("vmlsdav", 0) == 0 || op == "vmlav" || op == "vmlava")
+	{
+		bool sub = op.compare(0, 4, "vmls") == 0;
+		bool acc = op.find("ava") != std::string::npos || op == "vmlava";
+		bool xch = op.back() == 'x';
+		if (ai->op_count != 3) { fallback(); return; }
+		auto* a = loadNeonVector(reg(1), lb, false, irb);
+		auto* b = loadNeonVector(reg(2), lb, false, irb);
+		llvm::Value* sum = acc ? loadRegister(reg(0), irb) : llvm::ConstantInt::get(i32, 0);
+		unsigned n = lanesOf(a);
+		for (unsigned k = 0; k < n; ++k)
+		{
+			unsigned kb = xch ? (k ^ 1) : k;
+			auto* p = irb.CreateMul(ext(irb.CreateExtractElement(a, uint64_t(k)), i32, isSigned),
+					ext(irb.CreateExtractElement(b, uint64_t(kb)), i32, isSigned));
+			sum = (sub && (k & 1)) ? irb.CreateSub(sum, p) : irb.CreateAdd(sum, p);
+		}
+		storeRegister(reg(0), sum, irb);
+		return;
+	}
+	fallback();
+}
+
+
 } // namespace capstone2llvmir
 } // namespace retdec
