@@ -6506,6 +6506,38 @@ TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_SRET)
 	});
 }
 
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_FCVT_BF16_S)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_F11_32, 1.01171875_f32},
+	});
+
+	emulate_bin("53 f5 85 44"); // fcvt.bf16.s fa0, fa1 (tie rounds to even, up)
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_F10_32, 1.015625_f32},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_FCVT_S_BF16)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_F11_32, 1.015625_f32},
+	});
+
+	emulate_bin("53 f5 65 40"); // fcvt.s.bf16 fa0, fa1
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_F10_32, 1.015625_f32},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

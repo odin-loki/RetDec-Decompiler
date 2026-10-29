@@ -6529,6 +6529,24 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateZfh(cs_insn* i, cs_riscv* ri,
 			storeOp(ri->operands[0], irb.CreateFPCast(f, t), irb, eOpConv::FPCAST_OR_BITCAST);
 			return;
 		}
+		case RISCV_INS_FCVT_S_BF16:
+		{
+			// Registers hold the widened value, so BF16->S is exact.
+			auto* f = loadOp(ri->operands[1], irb);
+			storeOp(ri->operands[0], irb.CreateFPCast(f, irb.getFloatTy()), irb, eOpConv::FPCAST_OR_BITCAST);
+			return;
+		}
+		case RISCV_INS_FCVT_BF16_S:
+		{
+			// Round to nearest even onto the bf16 grid (NaN payloads not modelled).
+			auto* f = irb.CreateFPCast(loadOp(ri->operands[1], irb), irb.getFloatTy());
+			auto* x = irb.CreateBitCast(f, irb.getInt32Ty());
+			auto* lsb = irb.CreateAnd(irb.CreateLShr(x, 16), irb.getInt32(1));
+			auto* r = irb.CreateAdd(x, irb.CreateAdd(lsb, irb.getInt32(0x7fff)));
+			r = irb.CreateAnd(r, irb.getInt32(0xffff0000));
+			storeOp(ri->operands[0], irb.CreateBitCast(r, irb.getFloatTy()), irb, eOpConv::FPCAST_OR_BITCAST);
+			return;
+		}
 		case RISCV_INS_FLH:
 			translateFpLoad(i, ri, irb);
 			return;
