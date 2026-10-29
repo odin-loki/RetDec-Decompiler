@@ -10176,5 +10176,156 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecInsertExtract(cs_insn* i
 	storeOpI128(pi->operands[0], ppcBeInsert(vt, off, size, val, irb), irb);
 }
 
+
+/**
+ * PPC_INS_VSLV, PPC_INS_VSRV, PPC_INS_VRLWNM, PPC_INS_VRLDNM, PPC_INS_VRLWMI,
+ * PPC_INS_VRLDMI, PPC_INS_VEXTRACTBM, PPC_INS_VEXTRACTHM, PPC_INS_VEXTRACTWM,
+ * PPC_INS_VEXTRACTDM, PPC_INS_VEXTRACTQM, PPC_INS_VPMSUMB, PPC_INS_VPMSUMH,
+ * PPC_INS_VPMSUMW, PPC_INS_VPMSUMD
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecBitOps(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	auto* i128 = irb.getInt128Ty();
+	// Big-endian element numbering: element 0 is the most significant.
+	auto elem = [&](llvm::Value* v, unsigned idx, unsigned bits) -> llvm::Value* {
+		unsigned n = 128u / bits;
+		return irb.CreateTrunc(irb.CreateLShr(v, (n - 1u - idx) * bits), irb.getIntNTy(bits));
+	};
+	auto place = [&](llvm::Value* acc, llvm::Value* e, unsigned idx, unsigned bits) -> llvm::Value* {
+		unsigned n = 128u / bits;
+		return irb.CreateOr(acc, irb.CreateShl(irb.CreateZExt(e, i128), (n - 1u - idx) * bits));
+	};
+	llvm::Value* zero128 = llvm::ConstantInt::get(i128, 0);
+
+	switch (i->id)
+	{
+	case PPC_INS_VEXTRACTBM:
+	case PPC_INS_VEXTRACTHM:
+	case PPC_INS_VEXTRACTWM:
+	case PPC_INS_VEXTRACTDM:
+	case PPC_INS_VEXTRACTQM:
+	{
+		EXPECT_IS_BINARY(i, pi, irb);
+		unsigned bits = i->id == PPC_INS_VEXTRACTBM ? 8 : i->id == PPC_INS_VEXTRACTHM ? 16
+				: i->id == PPC_INS_VEXTRACTWM ? 32 : i->id == PPC_INS_VEXTRACTDM ? 64 : 128;
+		unsigned n = 128u / bits;
+		auto* v = loadOpI128(pi->operands[1], irb);
+		auto* dt = getDefaultType();
+		llvm::Value* r = llvm::ConstantInt::get(dt, 0);
+		for (unsigned k = 0; k < n; ++k)
+		{
+			auto* msb = irb.CreateTrunc(irb.CreateLShr(v, (n - 1u - k) * bits + bits - 1u), irb.getInt1Ty());
+			r = irb.CreateOr(r, irb.CreateShl(irb.CreateZExt(msb, dt), n - 1u - k));
+		}
+		storeOp(pi->operands[0], r, irb);
+		return;
+	}
+	default:
+		break;
+	}
+
+	EXPECT_IS_TERNARY(i, pi, irb);
+	auto* a = loadOpI128(pi->operands[1], irb);
+	auto* b = loadOpI128(pi->operands[2], irb);
+	llvm::Value* r = zero128;
+
+	switch (i->id)
+	{
+	case PPC_INS_VSLV:
+	case PPC_INS_VSRV:
+	{
+		bool left = i->id == PPC_INS_VSLV;
+		auto* i16 = irb.getInt16Ty();
+		for (unsigned k = 0; k < 16; ++k)
+		{
+			auto* sh = irb.CreateZExt(irb.CreateAnd(elem(b, k, 8), irb.getInt8(7)), i16);
+			llvm::Value* e;
+			if (left)
+			{
+				auto* hi = irb.CreateZExt(elem(a, k, 8), i16);
+				llvm::Value* lo = k < 15 ? irb.CreateZExt(elem(a, k + 1, 8), i16) : irb.getInt16(0);
+				auto* src = irb.CreateOr(irb.CreateShl(hi, 8), lo);
+				e = irb.CreateTrunc(irb.CreateLShr(irb.CreateShl(src, sh), 8), irb.getInt8Ty());
+			}
+			else
+			{
+				llvm::Value* hi = k > 0 ? irb.CreateZExt(elem(a, k - 1, 8), i16) : irb.getInt16(0);
+				auto* lo = irb.CreateZExt(elem(a, k, 8), i16);
+				auto* src = irb.CreateOr(irb.CreateShl(hi, 8), lo);
+				e = irb.CreateTrunc(irb.CreateLShr(src, sh), irb.getInt8Ty());
+			}
+			r = place(r, e, k, 8);
+		}
+		break;
+	}
+	case PPC_INS_VRLWNM:
+	case PPC_INS_VRLDNM:
+	case PPC_INS_VRLWMI:
+	case PPC_INS_VRLDMI:
+	{
+		bool dw = i->id == PPC_INS_VRLDNM || i->id == PPC_INS_VRLDMI;
+		bool mi = i->id == PPC_INS_VRLWMI || i->id == PPC_INS_VRLDMI;
+		unsigned bits = dw ? 64 : 32;
+		unsigned n = 128u / bits;
+		auto* ty = irb.getIntNTy(bits);
+		auto* fieldMask = llvm::ConstantInt::get(ty, bits - 1);
+		auto* ones = llvm::ConstantInt::getAllOnesValue(ty);
+		auto* t = mi ? loadOpI128(pi->operands[0], irb) : nullptr;
+		for (unsigned k = 0; k < n; ++k)
+		{
+			auto* ctl = elem(b, k, bits);
+			auto* sh = irb.CreateAnd(ctl, fieldMask);
+			auto* mb = irb.CreateAnd(irb.CreateLShr(ctl, 16), fieldMask);
+			auto* me = irb.CreateAnd(irb.CreateLShr(ctl, 8), fieldMask);
+			auto* src = elem(a, k, bits);
+			auto* back = irb.CreateAnd(irb.CreateSub(llvm::ConstantInt::get(ty, bits), sh), fieldMask);
+			auto* rot = irb.CreateOr(irb.CreateShl(src, sh), irb.CreateLShr(src, back));
+			auto* m1 = irb.CreateLShr(ones, mb);
+			auto* m2 = irb.CreateShl(ones, irb.CreateSub(fieldMask, me));
+			auto* mask = irb.CreateSelect(irb.CreateICmpULE(mb, me), irb.CreateAnd(m1, m2), irb.CreateOr(m1, m2));
+			llvm::Value* e = irb.CreateAnd(rot, mask);
+			if (mi)
+			{
+				e = irb.CreateOr(e, irb.CreateAnd(elem(t, k, bits), irb.CreateNot(mask)));
+			}
+			r = place(r, e, k, bits);
+		}
+		break;
+	}
+	case PPC_INS_VPMSUMB:
+	case PPC_INS_VPMSUMH:
+	case PPC_INS_VPMSUMW:
+	case PPC_INS_VPMSUMD:
+	{
+		unsigned bits = i->id == PPC_INS_VPMSUMB ? 8 : i->id == PPC_INS_VPMSUMH ? 16
+				: i->id == PPC_INS_VPMSUMW ? 32 : 64;
+		unsigned n = 128u / bits;
+		auto* wide = irb.getIntNTy(2 * bits);
+		auto clmul = [&](llvm::Value* x, llvm::Value* y) -> llvm::Value* {
+			auto* xw = irb.CreateZExt(x, wide);
+			auto* yw = irb.CreateZExt(y, wide);
+			llvm::Value* acc = llvm::ConstantInt::get(wide, 0);
+			for (unsigned bit = 0; bit < bits; ++bit)
+			{
+				auto* set = irb.CreateTrunc(irb.CreateLShr(yw, bit), irb.getInt1Ty());
+				acc = irb.CreateXor(acc, irb.CreateSelect(set, irb.CreateShl(xw, bit), llvm::ConstantInt::get(wide, 0)));
+			}
+			return acc;
+		};
+		for (unsigned k = 0; k < n / 2u; ++k)
+		{
+			auto* e = irb.CreateXor(
+					clmul(elem(a, 2 * k, bits), elem(b, 2 * k, bits)),
+					clmul(elem(a, 2 * k + 1, bits), elem(b, 2 * k + 1, bits)));
+			r = place(r, e, k, 2 * bits);
+		}
+		break;
+	}
+	default:
+		throw GenericError("unhandled vector bit op");
+	}
+	storeOpI128(pi->operands[0], r, irb);
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec
