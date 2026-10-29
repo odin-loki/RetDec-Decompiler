@@ -595,7 +595,7 @@ bool ValueProtect::protectStack()
 				// LLVM cannot fold its loads; protecting it would copy an
 				// opaque [N x i8] into it byte by byte.
 				if (a->getAllocatedType()->isArrayTy()
-						&& a->getName().starts_with("stack_frame_"))
+						&& (a->getName().starts_with("stack_frame_") || a->getName().starts_with("stack_var_")))
 				{
 					continue;
 				}

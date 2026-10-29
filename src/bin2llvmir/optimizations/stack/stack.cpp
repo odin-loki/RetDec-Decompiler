@@ -5,6 +5,7 @@
 * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
+#include <algorithm>
 #include <regex>
 
 #include <llvm/IR/Constants.h>
@@ -132,6 +133,7 @@ bool StackAnalysis::run()
 
 	for (auto& f : *_module)
 	{
+		mergeStoredOverLocals(f);
 		mergeWalkedLocals(f);
 	}
 
@@ -152,7 +154,148 @@ std::optional<int> stackOffsetOf(Config* config, AllocaInst* a)
 }
 
 
+/// Follows @a v through casts and through register round-trips within one
+/// basic block (`store X, @reg ... load @reg`) to the value it came from.
+Value* resolveLocally(Value* v, int depth = 0)
+{
+	for (; v && depth < 16; ++depth)
+	{
+		if (auto* c = dyn_cast<CastInst>(v))
+		{
+			v = c->getOperand(0);
+			continue;
+		}
+		auto* l = dyn_cast<LoadInst>(v);
+		if (l == nullptr) return v;
+		auto* ptr = l->getPointerOperand();
+		if (!isa<GlobalVariable>(ptr) && !isa<AllocaInst>(ptr)) return v;
+		StoreInst* def = nullptr;
+		for (auto it = l->getReverseIterator(), e = l->getParent()->rend(); it != e; ++it)
+		{
+			if (auto* s = dyn_cast<StoreInst>(&*it); s && s->getPointerOperand() == ptr)
+			{
+				def = s;
+				break;
+			}
+			if (auto* call = dyn_cast<CallInst>(&*it))
+			{
+				auto* fn = call->getCalledFunction();
+				if (fn == nullptr || !(fn->isIntrinsic() || fn->getName().starts_with("__asm_"))) return v;
+			}
+		}
+		if (def == nullptr) return v;
+		v = def->getValueOperand();
+	}
+	return v;
+}
+
+/// Byte width of the element a `__asm_rep_stos?_memset` stores, or 0.
+unsigned repStosWidth(const CallInst* call)
+{
+	auto* fn = call ? call->getCalledFunction() : nullptr;
+	if (fn == nullptr || call->arg_size() != 3) return 0;
+	auto n = fn->getName();
+	if (n == "__asm_rep_stosb_memset") return 1;
+	if (n == "__asm_rep_stosw_memset") return 2;
+	if (n == "__asm_rep_stosd_memset") return 4;
+	if (n == "__asm_rep_stosq_memset") return 8;
+	return 0;
+}
+
 } // anonymous namespace
+
+/**
+ * A local array cleared with `rep stos` is one object, not the slots that
+ * happen to be addressed by constant offsets inside it.
+ *
+ * `int dp[32] = {0}` at -O2 is `lea rdi,[rsp+8]; mov ecx,16; rep stosq`, and
+ * `dp[cap]` is reached through another slot's address plus a computed
+ * offset.  Kept as separate 8-byte allocas the clear overruns its slot and the
+ * computed reads land on whatever the C compiler put next to it.  Every local
+ * slot inside the cleared bytes joins one frame object, which is then emitted
+ * as an array.
+ */
+void StackAnalysis::mergeStoredOverLocals(llvm::Function& f)
+{
+	if (f.isDeclaration()) return;
+	const auto& dl = _module->getDataLayout();
+
+	std::map<int, AllocaInst*> byOff;
+	std::map<AllocaInst*, int> offOf;
+	for (auto& i : f.getEntryBlock())
+	{
+		auto* a = dyn_cast<AllocaInst>(&i);
+		if (a == nullptr || !a->isStaticAlloca()) continue;
+		auto o = stackOffsetOf(_config, a);
+		if (!o.has_value() || *o >= 0 || byOff.count(*o)) continue;
+		byOff[*o] = a;
+		offOf[a] = *o;
+	}
+	if (byOff.empty()) return;
+
+	// [lo, hi) byte ranges the clears cover.
+	std::vector<std::pair<int, int>> ranges;
+	for (auto& bb : f)
+	for (auto& i : bb)
+	{
+		auto* call = dyn_cast<CallInst>(&i);
+		unsigned w = repStosWidth(call);
+		if (w == 0) continue;
+		auto* a = dyn_cast<AllocaInst>(resolveLocally(call->getArgOperand(0)));
+		auto* cnt = dyn_cast<ConstantInt>(resolveLocally(call->getArgOperand(2)));
+		if (a == nullptr || cnt == nullptr || !offOf.count(a)) continue;
+		uint64_t bytes = cnt->getZExtValue() * w;
+		if (bytes == 0 || bytes > (1u << 20)) continue;
+		int lo = offOf[a];
+		ranges.push_back({lo, lo + int(bytes)});
+	}
+	if (ranges.empty()) return;
+	std::sort(ranges.begin(), ranges.end());
+
+	// Merge overlapping ranges, growing each by the slots that start in it.
+	std::vector<std::pair<int, int>> merged;
+	for (auto r : ranges)
+	{
+		if (!merged.empty() && r.first < merged.back().second)
+			merged.back().second = std::max(merged.back().second, r.second);
+		else
+			merged.push_back(r);
+	}
+
+	IRBuilder<> irb(&*f.getEntryBlock().getFirstInsertionPt());
+	for (auto [lo, hi] : merged)
+	{
+		std::vector<std::pair<AllocaInst*, int>> members;
+		for (auto it = byOff.lower_bound(lo); it != byOff.end() && it->first < hi; ++it)
+		{
+			members.push_back({it->second, it->first});
+			hi = std::max<int>(hi, it->first
+					+ int(dl.getTypeAllocSize(it->second->getAllocatedType())));
+		}
+		if (members.empty()) continue;
+		if (members.size() == 1 && hi - lo <= int(dl.getTypeAllocSize(
+				members[0].first->getAllocatedType())))
+			continue;
+
+		irb.SetInsertPoint(&*f.getEntryBlock().getFirstInsertionPt());
+		auto* frameTy = ArrayType::get(irb.getInt8Ty(), hi - lo);
+		auto* frame = irb.CreateAlloca(frameTy, nullptr,
+				"stack_var_" + std::to_string(lo));
+		frame->setAlignment(Align(16));
+		for (auto& [a, o] : members)
+		{
+			irb.SetInsertPoint(a);
+			Value* addr = o == lo
+					? static_cast<Value*>(frame)
+					: irb.CreateConstInBoundsGEP2_32(frameTy, frame, 0, o - lo);
+			a->replaceAllUsesWith(addr);
+			if (o == lo) frame->takeName(a);
+			for (auto it = _typedViews.begin(); it != _typedViews.end();)
+				it = (it->first.first == a || it->second == a) ? _typedViews.erase(it) : std::next(it);
+			a->eraseFromParent();
+		}
+	}
+}
 
 /**
  * Local slots one pointer walks across are one array, not separate variables.
