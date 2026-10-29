@@ -24049,6 +24049,36 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VPSHUFBITQMB_selects_bits)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VFIXUPIMMPD_zmm_masked_emits_fixupimm_intrinsic)
+{
+	SKIP_MODE_16;
+	auto* f = translateTextOrBytes("vfixupimmpd zmm1 {k1}, zmm2, zmm3, 5", {0x62, 0xf3, 0xed, 0x49, 0x54, 0xcb, 0x05});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.avx512.mask.fixupimm.pd.512")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VFIXUPIMMPS_xmm_emits_fixupimm_intrinsic)
+{
+	SKIP_MODE_16;
+	auto* f = translateTextOrBytes("vfixupimmps xmm1, xmm2, xmm3, 5", {0x62, 0xf3, 0x6d, 0x08, 0x54, 0xcb, 0x05});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.avx512.mask.fixupimm.ps.128")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VFIXUPIMMSD_zeroing_emits_fixupimm_intrinsic)
+{
+	SKIP_MODE_16;
+	auto* f = translateTextOrBytes("vfixupimmsd xmm1 {k1} {z}, xmm2, xmm3, 5", {0x62, 0xf3, 0xed, 0x89, 0x55, 0xcb, 0x05});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.avx512.maskz.fixupimm.sd")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

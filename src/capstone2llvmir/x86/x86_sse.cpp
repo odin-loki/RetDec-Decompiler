@@ -10558,5 +10558,77 @@ void Capstone2LlvmIrTranslatorX86_impl::translateVpshufbitqmb(cs_insn* i, cs_x86
 	storeRegister(xi->operands[0].reg, r, irb);
 }
 
+/**
+ * VFIXUPIMMPS/PD/SS/SD through the llvm.x86.avx512.mask[z].fixupimm.*
+ * intrinsics, with the writemask and {z} passed through.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateFixupimm(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	bool dbl = i->id == X86_INS_VFIXUPIMMPD || i->id == X86_INS_VFIXUPIMMSD;
+	bool scalar = i->id == X86_INS_VFIXUPIMMSS || i->id == X86_INS_VFIXUPIMMSD;
+	int maskOp = -1;
+	std::vector<unsigned> ops;
+	for (unsigned k = 0; k < xi->op_count; ++k)
+	{
+		auto& o = xi->operands[k];
+		if (o.type == X86_OP_REG && o.reg >= X86_REG_K0 && o.reg <= X86_REG_K7) maskOp = int(k);
+		else ops.push_back(k);
+	}
+	if (ops.size() != 4 || xi->operands[ops[3]].type != X86_OP_IMM || xi->operands[ops[0]].type != X86_OP_REG)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned bits = scalar ? 128 : xi->operands[ops[0]].size * 8;
+	if (bits != 128 && bits != 256 && bits != 512)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned eb = dbl ? 64 : 32;
+	unsigned n = bits / eb;
+	unsigned b0 = bits, b1 = bits, b2 = bits;
+	Value* a = loadVectorOp(xi->operands[ops[0]], irb, b0);
+	Value* b = loadVectorOp(xi->operands[ops[1]], irb, b1);
+	Value* c = scalar && xi->operands[ops[2]].type == X86_OP_MEM
+			? loadOp(xi->operands[ops[2]], irb)
+			: loadVectorOp(xi->operands[ops[2]], irb, b2);
+	if (a == nullptr || b == nullptr || c == nullptr)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	auto* intTy = irb.getIntNTy(bits);
+	auto* fty = dbl ? irb.getDoubleTy() : irb.getFloatTy();
+	auto* fv = FixedVectorType::get(fty, n);
+	auto* iv = FixedVectorType::get(irb.getIntNTy(eb), n);
+	auto asInt = [&](Value* v) {
+		if (v->getType()->isFloatingPointTy()) v = irb.CreateBitCast(v, irb.getIntNTy(v->getType()->getPrimitiveSizeInBits()));
+		return irb.CreateZExtOrTrunc(v, intTy);
+	};
+	a = irb.CreateBitCast(asInt(a), fv);
+	b = irb.CreateBitCast(asInt(b), fv);
+	c = irb.CreateBitCast(asInt(c), iv);
+	bool zeroing = false;
+	for (unsigned k = 0; k < xi->op_count; ++k) zeroing |= bool(xi->operands[k].avx_zero_opmask);
+	std::string name = std::string("llvm.x86.avx512.") + (zeroing ? "maskz" : "mask") + ".fixupimm."
+			+ (scalar ? (dbl ? "sd" : "ss") : (dbl ? "pd." : "ps.") + std::to_string(bits));
+	auto iid = Intrinsic::lookupIntrinsicID(name);
+	if (iid == Intrinsic::not_intrinsic)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	auto* fn = Intrinsic::getOrInsertDeclaration(_module, iid);
+	auto* maskTy = fn->getFunctionType()->getParamType(4);
+	Value* m = maskOp >= 0
+			? irb.CreateZExtOrTrunc(loadRegister(xi->operands[maskOp].reg, irb), maskTy)
+			: Constant::getAllOnesValue(maskTy);
+	std::vector<Value*> args{a, b, c, irb.getInt32(int32_t(xi->operands[ops[3]].imm & 0xff)), m};
+	if (fn->getFunctionType()->getNumParams() == 6) args.push_back(irb.getInt32(4));
+	Value* r = irb.CreateCall(fn, args);
+	storeVectorOp(xi->operands[ops[0]], irb.CreateBitCast(r, intTy), bits, irb);
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec
