@@ -20141,6 +20141,39 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STWAT_umax)
 	EXPECT_JUST_MEMORY_STORED({{0x1000, 0x50_dw}});
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSRQPI_floor)
+{
+	ALL_MODES;
+
+	// The test emulator has no fp128 arithmetic, so check the lifted IR.
+	auto* f = translate(utils::hexStringToBytes("fc 41 1e 0a")); // xsrqpi 1, v2, v3, 3
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("llvm.floor.f128"));
+	EXPECT_FALSE(hasAsmCall(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSRQPIX_round)
+{
+	ALL_MODES;
+
+	// The test emulator has no fp128 arithmetic, so check the lifted IR.
+	auto* f = translate(utils::hexStringToBytes("fc 40 18 0b")); // xsrqpix 0, v2, v3, 0
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("llvm.round.f128"));
+	EXPECT_FALSE(hasAsmCall(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSRQPXP)
+{
+	ALL_MODES;
+
+	// The test emulator has no fp128 arithmetic, so check the lifted IR.
+	auto* f = translate(utils::hexStringToBytes("fc 40 18 4a")); // xsrqpxp 0, v2, v3, 0
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasFp128Op(f, llvm::Instruction::FPTrunc)) << dumpFunction(f);
+	EXPECT_FALSE(hasAsmCall(f)) << dumpFunction(f);
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

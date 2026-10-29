@@ -12191,5 +12191,56 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateAtomicMemOp(cs_insn* i, cs_
 	}
 }
 
+
+/**
+ * PPC_INS_XSRQPI, PPC_INS_XSRQPIX -- round quad-precision to an integral
+ * value; PPC_INS_XSRQPXP -- round to double-extended (64-bit significand)
+ * precision. Operands are R, VRT, VRB, RMC.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxRoundQuad(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	if (pi->op_count != 4 || pi->operands[0].type != PPC_OP_IMM || pi->operands[1].type != PPC_OP_REG
+			|| pi->operands[2].type != PPC_OP_REG || pi->operands[3].type != PPC_OP_IMM)
+	{
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+	auto vrOp = [](cs_ppc_op op) {
+		if (op.reg >= PPC_REG_VF0 && op.reg <= PPC_REG_VF31) op.reg = ppc_reg(PPC_REG_V0 + (op.reg - PPC_REG_VF0));
+		return op;
+	};
+	auto dst = vrOp(pi->operands[1]);
+	auto src = vrOp(pi->operands[2]);
+	auto* f128 = llvm::Type::getFP128Ty(irb.getContext());
+	auto* x = irb.CreateBitCast(loadOpI128(src, irb), f128);
+	bool r = pi->operands[0].imm & 1;
+	unsigned rmc = unsigned(pi->operands[3].imm) & 3;
+	llvm::Value* res = nullptr;
+	if (i->id == PPC_INS_XSRQPXP)
+	{
+		// The rounding mode is not modelled; x86_fp80 has the same 64-bit
+		// significand, and the conversion rounds to nearest even.
+		res = irb.CreateFPExt(irb.CreateFPTrunc(x, llvm::Type::getX86_FP80Ty(irb.getContext())), f128);
+	}
+	else
+	{
+		llvm::Intrinsic::ID id = llvm::Intrinsic::roundeven;
+		if (!r)
+		{
+			// R=0: RMC 0 is round to nearest away, 3 is FPSCR[RN] (assumed
+			// nearest even); 1 and 2 are reserved.
+			id = rmc == 0 ? llvm::Intrinsic::round : llvm::Intrinsic::roundeven;
+		}
+		else
+		{
+			static const llvm::Intrinsic::ID ids[] = {
+					llvm::Intrinsic::roundeven, llvm::Intrinsic::trunc, llvm::Intrinsic::ceil, llvm::Intrinsic::floor};
+			id = ids[rmc];
+		}
+		res = irb.CreateCall(llvm::Intrinsic::getOrInsertDeclaration(_module, id, {f128}), {x});
+	}
+	storeOpI128(dst, irb.CreateBitCast(res, irb.getInt128Ty()), irb);
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec
