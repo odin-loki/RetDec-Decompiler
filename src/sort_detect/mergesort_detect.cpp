@@ -60,7 +60,8 @@ static bool hasMergeLoop(const ssa::SSAFunction& fn)
 	int loads = countOp(fn, ssa::IrInstr::Op::Load);
 	int cmps = countOp(fn, ssa::IrInstr::Op::Compare);
 	int cbs = countOp(fn, ssa::IrInstr::Op::CondBranch);
-	return loads >= 2 && cmps >= 1 && cbs >= 2;
+	// ...and to be a loop: heapify has the same opcodes and no cycle.
+	return loads >= 2 && cmps >= 1 && cbs >= 2 && ssa::hasCycle(fn);
 }
 
 // Detect auxiliary buffer allocation: a call to malloc/calloc/alloca/new
