@@ -87,5 +87,11 @@
   "v3 <= 1.0e+9 ? (uint64_t)v6 : 0x3b9aca00",
   "0.25f * (float32_t)((uint32_t)a1 >> 8)",
   "!__asm_ucvtf"
+ ],
+ "audit5-mips64el-pie": [
+  "float32_t g3 = 0.25f;",
+  "0.25f * (float32_t)((uint32_t)a1 >> 8)",
+  "!__asm_trunc",
+  "!3.05"
  ]
 }

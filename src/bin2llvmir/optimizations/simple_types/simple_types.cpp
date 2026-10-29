@@ -797,8 +797,13 @@ void SimpleTypesAnalysis::processUse(llvm::Value* current, Value* u, std::queue<
 			 || user->getOpcode() == Instruction::FPTrunc
 			 || user->getOpcode() == Instruction::FPExt)
 	{
-		// Delegated to simpleTypesFpExt (see simple_types_fp_ext.cpp).
-		simpleTypesFpExt(user, toProcess);
+		// A conversion is a type boundary: its result is a different value
+		// of a different type, so it must not join its operand's equivalence
+		// set. Merging across fpext made an N64 mips `lwc1` float constant
+		// (loaded, then fpext'ed into the double-modelled $f0) a double global,
+		// read 8 bytes and turned 0.25f into 3.05e-5. simpleTypesFpExt() used
+		// to be called here and did exactly that merge.
+		LOG << "\t\t\tskipped: FP conversion is a type boundary" << std::endl;
 	}
 	else if (user->getOpcode() == Instruction::PtrToInt ||
 	         user->getOpcode() == Instruction::BitCast)
