@@ -170,6 +170,7 @@ class Capstone2LlvmIrTranslatorRiscv_impl :
 		void translateMv(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateEcall(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateNop(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateCoreV(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateThead(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateFence(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateMul(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);

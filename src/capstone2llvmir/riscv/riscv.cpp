@@ -417,7 +417,8 @@ bool Capstone2LlvmIrTranslatorRiscv_impl::isAllowedExtraMode(cs_mode m)
 			| static_cast<unsigned>(CS_MODE_RISCV_ZBS)
 			| static_cast<unsigned>(CS_MODE_RISCV_VENTANA)
 			| static_cast<unsigned>(CS_MODE_RISCV_ZCMP_ZCMT_ZCE)
-			| static_cast<unsigned>(CS_MODE_RISCV_THEAD);
+			| static_cast<unsigned>(CS_MODE_RISCV_THEAD)
+			| static_cast<unsigned>(CS_MODE_RISCV_COREV);
 	auto stripped = static_cast<cs_mode>(static_cast<unsigned>(m) & ~ext);
 	return stripped == CS_MODE_LITTLE_ENDIAN
 			|| stripped == CS_MODE_BIG_ENDIAN;
@@ -6804,6 +6805,174 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateThead(cs_insn* i, cs_riscv* r
 			return;
 	}
 	str(rd, r);
+}
+
+
+void Capstone2LlvmIrTranslatorRiscv_impl::translateCoreV(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	// CORE-V (XCV) ALU, bit-manipulation and packed-SIMD operations, decoded
+	// from the mnemonic: cv.<op>[.sc|.sci][.b|.h].
+	std::string m = i->mnemonic;
+	auto* xt = getDefaultType();
+	auto* i32 = irb.getInt32Ty();
+	auto c32 = [&](uint64_t v) { return llvm::ConstantInt::get(i32, v); };
+	auto ldo = [&](unsigned k) -> llvm::Value* {
+		auto& o = ri->operands[k];
+		if (o.type == RISCV_OP_IMM) return llvm::ConstantInt::getSigned(i32, o.imm);
+		if (o.reg == RISCV_REG_X0) return c32(0);
+		return irb.CreateZExtOrTrunc(loadRegister(o.reg, irb), i32);
+	};
+	auto fallback = [&]() { translatePseudoAsmGeneric(i, ri, irb); };
+	if (m.compare(0, 3, "cv.") != 0 || ri->op_count < 2 || ri->operands[0].type != RISCV_OP_REG)
+	{
+		fallback();
+		return;
+	}
+	std::vector<std::string> parts;
+	{
+		size_t p = 3;
+		while (p <= m.size())
+		{
+			size_t q = m.find('.', p);
+			if (q == std::string::npos) q = m.size();
+			parts.push_back(m.substr(p, q - p));
+			p = q + 1;
+		}
+	}
+	std::string op = parts[0];
+	unsigned eb = 0;
+	bool sc = false, sci = false;
+	for (size_t k = 1; k < parts.size(); ++k)
+	{
+		if (parts[k] == "b") eb = 8;
+		else if (parts[k] == "h") eb = 16;
+		else if (parts[k] == "sc") sc = true;
+		else if (parts[k] == "sci") sci = true;
+		else { fallback(); return; }
+	}
+	auto* a = ldo(1);
+	llvm::Value* r = nullptr;
+	auto sminmax = [&](llvm::Value* x, llvm::Value* y, bool mx, bool sg) {
+		auto* c = mx ? (sg ? irb.CreateICmpSGT(x, y) : irb.CreateICmpUGT(x, y))
+				: (sg ? irb.CreateICmpSLT(x, y) : irb.CreateICmpULT(x, y));
+		return irb.CreateSelect(c, x, y);
+	};
+	if (eb == 0)
+	{
+		auto* b = ri->op_count > 2 ? ldo(2) : nullptr;
+		if (op == "abs") r = irb.CreateSelect(irb.CreateICmpSLT(a, c32(0)), irb.CreateNeg(a), a);
+		else if (op == "min" && b) r = sminmax(a, b, false, true);
+		else if (op == "minu" && b) r = sminmax(a, b, false, false);
+		else if (op == "max" && b) r = sminmax(a, b, true, true);
+		else if (op == "maxu" && b) r = sminmax(a, b, true, false);
+		else if (op == "slet" && b) r = irb.CreateZExt(irb.CreateICmpSLE(a, b), i32);
+		else if (op == "sletu" && b) r = irb.CreateZExt(irb.CreateICmpULE(a, b), i32);
+		else if (op == "exths") r = irb.CreateSExt(irb.CreateTrunc(a, irb.getInt16Ty()), i32);
+		else if (op == "exthz") r = irb.CreateZExt(irb.CreateTrunc(a, irb.getInt16Ty()), i32);
+		else if (op == "extbs") r = irb.CreateSExt(irb.CreateTrunc(a, irb.getInt8Ty()), i32);
+		else if (op == "extbz") r = irb.CreateZExt(irb.CreateTrunc(a, irb.getInt8Ty()), i32);
+		else if (op == "cnt") r = irb.CreateUnaryIntrinsic(llvm::Intrinsic::ctpop, a);
+		else if (op == "ff1") r = irb.CreateBinaryIntrinsic(llvm::Intrinsic::cttz, a, irb.getFalse());
+		else if (op == "fl1")
+		{
+			auto* lz = irb.CreateBinaryIntrinsic(llvm::Intrinsic::ctlz, a, irb.getFalse());
+			r = irb.CreateSelect(irb.CreateICmpEQ(a, c32(0)), c32(32), irb.CreateSub(c32(31), lz));
+		}
+		else if (op == "clb")
+		{
+			auto* x = irb.CreateXor(a, irb.CreateAShr(a, 31));
+			auto* lz = irb.CreateBinaryIntrinsic(llvm::Intrinsic::ctlz, x, irb.getFalse());
+			r = irb.CreateSelect(irb.CreateICmpEQ(a, c32(0)), c32(0), irb.CreateSub(lz, c32(1)));
+		}
+		else if ((op == "clip" || op == "clipu" || op == "clipr" || op == "clipur") && b)
+		{
+			bool u = op == "clipu" || op == "clipur";
+			llvm::Value* hi;
+			llvm::Value* lo;
+			if (op == "clip" || op == "clipu")
+			{
+				uint64_t n = uint64_t(ri->operands[2].imm) & 31;
+				int64_t h = n ? (int64_t(1) << (n - 1)) - 1 : 0;
+				hi = c32(h);
+				lo = u ? c32(0) : llvm::ConstantInt::getSigned(i32, -h - 1);
+			}
+			else
+			{
+				hi = b;
+				lo = u ? c32(0) : irb.CreateSub(irb.CreateNeg(b), c32(1));
+			}
+			r = irb.CreateSelect(irb.CreateICmpSGT(a, hi), hi, irb.CreateSelect(irb.CreateICmpSLT(a, lo), lo, a));
+		}
+		else if (op == "ror" && b)
+		{
+			auto* s = irb.CreateAnd(b, c32(31));
+			r = irb.CreateOr(irb.CreateLShr(a, s), irb.CreateShl(a, irb.CreateAnd(irb.CreateSub(c32(32), s), c32(31))));
+		}
+		else { fallback(); return; }
+		storeRegister(ri->operands[0].reg, irb.CreateZExtOrTrunc(r, xt), irb);
+		return;
+	}
+
+	// Packed SIMD.
+	unsigned n = 32 / eb;
+	auto* et = irb.getIntNTy(eb);
+	auto lane = [&](llvm::Value* v, unsigned k) { return irb.CreateTrunc(irb.CreateLShr(v, k * eb), et); };
+	llvm::Value* b = nullptr;
+	if (op != "abs")
+	{
+		if (ri->op_count < 3) { fallback(); return; }
+		b = ldo(2);
+	}
+	bool dot = op == "dotup" || op == "dotusp" || op == "dotsp";
+	llvm::Value* acc = c32(0);
+	r = c32(0);
+	for (unsigned k = 0; k < n; ++k)
+	{
+		auto* x = lane(a, k);
+		llvm::Value* y = nullptr;
+		if (b) y = (sc || sci) ? irb.CreateTrunc(b, et) : lane(b, k);
+		llvm::Value* e = nullptr;
+		auto cmp = [&](llvm::CmpInst::Predicate p) {
+			return irb.CreateSExt(irb.CreateICmp(p, x, y), et);
+		};
+		auto* sh = y ? irb.CreateAnd(y, llvm::ConstantInt::get(et, eb - 1)) : nullptr;
+		if (op == "add") e = irb.CreateAdd(x, y);
+		else if (op == "sub") e = irb.CreateSub(x, y);
+		else if (op == "and") e = irb.CreateAnd(x, y);
+		else if (op == "or") e = irb.CreateOr(x, y);
+		else if (op == "xor") e = irb.CreateXor(x, y);
+		else if (op == "avg") e = irb.CreateAShr(irb.CreateAdd(x, y), 1);
+		else if (op == "avgu") e = irb.CreateLShr(irb.CreateAdd(x, y), 1);
+		else if (op == "min") e = sminmax(x, y, false, true);
+		else if (op == "minu") e = sminmax(x, y, false, false);
+		else if (op == "max") e = sminmax(x, y, true, true);
+		else if (op == "maxu") e = sminmax(x, y, true, false);
+		else if (op == "sll") e = irb.CreateShl(x, sh);
+		else if (op == "srl") e = irb.CreateLShr(x, sh);
+		else if (op == "sra") e = irb.CreateAShr(x, sh);
+		else if (op == "abs") e = irb.CreateSelect(irb.CreateICmpSLT(x, llvm::ConstantInt::get(et, 0)), irb.CreateNeg(x), x);
+		else if (op == "cmpeq") e = cmp(llvm::CmpInst::ICMP_EQ);
+		else if (op == "cmpne") e = cmp(llvm::CmpInst::ICMP_NE);
+		else if (op == "cmpgt") e = cmp(llvm::CmpInst::ICMP_SGT);
+		else if (op == "cmpge") e = cmp(llvm::CmpInst::ICMP_SGE);
+		else if (op == "cmplt") e = cmp(llvm::CmpInst::ICMP_SLT);
+		else if (op == "cmple") e = cmp(llvm::CmpInst::ICMP_SLE);
+		else if (op == "cmpgtu") e = cmp(llvm::CmpInst::ICMP_UGT);
+		else if (op == "cmpgeu") e = cmp(llvm::CmpInst::ICMP_UGE);
+		else if (op == "cmpltu") e = cmp(llvm::CmpInst::ICMP_ULT);
+		else if (op == "cmpleu") e = cmp(llvm::CmpInst::ICMP_ULE);
+		else if (dot)
+		{
+			auto* xe = op == "dotsp" ? irb.CreateSExt(x, i32) : irb.CreateZExt(x, i32);
+			auto* ye = op == "dotup" ? irb.CreateZExt(y, i32) : irb.CreateSExt(y, i32);
+			acc = irb.CreateAdd(acc, irb.CreateMul(xe, ye));
+			continue;
+		}
+		else { fallback(); return; }
+		r = irb.CreateOr(r, irb.CreateShl(irb.CreateZExt(e, i32), k * eb));
+	}
+	if (dot) r = acc;
+	storeRegister(ri->operands[0].reg, irb.CreateZExtOrTrunc(r, xt), irb);
 }
 
 
