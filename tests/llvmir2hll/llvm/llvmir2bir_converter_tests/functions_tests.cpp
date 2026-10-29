@@ -8,7 +8,12 @@
 #include <gtest/gtest.h>
 
 #include "llvmir2hll/llvm/llvmir2bir_converter_tests/base_tests.h"
+#include <llvm/IR/Constants.h>
+#include <llvm/IR/InstIterator.h>
+#include <llvm/IR/Instructions.h>
+
 #include "retdec/llvmir2hll/ir/function.h"
+#include "retdec/llvmir2hll/llvm/llvmir2bir_converter.h"
 #include "retdec/llvmir2hll/ir/int_type.h"
 #include "retdec/llvmir2hll/ir/module.h"
 #include "retdec/llvmir2hll/ir/pointer_type.h"
@@ -178,6 +183,40 @@ LocalVariableWithInvalidIdentifierNameHasValidIdentifierNameAfterConversion) {
 	auto varSet = f->getLocalVars();
 	auto var = *(varSet.begin());
 	ASSERT_EQ("_24_example_variable1", var->getName());
+}
+
+TEST_F(LLVMIR2BIRConverterFunctionsTests,
+PairedIntegerLoadLanesAreLoweredToShiftsOfTheScalar) {
+	// gcc -O2 bubblesort: movq/pshufd/movd reads two adjacent ints as one
+	// i64; lane 1 must become the high half, not lane 0 again.
+	auto m = parseLLVMIR(R"(
+		define i64 @f(i64 %x) {
+			%z = zext i64 %x to i128
+			%v = bitcast i128 %z to <4 x i32>
+			%hi = extractelement <4 x i32> %v, i64 1
+			%s = shufflevector <4 x i32> %v, <4 x i32> poison, <2 x i32> <i32 1, i32 0>
+			%sw = bitcast <2 x i32> %s to i64
+			%h = zext i32 %hi to i64
+			%r = add i64 %h, %sw
+			ret i64 %r
+		}
+	)");
+	LLVMIR2BIRConverter::lowerIntegerVectorLanes(*m);
+	unsigned shr32 = 0, shl32 = 0;
+	for (auto &i : llvm::instructions(*m->getFunction("f"))) {
+		ASSERT_FALSE(llvm::isa<llvm::ExtractElementInst>(i));
+		ASSERT_FALSE(i.getType()->isVectorTy());
+		if (i.getOpcode() == llvm::Instruction::LShr) {
+			auto *c = llvm::cast<llvm::ConstantInt>(i.getOperand(1));
+			shr32 += c->getZExtValue() == 32;
+		}
+		if (i.getOpcode() == llvm::Instruction::Shl) {
+			auto *c = llvm::cast<llvm::ConstantInt>(i.getOperand(1));
+			shl32 += c->getZExtValue() == 32;
+		}
+	}
+	EXPECT_EQ(2u, shr32);
+	EXPECT_EQ(1u, shl32);
 }
 
 } // namespace tests

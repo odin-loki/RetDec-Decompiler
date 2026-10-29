@@ -44,6 +44,7 @@ class VariablesManager;
 */
 class LLVMIR2BIRConverter: private retdec::utils::NonCopyable {
 public:
+	static void lowerIntegerVectorLanes(llvm::Module &m);
 	static ShPtr<LLVMIR2BIRConverter> create(llvm::Pass *basePass);
 
 	ShPtr<Module> convert(llvm::Module *llvmModule,

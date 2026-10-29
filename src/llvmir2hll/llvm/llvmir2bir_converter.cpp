@@ -6,7 +6,10 @@
 */
 
 #include <memory>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Instructions.h>
 #include <llvm/IR/Module.h>
+#include <llvm/Transforms/Utils/Local.h>
 
 #include "retdec/llvmir2hll/config/config.h"
 #include "retdec/llvmir2hll/ir/expression.h"
@@ -72,6 +75,125 @@ void LLVMIR2BIRConverter::setOptionStrictFPUSemantics(bool strict) {
 * @par Preconditions
 *  - both @a llvmModule and @a semantics are non-null
 */
+
+namespace {
+
+/**
+ * Returns lane @a idx of the integer vector @a vec as a scalar built from the
+ * scalar the vector came from, or nullptr when the lane cannot be traced.
+ */
+llvm::Value *integerVectorLane(llvm::Value *vec, unsigned idx,
+		llvm::IRBuilder<> &irb, unsigned depth = 0) {
+	auto *vt = llvm::dyn_cast<llvm::FixedVectorType>(vec->getType());
+	if (!vt || !vt->getElementType()->isIntegerTy() || depth > 8
+			|| idx >= vt->getNumElements()) {
+		return nullptr;
+	}
+	auto *et = vt->getElementType();
+	unsigned eb = et->getIntegerBitWidth();
+	if (auto *c = llvm::dyn_cast<llvm::Constant>(vec)) {
+		return c->getAggregateElement(idx);
+	}
+	if (auto *bc = llvm::dyn_cast<llvm::BitCastInst>(vec)) {
+		llvm::Value *x = bc->getOperand(0);
+		if (!x->getType()->isIntegerTy()) {
+			return nullptr;
+		}
+		unsigned lo = idx * eb;
+		if (auto *z = llvm::dyn_cast<llvm::ZExtInst>(x)) {
+			unsigned w = z->getOperand(0)->getType()->getIntegerBitWidth();
+			if (lo >= w) {
+				return llvm::ConstantInt::get(et, 0);
+			}
+			if (lo + eb <= w) {
+				x = z->getOperand(0);
+			}
+		}
+		if (lo) {
+			x = irb.CreateLShr(x, lo);
+		}
+		return irb.CreateTrunc(x, et);
+	}
+	if (auto *sv = llvm::dyn_cast<llvm::ShuffleVectorInst>(vec)) {
+		int m = sv->getMaskValue(idx);
+		if (m < 0) {
+			return llvm::UndefValue::get(et);
+		}
+		unsigned n = llvm::cast<llvm::FixedVectorType>(
+			sv->getOperand(0)->getType())->getNumElements();
+		return unsigned(m) < n
+			? integerVectorLane(sv->getOperand(0), m, irb, depth + 1)
+			: integerVectorLane(sv->getOperand(1), m - n, irb, depth + 1);
+	}
+	if (auto *ie = llvm::dyn_cast<llvm::InsertElementInst>(vec)) {
+		auto *ci = llvm::dyn_cast<llvm::ConstantInt>(ie->getOperand(2));
+		if (!ci) {
+			return nullptr;
+		}
+		return ci->getZExtValue() == idx ? ie->getOperand(1)
+			: integerVectorLane(ie->getOperand(0), idx, irb, depth + 1);
+	}
+	return nullptr;
+}
+
+} // anonymous namespace
+
+/**
+ * Rewrites lane reads of integer vectors (extractelement, and bitcasts of a
+ * vector back to an integer) into shifts and truncations of the scalars the
+ * lanes came from. The BIR has no vector types, and its converter would
+ * otherwise read every lane as lane 0 and every shuffle as its first operand,
+ * so a paired 32-bit load compared lane 0 with itself and lost the swap.
+ */
+void LLVMIR2BIRConverter::lowerIntegerVectorLanes(llvm::Module &m) {
+	for (auto &f : m) {
+		std::vector<llvm::Instruction *> work;
+		for (auto &bb : f) {
+			for (auto &i : bb) {
+				if (llvm::isa<llvm::ExtractElementInst>(i)
+						|| (llvm::isa<llvm::BitCastInst>(i)
+							&& i.getType()->isIntegerTy()
+							&& i.getOperand(0)->getType()->isVectorTy())) {
+					work.push_back(&i);
+				}
+			}
+		}
+		for (auto *i : work) {
+			llvm::IRBuilder<> irb(i);
+			llvm::Value *r = nullptr;
+			if (auto *ee = llvm::dyn_cast<llvm::ExtractElementInst>(i)) {
+				auto *ci = llvm::dyn_cast<llvm::ConstantInt>(ee->getIndexOperand());
+				if (ci) {
+					r = integerVectorLane(ee->getVectorOperand(), ci->getZExtValue(), irb);
+				}
+			} else {
+				auto *vt = llvm::dyn_cast<llvm::FixedVectorType>(i->getOperand(0)->getType());
+				if (vt && vt->getElementType()->isIntegerTy()
+						&& !llvm::isa<llvm::BitCastInst>(i->getOperand(0))) {
+					unsigned eb = vt->getElementType()->getIntegerBitWidth();
+					auto *it = i->getType();
+					for (unsigned l = 0; l < vt->getNumElements(); ++l) {
+						auto *lane = integerVectorLane(i->getOperand(0), l, irb);
+						if (!lane) {
+							r = nullptr;
+							break;
+						}
+						llvm::Value *part = irb.CreateZExt(lane, it);
+						if (l) {
+							part = irb.CreateShl(part, l * eb);
+						}
+						r = r ? irb.CreateOr(r, part) : part;
+					}
+				}
+			}
+			if (r && r->getType() == i->getType()) {
+				i->replaceAllUsesWith(r);
+				llvm::RecursivelyDeleteTriviallyDeadInstructions(i);
+			}
+		}
+	}
+}
+
 ShPtr<Module> LLVMIR2BIRConverter::convert(llvm::Module *llvmModule,
 		const std::string &moduleName, ShPtr<Semantics> semantics,
 		ShPtr<Config> config, bool enableDebug) {
@@ -79,6 +201,7 @@ ShPtr<Module> LLVMIR2BIRConverter::convert(llvm::Module *llvmModule,
 	PRECONDITION_NON_NULL(semantics);
 
 	this->llvmModule = llvmModule;
+	lowerIntegerVectorLanes(*llvmModule);
 	this->enableDebug = enableDebug;
 	resModule = std::make_shared<Module>(llvmModule, moduleName, semantics,
 		config);
