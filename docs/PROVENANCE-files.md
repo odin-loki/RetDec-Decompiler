@@ -73,7 +73,6 @@ None.
 - `src/retdec-decompiler/managed_decompiler.h`
 - `src/retdec-decompiler/output_lang.cpp`
 - `src/retdec-decompiler/output_lang.h`
-- `src/rtti-finder/vtable/vtable_xref.cpp`
 - `src/serdes/semantic_detection.cpp`
 - `src/unpackertool/main.cpp`
 - `src/utils/crc32.cpp`

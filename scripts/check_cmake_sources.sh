@@ -113,22 +113,11 @@ UNBUILT_DIRS = {
 # This list exists because the walk below used to cover tests/ only. The
 # question it asks -- "does anything build this?" -- is the same question for
 # product code, and src/ was never asked it: three files sat here unnamed by
-# any CMakeLists, and two of them do not even compile.
+# any CMakeLists, and two of them did not even compile (since deleted).
 UNBUILT_SRC = {
     "src/unpackertool/plugins/example/example.cpp":
         "a template for writing an unpacker plugin, not a plugin; it compiles, "
         "and building it would register an unpacker that unpacks nothing",
-    "src/rtti-finder/vtable/vtable_xref.cpp":
-        "dead and does not compile: 14 errors against the current API, among "
-        "them VtableGcc::virtualFunctions, which does not exist. 244 lines "
-        "written against a shape rtti-finder no longer has. include/retdec/"
-        "rtti-finder/vtable/vtable_xref.h declares it and nothing includes that "
-        "either",
-    "src/bin2llvmir/optimizations/types_propagator/types_propagator.cpp":
-        "dead and does not compile: resolveTypes() is defined at line 287 and "
-        "called at line 71 and declared in no header, so this has never been "
-        "through a compiler. simple_types/ is the types pass the build "
-        "actually uses",
 }
 
 UNBUILT = {

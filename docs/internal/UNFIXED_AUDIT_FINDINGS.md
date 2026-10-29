@@ -16,7 +16,6 @@ Verified against the tree or left open in the last batches of this file:
 | Item | Why it still stands |
 |------|---------------------|
 | Native arm64 Mach-O → empty `.c` | Decoding phases never run. `ctest-macos` attempts it every run. Corpus is ELF. |
-| `src/bin2llvmir/optimizations/types_propagator/types_propagator.cpp` | Present; named by no `CMakeLists.txt`; does not compile in the product build |
 | `DerefOpExpr` / `UnaryOpExpr::getType()` | Returns the operand's type (the pointer), not the pointee. Consumers tuned against that |
 | Copy-propagation def-use comparator | Not a strict weak ordering; left because a fix changes emit order |
 | `ctest-linux` / `ctest-windows` suite subset | Named targets only. `ctest-macos` runs `ctest` with no `-L` |

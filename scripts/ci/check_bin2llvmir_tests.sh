@@ -109,8 +109,6 @@ fi
 # Translation units that do not compile in this container.  A reason each, and
 # none of them reachable from tests/bin2llvmir.
 EXPECTED_UNCOMPILABLE="
-src/bin2llvmir/optimizations/types_propagator/types_propagator.cpp|dead: resolveTypes() declared in no header; recorded in check_cmake_sources.sh UNBUILT_SRC
-src/rtti-finder/vtable/vtable_xref.cpp|dead: written against an API rtti-finder no longer has; recorded in check_cmake_sources.sh UNBUILT_SRC
 src/cli_parser/cil_lifter.cpp|C++20 (std::span); this harness compiles the tree as C++17
 src/cli_parser/cli_heaps.cpp|C++20 (std::span)
 src/cli_parser/cli_reader.cpp|C++20 (std::span)
