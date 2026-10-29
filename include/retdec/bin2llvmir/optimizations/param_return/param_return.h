@@ -121,6 +121,7 @@ class ParamReturn : public llvm::ModulePass
 		void propagateWrapped(DataFlowEntry& de);
 		void applyToIr();
 		void applyToIr(DataFlowEntry& de);
+		llvm::GlobalVariable* pairReturnHighRegister(DataFlowEntry& de) const;
 		void connectWrappers(const DataFlowEntry& de);
 
 		std::map<llvm::CallInst*, std::vector<llvm::Value*>> fetchLoadsOfCalls(

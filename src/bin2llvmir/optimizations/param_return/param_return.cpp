@@ -1119,6 +1119,63 @@ void ParamReturn::applyToIr()
 	}
 }
 
+/**
+ * A 32-bit target returns a 64-bit integer in a register pair (r0:r1,
+ * v0:v1, a0:a1, r3:r4).  Only the first register became the return value,
+ * so `u64 pw(...)` lost its high word at every call (pow on all 32-bit
+ * targets).  A caller reads the pair's second register after the call
+ * before writing it -- a call-clobbered register no compiler reads unless
+ * it was returned -- and the callee writes it: return both words.
+ * @return The pair's second register, or @c nullptr.
+ */
+GlobalVariable* ParamReturn::pairReturnHighRegister(DataFlowEntry& de) const
+{
+	Function* fnc = de.getFunction();
+	if (fnc == nullptr || fnc->isDeclaration() || de.getRetValue() == nullptr)
+		return nullptr;
+	auto& arch = _config->getConfig().architecture;
+	if (Abi::getWordSize(_module) != 4) return nullptr;
+	uint32_t loId, hiId;
+	if (arch.isArm32OrThumb()) { loId = ARM_REG_R0; hiId = ARM_REG_R1; }
+	else if (arch.isMips() && !arch.isMips64()) { loId = MIPS_REG_V0; hiId = MIPS_REG_V1; }
+	else if (arch.isRiscv() && !arch.isRiscv64()) { loId = RISCV_REG_X10; hiId = RISCV_REG_X11; }
+	else if (arch.isPpc() && !arch.isPpc64()) { loId = PPC_REG_R3; hiId = PPC_REG_R4; }
+	else return nullptr;
+	auto* lo = _abi->getRegister(loId);
+	auto* hi = _abi->getRegister(hiId);
+	if (lo == nullptr || hi == nullptr || de.getRetValue() != lo) return nullptr;
+	if (de.getRetType() && !(de.getRetType()->isIntegerTy()
+			&& de.getRetType()->getIntegerBitWidth() <= 32))
+		return nullptr;
+
+	bool calleeWrites = false;
+	for (auto& bb : *fnc)
+	for (auto& i : bb)
+	{
+		if (auto* st = dyn_cast<StoreInst>(&i))
+		if (st->getPointerOperand() == hi)
+		{
+			calleeWrites = true;
+		}
+	}
+	if (!calleeWrites) return nullptr;
+
+	for (auto* u : fnc->users())
+	{
+		auto* c = dyn_cast<CallInst>(u);
+		if (c == nullptr || c->getCalledFunction() != fnc) continue;
+		for (auto* i = c->getNextNode(); i; i = i->getNextNode())
+		{
+			if (isa<CallInst>(i)) break;
+			if (auto* st = dyn_cast<StoreInst>(i))
+			if (st->getPointerOperand() == hi) break;
+			if (auto* l = dyn_cast<LoadInst>(i))
+			if (l->getPointerOperand() == hi) return hi;
+		}
+	}
+	return nullptr;
+}
+
 void ParamReturn::applyToIr(DataFlowEntry& de)
 {
 	Function* fnc = de.getFunction();
@@ -1197,6 +1254,29 @@ void ParamReturn::applyToIr(DataFlowEntry& de)
 	else
 	{
 		de.setRetType(Type::getVoidTy(_module->getContext()));
+	}
+
+	GlobalVariable* pairHi = pairReturnHighRegister(de);
+	if (pairHi)
+	{
+		traceParamReturn("applyToIr 64-bit pair return: " + fnName);
+		auto* i64 = Type::getInt64Ty(_module->getContext());
+		de.setRetType(i64);
+		for (auto& kv : rets2vals)
+		{
+			auto* r = kv.first;
+			auto* lo = IrModifier::convertValueToType(kv.second,
+					Type::getInt32Ty(_module->getContext()), r);
+			auto* hi = llvm_utils::createLoadInst(pairHi, "", r);
+			auto* loW = new ZExtInst(lo, i64, "", r);
+			auto* hiW = new ZExtInst(
+					IrModifier::convertValueToType(hi,
+						Type::getInt32Ty(_module->getContext()), r),
+					i64, "", r);
+			auto* sh = BinaryOperator::CreateShl(hiW,
+					ConstantInt::get(i64, 32), "", r);
+			kv.second = BinaryOperator::CreateOr(sh, loW, "", r);
+		}
 	}
 
 	std::vector<llvm::Value*> definitionArgs;
@@ -1445,6 +1525,23 @@ void ParamReturn::applyToIr(DataFlowEntry& de)
 			definitionArgs,
 			definitionArgNames).first;
 	traceParamReturn("applyToIr modifyFunction end: " + fnName);
+
+	if (pairHi && newFnc && newFnc->getReturnType()->isIntegerTy(64))
+	{
+		for (auto* u : newFnc->users())
+		{
+			auto* c = dyn_cast<CallInst>(u);
+			if (c == nullptr || c->getCalledFunction() != newFnc) continue;
+			auto* n = c->getNextNode();
+			if (n == nullptr) continue;
+			auto* i64 = c->getType();
+			auto* sh = BinaryOperator::CreateLShr(c,
+					ConstantInt::get(i64, 32), "", n);
+			auto* hi = IrModifier::convertValueToType(sh,
+					llvm_utils::pointeeType(pairHi), n);
+			llvm_utils::createStoreInst(hi, pairHi, n);
+		}
+	}
 
 	de.setCalledValue(newFnc);
 }
