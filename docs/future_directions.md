@@ -291,3 +291,21 @@ automatically “done”.
 | 6 | SASS decompilation (no nvdisasm) | Library subset in `src/sass_decode/`; not CLI / not Production |
 | 7 | Cross-binary diff | Research (GUI Diff is same-session) |
 | 8 | Formal verification bridge | Research |
+
+---
+
+## Open cross-arch issues (32-bit recompile audit, Oct 2026)
+
+From the `funcs2` recompile-and-diff audit (clang-18 `-O1/-O2/-O3`, decompile,
+recompile with `-m32`, compare output).  The original `funcs` set passes on
+all 32-bit targets; these `funcs2` cases still differ:
+
+| Target | Failing cases | Notes |
+|--------|---------------|-------|
+| all 32-bit (arm, thumb, mips, mipsel, ppc) | `va` | Varargs save area is not walked; rv32 is fixed by merging write-only spill slots in `mergeWalkedLocals` (stack pass). Other ABIs spill differently. |
+| all 32-bit incl. rv32 | `va64` | 64-bit varargs: even-register / 8-byte aligned pair slots are not modelled. |
+| thumb | `jt` | Thumb table-branch / `tbb` jump table mis-resolved: wrong result index. |
+| thumb (O2/O3) | `m64` | 64-bit multiply idiom under Thumb-2 still differs. |
+| ppc (big-endian) | `dbl`, `fl`, `fcmp`, `fsum`, `u2f` | int<->double via the `0x43300000` magic through a stack slot; the word order in the recovered stack object is host-endian when recompiled. |
+| ppc | `pow` | 64-bit pair return not taking effect on ppc. |
+| ppc | `stc`, `sta` (O1) | Struct copy, and array-of-struct globals reached via a GOT pointer and a constant `-0x10` offset that symbolizes to a neighbouring global. |
