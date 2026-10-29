@@ -1777,8 +1777,10 @@ void Heuristics::getCodegenFingerprintHeuristics()
 		addCompiler(DetectionMethod::OTHER_H, DetectionStrength::LOW,
 				"GCC (codegen fingerprint)", "", extra);
 	}
+	// MSVC never emits ELF or Mach-O; gcc -O2 frameless prologues (sub rsp, imm)
+	// look the same, and a stray MSVC entry flips x86-64 to the Microsoft ABI.
 	else if (msvcPrologueCount > gccPrologueCount && msvcPrologueCount > clangPrologueCount
-			&& msvcPrologueCount >= 2)
+			&& msvcPrologueCount >= 2 && fileParser.isPe())
 	{
 		addCompiler(DetectionMethod::OTHER_H, DetectionStrength::LOW,
 				"MSVC (codegen fingerprint)", "", extra);
