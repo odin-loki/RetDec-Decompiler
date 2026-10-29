@@ -203,6 +203,7 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		void translateNand(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateNeg(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateNop(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateSpeDouble(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateSpeFloat(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateTwin(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translatePpcMisc(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);

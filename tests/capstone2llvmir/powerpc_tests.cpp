@@ -17863,6 +17863,93 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_EFSCMPGT)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_EFDADD)
+{
+	ONLY_MODE_SPE;
+
+	setRegisters({
+		{PPC_REG_S4, 0x3ff8000000000000ULL},
+		{PPC_REG_S5, 0x4002000000000000ULL},
+	});
+
+	emulate_bin("10 64 2a e0");
+
+	EXPECT_EQ(0x400e000000000000ULL, getRegisterValueUnsigned(PPC_REG_S3)) << dumpFunction(_function);
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_EFDCFSI)
+{
+	ONLY_MODE_SPE;
+
+	setRegisters({
+		{PPC_REG_S5, 0xfffffffffffffffdULL},
+	});
+
+	emulate_bin("10 60 2a f1");
+
+	EXPECT_EQ(0xc008000000000000ULL, getRegisterValueUnsigned(PPC_REG_S3)) << dumpFunction(_function);
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_EFDCTSIZ)
+{
+	ONLY_MODE_SPE;
+
+	setRegisters({
+		{PPC_REG_S3, 0xaaaaaaaa00000000ULL},
+		{PPC_REG_S5, 0xc006000000000000ULL},
+	});
+
+	emulate_bin("10 60 2a fa");
+
+	EXPECT_EQ(0xaaaaaaaafffffffeULL, getRegisterValueUnsigned(PPC_REG_S3)) << dumpFunction(_function);
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_EFDCMPGT)
+{
+	ONLY_MODE_SPE;
+
+	setRegisters({
+		{PPC_REG_S4, 0x4000000000000000ULL},
+		{PPC_REG_S5, 0x3ff0000000000000ULL},
+	});
+
+	emulate_bin("10 84 2a ec");
+
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(PPC_REG_CR1GT));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_EFDCFS)
+{
+	ONLY_MODE_SPE;
+
+	setRegisters({
+		{PPC_REG_S5, 0x3fc00000ULL},
+	});
+
+	emulate_bin("10 60 2a ef");
+
+	EXPECT_EQ(0x3ff8000000000000ULL, getRegisterValueUnsigned(PPC_REG_S3)) << dumpFunction(_function);
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_EFDNEG)
+{
+	ONLY_MODE_SPE;
+
+	setRegisters({
+		{PPC_REG_S4, 0x3ff0000000000000ULL},
+	});
+
+	emulate_bin("10 64 02 e6");
+
+	EXPECT_EQ(0xbff0000000000000ULL, getRegisterValueUnsigned(PPC_REG_S3)) << dumpFunction(_function);
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

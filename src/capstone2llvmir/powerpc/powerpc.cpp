@@ -9469,5 +9469,82 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateSpeFloat(cs_insn* i, cs_ppc
 }
 
 
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateSpeDouble(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	// e500v2 SPE scalar double precision: the double fills the whole 64-bit GPR.
+	// Rounding mode and SPEFSCR flags are not modelled.
+	uint32_t w = (uint32_t(i->bytes[0]) << 24) | (uint32_t(i->bytes[1]) << 16)
+			| (uint32_t(i->bytes[2]) << 8) | uint32_t(i->bytes[3]);
+	unsigned rd = (w >> 21) & 31, ra = (w >> 16) & 31, rb = (w >> 11) & 31;
+	auto* i64 = irb.getInt64Ty();
+	auto* i32 = irb.getInt32Ty();
+	auto* dt = irb.getDoubleTy();
+	auto opOf = [](unsigned n) {
+		cs_ppc_op o{};
+		o.type = PPC_OP_REG;
+		o.reg = ppc_reg(PPC_REG_R0 + n);
+		return o;
+	};
+	auto ld = [&](unsigned n) { auto o = opOf(n); return loadSpeI64(o, irb); };
+	auto ldd = [&](unsigned n) { return irb.CreateBitCast(ld(n), dt); };
+	auto ldw = [&](unsigned n) { return irb.CreateTrunc(ld(n), i32); };
+	auto st = [&](llvm::Value* v) { auto o = opOf(rd); storeSpeI64(o, irb.CreateZExtOrTrunc(v, i64), irb); };
+	auto std_ = [&](llvm::Value* v) { st(irb.CreateBitCast(v, i64)); };
+	auto stw = [&](llvm::Value* v) {
+		// 32-bit results replace only the low word.
+		auto* hi = irb.CreateAnd(ld(rd), llvm::ConstantInt::get(i64, 0xffffffff00000000ull));
+		st(irb.CreateOr(hi, irb.CreateZExt(v, i64)));
+	};
+	auto* sign = llvm::ConstantInt::get(i64, 0x8000000000000000ull);
+	switch (i->id)
+	{
+		case PPC_INS_EFDADD: std_(irb.CreateFAdd(ldd(ra), ldd(rb))); return;
+		case PPC_INS_EFDSUB: std_(irb.CreateFSub(ldd(ra), ldd(rb))); return;
+		case PPC_INS_EFDMUL: std_(irb.CreateFMul(ldd(ra), ldd(rb))); return;
+		case PPC_INS_EFDDIV: std_(irb.CreateFDiv(ldd(ra), ldd(rb))); return;
+		case PPC_INS_EFDABS: st(irb.CreateAnd(ld(ra), llvm::ConstantInt::get(i64, 0x7fffffffffffffffull))); return;
+		case PPC_INS_EFDNABS: st(irb.CreateOr(ld(ra), sign)); return;
+		case PPC_INS_EFDNEG: st(irb.CreateXor(ld(ra), sign)); return;
+		case PPC_INS_EFDCFS: std_(irb.CreateFPExt(irb.CreateBitCast(ldw(rb), irb.getFloatTy()), dt)); return;
+		case PPC_INS_EFDCFSI: std_(irb.CreateSIToFP(ldw(rb), dt)); return;
+		case PPC_INS_EFDCFUI: std_(irb.CreateUIToFP(ldw(rb), dt)); return;
+		case PPC_INS_EFDCFSID: std_(irb.CreateSIToFP(ld(rb), dt)); return;
+		case PPC_INS_EFDCFUID: std_(irb.CreateUIToFP(ld(rb), dt)); return;
+		case PPC_INS_EFDCTSI: case PPC_INS_EFDCTSIZ: stw(irb.CreateFPToSI(ldd(rb), i32)); return;
+		case PPC_INS_EFDCTUI: case PPC_INS_EFDCTUIZ: stw(irb.CreateFPToUI(ldd(rb), i32)); return;
+		case PPC_INS_EFDCTSIDZ: st(irb.CreateFPToSI(ldd(rb), i64)); return;
+		case PPC_INS_EFDCTUIDZ: st(irb.CreateFPToUI(ldd(rb), i64)); return;
+		case PPC_INS_EFDCMPEQ: case PPC_INS_EFDTSTEQ:
+		case PPC_INS_EFDCMPGT: case PPC_INS_EFDTSTGT:
+		case PPC_INS_EFDCMPLT: case PPC_INS_EFDTSTLT:
+		{
+			auto* a = ldd(ra);
+			auto* b = ldd(rb);
+			llvm::Value* r = nullptr;
+			if (i->id == PPC_INS_EFDCMPEQ || i->id == PPC_INS_EFDTSTEQ) r = irb.CreateFCmpOEQ(a, b);
+			else if (i->id == PPC_INS_EFDCMPGT || i->id == PPC_INS_EFDTSTGT) r = irb.CreateFCmpOGT(a, b);
+			else r = irb.CreateFCmpOLT(a, b);
+			unsigned bf = (w >> 23) & 7;
+			static const uint32_t gt[8] = {PPC_REG_CR0GT, PPC_REG_CR1GT, PPC_REG_CR2GT, PPC_REG_CR3GT,
+					PPC_REG_CR4GT, PPC_REG_CR5GT, PPC_REG_CR6GT, PPC_REG_CR7GT};
+			static const uint32_t lt[8] = {PPC_REG_CR0LT, PPC_REG_CR1LT, PPC_REG_CR2LT, PPC_REG_CR3LT,
+					PPC_REG_CR4LT, PPC_REG_CR5LT, PPC_REG_CR6LT, PPC_REG_CR7LT};
+			static const uint32_t eq[8] = {PPC_REG_CR0EQ, PPC_REG_CR1EQ, PPC_REG_CR2EQ, PPC_REG_CR3EQ,
+					PPC_REG_CR4EQ, PPC_REG_CR5EQ, PPC_REG_CR6EQ, PPC_REG_CR7EQ};
+			static const uint32_t un[8] = {PPC_REG_CR0UN, PPC_REG_CR1UN, PPC_REG_CR2UN, PPC_REG_CR3UN,
+					PPC_REG_CR4UN, PPC_REG_CR5UN, PPC_REG_CR6UN, PPC_REG_CR7UN};
+			storeRegister(lt[bf], irb.getFalse(), irb);
+			storeRegister(gt[bf], r, irb);
+			storeRegister(eq[bf], irb.getFalse(), irb);
+			storeRegister(un[bf], irb.getFalse(), irb);
+			return;
+		}
+		default:
+			translatePseudoAsmGeneric(i, pi, irb);
+			return;
+	}
+}
+
+
 } // namespace capstone2llvmir
 } // namespace retdec
