@@ -4294,6 +4294,35 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateMovk(cs_insn* i, cs_arm64* ai
  */
 void Capstone2LlvmIrTranslatorArm64_impl::translateStr(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {
+	// Capstone 6 garbles the STLUR operands (Rt shows up as a memory
+	// operand and the base is lost), so decode the whole thing from the
+	// encoding: size in 31:30, imm9 in 20:12, Rn in 9:5, Rt in 4:0.
+	if (i->id == ARM64_INS_STLUR || i->id == ARM64_INS_STLURB || i->id == ARM64_INS_STLURH)
+	{
+		uint32_t w = i->bytes[0] | (i->bytes[1] << 8) | (i->bytes[2] << 16)
+				| (uint32_t(i->bytes[3]) << 24);
+		unsigned size = w >> 30;
+		unsigned rt = w & 31;
+		unsigned rn = (w >> 5) & 31;
+		int64_t imm = static_cast<int64_t>((w >> 12) & 0x1ff);
+		if (imm & 0x100)
+		{
+			imm -= 0x200;
+		}
+		auto xreg = [](unsigned n) -> uint32_t {
+			return n == 29 ? ARM64_REG_X29 : n == 30 ? ARM64_REG_X30
+					: ARM64_REG_X0 + n;
+		};
+		llvm::Value* val = rt == 31
+				? llvm::ConstantInt::get(getDefaultType(), 0)
+				: loadRegister(xreg(rt), irb);
+		auto* base = loadRegister(rn == 31 ? ARM64_REG_SP : xreg(rn), irb);
+		auto* addr = irb.CreateAdd(base, llvm::ConstantInt::get(base->getType(), imm));
+		auto* sty = irb.getIntNTy(8u << size);
+		auto* st = storeIntPtr(irb, irb.CreateZExtOrTrunc(val, sty), addr, sty);
+		st->setAtomic(llvm::AtomicOrdering::Release);
+		return;
+	}
 	EXPECT_IS_BINARY_OR_TERNARY(i, ai, irb);
 
 	llvm::Type* ty = nullptr;
@@ -4303,6 +4332,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateStr(cs_insn* i, cs_arm64* ai,
 		case ARM64_INS_STUR:
 		case ARM64_INS_STTR:
 		case ARM64_INS_STLR:
+		case ARM64_INS_STLUR:
+		case ARM64_INS_STLLR:
 		{
 			ty = getRegisterType(ai->operands[0].reg);
 			if (ty->isFloatTy())
@@ -4319,6 +4350,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateStr(cs_insn* i, cs_arm64* ai,
 		case ARM64_INS_STURB:
 		case ARM64_INS_STTRB:
 		case ARM64_INS_STLRB:
+		case ARM64_INS_STLURB:
+		case ARM64_INS_STLLRB:
 		{
 			ty = irb.getInt8Ty();
 			break;
@@ -4327,6 +4360,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateStr(cs_insn* i, cs_arm64* ai,
 		case ARM64_INS_STURH:
 		case ARM64_INS_STTRH:
 		case ARM64_INS_STLRH:
+		case ARM64_INS_STLURH:
+		case ARM64_INS_STLLRH:
 		{
 			ty = irb.getInt16Ty();
 			break;
@@ -4350,9 +4385,15 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateStr(cs_insn* i, cs_arm64* ai,
 	auto* dest = generateGetOperandMemAddr(ai->operands[1], irb);
 	auto* access = ai->op_count < 3 ? arm64AccessAddr(ai, ai->operands[1], dest, irb) : dest;
 	auto* st = storeIntPtr(irb, op0, access, op0->getType());
-	if (i->id == ARM64_INS_STLR || i->id == ARM64_INS_STLRB || i->id == ARM64_INS_STLRH)
+	switch (i->id)
 	{
-		st->setAtomic(llvm::AtomicOrdering::Release);
+		case ARM64_INS_STLR: case ARM64_INS_STLRB: case ARM64_INS_STLRH:
+		case ARM64_INS_STLUR: case ARM64_INS_STLURB: case ARM64_INS_STLURH:
+		case ARM64_INS_STLLR: case ARM64_INS_STLLRB: case ARM64_INS_STLLRH:
+			st->setAtomic(llvm::AtomicOrdering::Release);
+			break;
+		default:
+			break;
 	}
 
 	uint32_t baseR = ARM64_REG_INVALID;
@@ -4535,6 +4576,11 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdr(cs_insn* i, cs_arm64* ai,
 		case ARM64_INS_LDXR:
 		case ARM64_INS_LDAXR:
 		case ARM64_INS_LDAR:
+		case ARM64_INS_LDAPR:
+		case ARM64_INS_LDAPUR:
+		case ARM64_INS_LDLAR:
+		case ARM64_INS_LDRAA:
+		case ARM64_INS_LDRAB:
 		{
 			ty = getRegisterType(ai->operands[0].reg);
 			sext = false;
@@ -4546,6 +4592,9 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdr(cs_insn* i, cs_arm64* ai,
 		case ARM64_INS_LDXRB:
 		case ARM64_INS_LDAXRB:
 		case ARM64_INS_LDARB:
+		case ARM64_INS_LDAPRB:
+		case ARM64_INS_LDAPURB:
+		case ARM64_INS_LDLARB:
 		{
 			ty = irb.getInt8Ty();
 			sext = false;
@@ -4557,6 +4606,9 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdr(cs_insn* i, cs_arm64* ai,
 		case ARM64_INS_LDXRH:
 		case ARM64_INS_LDAXRH:
 		case ARM64_INS_LDARH:
+		case ARM64_INS_LDAPRH:
+		case ARM64_INS_LDAPURH:
+		case ARM64_INS_LDLARH:
 		{
 			ty = irb.getInt16Ty();
 			sext = false;
@@ -4566,6 +4618,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdr(cs_insn* i, cs_arm64* ai,
 		case ARM64_INS_LDRSB:
 		case ARM64_INS_LDURSB:
 		case ARM64_INS_LDTRSB:
+		case ARM64_INS_LDAPURSB:
 		{
 			ty = irb.getInt8Ty();
 			sext = true;
@@ -4574,6 +4627,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdr(cs_insn* i, cs_arm64* ai,
 		case ARM64_INS_LDRSH:
 		case ARM64_INS_LDURSH:
 		case ARM64_INS_LDTRSH:
+		case ARM64_INS_LDAPURSH:
 		{
 			ty = irb.getInt16Ty();
 			sext = true;
@@ -4582,6 +4636,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdr(cs_insn* i, cs_arm64* ai,
 		case ARM64_INS_LDRSW:
 		case ARM64_INS_LDURSW:
 		case ARM64_INS_LDTRSW:
+		case ARM64_INS_LDAPURSW:
 		{
 			ty = irb.getInt32Ty();
 			sext = true;
@@ -4612,6 +4667,15 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdr(cs_insn* i, cs_arm64* ai,
 			case ARM64_INS_LDAR:
 			case ARM64_INS_LDARB:
 			case ARM64_INS_LDARH:
+			case ARM64_INS_LDAPR:
+			case ARM64_INS_LDAPRB:
+			case ARM64_INS_LDAPRH:
+			case ARM64_INS_LDAPUR:
+			case ARM64_INS_LDAPURB:
+			case ARM64_INS_LDAPURH:
+			case ARM64_INS_LDLAR:
+			case ARM64_INS_LDLARB:
+			case ARM64_INS_LDLARH:
 				ld->setAtomic(llvm::AtomicOrdering::Acquire);
 				break;
 			default:
@@ -9234,6 +9298,44 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateSveReduce(cs_insn* i, cs_arm6
 	}
 	storeRegister(ai->operands[0].reg, acc, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 }
+
+/**
+ * ARMv8.3 authenticated branches. Under the identity model used for
+ * PACIASP/AUTIASP the authentication is a no-op, so BRAA/BRAB(Z) branch to
+ * Xn, BLRAA/BLRAB(Z) call it and RETAA/RETAB return through LR. The modifier
+ * operand is ignored.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translatePacBranch(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	switch (i->id)
+	{
+		case ARM64_INS_RETAA:
+		case ARM64_INS_RETAB:
+			generateReturnFunctionCall(irb, loadRegister(ARM64_REG_LR, irb));
+			return;
+		default:
+			break;
+	}
+	if (ai->op_count < 1 || ai->operands[0].type != ARM64_OP_REG)
+	{
+		throwUnexpectedOperands(i);
+	}
+	auto* target = loadOp(ai->operands[0], irb);
+	switch (i->id)
+	{
+		case ARM64_INS_BLRAA:
+		case ARM64_INS_BLRAAZ:
+		case ARM64_INS_BLRAB:
+		case ARM64_INS_BLRABZ:
+			storeRegister(ARM64_REG_LR, getNextInsnAddress(i), irb);
+			generateCallFunctionCall(irb, target);
+			return;
+		default:
+			generateBranchFunctionCall(irb, target);
+			return;
+	}
+}
+
 
 } // namespace capstone2llvmir
 } // namespace retdec
