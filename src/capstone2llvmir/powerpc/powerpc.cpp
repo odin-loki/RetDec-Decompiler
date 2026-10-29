@@ -9405,5 +9405,69 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateTrap(cs_insn* i, cs_ppc* pi
 }
 
 
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateSpeFloat(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	// e500 SPE scalar single precision: the float lives in the low word of a GPR.
+	uint32_t w = (uint32_t(i->bytes[0]) << 24) | (uint32_t(i->bytes[1]) << 16)
+			| (uint32_t(i->bytes[2]) << 8) | uint32_t(i->bytes[3]);
+	unsigned rd = (w >> 21) & 31, ra = (w >> 16) & 31, rb = (w >> 11) & 31;
+	auto* i32 = irb.getInt32Ty();
+	auto* ft = irb.getFloatTy();
+	auto* dt = getDefaultType();
+	auto gpr = [](unsigned n) { return PPC_REG_R0 + n; };
+	auto ldw = [&](unsigned n) { return irb.CreateTrunc(irb.CreateZExtOrTrunc(loadRegister(gpr(n), irb), irb.getInt64Ty()), i32); };
+	auto ldf = [&](unsigned n) { return irb.CreateBitCast(ldw(n), ft); };
+	auto stw = [&](llvm::Value* v) { storeRegister(gpr(rd), irb.CreateZExtOrTrunc(v, dt), irb); };
+	auto stf = [&](llvm::Value* v) { stw(irb.CreateBitCast(v, i32)); };
+	auto* sign = llvm::ConstantInt::get(i32, 0x80000000u);
+	switch (i->id)
+	{
+		case PPC_INS_EFSADD: stf(irb.CreateFAdd(ldf(ra), ldf(rb))); return;
+		case PPC_INS_EFSSUB: stf(irb.CreateFSub(ldf(ra), ldf(rb))); return;
+		case PPC_INS_EFSMUL: stf(irb.CreateFMul(ldf(ra), ldf(rb))); return;
+		case PPC_INS_EFSDIV: stf(irb.CreateFDiv(ldf(ra), ldf(rb))); return;
+		case PPC_INS_EFSABS: stw(irb.CreateAnd(ldw(ra), llvm::ConstantInt::get(i32, 0x7fffffffu))); return;
+		case PPC_INS_EFSNABS: stw(irb.CreateOr(ldw(ra), sign)); return;
+		case PPC_INS_EFSNEG: stw(irb.CreateXor(ldw(ra), sign)); return;
+		case PPC_INS_EFSCFSI: stf(irb.CreateSIToFP(ldw(rb), ft)); return;
+		case PPC_INS_EFSCFUI: stf(irb.CreateUIToFP(ldw(rb), ft)); return;
+		// Rounding mode is not modelled; the non-Z forms truncate too.
+		case PPC_INS_EFSCTSI: case PPC_INS_EFSCTSIZ: stw(irb.CreateFPToSI(ldf(rb), i32)); return;
+		case PPC_INS_EFSCTUI: case PPC_INS_EFSCTUIZ: stw(irb.CreateFPToUI(ldf(rb), i32)); return;
+		case PPC_INS_EFSCMPEQ: case PPC_INS_EFSTSTEQ:
+		case PPC_INS_EFSCMPGT: case PPC_INS_EFSTSTGT:
+		case PPC_INS_EFSCMPLT: case PPC_INS_EFSTSTLT:
+		{
+			static const uint32_t crb[8][4] = {
+				{PPC_REG_CR0LT, PPC_REG_CR0GT, PPC_REG_CR0EQ, PPC_REG_CR0UN},
+				{PPC_REG_CR1LT, PPC_REG_CR1GT, PPC_REG_CR1EQ, PPC_REG_CR1UN},
+				{PPC_REG_CR2LT, PPC_REG_CR2GT, PPC_REG_CR2EQ, PPC_REG_CR2UN},
+				{PPC_REG_CR3LT, PPC_REG_CR3GT, PPC_REG_CR3EQ, PPC_REG_CR3UN},
+				{PPC_REG_CR4LT, PPC_REG_CR4GT, PPC_REG_CR4EQ, PPC_REG_CR4UN},
+				{PPC_REG_CR5LT, PPC_REG_CR5GT, PPC_REG_CR5EQ, PPC_REG_CR5UN},
+				{PPC_REG_CR6LT, PPC_REG_CR6GT, PPC_REG_CR6EQ, PPC_REG_CR6UN},
+				{PPC_REG_CR7LT, PPC_REG_CR7GT, PPC_REG_CR7EQ, PPC_REG_CR7UN},
+			};
+			auto* a = ldf(ra);
+			auto* b = ldf(rb);
+			llvm::Value* r = nullptr;
+			if (i->id == PPC_INS_EFSCMPEQ || i->id == PPC_INS_EFSTSTEQ) r = irb.CreateFCmpOEQ(a, b);
+			else if (i->id == PPC_INS_EFSCMPGT || i->id == PPC_INS_EFSTSTGT) r = irb.CreateFCmpOGT(a, b);
+			else r = irb.CreateFCmpOLT(a, b);
+			// The result goes to the GT bit; the other bits are undefined, cleared here.
+			unsigned bf = (w >> 23) & 7;
+			storeRegister(crb[bf][0], irb.getFalse(), irb);
+			storeRegister(crb[bf][1], r, irb);
+			storeRegister(crb[bf][2], irb.getFalse(), irb);
+			storeRegister(crb[bf][3], irb.getFalse(), irb);
+			return;
+		}
+		default:
+			translatePseudoAsmGeneric(i, pi, irb);
+			return;
+	}
+}
+
+
 } // namespace capstone2llvmir
 } // namespace retdec

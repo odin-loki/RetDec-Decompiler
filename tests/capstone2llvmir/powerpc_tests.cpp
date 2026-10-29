@@ -17797,6 +17797,72 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_ADDPCIS)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_EFSADD)
+{
+	ONLY_MODE_SPE;
+
+	setRegisters({
+		{PPC_REG_R4, 0x3fc00000},
+		{PPC_REG_R5, 0x40000000},
+	});
+
+	emulate_bin("10 64 2a c0"); // efsadd 3, 4, 5
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 0x40600000},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_EFSNEG)
+{
+	ONLY_MODE_SPE;
+
+	setRegisters({
+		{PPC_REG_R4, 0x3f800000},
+	});
+
+	emulate_bin("10 64 02 c6"); // efsneg 3, 4
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 0xbf800000},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_EFSCTSIZ)
+{
+	ONLY_MODE_SPE;
+
+	setRegisters({
+		{PPC_REG_R5, 0xc0700000},
+	});
+
+	emulate_bin("10 60 2a da"); // efsctsiz 3, 5
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 0xfffffffd},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_EFSCMPGT)
+{
+	ONLY_MODE_SPE;
+
+	setRegisters({
+		{PPC_REG_R4, 0x40000000},
+		{PPC_REG_R5, 0x3fc00000},
+	});
+
+	emulate_bin("10 84 2a cc"); // efscmpgt 1, 4, 5
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_CR1LT, false}, {PPC_REG_CR1GT, true}, {PPC_REG_CR1EQ, false}, {PPC_REG_CR1UN, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
