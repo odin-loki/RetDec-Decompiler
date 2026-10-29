@@ -4847,6 +4847,15 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateB(cs_insn* i, cs_ppc* pi, l
 		}
 		else if (link)
 		{
+			// `bl .+4; mflr rX` is the 32-bit PIC idiom for reading the
+			// current address (GOT base). It is not a call: treating it as one
+			// left LR -- and so r30 / the GOT base -- undefined after it
+			// (ppc -O1 f_switch read its jump table through garbage).
+			auto* ci = llvm::dyn_cast<llvm::ConstantInt>(target);
+			if (ci && ci->getZExtValue() == i->address + i->size)
+			{
+				return;
+			}
 			generateCallFunctionCall(irb, target);
 		}
 		else

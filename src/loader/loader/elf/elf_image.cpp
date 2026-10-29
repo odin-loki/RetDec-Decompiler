@@ -61,6 +61,29 @@ bool ElfImage::load()
 	// Base address is determined by the address of first LOAD segment. The kernel does the same.
 	setBaseAddress(getSegments().front()->getAddress());
 
+	// 32-bit PowerPC PIC code reaches its data only through .got2 slots that
+	// the file leaves zero and an R_PPC_RELATIVE fills at load time (RELA:
+	// value = base + addend, base 0 here). Without them every switch table /
+	// global read through r30 folded to garbage (ppc -O1 f_switch).
+	if (!getFileFormat()->isObjectFile()
+			&& getFileFormat()->getTargetArchitecture()
+				== retdec::fileformat::Architecture::POWERPC
+			&& getFileFormat()->getBytesPerWord() == 4)
+	{
+		for (auto& relTable : getFileFormat()->getRelocationTables())
+		{
+			for (const auto& rel : *relTable)
+			{
+				if (rel.getType() != 22 /* R_PPC_RELATIVE */)
+					continue;
+				std::uint64_t value = 0;
+				if (!get4Byte(rel.getAddress(), value) || value != 0)
+					continue;
+				set4Byte(rel.getAddress(), rel.getAddend());
+			}
+		}
+	}
+
 	// Sort segment by their address
 	sortSegments();
 

@@ -445,6 +445,29 @@ void ConstantsAnalysis::checkForGlobalInInstruction(
 		}
 	}
 
+	// A word-sized load from a literal pool inside read-only code (ppc32 PIC
+	// keeps `.long _GLOBAL_OFFSET_TABLE_ - .` right before the function)
+	// gets no global, so the load stayed a read of the binary's own text --
+	// meaningless in the recompiled C (ppc -O1 f_switch). Fold its value.
+	if (max && maxC && max == &root && maxC->getValue().getActiveBits() <= 64
+			&& isa<LoadInst>(inst) && inst->getType()->isIntegerTy()
+			&& inst->getType()->getIntegerBitWidth()
+				== _image->getImage()->getBytesPerWord() * 8
+			&& _config->getLlvmFunction(maxC->getZExtValue()) == nullptr)
+	{
+		uint64_t addr = maxC->getZExtValue();
+		auto* seg = _image->getImage()->getSegmentFromAddress(addr);
+		auto* sec = seg ? seg->getSecSeg() : nullptr;
+		uint64_t w = 0;
+		if (sec && sec->isCode() && !sec->isSomeData()
+				&& _image->getImage()->getWord(addr, w))
+		{
+			inst->replaceAllUsesWith(ConstantInt::get(inst->getType(), w));
+			_toRemove.insert(inst);
+			return;
+		}
+	}
+
 	auto* gv = dyn_cast<GlobalVariable>(root.value);
 	// A register global here is the register's value on entry, not its
 	// address: `mov %rdi,%rdx; movzbl (%rdx),%edi` reads through rdi's value,

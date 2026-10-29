@@ -6736,6 +6736,21 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_BL_uncond)
 	});
 }
 
+// `bl .+4` (PIC: read the current address into LR) is not a call.
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_BL_next_insn_is_not_call)
+{
+	ALL_MODES;
+
+	emulate("bl 0x514", 0x10000510);
+
+	EXPECT_NO_REGISTERS_LOADED();
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_LR, 0x10000514},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
 // PPC_BC_LT, op0 = PPC_OP_IMM = target
 TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_BL_blt_cr0_true)
 {

@@ -60,5 +60,10 @@
   "unroll-x86_64-pie": [
     "= a2 & 0x7ffffffc;",
     "!v1 = 0; // 0x126e"
+  ],
+  "audit-powerpc-pie": [
+    "return *(uint32_t *)((a1 << 2) + (uint32_t)g",
+    "void * * g2 = &g1;",
+    "!*(uint32_t *)0x104ac"
   ]
 }
