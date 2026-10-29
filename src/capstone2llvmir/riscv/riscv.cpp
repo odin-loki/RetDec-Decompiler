@@ -6946,6 +6946,112 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateThead(cs_insn* i, cs_riscv* r
 }
 
 
+/**
+ * Zfa FCVTMOD.W.D (modular truncating conversion), and the RV32 FMVH.X.D /
+ * FMVP.D.X moves of the high half / a GPR pair. FCVTMOD's fflags are not
+ * modelled.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateZfaMove(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	auto* i64 = irb.getInt64Ty();
+	auto* i32 = irb.getInt32Ty();
+	auto* xt = getDefaultType();
+	auto gpr = [&](unsigned k) -> llvm::Value* {
+		auto r = ri->operands[k].reg;
+		if (r == RISCV_REG_X0) return llvm::ConstantInt::get(xt, 0);
+		return irb.CreateZExtOrTrunc(loadRegister(r, irb), xt);
+	};
+	auto fbits = [&](unsigned k) {
+		auto* v = loadRegister(ri->operands[k].reg, irb);
+		if (!v->getType()->isDoubleTy()) v = irb.CreateFPCast(v, irb.getDoubleTy());
+		return irb.CreateBitCast(v, i64);
+	};
+	auto setGpr = [&](llvm::Value* v) {
+		if (ri->operands[0].reg != RISCV_REG_X0)
+			storeRegister(ri->operands[0].reg, irb.CreateSExtOrTrunc(v, xt), irb);
+	};
+	if (ri->op_count < 2 || ri->operands[0].type != RISCV_OP_REG || ri->operands[1].type != RISCV_OP_REG)
+	{
+		throwUnexpectedOperands(i);
+	}
+	switch (i->id)
+	{
+		case RISCV_INS_FCVTMOD_W_D:
+		{
+			auto* b = fbits(1);
+			auto c = [&](uint64_t v) { return llvm::ConstantInt::get(i64, v); };
+			auto* ex = irb.CreateAnd(irb.CreateLShr(b, 52), c(0x7ff));
+			auto* man = irb.CreateOr(irb.CreateAnd(b, c(0xfffffffffffffULL)), c(1ULL << 52));
+			auto* e = irb.CreateSub(ex, c(1075));
+			auto* isPos = irb.CreateICmpSGE(e, c(0));
+			auto* ne = irb.CreateNeg(e);
+			auto* shl = irb.CreateSelect(irb.CreateICmpULT(e, c(64)), irb.CreateShl(man, e), c(0));
+			auto* shr = irb.CreateSelect(irb.CreateICmpULT(ne, c(64)), irb.CreateLShr(man, ne), c(0));
+			llvm::Value* v = irb.CreateSelect(isPos, shl, shr);
+			v = irb.CreateSelect(irb.CreateICmpEQ(ex, c(0x7ff)), c(0), v);
+			v = irb.CreateSelect(irb.CreateICmpEQ(ex, c(0)), c(0), v);
+			auto* neg = irb.CreateICmpSLT(b, c(0));
+			v = irb.CreateSelect(neg, irb.CreateNeg(v), v);
+			setGpr(irb.CreateTrunc(v, i32));
+			return;
+		}
+		case RISCV_INS_FMVH_X_D:
+			setGpr(irb.CreateTrunc(irb.CreateLShr(fbits(1), 32), i32));
+			return;
+		case RISCV_INS_FMVP_D_X:
+		{
+			if (ri->op_count != 3) throwUnexpectedOperands(i);
+			auto* lo = irb.CreateZExt(irb.CreateTrunc(gpr(1), i32), i64);
+			auto* hi = irb.CreateZExt(irb.CreateTrunc(gpr(2), i32), i64);
+			auto* d = irb.CreateBitCast(irb.CreateOr(irb.CreateShl(hi, 32), lo), irb.getDoubleTy());
+			storeOp(ri->operands[0], d, irb, eOpConv::FPCAST_OR_BITCAST);
+			return;
+		}
+		default:
+			translatePseudoAsmGeneric(i, ri, irb);
+	}
+}
+
+/**
+ * T-Head XTheadFMemIdx indexed FP loads/stores: rs1 + (rs2 << imm2), with
+ * the .u forms zero-extending the low 32 bits of rs2.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateTheadFmem(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	if (ri->op_count != 4 || ri->operands[3].type != RISCV_OP_IMM)
+	{
+		throwUnexpectedOperands(i);
+	}
+	auto* xt = getDefaultType();
+	auto gpr = [&](unsigned k) -> llvm::Value* {
+		auto r = ri->operands[k].reg;
+		if (r == RISCV_REG_X0) return llvm::ConstantInt::get(xt, 0);
+		return irb.CreateZExtOrTrunc(loadRegister(r, irb), xt);
+	};
+	unsigned id = i->id;
+	bool u = id == RISCV_INS_TH_FLURD || id == RISCV_INS_TH_FLURW
+			|| id == RISCV_INS_TH_FSURD || id == RISCV_INS_TH_FSURW;
+	bool st = id == RISCV_INS_TH_FSRD || id == RISCV_INS_TH_FSRW
+			|| id == RISCV_INS_TH_FSURD || id == RISCV_INS_TH_FSURW;
+	bool dbl = id == RISCV_INS_TH_FLRD || id == RISCV_INS_TH_FLURD
+			|| id == RISCV_INS_TH_FSRD || id == RISCV_INS_TH_FSURD;
+	llvm::Value* idx = gpr(2);
+	if (u) idx = irb.CreateZExt(irb.CreateTrunc(idx, irb.getInt32Ty()), xt);
+	auto* ea = irb.CreateAdd(gpr(1), irb.CreateShl(idx, ri->operands[3].imm & 3));
+	auto* fty = dbl ? irb.getDoubleTy() : irb.getFloatTy();
+	auto* ity = irb.getIntNTy(dbl ? 64 : 32);
+	if (st)
+	{
+		llvm::Value* v = loadRegister(ri->operands[0].reg, irb);
+		if (v->getType() != fty) v = irb.CreateFPCast(v, fty);
+		storeIntPtr(irb, irb.CreateBitCast(v, ity), ea, ity);
+		return;
+	}
+	auto* v = irb.CreateBitCast(loadIntPtr(irb, ea, ity), fty);
+	storeOp(ri->operands[0], v, irb, eOpConv::FPCAST_OR_BITCAST);
+}
+
+
 void Capstone2LlvmIrTranslatorRiscv_impl::translateCoreV(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
 {
 	// CORE-V (XCV) ALU, bit-manipulation and packed-SIMD operations, decoded
