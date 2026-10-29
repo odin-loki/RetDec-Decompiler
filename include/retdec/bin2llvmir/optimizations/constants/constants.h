@@ -41,6 +41,7 @@ class ConstantsAnalysis : public llvm::ModulePass
 
 	private:
 		bool run();
+		void widenNarrowConstantLoads();
 		void checkForGlobalInInstruction(
 				ReachingDefinitionsAnalysis& RDA,
 				llvm::Instruction* inst,

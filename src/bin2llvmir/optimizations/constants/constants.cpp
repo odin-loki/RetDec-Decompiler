@@ -114,7 +114,47 @@ bool ConstantsAnalysis::run()
 
 	IrModifier::eraseUnusedInstructionsRecursive(_toRemove);
 
+	widenNarrowConstantLoads();
+
 	return false;
+}
+
+/**
+ * `movapd 0x2010(%rip),%xmm0` reads 16 bytes, but the global made for 0x2010
+ * may be typed by an earlier `movsd` of the same address as an 8-byte i64.
+ * LLVM then folds the i128 load of that 8-byte constant with its upper half
+ * as zero: {2.0, 4.0} became {2.0, 0.0}.  Read such wide loads of read-only
+ * data straight from the image instead.
+ */
+void ConstantsAnalysis::widenNarrowConstantLoads()
+{
+	auto& dl = _module->getDataLayout();
+	auto* img = _image->getImage();
+	for (Function& f : *_module)
+	for (inst_iterator I = inst_begin(&f), E = inst_end(&f); I != E;)
+	{
+		auto* load = dyn_cast<LoadInst>(&*I);
+		++I;
+		if (load == nullptr || !load->getType()->isIntegerTy()) continue;
+		auto* gv = dyn_cast<GlobalVariable>(load->getPointerOperand());
+		if (gv == nullptr || !gv->isConstant() || !gv->hasInitializer()) continue;
+		uint64_t want = dl.getTypeStoreSize(load->getType());
+		if (want <= dl.getTypeStoreSize(gv->getValueType())) continue;
+		auto addr = _config->getGlobalAddress(gv);
+		if (addr.isUndefined()) continue;
+		std::vector<std::uint8_t> bytes;
+		if (!img->getXBytes(addr, want, bytes) || bytes.size() < want) continue;
+		unsigned bits = load->getType()->getIntegerBitWidth();
+		APInt v(bits, 0);
+		bool le = dl.isLittleEndian();
+		for (uint64_t k = 0; k < want; ++k)
+		{
+			uint64_t b = bytes[le ? want - 1 - k : k];
+			v = v.shl(8) | APInt(bits, b);
+		}
+		load->replaceAllUsesWith(ConstantInt::get(load->getType(), v));
+		load->eraseFromParent();
+	}
 }
 
 void ConstantsAnalysis::checkForGlobalInInstruction(
