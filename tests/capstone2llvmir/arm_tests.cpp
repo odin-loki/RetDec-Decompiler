@@ -12552,6 +12552,90 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VUSMMLA)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VFMAB_bf16)
+{
+	ONLY_MODE_ARM;
+	_translator->modifyExtraMode(static_cast<cs_mode>(_translator->getExtraMode() | CS_MODE_V8));
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x3f800000ULL)},
+		{ARM_REG_D1, armDBits(0x0ULL)},
+		{ARM_REG_D2, armDBits(0x40404000ULL)},
+		{ARM_REG_D3, armDBits(0x0ULL)},
+		{ARM_REG_D4, armDBits(0x3f804040ULL)},
+		{ARM_REG_D5, armDBits(0x0ULL)},
+	});
+
+	emulate_bin("14 08 32 fc");
+
+	EXPECT_EQ(0x40e00000ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0ULL, dBits(ARM_REG_D1));
+	EXPECT_EQ(std::string::npos, dumpFunction(_function).find("__asm_"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VFMAT_bf16)
+{
+	ONLY_MODE_ARM;
+	_translator->modifyExtraMode(static_cast<cs_mode>(_translator->getExtraMode() | CS_MODE_V8));
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x3f800000ULL)},
+		{ARM_REG_D1, armDBits(0x0ULL)},
+		{ARM_REG_D2, armDBits(0x40404000ULL)},
+		{ARM_REG_D3, armDBits(0x0ULL)},
+		{ARM_REG_D4, armDBits(0x3f804040ULL)},
+		{ARM_REG_D5, armDBits(0x0ULL)},
+	});
+
+	emulate_bin("54 08 32 fc");
+
+	EXPECT_EQ(0x40800000ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0ULL, dBits(ARM_REG_D1));
+	EXPECT_EQ(std::string::npos, dumpFunction(_function).find("__asm_"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMMLA_bf16)
+{
+	ONLY_MODE_ARM;
+	_translator->modifyExtraMode(static_cast<cs_mode>(_translator->getExtraMode() | CS_MODE_V8));
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x0ULL)},
+		{ARM_REG_D1, armDBits(0x0ULL)},
+		{ARM_REG_D2, armDBits(0x40404000ULL)},
+		{ARM_REG_D3, armDBits(0x0ULL)},
+		{ARM_REG_D4, armDBits(0x3f804040ULL)},
+		{ARM_REG_D5, armDBits(0x3f80ULL)},
+	});
+
+	emulate_bin("44 0c 02 fc");
+
+	EXPECT_EQ(0x4000000041100000ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VDOT_bf16)
+{
+	ONLY_MODE_ARM;
+	_translator->modifyExtraMode(static_cast<cs_mode>(_translator->getExtraMode() | CS_MODE_V8));
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x0ULL)},
+		{ARM_REG_D1, armDBits(0x0ULL)},
+		{ARM_REG_D2, armDBits(0x40404000ULL)},
+		{ARM_REG_D3, armDBits(0x0ULL)},
+		{ARM_REG_D4, armDBits(0x3f804040ULL)},
+		{ARM_REG_D5, armDBits(0x0ULL)},
+	});
+
+	emulate_bin("44 0d 02 fc");
+
+	EXPECT_EQ(0x41100000ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VADCI_i32_carry_chain)
 {
 	ONLY_MODE_THUMB;

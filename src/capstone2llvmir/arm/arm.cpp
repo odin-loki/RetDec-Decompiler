@@ -8888,6 +8888,94 @@ void Capstone2LlvmIrTranslatorArm_impl::translateNeonDot(cs_insn* i, cs_arm* ai,
 
 
 /**
+ * BFloat16 VDOT (vector and indexed), VMMLA and the widening VFMAB/VFMAT.
+ * bf16 elements are widened exactly to f32; VFMAB/VFMAT are fused, VDOT and
+ * VMMLA use ordinary f32 multiply/add (their round-to-odd intermediate is
+ * not modelled).
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateNeonBf16(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	auto fallback = [&]() { translatePseudoAsmGeneric(i, ai, irb); };
+	if (ai->op_count != 3)
+	{
+		fallback();
+		return;
+	}
+	for (unsigned k = 0; k < 3; ++k)
+	{
+		if (ai->operands[k].type != ARM_OP_REG || !isNeonRegister(ai->operands[k].reg))
+		{
+			fallback();
+			return;
+		}
+	}
+	auto* i32 = irb.getInt32Ty();
+	auto* f32 = irb.getFloatTy();
+	auto rd = ai->operands[0].reg;
+	auto* d = loadNeonVector(rd, 32, false, irb);
+	auto* a = loadNeonVector(ai->operands[1].reg, 16, false, irb);
+	auto* b = loadNeonVector(ai->operands[2].reg, 16, false, irb);
+	unsigned n = llvm::cast<llvm::FixedVectorType>(d->getType())->getNumElements();
+	int lane = operandLane(ai->operands[2]);
+	auto bf = [&](llvm::Value* v, unsigned k) {
+		auto* e = irb.CreateZExt(irb.CreateExtractElement(v, uint64_t(k)), i32);
+		return irb.CreateBitCast(irb.CreateShl(e, 16), f32);
+	};
+	auto df = [&](unsigned k) {
+		return irb.CreateBitCast(irb.CreateExtractElement(d, uint64_t(k)), f32);
+	};
+	llvm::Value* r = d;
+	auto put = [&](unsigned k, llvm::Value* v) {
+		r = irb.CreateInsertElement(r, irb.CreateBitCast(v, i32), uint64_t(k));
+	};
+	switch (i->id)
+	{
+		case ARM_INS_VDOT:
+			for (unsigned k = 0; k < n; ++k)
+			{
+				unsigned bk = lane >= 0 ? unsigned(lane) : k;
+				auto* s = irb.CreateFAdd(
+						irb.CreateFMul(bf(a, 2 * k), bf(b, 2 * bk)),
+						irb.CreateFMul(bf(a, 2 * k + 1), bf(b, 2 * bk + 1)));
+				put(k, irb.CreateFAdd(df(k), s));
+			}
+			break;
+		case ARM_INS_VMMLA:
+			if (n != 4 || lane >= 0) { fallback(); return; }
+			for (unsigned row = 0; row < 2; ++row)
+			{
+				for (unsigned col = 0; col < 2; ++col)
+				{
+					llvm::Value* acc = df(2 * row + col);
+					for (unsigned j = 0; j < 4; ++j)
+					{
+						acc = irb.CreateFAdd(acc, irb.CreateFMul(bf(a, 4 * row + j), bf(b, 4 * col + j)));
+					}
+					put(2 * row + col, acc);
+				}
+			}
+			break;
+		case ARM_INS_VFMAB:
+		case ARM_INS_VFMAT:
+		{
+			unsigned t = i->id == ARM_INS_VFMAT ? 1 : 0;
+			auto* fma = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::fma, {f32});
+			for (unsigned k = 0; k < n; ++k)
+			{
+				unsigned bk = lane >= 0 ? unsigned(lane) : 2 * k + t;
+				put(k, irb.CreateCall(fma, {bf(a, 2 * k + t), bf(b, bk), df(k)}));
+			}
+			break;
+		}
+		default:
+			fallback();
+			return;
+	}
+	storeNeonVector(rd, r, irb);
+}
+
+
+/**
  * MVE predication: VPR.P0 is modelled as a 16-bit byte mask in ARM_REG_VPR.
  * VCTP, VPNOT and the VPT compare write it and VPSEL reads it. The VPT/VPST
  * mask fields and the predication of the instructions inside a VPT block
