@@ -1,3 +1,5 @@
+#include <cstdio>
+#include <cstdlib>
 #include <set>
 /**
  * @file src/sort_detect/sort_detector.cpp
@@ -264,6 +266,8 @@ bool decrementsInLoop(const ssa::SSAFunction& fn) {
 SortResult SelectionSortDetector::detect(const ssa::SSAFunction& fn) const {
     SortResult result;
     result.algorithm = SortAlgorithm::SelectionSort;
+    if (std::getenv("RETDEC_SORT_DIAG"))
+        std::fprintf(stderr, "SEL %s nested=%d dec=%d\n", fn.name().c_str(), ssa::hasNestedLoop(fn), decrementsInLoop(fn));
     if (!ssa::hasNestedLoop(fn) || decrementsInLoop(fn)) return result;
 
     // The scan: compares two elements it read and writes nothing. Nothing
@@ -286,6 +290,8 @@ SortResult SelectionSortDetector::detect(const ssa::SSAFunction& fn) const {
             swap = true;
         }
     }
+    if (std::getenv("RETDEC_SORT_DIAG"))
+        std::fprintf(stderr, "SEL %s scan=%d swap=%d\n", fn.name().c_str(), scan, swap);
     if (scan && swap) result.confidence = 0.55f;
     result.compilerVariant = CompilerVariant::Unknown;
     return result;
