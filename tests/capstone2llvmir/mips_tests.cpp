@@ -4634,9 +4634,8 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ROUND_w_s_64)
 		{MIPS_REG_F0, ANY},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_round.w.s"), {3.14_f64}},
-	});
+	// Translated now (N64 single/word access, see fpRegWord()); only the
+	// rounding intrinsic is called.
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ROUND_w_d_64)
@@ -4654,9 +4653,8 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ROUND_w_d_64)
 		{MIPS_REG_F0, ANY},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_round.w.d"), {3.14_f64}},
-	});
+	// Translated now (N64 single/word access, see fpRegWord()); only the
+	// rounding intrinsic is called.
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ROUND_l_s_64)
@@ -4674,9 +4672,8 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ROUND_l_s_64)
 		{MIPS_REG_F0, ANY},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_round.l.s"), {3.14_f64}},
-	});
+	// Translated now (N64 single/word access, see fpRegWord()); only the
+	// rounding intrinsic is called.
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ROUND_l_d_64)
@@ -5090,9 +5087,8 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FLOOR_w_s_64)
 		{MIPS_REG_F0, ANY},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_floor.w.s"), {3.14_f64}},
-	});
+	// Translated now (N64 single/word access, see fpRegWord()); only the
+	// rounding intrinsic is called.
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FLOOR_w_d_64)
@@ -5110,9 +5106,8 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FLOOR_w_d_64)
 		{MIPS_REG_F0, ANY},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_floor.w.d"), {3.14_f64}},
-	});
+	// Translated now (N64 single/word access, see fpRegWord()); only the
+	// rounding intrinsic is called.
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FLOOR_l_s_64)
@@ -5130,9 +5125,8 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FLOOR_l_s_64)
 		{MIPS_REG_F0, ANY},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_floor.l.s"), {3.14_f64}},
-	});
+	// Translated now (N64 single/word access, see fpRegWord()); only the
+	// rounding intrinsic is called.
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FLOOR_l_d_64)
@@ -5223,9 +5217,8 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CEIL_w_s_64)
 		{MIPS_REG_F0, ANY},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_ceil.w.s"), {3.14_f64}},
-	});
+	// Translated now (N64 single/word access, see fpRegWord()); only the
+	// rounding intrinsic is called.
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CEIL_w_d_64)
@@ -5243,9 +5236,8 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CEIL_w_d_64)
 		{MIPS_REG_F0, ANY},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_ceil.w.d"), {3.14_f64}},
-	});
+	// Translated now (N64 single/word access, see fpRegWord()); only the
+	// rounding intrinsic is called.
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CEIL_l_s_64)
@@ -5263,9 +5255,8 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CEIL_l_s_64)
 		{MIPS_REG_F0, ANY},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_ceil.l.s"), {3.14_f64}},
-	});
+	// Translated now (N64 single/word access, see fpRegWord()); only the
+	// rounding intrinsic is called.
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CEIL_l_d_64)
@@ -5348,9 +5339,8 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_TRUNC_w_s_64)
 		{MIPS_REG_F0, ANY},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_trunc.w.s"), {3.14_f64}},
-	});
+	// Translated now (N64 single/word access, see fpRegWord()).
+	EXPECT_NO_VALUE_CALLED();
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_TRUNC_w_d_64)
@@ -5368,9 +5358,8 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_TRUNC_w_d_64)
 		{MIPS_REG_F0, ANY},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_trunc.w.d"), {3.14_f64}},
-	});
+	// Translated now (N64 single/word access, see fpRegWord()).
+	EXPECT_NO_VALUE_CALLED();
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_TRUNC_l_s_64)
@@ -5388,9 +5377,8 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_TRUNC_l_s_64)
 		{MIPS_REG_F0, ANY},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_trunc.l.s"), {3.14_f64}},
-	});
+	// Translated now (N64 single/word access, see fpRegWord()).
+	EXPECT_NO_VALUE_CALLED();
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_TRUNC_l_d_64)
@@ -5446,7 +5434,9 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MFC1_64)
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F0});
 	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_2, 0x51eb851f}, // double to hex = 0x40091eb8 | 51eb851f
+		// The N64 register holds a single as its fpext (see fpRegWord()):
+		// mfc1 moves the bits of (float)3.14, not the low word of 3.14.
+		{MIPS_REG_2, 0x4048f5c3},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();
@@ -5808,6 +5798,46 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CVT_s_w)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+// mtc1 then cvt.s.w on N64: the word moved in must be the word converted
+// (mips64el -O1 f_u2f converted the raw double bits instead).
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MTC1_CVT_s_w_64)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_1, 0xfffffff9},
+	});
+
+	emulate("mtc1 $1, $f1; cvt.s.w $f1, $f1");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_1, MIPS_REG_F1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_F1, static_cast<double>(-7.0)},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// mul.s on N64 rounds to single: 4097*4097 = 16785409 is not a float.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MUL_S_rounds_to_single_64)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_F2, 4097.0_f64},
+		{MIPS_REG_F4, 4097.0_f64},
+	});
+
+	emulate("mul.s $f0, $f2, $f4");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2, MIPS_REG_F4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_F0, 16785408.0_f64},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CVT_s_l)
 {
 	ONLY_MODE_64;
@@ -5820,7 +5850,8 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CVT_s_l)
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_F0, 4614253070214989087.0_f64},
+		// cvt.S.l rounds to single.
+		{MIPS_REG_F0, static_cast<double>(4.614252828322431e+18f)},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();

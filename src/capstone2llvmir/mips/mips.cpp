@@ -5,6 +5,7 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <cstring>
 #include <cmath>
 #include <cstdint>
 #include <iomanip>
@@ -462,6 +463,28 @@ static uint32_t canonicalizeMipsReg(uint32_t r)
 	}
 }
 
+/// On N64 every $fN is one 64-bit register, modelled as a double. A single
+/// or a 32-bit word in it is held as the fpext of the float with those 32
+/// bits: lwc1 and mtc1 already wrote it so, and the .s arithmetic reads it
+/// so. The word readers and writers (cvt.*.w, mfc1, trunc/cvt.w.*) used the
+/// raw double bits instead, so `mtc1; cvt.s.w` converted garbage. These two
+/// keep every 32-bit access on the one representation; LLVM folds the
+/// fptrunc(fpext(x)) pairs away.
+static llvm::Value* fpRegWord(llvm::Value* v, llvm::IRBuilder<>& irb)
+{
+	if (v->getType()->isDoubleTy())
+	{
+		v = irb.CreateFPTrunc(v, irb.getFloatTy());
+	}
+	return irb.CreateBitCast(v, irb.getInt32Ty());
+}
+
+static llvm::Value* fpRegFromWord(llvm::Value* w, llvm::Type* regTy, llvm::IRBuilder<>& irb)
+{
+	llvm::Value* f = irb.CreateBitCast(irb.CreateZExtOrTrunc(w, irb.getInt32Ty()), irb.getFloatTy());
+	return regTy->isDoubleTy() ? irb.CreateFPExt(f, regTy) : f;
+}
+
 static bool isCanonicalFpReg(uint32_t r)
 {
 	r = canonicalizeMipsReg(r);
@@ -695,6 +718,25 @@ llvm::StoreInst* Capstone2LlvmIrTranslatorMips_impl::storeRegister(
 		throw GenericError("storeRegister() unhandled reg.");
 	}
 	val = generateTypeConversion(irb, val, llvmReg->getValueType(),  llvmReg->getValueType()->isFloatingPointTy()? eOpConv::FPCAST_OR_BITCAST : ct);
+
+	// N64: a .s operation on the double-modelled register computes in double;
+	// the hardware rounds to single. Round here, or `x*y + c` in float
+	// came out at double precision.
+	if (val->getType()->isDoubleTy() && _insn != nullptr
+			&& MIPS_REG_F0 <= r && r <= MIPS_REG_F31)
+	{
+		static const char* singleArith[] = {"add.s", "sub.s", "mul.s", "div.s",
+				"sqrt.s", "madd.s", "msub.s", "nmadd.s", "nmsub.s", "recip.s",
+				"rsqrt.s", "maddf.s", "msubf.s"};
+		for (auto* m : singleArith)
+		{
+			if (std::strcmp(_insn->mnemonic, m) == 0)
+			{
+				val = irb.CreateFPExt(irb.CreateFPTrunc(val, irb.getFloatTy()), val->getType());
+				break;
+			}
+		}
+	}
 
 	auto* s = irb.CreateStore(val, llvmReg);
 	attachPointeeType(s, llvmReg->getValueType());
@@ -1785,6 +1827,10 @@ void Capstone2LlvmIrTranslatorMips_impl::translateFpToInt(cs_insn* i, cs_mips* m
 	// of the width the mnemonic asks for is the question, so the loaded type is
 	// what gets checked -- not the register id, which is the same either way.
 	llvm::Value* src = loadRegister(mi->operands[1].reg, irb);
+	if (src != nullptr && srcBits == 32 && src->getType()->isDoubleTy())
+	{
+		src = irb.CreateFPTrunc(src, irb.getFloatTy()); // N64 single, see fpRegWord()
+	}
 	if (src == nullptr || !src->getType()->isFloatingPointTy() || src->getType()->getPrimitiveSizeInBits() != srcBits)
 	{
 		translatePseudoAsmOp0FncOp1(i, mi, irb);
@@ -1798,7 +1844,8 @@ void Capstone2LlvmIrTranslatorMips_impl::translateFpToInt(cs_insn* i, cs_mips* m
 	// instruction reads f0.
 	uint32_t dr = canonicalizeMipsReg(mi->operands[0].reg);
 	llvm::Type* dstTy = getRegisterType(dr);
-	if (dstTy == nullptr || dstTy->getPrimitiveSizeInBits() != dstBits)
+	bool wordInDouble = dstBits == 32 && dstTy != nullptr && dstTy->isDoubleTy();
+	if (!wordInDouble && (dstTy == nullptr || dstTy->getPrimitiveSizeInBits() != dstBits))
 	{
 		uint32_t alt = singlePrecisionToDoublePrecisionFpRegister(dr);
 		llvm::Type* altTy = getRegister(alt) ? getRegisterType(alt) : nullptr;
@@ -1809,7 +1856,8 @@ void Capstone2LlvmIrTranslatorMips_impl::translateFpToInt(cs_insn* i, cs_mips* m
 		}
 	}
 	auto* dstReg = getRegister(dr);
-	if (dstReg == nullptr || dstTy == nullptr || dstTy->getPrimitiveSizeInBits() != dstBits)
+	if (dstReg == nullptr || dstTy == nullptr
+			|| (!wordInDouble && dstTy->getPrimitiveSizeInBits() != dstBits))
 	{
 		translatePseudoAsmOp0FncOp1(i, mi, irb);
 		return;
@@ -1841,7 +1889,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateFpToInt(cs_insn* i, cs_mips* m
 	}
 
 	llvm::Value* iv = generateFpToIntDefault(src, irb.getIntNTy(dstBits), irb);
-	auto* st = irb.CreateStore(irb.CreateBitCast(iv, dstTy), dstReg);
+	auto* st = irb.CreateStore(wordInDouble ? fpRegFromWord(iv, dstTy, irb) : irb.CreateBitCast(iv, dstTy), dstReg);
 	attachPointeeType(st, dstReg->getValueType());
 }
 
@@ -1871,6 +1919,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateCvt(cs_insn* i, cs_mips* mi, l
 	if (mnem == "cvt.s.d" || i->id == MIPS_INS_CVT_S_D) // should be only on MIPS32
 	{
 		op1 = loadRegister(r1, irb);
+		op1 = irb.CreateFPCast(op1, irb.getFloatTy());
 		op1 = irb.CreateFPCast(op1, getRegisterType(r0));
 		auto* dst = getRegister(r0);
 		auto* st = irb.CreateStore(op1, dst);
@@ -1883,11 +1932,12 @@ void Capstone2LlvmIrTranslatorMips_impl::translateCvt(cs_insn* i, cs_mips* mi, l
 	{
 		auto* op0Ty = getRegisterType(r0);
 		op1 = loadRegister(r1, irb);
-		auto* iTy = op1->getType()->isDoubleTy()
-				? irb.getInt64Ty()
-				: irb.getInt32Ty();
-		op1 = irb.CreateBitCast(op1, iTy);
-		op1 = irb.CreateSIToFP(op1, op0Ty);
+		bool isL = mnem == "cvt.s.l" || i->id == MIPS_INS_CVT_S_L;
+		op1 = isL && op1->getType()->isDoubleTy()
+				? irb.CreateBitCast(op1, irb.getInt64Ty())
+				: fpRegWord(op1, irb);
+		op1 = irb.CreateSIToFP(op1, irb.getFloatTy());
+		op1 = irb.CreateFPCast(op1, op0Ty);
 		auto* dst = getRegister(r0);
 		auto* st = irb.CreateStore(op1, dst);
 		attachPointeeType(st, dst->getValueType());
@@ -1905,10 +1955,10 @@ void Capstone2LlvmIrTranslatorMips_impl::translateCvt(cs_insn* i, cs_mips* mi, l
 			|| i->id == MIPS_INS_CVT_D_L)
 	{
 		op1 = createLoad(irb, getRegister(r1));
-		auto* iTy = op1->getType()->isDoubleTy()
-				? irb.getInt64Ty()
-				: irb.getInt32Ty();
-		op1 = irb.CreateBitCast(op1, iTy);
+		bool isL = mnem == "cvt.d.l" || i->id == MIPS_INS_CVT_D_L;
+		op1 = isL && op1->getType()->isDoubleTy()
+				? irb.CreateBitCast(op1, irb.getInt64Ty())
+				: fpRegWord(op1, irb);
 		op1 = irb.CreateSIToFP(op1, irb.getDoubleTy());
 		storeRegister(r0, op1, irb, eOpConv::SITOFP_OR_FPCAST);
 	}
@@ -1935,11 +1985,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateCvt(cs_insn* i, cs_mips* mi, l
 		// picked the width from the SOURCE, so cvt.w.d converted to 64 bits.
 		auto* iTy = irb.getInt32Ty();
 		op1 = generateFpToIntDefault(op1, iTy, irb);
-		auto* iTy2 = getRegisterType(r0)->isDoubleTy()
-				? irb.getInt64Ty()
-				: irb.getInt32Ty();
-		op1 = irb.CreateSExtOrTrunc(op1, iTy2);
-		op1 = irb.CreateBitCast(op1, getRegisterType(r0));
+		op1 = fpRegFromWord(op1, getRegisterType(r0), irb);
 		auto* dst = getRegister(r0);
 		auto* st = irb.CreateStore(op1, dst);
 		attachPointeeType(st, dst->getValueType());
@@ -7878,11 +7924,9 @@ void Capstone2LlvmIrTranslatorMips_impl::translateMfc1(cs_insn* i, cs_mips* mi, 
 		storeOp(mi->operands[0], op1, irb);
 		return;
 	}
-	auto* ty = op1->getType()->isDoubleTy()
-			? irb.getInt64Ty()
-			: irb.getInt32Ty();
-	op1 = irb.CreateBitCast(op1, ty);
-	op1 = irb.CreateZExtOrTrunc(op1, irb.getInt32Ty()); // even on 64-bit it takes only 0..31
+	op1 = op1->getType()->isFloatingPointTy()
+			? fpRegWord(op1, irb)
+			: irb.CreateZExtOrTrunc(op1, irb.getInt32Ty()); // only bits 0..31
 	storeOp(mi->operands[0], op1, irb);
 }
 
