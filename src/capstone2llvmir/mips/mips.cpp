@@ -8613,6 +8613,7 @@ static unsigned dspLaneBits(unsigned id)
 		case MIPS_INS_ADDU_PH:
 		case MIPS_INS_SUBU_PH:
 		case MIPS_INS_MUL_PH:
+		case MIPS_INS_MUL_S_PH:
 			return 16;
 		default:
 			return 32;
@@ -8717,6 +8718,22 @@ void Capstone2LlvmIrTranslatorMips_impl::translateDspArith(cs_insn* i, cs_mips* 
 					: llvm::Instruction::Add,
 					irb);
 			break;
+		case MIPS_INS_MUL_S_PH:
+		{
+			// Signed halfword products saturated to int16 (DSP R2); the
+			// DSPControl ouflag bit is not modelled.
+			auto* vecTy = llvm::FixedVectorType::get(irb.getInt16Ty(), 2);
+			auto* wideVec = llvm::FixedVectorType::get(irb.getInt32Ty(), 2);
+			auto* aw = irb.CreateSExt(irb.CreateBitCast(dspToI32(op1, irb), vecTy), wideVec);
+			auto* bw = irb.CreateSExt(irb.CreateBitCast(dspToI32(op2, irb), vecTy), wideVec);
+			auto* w = irb.CreateMul(aw, bw);
+			auto* loC = llvm::ConstantInt::get(wideVec, -32768, true);
+			auto* hiC = llvm::ConstantInt::get(wideVec, 32767, true);
+			w = irb.CreateSelect(irb.CreateICmpSLT(w, loC), loC, w);
+			w = irb.CreateSelect(irb.CreateICmpSGT(w, hiC), hiC, w);
+			r = irb.CreateBitCast(irb.CreateTrunc(w, vecTy), irb.getInt32Ty());
+			break;
+		}
 		case MIPS_INS_ADDQ_S_PH:
 		case MIPS_INS_ADDQ_S_W:
 		case MIPS_INS_SUBQ_S_PH:

@@ -11979,6 +11979,25 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MUL_PH)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MUL_S_PH_saturates_each_lane)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_V1, 0x30002},
+		{MIPS_REG_A0, 0xffff8000},
+	});
+
+	emulate_bin("98 13 64 7c"); // mul_s.ph $v0, $v1, $a0
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_A0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_V0, 0xfffd8000},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
 static double mipsPsDouble(uint64_t bits)
 {
 	double d = 0;

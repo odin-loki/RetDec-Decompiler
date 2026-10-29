@@ -394,6 +394,7 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorMips_impl::*)(cs_insn* i, c
 		{MIPS_INS_SUBU_QB, &Capstone2LlvmIrTranslatorMips_impl::translateDspArith},
 		{MIPS_INS_SUBU_PH, &Capstone2LlvmIrTranslatorMips_impl::translateDspArith},
 		{MIPS_INS_MUL_PH, &Capstone2LlvmIrTranslatorMips_impl::translateDspArith},
+		{MIPS_INS_MUL_S_PH, &Capstone2LlvmIrTranslatorMips_impl::translateDspArith},
 		{MIPS_INS_ADDQ_PH, &Capstone2LlvmIrTranslatorMips_impl::translateDspArith},
 		{MIPS_INS_ADDQ_S_PH, &Capstone2LlvmIrTranslatorMips_impl::translateDspArith},
 		{MIPS_INS_ADDQ_S_W, &Capstone2LlvmIrTranslatorMips_impl::translateDspArith},
