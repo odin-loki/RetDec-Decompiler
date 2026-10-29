@@ -238,6 +238,7 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		void translateXoris(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateVecLogical(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateVecLoadIndexed(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateAtomicMemOp(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateLoadStoreQuad(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateVsxQuad(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateVecCryptoHalf(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);

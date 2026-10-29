@@ -12130,5 +12130,66 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateLoadStoreQuad(cs_insn* i, c
 	}
 }
 
+
+/**
+ * PPC_INS_LDAT, PPC_INS_LWAT, PPC_INS_STDAT, PPC_INS_STWAT -- ISA 3.0
+ * atomic memory operations. The fetch-and-op and store-op function codes
+ * become atomicrmw; the compare and bounded-increment codes stay pseudo.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateAtomicMemOp(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	if (pi->op_count != 3 || pi->operands[0].type != PPC_OP_REG || pi->operands[1].type != PPC_OP_REG
+			|| pi->operands[2].type != PPC_OP_IMM)
+	{
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+	auto toR = [](unsigned r) -> unsigned {
+		return (r >= PPC_REG_X0 && r <= PPC_REG_X31) ? PPC_REG_R0 + (r - PPC_REG_X0) : r;
+	};
+	unsigned rt = toR(pi->operands[0].reg);
+	unsigned ra = toR(pi->operands[1].reg);
+	unsigned fc = unsigned(pi->operands[2].imm) & 31;
+	bool load = i->id == PPC_INS_LDAT || i->id == PPC_INS_LWAT;
+	bool dw = i->id == PPC_INS_LDAT || i->id == PPC_INS_STDAT;
+	llvm::AtomicRMWInst::BinOp op;
+	switch (fc)
+	{
+		case 0: op = llvm::AtomicRMWInst::Add; break;
+		case 1: op = llvm::AtomicRMWInst::Xor; break;
+		case 2: op = llvm::AtomicRMWInst::Or; break;
+		case 3: op = llvm::AtomicRMWInst::And; break;
+		case 4: op = llvm::AtomicRMWInst::UMax; break;
+		case 5: op = llvm::AtomicRMWInst::Max; break;
+		case 6: op = llvm::AtomicRMWInst::UMin; break;
+		case 7: op = llvm::AtomicRMWInst::Min; break;
+		case 8:
+			if (!load)
+			{
+				translatePseudoAsmGeneric(i, pi, irb);
+				return;
+			}
+			op = llvm::AtomicRMWInst::Xchg;
+			break;
+		default:
+			translatePseudoAsmGeneric(i, pi, irb);
+			return;
+	}
+	if (rt < PPC_REG_R0 || rt > PPC_REG_R31 || ra < PPC_REG_R0 || ra > PPC_REG_R31 || (load && rt == PPC_REG_R31))
+	{
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+	auto* ty = dw ? irb.getInt64Ty() : irb.getInt32Ty();
+	auto* ea = irb.CreateZExtOrTrunc(loadRegister(ra, irb), getDefaultType());
+	auto* ptr = irb.CreateIntToPtr(ea, llvm::PointerType::get(irb.getContext(), 0));
+	auto* val = irb.CreateZExtOrTrunc(loadRegister(load ? rt + 1 : rt, irb), ty);
+	auto* old = irb.CreateAtomicRMW(op, ptr, val, llvm::MaybeAlign(), llvm::AtomicOrdering::Monotonic);
+	if (load)
+	{
+		storeRegister(rt, irb.CreateZExt(old, getDefaultType()), irb);
+	}
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec
