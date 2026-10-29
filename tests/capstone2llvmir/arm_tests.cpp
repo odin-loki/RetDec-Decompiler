@@ -11560,6 +11560,32 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_MRS_spsr_stays_pseudo)
 	});
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_BKPT)
+{
+	ONLY_MODE_ARM;
+
+	emulate("bkpt #0x12");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_bkpt"), {0x12}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UDF)
+{
+	ONLY_MODE_ARM;
+
+	emulate("udf #0x34");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_udf"), {0x34}},
+	});
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
