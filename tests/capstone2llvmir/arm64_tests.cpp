@@ -725,6 +725,177 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_STLLR_stores_doubleword)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CFINV)
+{
+	setRegisters({
+		{ARM64_REG_CPSR_C, true},
+	});
+
+	emulate_bin("1f 40 00 d5"); // cfinv
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_CPSR_C, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_RMIF)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0x60},
+	});
+
+	emulate_bin("26 04 02 ba"); // rmif x1, #4, #6
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_CPSR_Z, true},
+		{ARM64_REG_CPSR_C, true},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SETF8)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0x180},
+	});
+
+	emulate_bin("2d 08 00 3a"); // setf8 w1
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_CPSR_N, true},
+		{ARM64_REG_CPSR_Z, false},
+		{ARM64_REG_CPSR_V, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ADDG)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0x1000},
+	});
+
+	emulate_bin("20 0c 82 91"); // addg x0, x1, #32, #3
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0x1020},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SUBP)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0xff00000000001000},
+		{ARM64_REG_X2, 0x800},
+	});
+
+	emulate_bin("20 00 c2 9a"); // subp x0, x1, x2
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0x800},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_STGP_pre)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0x2000},
+		{ARM64_REG_X2, 0x1111},
+		{ARM64_REG_X3, 0x2222},
+	});
+
+	emulate_bin("22 8c bf 69"); // stgp x2, x3, [x1, #-16]!
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X1, 0x1ff0},
+	});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1ff0, 0x1111_qw},
+		{0x1ff8, 0x2222_qw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_STZG_post)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0x2000},
+	});
+
+	emulate_bin("20 14 60 d9"); // stzg x0, [x1], #16
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X1, 0x2010},
+	});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x2000, 0x0_qw},
+		{0x2008, 0x0_qw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FRINT32X_in_range)
+{
+	setRegisters({
+		{ARM64_REG_D1, 3.7_f64},
+	});
+
+	emulate_bin("20 c0 68 1e"); // frint32x d0, d1
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_D0, 4.0_f64},
+	});
+	// rint is an intrinsic call in the emulator.
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FRINT32X_out_of_range)
+{
+	setRegisters({
+		{ARM64_REG_D1, 1.0e30_f64},
+	});
+
+	emulate_bin("20 c0 68 1e"); // frint32x d0, d1
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_D0, double(-2147483648.0)},
+	});
+	// rint is an intrinsic call in the emulator.
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_EOR3)
+{
+	setRegisters({
+		{ARM64_REG_V1, 0xf0},
+		{ARM64_REG_V2, 0xcc},
+		{ARM64_REG_V3, 0xaa},
+	});
+
+	emulate_bin("20 0c 02 ce"); // eor3 v0.16b, v1.16b, v2.16b, v3.16b
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_V0, 0x96},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_RAX1)
+{
+	setRegisters({
+		{ARM64_REG_V1, 0x1},
+		{ARM64_REG_V2, 0x8000000000000001},
+	});
+
+	emulate_bin("20 8c 62 ce"); // rax1 v0.2d, v1.2d, v2.2d
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_V0, 0x2},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CPYFP_is_one_memcpy)
 {
 	setRegisters({

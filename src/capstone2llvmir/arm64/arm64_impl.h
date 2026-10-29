@@ -295,6 +295,7 @@ class Capstone2LlvmIrTranslatorArm64_impl :
 		void translateRet(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translatePacBranch(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateMops(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateArm64Misc(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateRev(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 
 		// FP - instructions

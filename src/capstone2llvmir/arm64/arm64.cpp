@@ -9399,5 +9399,230 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateMops(cs_insn* i, cs_arm64* ai
 }
 
 
+/**
+ * Armv8.4/8.5 odds and ends decoded from the raw encoding:
+ *  - flag manipulation CFINV, AXFLAG, XAFLAG, RMIF, SETF8, SETF16;
+ *  - MTE with the tags left out of the model: ADDG/SUBG/IRG/GMI/SUBP are
+ *    plain address arithmetic, LDG is an identity, STG/ST2G only do their
+ *    write-back, STZG/STZ2G also zero the granule(s) and STGP stores a pair;
+ *  - FRINT32/64 X/Z (scalar);
+ *  - SHA3 EOR3, BCAX, RAX1, XAR.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateArm64Misc(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	uint32_t w = i->bytes[0] | (i->bytes[1] << 8) | (i->bytes[2] << 16)
+			| (uint32_t(i->bytes[3]) << 24);
+	auto xreg = [](unsigned n) -> uint32_t {
+		return n == 29 ? ARM64_REG_X29 : n == 30 ? ARM64_REG_X30 : ARM64_REG_X0 + n;
+	};
+	auto* i64 = irb.getInt64Ty();
+	auto* i1 = irb.getInt1Ty();
+	auto c64 = [&](int64_t v) { return llvm::ConstantInt::getSigned(i64, v); };
+	auto spOrX = [&](unsigned n) { return n == 31 ? uint32_t(ARM64_REG_SP) : xreg(n); };
+	auto zrOrX = [&](unsigned n) -> llvm::Value* {
+		return n == 31 ? static_cast<llvm::Value*>(c64(0)) : loadRegister(xreg(n), irb);
+	};
+	unsigned rd = w & 31, rn = (w >> 5) & 31, rm = (w >> 16) & 31;
+	auto flags = [&](llvm::Value* n, llvm::Value* z, llvm::Value* c, llvm::Value* v) {
+		if (n) storeRegister(ARM64_REG_CPSR_N, n, irb);
+		if (z) storeRegister(ARM64_REG_CPSR_Z, z, irb);
+		if (c) storeRegister(ARM64_REG_CPSR_C, c, irb);
+		if (v) storeRegister(ARM64_REG_CPSR_V, v, irb);
+	};
+	switch (i->id)
+	{
+		case ARM64_INS_CFINV:
+			flags(nullptr, nullptr, irb.CreateNot(loadRegister(ARM64_REG_CPSR_C, irb)), nullptr);
+			return;
+		case ARM64_INS_AXFLAG:
+		{
+			auto* z = loadRegister(ARM64_REG_CPSR_Z, irb);
+			auto* c = loadRegister(ARM64_REG_CPSR_C, irb);
+			auto* v = loadRegister(ARM64_REG_CPSR_V, irb);
+			auto* f = llvm::ConstantInt::getFalse(irb.getContext());
+			flags(f, irb.CreateOr(z, v), irb.CreateAnd(c, irb.CreateNot(v)), f);
+			return;
+		}
+		case ARM64_INS_XAFLAG:
+		{
+			auto* z = loadRegister(ARM64_REG_CPSR_Z, irb);
+			auto* c = loadRegister(ARM64_REG_CPSR_C, irb);
+			flags(irb.CreateAnd(irb.CreateNot(c), irb.CreateNot(z)), irb.CreateAnd(z, c),
+					irb.CreateOr(c, z), irb.CreateAnd(irb.CreateNot(c), z));
+			return;
+		}
+		case ARM64_INS_RMIF:
+		{
+			unsigned sh = (w >> 15) & 63, mask = w & 15;
+			auto* x = zrOrX(rn);
+			if (sh)
+			{
+				x = irb.CreateOr(irb.CreateLShr(x, sh), irb.CreateShl(x, 64 - sh));
+			}
+			auto bit = [&](unsigned b) { return irb.CreateTrunc(irb.CreateLShr(x, b), i1); };
+			flags((mask & 8) ? bit(3) : nullptr, (mask & 4) ? bit(2) : nullptr,
+					(mask & 2) ? bit(1) : nullptr, (mask & 1) ? bit(0) : nullptr);
+			return;
+		}
+		case ARM64_INS_SETF8:
+		case ARM64_INS_SETF16:
+		{
+			unsigned m = i->id == ARM64_INS_SETF8 ? 8 : 16;
+			auto* x = irb.CreateTrunc(zrOrX(rn), irb.getInt32Ty());
+			auto bit = [&](unsigned b) { return irb.CreateTrunc(irb.CreateLShr(x, b), i1); };
+			auto* low = irb.CreateTrunc(x, irb.getIntNTy(m));
+			flags(bit(m - 1), irb.CreateICmpEQ(low, llvm::ConstantInt::get(low->getType(), 0)),
+					nullptr, irb.CreateXor(bit(m), bit(m - 1)));
+			return;
+		}
+		case ARM64_INS_ADDG:
+		case ARM64_INS_SUBG:
+		{
+			int64_t off = int64_t((w >> 16) & 63) * 16;
+			auto* b = loadRegister(spOrX(rn), irb);
+			auto* r = i->id == ARM64_INS_ADDG ? irb.CreateAdd(b, c64(off)) : irb.CreateSub(b, c64(off));
+			storeRegister(spOrX(rd), r, irb);
+			return;
+		}
+		case ARM64_INS_IRG:
+			storeRegister(spOrX(rd), loadRegister(spOrX(rn), irb), irb);
+			return;
+		case ARM64_INS_GMI:
+		{
+			auto* tag = irb.CreateAnd(irb.CreateLShr(loadRegister(spOrX(rn), irb), 56), c64(15));
+			auto* r = irb.CreateOr(zrOrX(rm), irb.CreateShl(c64(1), tag));
+			if (rd != 31) storeRegister(xreg(rd), r, irb);
+			return;
+		}
+		case ARM64_INS_SUBP:
+		{
+			auto s56 = [&](unsigned n) {
+				return irb.CreateAShr(irb.CreateShl(loadRegister(spOrX(n), irb), 8), 8);
+			};
+			if (rd != 31) storeRegister(xreg(rd), irb.CreateSub(s56(rn), s56(rm)), irb);
+			return;
+		}
+		case ARM64_INS_LDG:
+			return;
+		case ARM64_INS_STG:
+		case ARM64_INS_STZG:
+		case ARM64_INS_ST2G:
+		case ARM64_INS_STZ2G:
+		{
+			unsigned op2 = (w >> 10) & 3;
+			int64_t imm = (w >> 12) & 0x1ff;
+			if (imm & 0x100) imm -= 0x200;
+			imm *= 16;
+			auto* base = loadRegister(spOrX(rn), irb);
+			auto* addr = op2 == 1 ? base : irb.CreateAdd(base, c64(imm));
+			if (i->id == ARM64_INS_STZG || i->id == ARM64_INS_STZ2G)
+			{
+				unsigned n = i->id == ARM64_INS_STZG ? 2 : 4;
+				for (unsigned k = 0; k < n; ++k)
+				{
+					storeIntPtr(irb, c64(0), irb.CreateAdd(addr, c64(8 * k)), i64);
+				}
+			}
+			if (op2 != 2)
+			{
+				storeRegister(spOrX(rn), irb.CreateAdd(base, c64(imm)), irb);
+			}
+			return;
+		}
+		case ARM64_INS_STGP:
+		{
+			unsigned mode = (w >> 23) & 3; // 01 post, 10 offset, 11 pre
+			int64_t imm = (w >> 15) & 0x7f;
+			if (imm & 0x40) imm -= 0x80;
+			imm *= 16;
+			unsigned rt2 = (w >> 10) & 31;
+			auto* base = loadRegister(spOrX(rn), irb);
+			auto* addr = mode == 1 ? base : irb.CreateAdd(base, c64(imm));
+			storeIntPtr(irb, zrOrX(rd), addr, i64);
+			storeIntPtr(irb, zrOrX(rt2), irb.CreateAdd(addr, c64(8)), i64);
+			if (mode != 2)
+			{
+				storeRegister(spOrX(rn), irb.CreateAdd(base, c64(imm)), irb);
+			}
+			return;
+		}
+		case ARM64_INS_FRINT32X:
+		case ARM64_INS_FRINT32Z:
+		case ARM64_INS_FRINT64X:
+		case ARM64_INS_FRINT64Z:
+		{
+			if (ai->op_count != 2 || isVectorRegister(ai->operands[0]))
+			{
+				translatePseudoAsmGeneric(i, ai, irb);
+				return;
+			}
+			bool z = i->id == ARM64_INS_FRINT32Z || i->id == ARM64_INS_FRINT64Z;
+			unsigned nb = (i->id == ARM64_INS_FRINT32X || i->id == ARM64_INS_FRINT32Z) ? 32 : 64;
+			auto* x = loadOp(ai->operands[1], irb);
+			auto* ty = x->getType();
+			auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module,
+					z ? llvm::Intrinsic::trunc : llvm::Intrinsic::rint, {ty});
+			auto* r = irb.CreateCall(f, {x});
+			auto* lo = llvm::ConstantFP::get(ty, -std::ldexp(1.0, nb - 1));
+			auto* hi = llvm::ConstantFP::get(ty, std::ldexp(1.0, nb - 1));
+			auto* in = irb.CreateAnd(irb.CreateFCmpOGE(r, lo), irb.CreateFCmpOLT(r, hi));
+			storeOp(ai->operands[0], irb.CreateSelect(in, r, lo), irb);
+			return;
+		}
+		case ARM64_INS_EOR3:
+		case ARM64_INS_BCAX:
+		case ARM64_INS_RAX1:
+		case ARM64_INS_XAR:
+		{
+			if (ai->op_count < 3)
+			{
+				translatePseudoAsmGeneric(i, ai, irb);
+				return;
+			}
+			auto* i128 = irb.getInt128Ty();
+			auto ld = [&](unsigned k) {
+				return arm64ZExtOrTruncInt(irb, loadRegister(ai->operands[k].reg, irb), i128);
+			};
+			auto* n = ld(1);
+			auto* m = ld(2);
+			llvm::Value* r = nullptr;
+			if (i->id == ARM64_INS_EOR3 || i->id == ARM64_INS_BCAX)
+			{
+				auto* a = ld(3);
+				r = i->id == ARM64_INS_EOR3
+						? irb.CreateXor(irb.CreateXor(n, m), a)
+						: irb.CreateXor(n, irb.CreateAnd(m, irb.CreateNot(a)));
+			}
+			else
+			{
+				unsigned rot = i->id == ARM64_INS_XAR ? unsigned(ai->operands[3].imm) & 63 : 63;
+				r = llvm::ConstantInt::get(i128, 0);
+				for (unsigned lane = 0; lane < 2; ++lane)
+				{
+					auto lan = [&](llvm::Value* v) {
+						return irb.CreateTrunc(irb.CreateLShr(v, 64 * lane), i64);
+					};
+					llvm::Value* e = i->id == ARM64_INS_XAR ? irb.CreateXor(lan(n), lan(m)) : lan(m);
+					if (rot)
+					{
+						e = irb.CreateOr(irb.CreateLShr(e, rot), irb.CreateShl(e, 64 - rot));
+					}
+					if (i->id == ARM64_INS_RAX1)
+					{
+						e = irb.CreateXor(lan(n), e);
+					}
+					r = irb.CreateOr(r, irb.CreateShl(irb.CreateZExt(e, i128), 64 * lane));
+				}
+			}
+			storeRegister(ai->operands[0].reg, r, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+			return;
+		}
+		default:
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+	}
+}
+
+
 } // namespace capstone2llvmir
 } // namespace retdec
