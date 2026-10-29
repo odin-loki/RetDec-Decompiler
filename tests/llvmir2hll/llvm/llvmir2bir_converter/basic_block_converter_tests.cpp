@@ -90,6 +90,34 @@ SignedLessThanFlagIdiomIsConvertedToAPlainComparison) {
 }
 
 TEST_F(BasicBlockConverterTests,
+SignedLessThanFlagIdiomTestedAgainstMinusOneIsConverted) {
+	auto module = convertLLVMIR2BIR(R"(
+		define i1 @function(i32 %a, i32 %b) {
+			%d = sub i32 %a, %b
+			%x1 = xor i32 %d, %a
+			%x2 = xor i32 %a, %b
+			%m = and i32 %x1, %x2
+			%s = xor i32 %m, %d
+			%c = icmp sle i32 %s, -1
+			ret i1 %c
+		}
+	)");
+
+	auto f = module->getFuncByName("function");
+	ASSERT_TRUE(f);
+	LtCollector c;
+	f->getBody()->accept(&c);
+	ASSERT_EQ(1u, c.found.size());
+	auto lt = c.found[0];
+	EXPECT_EQ(LtOpExpr::Variant::SCmp, lt->getVariant());
+	auto a = cast<Variable>(lt->getFirstOperand());
+	auto b = cast<Variable>(lt->getSecondOperand());
+	ASSERT_TRUE(a && b);
+	EXPECT_EQ("a", a->getName());
+	EXPECT_EQ("b", b->getName());
+}
+
+TEST_F(BasicBlockConverterTests,
 SequenceOfStatementsIsConvertedCorrectly) {
 	auto module = convertLLVMIR2BIR(R"(
 		declare void @test(i32)

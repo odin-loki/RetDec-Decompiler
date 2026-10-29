@@ -724,19 +724,23 @@ bool matchSignedLessThanFlags(llvm::Value *x, llvm::Value *&a,
 */
 ShPtr<Expression> LLVMInstructionConverter::convertICmpInstToExpression(
 		llvm::User &inst, unsigned predicate) {
-	if (predicate == llvm::CmpInst::Predicate::ICMP_SLT ||
-			predicate == llvm::CmpInst::Predicate::ICMP_SGE) {
-		auto *zero = llvm::dyn_cast<llvm::ConstantInt>(inst.getOperand(1));
-		llvm::Value *a = nullptr, *b = nullptr;
-		if (zero && zero->isZero() &&
-				matchSignedLessThanFlags(inst.getOperand(0), a, b)) {
-			auto ea = getConverter()->convertValueToExpression(a);
-			auto eb = getConverter()->convertValueToExpression(b);
-			if (predicate == llvm::CmpInst::Predicate::ICMP_SLT) {
-				return LtOpExpr::create(ea, eb, LtOpExpr::Variant::SCmp);
-			}
-			return GtEqOpExpr::create(ea, eb, GtEqOpExpr::Variant::SCmp);
+	// `x <s 0` and `x <=s -1` both test the sign bit (likewise `x >=s 0` and
+	// `x >s -1`).
+	auto *k = llvm::dyn_cast<llvm::ConstantInt>(inst.getOperand(1));
+	bool signTest = k && (
+		((predicate == llvm::CmpInst::Predicate::ICMP_SLT ||
+			predicate == llvm::CmpInst::Predicate::ICMP_SGE) && k->isZero()) ||
+		((predicate == llvm::CmpInst::Predicate::ICMP_SLE ||
+			predicate == llvm::CmpInst::Predicate::ICMP_SGT) && k->isMinusOne()));
+	llvm::Value *a = nullptr, *b = nullptr;
+	if (signTest && matchSignedLessThanFlags(inst.getOperand(0), a, b)) {
+		auto ea = getConverter()->convertValueToExpression(a);
+		auto eb = getConverter()->convertValueToExpression(b);
+		if (predicate == llvm::CmpInst::Predicate::ICMP_SLT ||
+				predicate == llvm::CmpInst::Predicate::ICMP_SLE) {
+			return LtOpExpr::create(ea, eb, LtOpExpr::Variant::SCmp);
 		}
+		return GtEqOpExpr::create(ea, eb, GtEqOpExpr::Variant::SCmp);
 	}
 
 	auto op1 = getConverter()->convertValueToExpression(inst.getOperand(0));
