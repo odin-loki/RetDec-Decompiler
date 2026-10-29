@@ -1992,6 +1992,7 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorX86_impl::*)(cs_insn* i, cs
 		{X86_INS_VREDUCEPD, &Capstone2LlvmIrTranslatorX86_impl::translateAvx512FpMisc},
 		{X86_INS_VREDUCESS, &Capstone2LlvmIrTranslatorX86_impl::translateAvx512FpMisc},
 		{X86_INS_VREDUCESD, &Capstone2LlvmIrTranslatorX86_impl::translateAvx512FpMisc},
+		{X86_INS_VDBPSADBW, &Capstone2LlvmIrTranslatorX86_impl::translateVdbpsadbw},
 		{X86_INS_VPMOVM2B, &Capstone2LlvmIrTranslatorX86_impl::translateAvxPmovNarrow},
 		{X86_INS_VPMOVM2D, &Capstone2LlvmIrTranslatorX86_impl::translateAvxPmovNarrow},
 		{X86_INS_VPMOVM2Q, &Capstone2LlvmIrTranslatorX86_impl::translateAvxPmovNarrow},

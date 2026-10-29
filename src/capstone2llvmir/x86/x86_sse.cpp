@@ -10272,5 +10272,75 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvx512FpMisc(cs_insn* i, cs_x86
 }
 
 
+void Capstone2LlvmIrTranslatorX86_impl::translateVdbpsadbw(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	// Double-block packed SAD: dwords of src2 are shuffled per 128-bit lane by
+	// imm8, then four overlapping 4-byte SADs per quadword are formed.
+	bool bcast = false;
+	for (unsigned k = 0; k < xi->op_count; ++k)
+	{
+		bcast |= xi->operands[k].avx_bcast != X86_AVX_BCAST_INVALID;
+	}
+	if (xi->op_count != 4 || bcast || hasEvexModifier(xi) || xi->operands[3].type != X86_OP_IMM)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned imm = unsigned(xi->operands[3].imm) & 0xff;
+	unsigned bits = xi->operands[0].size * 8;
+	unsigned ab = 0, bb = 0;
+	llvm::Value* a = loadVectorOp(xi->operands[1], irb, ab);
+	llvm::Value* b = xi->operands[2].type == X86_OP_MEM
+			? loadOp(xi->operands[2], irb, irb.getIntNTy(bits))
+			: loadVectorOp(xi->operands[2], irb, bb);
+	if (xi->operands[2].type == X86_OP_MEM) bb = bits;
+	if (a == nullptr || b == nullptr || (bits != 128 && bits != 256 && bits != 512) || ab < bits || bb < bits)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	auto* it = irb.getIntNTy(bits);
+	a = irb.CreateZExtOrTrunc(a, it);
+	b = irb.CreateZExtOrTrunc(b, it);
+	auto* i16 = irb.getInt16Ty();
+	auto byteOf = [&](llvm::Value* v, unsigned idx) {
+		return irb.CreateZExt(irb.CreateTrunc(irb.CreateLShr(v, idx * 8), irb.getInt8Ty()), i16);
+	};
+	llvm::Value* res = llvm::ConstantInt::get(it, 0);
+	for (unsigned lane = 0; lane < bits / 128; ++lane)
+	{
+		// tmp bytes for this lane.
+		llvm::Value* tb[16];
+		for (unsigned d = 0; d < 4; ++d)
+		{
+			unsigned sel = (imm >> (2 * d)) & 3;
+			for (unsigned k = 0; k < 4; ++k)
+			{
+				tb[d * 4 + k] = byteOf(b, lane * 16 + sel * 4 + k);
+			}
+		}
+		for (unsigned q = 0; q < 2; ++q)
+		{
+			static const unsigned aOff[4] = {0, 0, 4, 4};
+			static const unsigned tOff[4] = {0, 1, 2, 3};
+			for (unsigned wd = 0; wd < 4; ++wd)
+			{
+				llvm::Value* sum = llvm::ConstantInt::get(i16, 0);
+				for (unsigned k = 0; k < 4; ++k)
+				{
+					auto* x = byteOf(a, lane * 16 + q * 8 + aOff[wd] + k);
+					auto* y = tb[q * 8 + tOff[wd] + k];
+					auto* d = irb.CreateSelect(irb.CreateICmpUGT(x, y), irb.CreateSub(x, y), irb.CreateSub(y, x));
+					sum = irb.CreateAdd(sum, d);
+				}
+				unsigned pos = lane * 128 + q * 64 + wd * 16;
+				res = irb.CreateOr(res, irb.CreateShl(irb.CreateZExt(sum, it), pos));
+			}
+		}
+	}
+	storeVectorOp(xi->operands[0], res, bits, irb);
+}
+
+
 } // namespace capstone2llvmir
 } // namespace retdec
