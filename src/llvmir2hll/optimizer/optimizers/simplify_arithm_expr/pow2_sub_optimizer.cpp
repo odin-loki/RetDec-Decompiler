@@ -78,6 +78,9 @@ void Pow2SubOptimizer::visit(ShPtr<MulOpExpr> expr) {
         }
     }
     if (!base || log2 == 0) return;
+    // A float doubled (`addss x, x` arrives as x * 2) is not a shift; C
+    // rejects `<<` on a float.
+    if (!isa<IntType>(base->getType())) return;
     optimizeExpr(expr, BitShlOpExpr::create(base, sameWidthConst(log2, base)));
 }
 

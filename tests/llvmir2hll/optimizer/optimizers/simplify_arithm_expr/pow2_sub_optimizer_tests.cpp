@@ -11,6 +11,8 @@
 #include "retdec/llvmir2hll/ir/bit_shr_op_expr.h"
 #include "retdec/llvmir2hll/ir/const_int.h"
 #include "retdec/llvmir2hll/ir/div_op_expr.h"
+#include "retdec/llvmir2hll/ir/float_type.h"
+#include "retdec/llvmir2hll/ir/mul_op_expr.h"
 #include "retdec/llvmir2hll/ir/int_type.h"
 #include "retdec/llvmir2hll/ir/mod_op_expr.h"
 #include "retdec/llvmir2hll/ir/return_stmt.h"
@@ -73,6 +75,15 @@ UnsignedRemainderBecomesAMask) {
 		ModOpExpr::Variant::UMod));
 	optimizer->tryOptimize(ret->getRetVal());
 	EXPECT_TRUE(isa<BitAndOpExpr>(ret->getRetVal())) << ret;
+}
+
+// `addss x, x` reaches here as x * 2; a float cannot be shifted in C.
+TEST_F(Pow2SubOptimizerTests,
+FloatTimesTwoIsNotAShift) {
+	auto a = Variable::create("a", FloatType::create(32));
+	auto ret = ReturnStmt::create(MulOpExpr::create(a, ConstInt::create(2, 32)));
+	optimizer->tryOptimize(ret->getRetVal());
+	EXPECT_TRUE(isa<MulOpExpr>(ret->getRetVal())) << ret;
 }
 
 } // namespace tests
