@@ -63,6 +63,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   change it. A swap `t = *p; *p = *q; *q = t;` used to come out as
   `*p = *q; *q = *p;`; selection sort -O0, heapsort -O0/-O2 and quicksort
   -O2 in the corpus all had it.
+- An arithmetic right shift is no longer rewritten as a division or printed
+  as a logical shift, and a signed comparison of an unsigned-typed value is
+  printed through a signed cast. Clones, negation and loop rewrites keep a
+  comparison's signedness; `lcs_dp -O2` used to print `max` as a test that
+  is always false.
 
 ### Added
 
@@ -70,6 +75,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   loop and a swap outside it. Under `-O3` the corpus program is folded to
   constants.
 - `goto`s that leave two loops at once become a flag and two `break`s.
+- The x86 `SF != OF` idiom `((a - b) ^ a) & (a ^ b) ^ (a - b)) < 0` comes
+  out as `a < b`; `a == b || a < b` comes out as `a <= b`; an `else {}`
+  with nothing in it is no longer printed.
 
 ## [2.0.26] — 2026-09-19
 
