@@ -501,5 +501,44 @@ bool blockOnCycle(const SSAFunction& fn, BlockId b)
 	return false;
 }
 
+namespace {
+
+// Blocks reachable from `from` along successor edges without entering `stop`.
+std::vector<uint8_t> reachWithout(const SSAFunction& fn, BlockId from, BlockId stop)
+{
+	std::vector<uint8_t> seen(fn.blocks().size(), 0);
+	std::vector<BlockId> work{from};
+	while (!work.empty())
+	{
+		const BlockId cur = work.back();
+		work.pop_back();
+		if (cur >= seen.size() || seen[cur]) continue;
+		seen[cur] = 1;
+		if (const BasicBlock* cb = fn.block(cur))
+			for (BlockId s: cb->succs)
+				if (s != stop) work.push_back(s);
+	}
+	return seen;
+}
+
+} // anonymous namespace
+
+bool hasNestedLoop(const SSAFunction& fn)
+{
+	const auto edges = retreatingEdges(fn);
+	for (const auto& [tail, header]: edges)
+	{
+		// The loop body: blocks reachable from the header without re-entering
+		// it, from which the latch (tail) is reachable without the header.
+		const auto fromHeader = reachWithout(fn, header, header);
+		for (const auto& [tail2, header2]: edges)
+		{
+			if (header2 == header || header2 >= fromHeader.size() || !fromHeader[header2]) continue;
+			if (reachWithout(fn, header2, header)[tail]) return true;
+		}
+	}
+	return false;
+}
+
 } // namespace ssa
 } // namespace retdec

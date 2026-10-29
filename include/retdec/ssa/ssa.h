@@ -727,6 +727,10 @@ bool hasCycle(const SSAFunction& fn);
 /// True when block `b` lies on a cycle: some path from it leads back to it.
 bool blockOnCycle(const SSAFunction& fn, BlockId b);
 
+/// True when one loop lies inside another: the header of one retreating edge
+/// is in the body of a different loop.  Sequential loops are not nested.
+bool hasNestedLoop(const SSAFunction& fn);
+
 } // namespace ssa
 } // namespace retdec
 

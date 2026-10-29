@@ -418,7 +418,8 @@ bool InsertionSortFingerprint::hasBackwardShiftLoop(const ssa::SSAFunction& fn) 
 	// Two compares: inner shift test plus the outer insertion bound.
 	// One compare is an atoi/parse loop (B9 atoi_hex_table O2).
 	return countSubs(fn) >= 1 && countCompares(fn) >= 2 && countStores(fn) >= 1 && fn.blockCount() >= 3
-		&& hasElementMove(fn);
+		&& hasElementMove(fn)
+		&& ssa::hasNestedLoop(fn);
 }
 
 bool InsertionSortFingerprint::hasThresholdGuard(const ssa::SSAFunction& fn, int& threshold) const

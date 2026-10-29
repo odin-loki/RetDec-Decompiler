@@ -422,7 +422,11 @@ TEST(InsertionSortFingerprintTest, EmptyFunctionNoInsertion)
 // which has the same instruction mix in a single loop.
 static void addNestedLoop(ssa::SSAFunction& fn)
 {
-	// blocks 1 and 2 are each a loop header, so there are two of them.
+	// entry -> 1 -> 2 -> 3: blocks 1 and 2 are each a loop header, and the
+	// inner shift loop at 2 sits inside the outer walk 1..3.
+	fn.block(0)->succs.push_back(1);
+	fn.block(1)->succs.push_back(2);
+	fn.block(2)->succs.push_back(3);
 	fn.block(2)->succs.push_back(2); // inner shift loop
 	fn.block(3)->succs.push_back(1); // outer walk
 }
@@ -440,6 +444,27 @@ static void addElementMove(ssa::SSAFunction& fn, ssa::BlockId blk = 2)
 	u.valueId = loaded->id;
 	u.operandIndex = 0;
 	st->uses.push_back(u);
+}
+
+TEST(InsertionSortFingerprintTest, SequentialLoopsAreNotAnInsertionSort)
+{
+	// A merge: copy loops one after another, none inside another.
+	auto fn = makeFunc(
+		"merge",
+		{ssa::IrInstr::Op::Sub,
+		 ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::Store,
+		 ssa::IrInstr::Op::CondBranch},
+		3);
+	fn->block(0)->succs.push_back(1);
+	fn->block(1)->succs.push_back(1);
+	fn->block(1)->succs.push_back(2);
+	fn->block(2)->succs.push_back(2);
+	fn->block(2)->succs.push_back(3);
+	addElementMove(*fn);
+	InsertionSortFingerprint isf;
+	EXPECT_FALSE(isf.analyse(*fn).found);
 }
 
 TEST(InsertionSortFingerprintTest, BasicInsertionPattern)
@@ -539,6 +564,8 @@ TEST(InsertionSortFingerprintTest, ThresholdGuard16)
 	auto* entry = fn->addBlock("entry");
 	fn->addBlock("loop");
 	fn->addBlock("exit");
+	fn->block(0)->succs.push_back(1);
+	fn->block(1)->succs.push_back(2);
 	fn->block(2)->succs.push_back(2); // inner shift
 	fn->block(2)->succs.push_back(1); // outer walk
 
@@ -1079,8 +1106,7 @@ TEST(InsertionSortDetectorTest, BasicPattern)
 		 ssa::IrInstr::Op::Store,
 		 ssa::IrInstr::Op::CondBranch},
 		3);
-	fn->block(2)->succs.push_back(2);
-	fn->block(3)->succs.push_back(1);
+	addNestedLoop(*fn);
 	addElementMove(*fn);
 	InsertionSortDetector det;
 	auto r = det.detect(*fn);
