@@ -18,6 +18,8 @@
  * Whole-function opcode counts and function-name hints are not used.
  */
 
+#include <cstdio>
+#include <cstdlib>
 #include "retdec/algo_recover/algo_recover.h"
 #include "retdec/ssa/ssa.h"
 
@@ -167,7 +169,27 @@ isLoopInvariant(const SSAFunction& fn, const UseDef& ud, ValueId id, const std::
 	const BlockId b = defBlockOf(fn, ud, id);
 	if (b == kInvalidBlock) return true; // parameter / no in-function def
 	if (loop.empty()) return false;
-	return loop.find(b) == loop.end();
+	if (loop.find(b) == loop.end()) return true;
+
+	// At -O0 the target lives in a stack slot and is reloaded on every
+	// iteration, so its load is inside the loop -- but if nothing in the
+	// loop stores to that slot, the value is the same each time round.
+	const IrInstr* d = defInstrOf(ud, id);
+	if (!d || d->op != IrInstr::Op::Load) return false;
+	ValueId slot = kInvalidValue;
+	for (const auto& u: d->uses)
+		if (const IrValue* a = fn.value(u.valueId); a && a->isStackSlot) slot = u.valueId;
+	if (slot == kInvalidValue) return false;
+	for (BlockId lb: loop)
+	{
+		const auto* blk = fn.block(lb);
+		if (!blk) continue;
+		for (const IrInstr* i: blk->instrs)
+			if (i && i->op == IrInstr::Op::Store)
+				for (const auto& u: i->uses)
+					if (u.operandIndex == 1 && u.valueId == slot) return false;
+	}
+	return true;
 }
 
 static bool isIndexArith(IrInstr::Op op)
@@ -251,7 +273,7 @@ analyseMid(const SSAFunction& fn, const UseDef& ud, const IrInstr& half, const s
 	ev.hasRangeAdd = addFeeds || (subFeeds && halfUsedByAdd(ud, half.defValue));
 
 	const ValueId mid = half.defValue;
-	const auto fromMid = derivedFrom(ud, mid, 2);
+	const auto fromMid = derivedFrom(ud, mid, 6);
 
 	const IrInstr* loadI = nullptr;
 	for (ValueId v: fromMid)
@@ -369,6 +391,12 @@ AlgorithmResult BinarySearchDetector::detect(const SSAFunction& fn) const
 			if (i->defValue == kInvalidValue) continue;
 			const MidEvidence ev = analyseMid(fn, ud, *i, loop);
 			const float s = score(ev);
+			if (std::getenv("RETDEC_BSEARCH_DIAG"))
+				std::fprintf(stderr,
+					"bsearch-diag %s halving@%u op=%d score=%.2f range=%d load=%d cmp=%d inv=%d midcmp=%d bound=%d upd=%d loop=%zu\n",
+					fn.name().c_str(), blk->id, (int)i->op, s, ev.hasRangeAdd, ev.midUsedAsLoadIndex,
+					ev.loadCompared, ev.targetInvariant, ev.midUsedByCompare, ev.midUsedByBoundArith,
+					ev.midUpdatesBound, loop.size());
 			if (s > best) best = s;
 		}
 	}

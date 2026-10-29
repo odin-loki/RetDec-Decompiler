@@ -120,6 +120,13 @@ static bool hasStructuralSwap(const ssa::SSAFunction& fn)
 		for (const auto* i: blk->instrs)
 		{
 			if (!i || i->op != ssa::IrInstr::Op::Store) continue;
+			// A store into a stack slot is a spill -- at -O0 every loaded
+			// value goes back to one -- not half of a swap in the data.
+			bool toStack = false;
+			for (const auto& u: i->uses)
+				if (u.operandIndex == 1)
+					if (const auto* a = fn.value(u.valueId); a && a->isStackSlot) toStack = true;
+			if (toStack) continue;
 			for (const auto& u: i->uses)
 				if (u.operandIndex == 0 && loaded.count(u.valueId)) storedBack.insert(u.valueId);
 		}

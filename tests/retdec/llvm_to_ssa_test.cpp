@@ -5,6 +5,7 @@
 
 #include "llvm_to_ssa.h"
 
+#include "retdec/algo_recover/algo_recover.h"
 #include "retdec/ssa/ssa.h"
 
 #include <llvm/IR/LLVMContext.h>
@@ -492,4 +493,114 @@ TEST(LlvmToSsa, RetdecAddrMetadataStillSetsVma)
 	const SSAFunction* fn = findFn(*ssa, "legacy");
 	ASSERT_NE(fn, nullptr);
 	EXPECT_EQ(firstOpVma(*fn, IrInstr::Op::Add), 8192u);
+}
+
+// ─── -O0 shape: locals in stack slots ────────────────────────────────────────
+//
+// What the corpus binary_search-gcc-O0 lifts to (address arithmetic, not a
+// getelementptr, as bin2llvmir emits it): every local lives in an
+// alloca, the target is reloaded from its slot on each iteration, and every
+// loaded value is spilled back. Three detectors misread that shape: the
+// binary-search target looked loop-variant (its load is in the loop), the
+// partition swap counted spills as swap stores, and so a binary search came
+// out as std::partition at 1.00.
+namespace {
+
+std::string bsearchO0IR(bool loopStoresTarget)
+{
+	return std::string(R"IR(
+target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
+define i32 @bsearch(i64 %a, i32 %n, i32 %t) {
+entry:
+  %lo = alloca i32
+  %hi = alloca i32
+  %tgt = alloca i32
+  store i32 %t, i32* %tgt
+  store i32 0, i32* %lo
+  %n1 = sub i32 %n, 1
+  store i32 %n1, i32* %hi
+  br label %head
+head:
+  %l = load i32, i32* %lo
+  %h = load i32, i32* %hi
+  %c = icmp sle i32 %l, %h
+  br i1 %c, label %body, label %notfound
+body:
+  %l2 = load i32, i32* %lo
+  %h2 = load i32, i32* %hi
+  %d = sub i32 %h2, %l2
+  %half = lshr i32 %d, 1
+  %mid = add i32 %half, %l2
+  %idx = sext i32 %mid to i64
+  %off = shl i64 %idx, 2
+  %addr = add i64 %a, %off
+  %p = inttoptr i64 %addr to i32*
+  %v = load i32, i32* %p
+  %tv = load i32, i32* %tgt
+  %eq = icmp eq i32 %v, %tv
+  br i1 %eq, label %found, label %cmp2
+cmp2:
+  %lt = icmp slt i32 %v, %tv
+  br i1 %lt, label %golo, label %gohi
+golo:
+  %m1 = add i32 %mid, 1
+  store i32 %m1, i32* %lo
+  br label %head
+gohi:
+  %m2 = sub i32 %mid, 1
+  store i32 %m2, i32* %hi
+)IR") + (loopStoresTarget ? "  store i32 %m2, i32* %tgt\n" : "") + R"IR(  br label %head
+found:
+  ret i32 %mid
+notfound:
+  ret i32 -1
+}
+)IR";
+}
+
+} // namespace
+
+TEST(LlvmToSsa, AnAllocaDefinesAStackSlot)
+{
+	llvm::LLVMContext ctx;
+	const auto ir = bsearchO0IR(false);
+	auto module = parseIR(ctx, ir.c_str());
+	ASSERT_NE(module, nullptr);
+	auto ssaMod = buildSsaModule(*module);
+	const auto* fn = findFn(*ssaMod, "bsearch");
+	ASSERT_NE(fn, nullptr);
+
+	std::size_t slots = 0;
+	for (const auto& v: fn->values())
+		if (v && v->isStackSlot) ++slots;
+	EXPECT_EQ(slots, 3u); // lo, hi, tgt -- and not the array argument
+}
+
+TEST(LlvmToSsa, AnO0BinarySearchIsABinarySearchAndNotAPartition)
+{
+	llvm::LLVMContext ctx;
+	const auto ir = bsearchO0IR(false);
+	auto module = parseIR(ctx, ir.c_str());
+	ASSERT_NE(module, nullptr);
+	auto ssaMod = buildSsaModule(*module);
+	const auto* fn = findFn(*ssaMod, "bsearch");
+	ASSERT_NE(fn, nullptr);
+
+	// All four invariants, the target among them: its slot is never written
+	// inside the loop, so reloading it there does not make it vary.
+	EXPECT_GE(retdec::algo_recover::BinarySearchDetector().detect(*fn).confidence, 0.9f);
+	EXPECT_LT(retdec::algo_recover::PartitionDetector().detect(*fn).confidence, 0.5f);
+}
+
+TEST(LlvmToSsa, ATargetWhoseSlotTheLoopWritesIsNotInvariant)
+{
+	llvm::LLVMContext ctx;
+	const auto ir = bsearchO0IR(true);
+	auto module = parseIR(ctx, ir.c_str());
+	ASSERT_NE(module, nullptr);
+	auto ssaMod = buildSsaModule(*module);
+	const auto* fn = findFn(*ssaMod, "bsearch");
+	ASSERT_NE(fn, nullptr);
+
+	EXPECT_LT(retdec::algo_recover::BinarySearchDetector().detect(*fn).confidence, 0.9f);
 }

@@ -287,7 +287,12 @@ std::unique_ptr<ssa::SSAModule> buildSsaModule(const llvm::Module& m)
 
 		for (const llvm::BasicBlock& lb: lf)
 			for (const llvm::Instruction& li: lb)
-				if (!li.getType()->isVoidTy()) valueIdFor(li, kindOfDef(li));
+				if (!li.getType()->isVoidTy())
+				{
+					const ssa::ValueId id = valueIdFor(li, kindOfDef(li));
+					if (llvm::isa<llvm::AllocaInst>(li))
+						if (ssa::IrValue* v = fn->value(id)) v->isStackSlot = true;
+				}
 
 		// Third pass: translate instructions and wire CFG edges, remembering
 		// which IrInstr each LLVM instruction became so the operands can be

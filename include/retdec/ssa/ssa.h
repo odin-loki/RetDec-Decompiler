@@ -200,6 +200,10 @@ struct IrValue
 	uint8_t memWidth = 0; ///< access size in bytes
 	bool memIsStack = true;
 
+	/// The address of a local stack slot (an LLVM alloca). A store to one
+	/// is a spill, not a write to the data the function works on.
+	bool isStackSlot = false;
+
 	// For FlagBundle: which flags are defined by the producing instruction
 	uint8_t definedFlags = 0; ///< bitmask of FlagBit
 
