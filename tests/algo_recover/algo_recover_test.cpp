@@ -1484,6 +1484,19 @@ TEST(GccO0MemcpyLoopShape, IndexedCopyDetectsWithoutNameHint)
 	EXPECT_EQ(r.kind, AlgorithmKind::Copy);
 }
 
+// The same loop with the loaded value coming from a stack slot is a local being
+// stored, as -O0 popcount and Fibonacci loops do -- no element moves.
+TEST(GccO0MemcpyLoopShape, StoringALocalSpillIsNotACopy)
+{
+	auto fn = makeGccO0MemcpyLoopShape();
+	for (auto* i: fn->block(2)->instrs)
+		if (i->op == ssa::IrInstr::Op::Load) fn->value(i->uses[0].valueId)->isStackSlot = true;
+	TransformDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_NE(r.kind, AlgorithmKind::Copy);
+	EXPECT_LT(r.confidence, 0.45f);
+}
+
 TEST(GccO0MemcpyLoopShape, IndexedCopyIsNotBinarySearch)
 {
 	auto fn = makeGccO0MemcpyLoopShape();

@@ -159,6 +159,45 @@ static Flow loadFlowsToOtherStore(const ssa::SSAFunction& fn)
 	return Flow::No;
 }
 
+static bool addrIsStack(const ssa::SSAFunction& fn, const ssa::IrInstr& i)
+{
+	const uint32_t addrOperand = i.op == ssa::IrInstr::Op::Store ? 1 : 0;
+	for (const auto& u: i.uses)
+		if (u.operandIndex == addrOperand)
+			if (const auto* a = fn.value(u.valueId); a && a->isStackSlot) return true;
+	return false;
+}
+
+// An identity copy moves an element: a Store to memory that is not a stack
+// slot, of a value loaded (possibly through a width cast) from memory that is
+// not a stack slot either.  -O0 loops that only update locals -- a popcount,
+// a Fibonacci step, a varint shift -- spill to the stack and never move one.
+// Unknown when no Store carries its operands (hand-built shapes).
+static Flow hasElementMove(const ssa::SSAFunction& fn)
+{
+	bool wired = false;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* st: blk->instrs)
+		{
+			if (!st || st->op != ssa::IrInstr::Op::Store || st->uses.size() < 2) continue;
+			wired = true;
+			if (addrIsStack(fn, *st)) continue;
+			const auto* v = fn.value(st->uses[0].valueId);
+			const ssa::IrInstr* d = v ? v->defInstr : nullptr;
+			for (int hops = 0; d && d->op == ssa::IrInstr::Op::Assign && hops < 2 && !d->uses.empty(); ++hops)
+			{
+				const auto* src = fn.value(d->uses[0].valueId);
+				d = src ? src->defInstr : nullptr;
+			}
+			if (d && d->op == ssa::IrInstr::Op::Load && !addrIsStack(fn, *d)) return Flow::Yes;
+		}
+	}
+	return wired ? Flow::No : Flow::Unknown;
+}
+
 } // anonymous namespace
 
 TransformEvidence TransformDetector::analyse(const ssa::SSAFunction& fn) const
@@ -248,6 +287,11 @@ AlgorithmResult TransformDetector::detect(const ssa::SSAFunction& fn) const
 		{
 			result.confidence = 0.0f;
 			result.kind = AlgorithmKind::Transform;
+			return result;
+		}
+		if (hasElementMove(fn) == Flow::No)
+		{
+			result.confidence = 0.0f;
 			return result;
 		}
 		result.kind = AlgorithmKind::Copy;
