@@ -1342,6 +1342,38 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ADD_thumb_r_pc)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ADD_thumb_r_pc_not_word_aligned)
+{
+	// ADD (register) reads PC unaligned; thumb -O1 PIC `add r4, pc` at a
+	// halfword address put g_arr two bytes low.
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R0, 0x4},
+	});
+
+	emulate("add r0, pc", 0x1002);
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x100a}, // 0x4 + 0x1002 + 0x4
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDR_thumb_literal_aligns_pc)
+{
+	ONLY_MODE_THUMB;
+
+	setMemory({
+		{0x1008, 0x12345678_dw},
+	});
+
+	emulate("ldr r0, [pc, #4]", 0x1002);
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x12345678}, // Align(0x1006, 4) + 4
+	});
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ADD_arm_pc_result)
 {
 	SKIP_MODE_THUMB;

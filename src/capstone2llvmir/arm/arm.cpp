@@ -641,7 +641,40 @@ void Capstone2LlvmIrTranslatorArm_impl::translateInstruction(cs_insn* i, llvm::I
 llvm::Value* Capstone2LlvmIrTranslatorArm_impl::getCurrentPc(cs_insn* i)
 {
 	uint64_t pc = _basicMode == CS_MODE_THUMB ? i->address + 4 : i->address + 8;
-	return llvm::ConstantInt::get(getDefaultType(), (pc >> 2) << 2);
+
+	// Only literal addressing (a PC-based memory operand, ADR) reads
+	// Align(PC, 4). Every other read -- `add r4, pc` in a Thumb PIC sequence,
+	// TBB/TBH -- sees the plain value. Aligning those put thumb -O1 f_loop's
+	// g_arr two bytes low (0x30532 for 0x30534).
+	bool align = _basicMode != CS_MODE_THUMB || i->id == ARM_INS_ADR;
+	if (!align && i->detail && i->id != ARM_INS_TBB && i->id != ARM_INS_TBH)
+	{
+		auto& d = i->detail->arm;
+		for (unsigned k = 0; k < d.op_count; ++k)
+		{
+			if (d.operands[k].type == ARM_OP_MEM
+					&& d.operands[k].mem.base == ARM_REG_PC)
+			{
+				align = true;
+				break;
+			}
+		}
+		// `add/sub rd, pc, #imm` is ADR's encoding (T1 / T3 / T2).
+		if ((i->id == ARM_INS_ADD || i->id == ARM_INS_ADDW
+					|| i->id == ARM_INS_SUB || i->id == ARM_INS_SUBW)
+				&& d.op_count == 3
+				&& d.operands[1].type == ARM_OP_REG
+				&& d.operands[1].reg == ARM_REG_PC
+				&& d.operands[2].type == ARM_OP_IMM)
+		{
+			align = true;
+		}
+	}
+	if (align)
+	{
+		pc = (pc >> 2) << 2;
+	}
+	return llvm::ConstantInt::get(getDefaultType(), pc);
 }
 
 /**
