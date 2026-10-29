@@ -6231,5 +6231,82 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateFround(cs_insn* i, cs_riscv* 
 			eOpConv::FPCAST_OR_BITCAST);
 }
 
+/**
+ * CBO.ZERO zeroes one cache block whose size the platform defines, so only
+ * the block address goes to the pseudo call; the generic path would load
+ * through it instead.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateCboZero(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	if (ri->op_count < 1)
+	{
+		throwUnexpectedOperands(i);
+	}
+	auto* addr = amoAddress(ri->operands[0], irb);
+	auto* fnc = getPseudoAsmFunction(i, irb.getVoidTy(), {addr->getType()});
+	irb.CreateCall(fnc, {addr});
+}
+
+/**
+ * Scalar AES and SM4 (Zkne, Zknd, Zksed) map onto LLVM's own RISC-V
+ * intrinsics. The aes32 and sm4 forms work on i32 with a byte-select
+ * immediate and sign-extend into rd; the aes64 forms need RV64.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateScalarCrypto(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	auto zid = [](llvm::Intrinsic::RISCVIntrinsics id) { return static_cast<llvm::Intrinsic::ID>(id); };
+	llvm::Intrinsic::ID iid = llvm::Intrinsic::not_intrinsic;
+	bool bs32 = false;
+	switch (i->id)
+	{
+	case RISCV_INS_AES32DSI: iid = zid(llvm::Intrinsic::riscv_aes32dsi); bs32 = true; break;
+	case RISCV_INS_AES32DSMI: iid = zid(llvm::Intrinsic::riscv_aes32dsmi); bs32 = true; break;
+	case RISCV_INS_AES32ESI: iid = zid(llvm::Intrinsic::riscv_aes32esi); bs32 = true; break;
+	case RISCV_INS_AES32ESMI: iid = zid(llvm::Intrinsic::riscv_aes32esmi); bs32 = true; break;
+	case RISCV_INS_SM4ED: iid = zid(llvm::Intrinsic::riscv_sm4ed); bs32 = true; break;
+	case RISCV_INS_SM4KS: iid = zid(llvm::Intrinsic::riscv_sm4ks); bs32 = true; break;
+	case RISCV_INS_AES64DS: iid = zid(llvm::Intrinsic::riscv_aes64ds); break;
+	case RISCV_INS_AES64DSM: iid = zid(llvm::Intrinsic::riscv_aes64dsm); break;
+	case RISCV_INS_AES64ES: iid = zid(llvm::Intrinsic::riscv_aes64es); break;
+	case RISCV_INS_AES64ESM: iid = zid(llvm::Intrinsic::riscv_aes64esm); break;
+	case RISCV_INS_AES64IM: iid = zid(llvm::Intrinsic::riscv_aes64im); break;
+	case RISCV_INS_AES64KS1I: iid = zid(llvm::Intrinsic::riscv_aes64ks1i); break;
+	case RISCV_INS_AES64KS2: iid = zid(llvm::Intrinsic::riscv_aes64ks2); break;
+	default: throw GenericError("Unhandled insn ID in translateScalarCrypto().");
+	}
+	if (!bs32 && !isXlen64())
+	{
+		translatePseudoAsmGeneric(i, ri, irb);
+		return;
+	}
+
+	auto* ty = bs32 ? irb.getInt32Ty() : irb.getInt64Ty();
+	std::vector<llvm::Value*> args;
+	for (unsigned k = 1; k < ri->op_count; ++k)
+	{
+		cs_riscv_op& op = ri->operands[k];
+		if (op.type == RISCV_OP_IMM)
+		{
+			args.push_back(irb.getInt32(static_cast<uint32_t>(op.imm)));
+		}
+		else
+		{
+			args.push_back(generateTypeConversion(irb, loadOp(op, irb), ty,
+					eOpConv::SEXT_TRUNC_OR_BITCAST));
+		}
+	}
+	if (args.empty())
+	{
+		throwUnexpectedOperands(i);
+	}
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, iid);
+	if (f->getFunctionType()->getNumParams() != args.size())
+	{
+		throwUnexpectedOperands(i);
+	}
+	auto* r = irb.CreateCall(f, args);
+	storeOp(ri->operands[0], r, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec

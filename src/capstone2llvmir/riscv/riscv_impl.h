@@ -187,6 +187,8 @@ class Capstone2LlvmIrTranslatorRiscv_impl :
 		void translateFmv(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateAmo(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateAmocas(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateCboZero(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateScalarCrypto(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateLr(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateSc(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateCsr(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);

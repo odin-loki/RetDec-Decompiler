@@ -2536,6 +2536,56 @@ TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_SM3P1)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CBO_CLEAN_is_nothing)
+{
+	ALL_MODES;
+
+	emulate_bin("0f 20 15 00");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CBO_FLUSH_is_nothing)
+{
+	ALL_MODES;
+
+	emulate_bin("0f 20 25 00");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CBO_INVAL_is_nothing)
+{
+	ALL_MODES;
+
+	emulate_bin("0f 20 05 00");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CBO_ZERO_keeps_its_call)
+{
+	ALL_MODES;
+
+	// The block size is implementation defined, so the store stays opaque.
+	setRegisters({
+		{RISCV_REG_X10, 0x1000},
+	});
+
+	emulate_bin("0f 20 45 00");
+
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_cbo.zero"), {0x1000}},
+	});
+}
+
 TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_PREFETCH_R_is_nothing)
 {
 	ALL_MODES;
@@ -4532,6 +4582,22 @@ RVV_IR(RISCV_INS_VSM3C_VI, ({0xf7, 0xa0, 0x23, 0xae}), hasNamedCall(f, "llvm.ris
 RVV_IR(RISCV_INS_VSM4K_VI, ({0xf7, 0xa0, 0x23, 0x86}), hasNamedCall(f, "llvm.riscv.vsm4k"))
 RVV_IR(RISCV_INS_VSM4R_VV, ({0xf7, 0x20, 0x28, 0xa2}), hasNamedCall(f, "llvm.riscv.vsm4r"))
 RVV_IR(RISCV_INS_VSM4R_VS, ({0xf7, 0x20, 0x28, 0xa6}), hasNamedCall(f, "llvm.riscv.vsm4r"))
+
+// Scalar AES and SM4 use LLVM intrinsics; aes32 is RV32-only, aes64 RV64-only.
+RVV_IR(RISCV_INS_AES32DSI_scalar, ({0x33, 0x85, 0xc5, 0x2a}), (hasNamedCall(f, "llvm.riscv.aes32dsi") || GetParam() == CS_MODE_RISCV64))
+RVV_IR(RISCV_INS_AES32DSMI_scalar, ({0x33, 0x85, 0xc5, 0x2e}), (hasNamedCall(f, "llvm.riscv.aes32dsmi") || GetParam() == CS_MODE_RISCV64))
+RVV_IR(RISCV_INS_AES32ESI_scalar, ({0x33, 0x85, 0xc5, 0x22}), (hasNamedCall(f, "llvm.riscv.aes32esi") || GetParam() == CS_MODE_RISCV64))
+RVV_IR(RISCV_INS_AES32ESMI_scalar, ({0x33, 0x85, 0xc5, 0x26}), (hasNamedCall(f, "llvm.riscv.aes32esmi") || GetParam() == CS_MODE_RISCV64))
+RVV_IR(RISCV_INS_AES32ESI_bs1_scalar, ({0x33, 0x85, 0xc5, 0x62}), (hasNamedCall(f, "llvm.riscv.aes32esi") || GetParam() == CS_MODE_RISCV64))
+RVV_IR(RISCV_INS_SM4ED_scalar, ({0x33, 0x85, 0xc5, 0x30}), hasNamedCall(f, "llvm.riscv.sm4ed"))
+RVV_IR(RISCV_INS_SM4KS_scalar, ({0x33, 0x85, 0xc5, 0x34}), hasNamedCall(f, "llvm.riscv.sm4ks"))
+RVV_IR(RISCV_INS_AES64ES_scalar, ({0x33, 0x85, 0xc5, 0x32}), (hasNamedCall(f, "llvm.riscv.aes64es") || GetParam() == CS_MODE_RISCV32))
+RVV_IR(RISCV_INS_AES64ESM_scalar, ({0x33, 0x85, 0xc5, 0x36}), (hasNamedCall(f, "llvm.riscv.aes64esm") || GetParam() == CS_MODE_RISCV32))
+RVV_IR(RISCV_INS_AES64DS_scalar, ({0x33, 0x85, 0xc5, 0x3a}), (hasNamedCall(f, "llvm.riscv.aes64ds") || GetParam() == CS_MODE_RISCV32))
+RVV_IR(RISCV_INS_AES64DSM_scalar, ({0x33, 0x85, 0xc5, 0x3e}), (hasNamedCall(f, "llvm.riscv.aes64dsm") || GetParam() == CS_MODE_RISCV32))
+RVV_IR(RISCV_INS_AES64KS2_scalar, ({0x33, 0x85, 0xc5, 0x7e}), (hasNamedCall(f, "llvm.riscv.aes64ks2") || GetParam() == CS_MODE_RISCV32))
+RVV_IR(RISCV_INS_AES64IM_scalar, ({0x13, 0x95, 0x05, 0x30}), (hasNamedCall(f, "llvm.riscv.aes64im") || GetParam() == CS_MODE_RISCV32))
+RVV_IR(RISCV_INS_AES64KS1I_scalar, ({0x13, 0x95, 0x35, 0x31}), (hasNamedCall(f, "llvm.riscv.aes64ks1i") || GetParam() == CS_MODE_RISCV32))
 
 RVV_IR(RISCV_INS_VLOXEI8_V, ({0x87, 0x00, 0x25, 0x0e}), hasAnyLoad(f))
 RVV_IR(RISCV_INS_VLOXEI16_V, ({0x87, 0x50, 0x25, 0x0e}), hasAnyLoad(f))
