@@ -100,5 +100,10 @@
   "!* (uint64_t)&g",
   "float32_t g2 = -7.0f;",
   "!(float32_t *)800"
+ ],
+ "audit7-ppc64-pie": [
+  "(uint64_t)v3 > 1 ? v3 : 1",
+  "!: v3 > 1 ?",
+  "(uint64_t)(v2 - v3) <= (uint64_t)(-1 - v3)"
  ]
 }

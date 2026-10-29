@@ -234,6 +234,32 @@ public:
 		}
 		OrderedAllVisitor::visit(expr);
 	}
+	// Only the first statement of a function reaches ExprTypesFixer's own
+	// comparison visits (its AssignStmt visit does not follow successors),
+	// so an unsigned compare of a variable typed signed printed as a signed
+	// one (ppc64 f_s64: the divd divisor umax(y, 1) became `y > 1 ? y : 1`
+	// for a negative y).  Re-sign comparison operands here.
+	ShPtr<Expression> fixCmp(bool isSigned, ShPtr<Expression> e) {
+		if (isa<ConstInt>(e)) return e;
+		auto t = cast<IntType>(e->getType());
+		if (!t || t->isBool() || t->isSigned() == isSigned) return e;
+		unsigned size = t->getSize();
+		if (size != 8 && size != 16 && size != 32 && size != 64) return e;
+		return BitCastExpr::create(e, IntType::create(size, isSigned));
+	}
+	template<typename T>
+	void fixCmpOperands(ShPtr<T> expr) {
+		bool s = expr->getVariant() == T::Variant::SCmp;
+		auto a = expr->getFirstOperand();
+		auto b = expr->getSecondOperand();
+		if (isa<ConstInt>(a) && isa<ConstInt>(b)) return;
+		expr->setFirstOperand(fixCmp(s, a));
+		expr->setSecondOperand(fixCmp(s, b));
+	}
+	void visit(ShPtr<LtOpExpr> expr) override { fixCmpOperands(expr); OrderedAllVisitor::visit(expr); }
+	void visit(ShPtr<LtEqOpExpr> expr) override { fixCmpOperands(expr); OrderedAllVisitor::visit(expr); }
+	void visit(ShPtr<GtOpExpr> expr) override { fixCmpOperands(expr); OrderedAllVisitor::visit(expr); }
+	void visit(ShPtr<GtEqOpExpr> expr) override { fixCmpOperands(expr); OrderedAllVisitor::visit(expr); }
 	void visit(ShPtr<ModOpExpr> expr) override {
 		if (expr->getVariant() != ModOpExpr::Variant::FMod) {
 			bool s = expr->getVariant() == ModOpExpr::Variant::SMod;
