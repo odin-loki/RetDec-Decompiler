@@ -1200,7 +1200,10 @@ void CHLLWriter::visit(ShPtr<ExtCastExpr> expr)
 	// implementation-defined signedness, so a signed byte is int8_t here.
 	auto variant = expr->getVariant();
 	auto opType = cast<IntType>(expr->getOperand()->getType());
-	if (variant != ExtCastExpr::Variant::FPExt && opType && !opType->isBool())
+	// Only sign extensions are corrected: a zext whose operand is typed signed
+	// is how later passes mark an index they proved sign-extended (BEQ-01
+	// insertion_sort a[j+1] with j == -1), so it keeps printing as before.
+	if (variant == ExtCastExpr::Variant::SExt && opType && !opType->isBool())
 	{
 		bool wantSigned = variant == ExtCastExpr::Variant::SExt;
 		unsigned size = opType->getSize();
