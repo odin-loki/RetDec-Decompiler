@@ -1,11 +1,16 @@
 {
  "equivalent": [
   "bfs_graph-gcc-O2",
+  "bfs_graph-gcc-O3",
   "binary_search-gcc-O2",
   "binary_search-gcc-O3",
   "dfs_graph-gcc-O0",
   "dfs_graph-gcc-O2",
   "hash_table-gcc-O0",
+  "hash_table-gcc-O2",
+  "hash_table-gcc-O3",
+  "heapsort-gcc-O2",
+  "heapsort-gcc-O3",
   "insertion_sort-gcc-O0",
   "insertion_sort-gcc-O2",
   "insertion_sort-gcc-O3",
@@ -13,6 +18,8 @@
   "knapsack_01-gcc-O2",
   "knapsack_01-gcc-O3",
   "lcs_dp-gcc-O0",
+  "lcs_dp-gcc-O2",
+  "lcs_dp-gcc-O3",
   "mergesort-gcc-O0",
   "mergesort-gcc-O2"
  ]
