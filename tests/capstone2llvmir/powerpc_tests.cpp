@@ -17236,6 +17236,236 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_EXTSWSLI_misc)
 	EXPECT_NO_MEMORY_LOADED_STORED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_PADDI_pcrel_raw)
+{
+	ONLY_MODE_64;
+
+
+	emulate_bin("06 10 00 00 38 60 00 10", 0x1000);
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 0x1010},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_PLI_raw)
+{
+	ONLY_MODE_64;
+
+
+	emulate_bin("06 00 00 00 38 60 00 64");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 100},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_PADDI_neg_raw)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R4, 10},
+	});
+
+	emulate_bin("06 03 ff ff 38 64 ff fb");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 5},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_PLD_raw)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R4, 0x1000},
+	});
+	setMemory({
+		{0x1008, 0x1122334455667788_qw},
+	});
+
+	emulate_bin("04 00 00 00 e4 64 00 08");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 0x1122334455667788},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_PSTD_raw)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R3, 0x55},
+		{PPC_REG_R4, 0x1000},
+	});
+
+	emulate_bin("04 00 00 00 f4 64 00 08");
+
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1008, 0x55_qw},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_SETB_raw)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_CR1LT, 1},
+		{PPC_REG_CR1GT, 0},
+	});
+
+	emulate_bin("7c 64 01 00");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 0xffffffffffffffff},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_SETBC_raw)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_CR1EQ, 1},
+	});
+
+	emulate_bin("7c 66 03 00");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 1},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_SETNBCR_raw)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_CR1EQ, 0},
+	});
+
+	emulate_bin("7c 66 03 c0");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 0xffffffffffffffff},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_POPCNTB_raw)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R4, 0xff0f030100000000},
+	});
+
+	emulate_bin("7c 83 00 f4");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 0x0804020100000000},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_PDEPD_raw)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R4, 5},
+		{PPC_REG_R5, 0xf0},
+	});
+
+	emulate_bin("7c 83 29 38");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 0x50},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_PEXTD_raw)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R4, 0x50},
+		{PPC_REG_R5, 0xf0},
+	});
+
+	emulate_bin("7c 83 29 78");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 5},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CFUGED_raw)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R4, 0xabcd},
+		{PPC_REG_R5, 0xff00},
+	});
+
+	emulate_bin("7c 83 29 b8");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 0xcdab},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CNTLZDM_raw)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R4, 0x100},
+		{PPC_REG_R5, 0xff00},
+	});
+
+	emulate_bin("7c 83 28 76");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 7},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CNTTZDM_raw)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R4, 0},
+		{PPC_REG_R5, 0xff00},
+	});
+
+	emulate_bin("7c 83 2c 76");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 8},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_BPERMD_raw)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R4, 0x3f00000000000000},
+		{PPC_REG_R5, 1},
+	});
+
+	emulate_bin("7c 83 29 f8");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 0x80},
+	});
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

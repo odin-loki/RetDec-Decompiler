@@ -1421,10 +1421,12 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateLoadIndexed(cs_insn* i, cs_
 	{
 		case PPC_INS_LBZX:
 		case PPC_INS_LBZUX:
+		case PPC_INS_LBARX:
 			ty = irb.getInt8Ty();
 			break;
 		case PPC_INS_LHZX:
 		case PPC_INS_LHZUX:
+		case PPC_INS_LHARX:
 		case PPC_INS_LHAX:
 		case PPC_INS_LHAUX:
 			ty = irb.getInt16Ty();
@@ -1442,7 +1444,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateLoadIndexed(cs_insn* i, cs_
 	}
 
 	auto* l = loadIntPtr(irb, add, ty);
-	if (i->id == PPC_INS_LWARX || i->id == PPC_INS_LDARX)
+	if (i->id == PPC_INS_LWARX || i->id == PPC_INS_LDARX || i->id == PPC_INS_LBARX || i->id == PPC_INS_LHARX)
 	{
 		l->setAtomic(llvm::AtomicOrdering::Monotonic);
 	}
@@ -1555,10 +1557,12 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateStoreIndexed(cs_insn* i, cs
 	{
 		case PPC_INS_STBX:
 		case PPC_INS_STBUX:
+		case PPC_INS_STBCX:
 			ty = irb.getInt8Ty();
 			break;
 		case PPC_INS_STHX:
 		case PPC_INS_STHUX:
+		case PPC_INS_STHCX:
 			ty = irb.getInt16Ty();
 			break;
 		case PPC_INS_STWX:
@@ -1577,7 +1581,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateStoreIndexed(cs_insn* i, cs
 
 	auto* add = loadIndexedEffectiveAddress(pi, irb);
 	auto* st = storeIntPtr(irb, op0, add, ty);
-	if (i->id == PPC_INS_STWCX || i->id == PPC_INS_STDCX)
+	if (i->id == PPC_INS_STWCX || i->id == PPC_INS_STDCX || i->id == PPC_INS_STBCX || i->id == PPC_INS_STHCX)
 	{
 		st->setAtomic(llvm::AtomicOrdering::Monotonic);
 		// Success. No exclusive-monitor model.
@@ -8849,6 +8853,213 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translatePpcMisc(cs_insn* i, cs_ppc*
 	}
 	storeOp(pi->operands[0], val, irb);
 	storeCr0(irb, pi, val);
+}
+
+
+/**
+ * Instructions decoded from the raw big-endian encoding: Power10 prefixed
+ * D-form loads/stores and PADDI (incl. the PC-relative R=1 forms),
+ * SETB/SETBC/SETBCR/SETNBC/SETNBCR, POPCNTB, BPERMD and the Power10
+ * bit-gather/scatter group PDEPD/PEXTD/CFUGED/CNTLZDM/CNTTZDM.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translatePpcRaw(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	auto be32 = [&](unsigned o) {
+		return (uint32_t(i->bytes[o]) << 24) | (uint32_t(i->bytes[o + 1]) << 16)
+				| (uint32_t(i->bytes[o + 2]) << 8) | uint32_t(i->bytes[o + 3]);
+	};
+	auto* i64 = irb.getInt64Ty();
+	auto* dt = getDefaultType();
+	auto c64 = [&](uint64_t v) { return llvm::ConstantInt::get(i64, v); };
+	auto gpr = [&](unsigned n) { return PPC_REG_R0 + n; };
+	auto ldg = [&](unsigned n) { return irb.CreateZExtOrTrunc(loadRegister(gpr(n), irb), i64); };
+	auto stg = [&](unsigned n, llvm::Value* v) { storeRegister(gpr(n), irb.CreateZExtOrTrunc(v, dt), irb); };
+	uint32_t w = be32(0);
+
+	switch (i->id)
+	{
+		case PPC_INS_PLBZ: case PPC_INS_PLHZ: case PPC_INS_PLHA: case PPC_INS_PLWZ:
+		case PPC_INS_PLWA: case PPC_INS_PLD: case PPC_INS_PSTB: case PPC_INS_PSTH:
+		case PPC_INS_PSTW: case PPC_INS_PSTD: case PPC_INS_PADDI:
+		case PPC_INS_PLI: case PPC_INS_PLA: case PPC_INS_PSUBI:
+		{
+			if (i->size < 8) break;
+			uint32_t pfx = w, sfx = be32(4);
+			bool r = (pfx >> 20) & 1;
+			int64_t d = (int64_t(pfx & 0x3ffff) << 16) | (sfx & 0xffff);
+			d = (d << 30) >> 30;
+			unsigned rt = (sfx >> 21) & 31, ra = (sfx >> 16) & 31;
+			llvm::Value* ea = r ? c64(i->address + d)
+					: irb.CreateAdd(ra ? ldg(ra) : c64(0), c64(d));
+			if (i->id == PPC_INS_PADDI || i->id == PPC_INS_PLI || i->id == PPC_INS_PLA || i->id == PPC_INS_PSUBI)
+			{
+				stg(rt, ea);
+				return;
+			}
+			llvm::Type* ty = irb.getInt8Ty();
+			switch (i->id)
+			{
+				case PPC_INS_PLHZ: case PPC_INS_PLHA: case PPC_INS_PSTH: ty = irb.getInt16Ty(); break;
+				case PPC_INS_PLWZ: case PPC_INS_PLWA: case PPC_INS_PSTW: ty = irb.getInt32Ty(); break;
+				case PPC_INS_PLD: case PPC_INS_PSTD: ty = i64; break;
+				default: break;
+			}
+			ea = irb.CreateZExtOrTrunc(ea, dt);
+			switch (i->id)
+			{
+				case PPC_INS_PSTB: case PPC_INS_PSTH: case PPC_INS_PSTW: case PPC_INS_PSTD:
+					storeIntPtr(irb, irb.CreateTrunc(ldg(rt), ty), ea, ty);
+					return;
+				default:
+				{
+					llvm::Value* l = loadIntPtr(irb, ea, ty);
+					bool sx = i->id == PPC_INS_PLHA || i->id == PPC_INS_PLWA;
+					l = sx ? irb.CreateSExt(l, i64) : irb.CreateZExtOrTrunc(l, i64);
+					stg(rt, l);
+					return;
+				}
+			}
+		}
+		case PPC_INS_SETB:
+		case PPC_INS_SETBC: case PPC_INS_SETBCR: case PPC_INS_SETNBC: case PPC_INS_SETNBCR:
+		{
+			static const uint32_t bits[8][4] = {
+				{PPC_REG_CR0LT, PPC_REG_CR0GT, PPC_REG_CR0EQ, PPC_REG_CR0UN},
+				{PPC_REG_CR1LT, PPC_REG_CR1GT, PPC_REG_CR1EQ, PPC_REG_CR1UN},
+				{PPC_REG_CR2LT, PPC_REG_CR2GT, PPC_REG_CR2EQ, PPC_REG_CR2UN},
+				{PPC_REG_CR3LT, PPC_REG_CR3GT, PPC_REG_CR3EQ, PPC_REG_CR3UN},
+				{PPC_REG_CR4LT, PPC_REG_CR4GT, PPC_REG_CR4EQ, PPC_REG_CR4UN},
+				{PPC_REG_CR5LT, PPC_REG_CR5GT, PPC_REG_CR5EQ, PPC_REG_CR5UN},
+				{PPC_REG_CR6LT, PPC_REG_CR6GT, PPC_REG_CR6EQ, PPC_REG_CR6UN},
+				{PPC_REG_CR7LT, PPC_REG_CR7GT, PPC_REG_CR7EQ, PPC_REG_CR7UN},
+			};
+			unsigned rt = (w >> 21) & 31;
+			auto bit = [&](uint32_t r) { return irb.CreateTrunc(loadRegister(r, irb), irb.getInt1Ty()); };
+			if (i->id == PPC_INS_SETB)
+			{
+				unsigned bf = (w >> 18) & 7;
+				auto* v = irb.CreateSelect(bit(bits[bf][1]), c64(1), c64(0));
+				v = irb.CreateSelect(bit(bits[bf][0]), c64(~0ull), v);
+				stg(rt, v);
+				return;
+			}
+			unsigned bi = (w >> 16) & 31;
+			auto* b = bit(bits[bi >> 2][bi & 3]);
+			uint64_t yes = (i->id == PPC_INS_SETNBC || i->id == PPC_INS_SETNBCR) ? ~0ull : 1;
+			bool rev = i->id == PPC_INS_SETBCR || i->id == PPC_INS_SETNBCR;
+			stg(rt, rev ? irb.CreateSelect(b, c64(0), c64(yes)) : irb.CreateSelect(b, c64(yes), c64(0)));
+			return;
+		}
+		default:
+			break;
+	}
+
+	// X-form RS, RA, RB (RA is the target).
+	unsigned rs = (w >> 21) & 31, ra = (w >> 16) & 31, rb = (w >> 11) & 31;
+	auto pext = [&](llvm::Value* src, llvm::Value* m) {
+		llvm::Value* res = c64(0);
+		llvm::Value* k = c64(0);
+		for (unsigned j = 0; j < 64; ++j)
+		{
+			auto* mb = irb.CreateAnd(irb.CreateLShr(m, j), c64(1));
+			auto* sb = irb.CreateAnd(irb.CreateLShr(src, j), c64(1));
+			res = irb.CreateOr(res, irb.CreateShl(irb.CreateAnd(sb, mb), k));
+			k = irb.CreateAdd(k, mb);
+		}
+		return res;
+	};
+	auto ctpop = [&](llvm::Value* v) {
+		auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::ctpop, i64);
+		return irb.CreateCall(f, {v});
+	};
+	llvm::Value* val = nullptr;
+	switch (i->id)
+	{
+		case PPC_INS_POPCNTB:
+		{
+			auto* x = ldg(rs);
+			x = irb.CreateSub(x, irb.CreateAnd(irb.CreateLShr(x, 1), c64(0x5555555555555555ull)));
+			x = irb.CreateAdd(irb.CreateAnd(x, c64(0x3333333333333333ull)),
+					irb.CreateAnd(irb.CreateLShr(x, 2), c64(0x3333333333333333ull)));
+			val = irb.CreateAnd(irb.CreateAdd(x, irb.CreateLShr(x, 4)), c64(0x0f0f0f0f0f0f0f0full));
+			break;
+		}
+		case PPC_INS_BPERMD:
+		{
+			auto* s = ldg(rs);
+			auto* b = ldg(rb);
+			val = c64(0);
+			for (unsigned k = 0; k < 8; ++k)
+			{
+				auto* idx = irb.CreateAnd(irb.CreateLShr(s, 56 - 8 * k), c64(0xff));
+				auto* ok = irb.CreateICmpULT(idx, c64(64));
+				auto* sh = irb.CreateSelect(ok, irb.CreateSub(c64(63), idx), c64(0));
+				auto* bt = irb.CreateAnd(irb.CreateLShr(b, sh), c64(1));
+				bt = irb.CreateSelect(ok, bt, c64(0));
+				val = irb.CreateOr(val, irb.CreateShl(bt, 7 - k));
+			}
+			break;
+		}
+		case PPC_INS_PDEPD:
+		{
+			auto* s = ldg(rs);
+			auto* m = ldg(rb);
+			llvm::Value* res = c64(0);
+			llvm::Value* k = c64(0);
+			for (unsigned j = 0; j < 64; ++j)
+			{
+				auto* mb = irb.CreateAnd(irb.CreateLShr(m, j), c64(1));
+				auto* sb = irb.CreateAnd(irb.CreateLShr(s, k), c64(1));
+				res = irb.CreateOr(res, irb.CreateShl(irb.CreateAnd(sb, mb), j));
+				k = irb.CreateAdd(k, mb);
+			}
+			val = res;
+			break;
+		}
+		case PPC_INS_PEXTD:
+			val = pext(ldg(rs), ldg(rb));
+			break;
+		case PPC_INS_CFUGED:
+		{
+			auto* s = ldg(rs);
+			auto* m = ldg(rb);
+			auto* lo = pext(s, m);
+			auto* hi = pext(s, irb.CreateNot(m));
+			auto* n = ctpop(m);
+			auto* full = irb.CreateICmpEQ(n, c64(64));
+			auto* hs = irb.CreateShl(hi, irb.CreateSelect(full, c64(0), n));
+			val = irb.CreateOr(irb.CreateSelect(full, c64(0), hs), lo);
+			break;
+		}
+		case PPC_INS_CNTLZDM:
+		case PPC_INS_CNTTZDM:
+		{
+			auto* m = ldg(rb);
+			auto* e = pext(ldg(rs), m);
+			auto* n = ctpop(m);
+			if (i->id == PPC_INS_CNTLZDM)
+			{
+				auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::ctlz, i64);
+				val = irb.CreateSub(irb.CreateCall(f, {e, irb.getFalse()}), irb.CreateSub(c64(64), n));
+			}
+			else
+			{
+				auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::cttz, i64);
+				auto* t = irb.CreateCall(f, {e, irb.getFalse()});
+				val = irb.CreateSelect(irb.CreateICmpULT(t, n), t, n);
+			}
+			break;
+		}
+		default:
+			translatePseudoAsmGeneric(i, pi, irb);
+			return;
+	}
+	stg(ra, val);
+	if (i->id != PPC_INS_PDEPD && i->id != PPC_INS_PEXTD && i->id != PPC_INS_CFUGED
+			&& i->id != PPC_INS_CNTLZDM && i->id != PPC_INS_CNTTZDM)
+	{
+		storeCr0(irb, pi, irb.CreateZExtOrTrunc(val, dt));
+	}
 }
 
 
