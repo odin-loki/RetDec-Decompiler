@@ -824,7 +824,8 @@ bool isFieldOf(const ssa::SSAFunction& fn, ssa::ValueId id, ssa::ValueId base)
 	return false;
 }
 
-/// `table + scaled(index)`: an Add with an operand made by Mul, Shl or And.
+/// `table + scaled(index)`: an Add with an operand made by Mul, Shl, Sar/Shr
+/// (a sign-extended index, `(i << 32) >> 30`) or And.
 bool isIndexedSlot(const ssa::SSAFunction& fn, ssa::ValueId id)
 {
 	id = stripCasts(fn, id);
@@ -832,7 +833,8 @@ bool isIndexedSlot(const ssa::SSAFunction& fn, ssa::ValueId id)
 	if (!d || d->op != ssa::IrInstr::Op::Add) return false;
 	for (const auto& u: d->uses)
 		if (const auto* s = defOf(fn, u.valueId))
-			if (s->op == ssa::IrInstr::Op::Mul || s->op == ssa::IrInstr::Op::Shl || s->op == ssa::IrInstr::Op::And)
+			if (s->op == ssa::IrInstr::Op::Mul || s->op == ssa::IrInstr::Op::Shl || s->op == ssa::IrInstr::Op::Sar || s->op == ssa::IrInstr::Op::Shr
+				|| s->op == ssa::IrInstr::Op::And)
 				return true;
 	return false;
 }
@@ -872,6 +874,38 @@ bool hasBucketHeadInsert(const ssa::SSAFunction& fn)
 			}
 			if (linked && published) return true;
 		}
+	return false;
+}
+
+/// BFS's inner step: `if (!vis[v]) { vis[v] = 1; q[tail++] = v; }`.  In one
+/// loop block a flag tested against zero is set to 1 and a value is appended
+/// to an indexed slot.
+bool hasVisitThenEnqueue(const ssa::SSAFunction& fn)
+{
+	std::vector<ssa::ValueId> testedFlags;
+	forEachLoopInstr(fn, [&](const ssa::IrInstr& i) {
+		if (i.op != ssa::IrInstr::Op::Compare || !immOperand(fn, i, 0)) return;
+		for (const auto& u: i.uses)
+			if (const auto* d = defOf(fn, u.valueId); d && d->op == ssa::IrInstr::Op::Load && !addrOnStack(fn, *d))
+				testedFlags.push_back(stripCasts(fn, operandAt(*d, 0)));
+	});
+	if (testedFlags.empty()) return false;
+	for (const auto& blk: fn.blocks())
+	{
+		if (!blk || !ssa::blockOnCycle(fn, blk->id)) continue;
+		bool marked = false, enqueued = false;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i || i->op != ssa::IrInstr::Op::Store || addrOnStack(fn, *i)) continue;
+			const ssa::ValueId addr = stripCasts(fn, operandAt(*i, 1));
+			if (immAt(fn, *i, 0, 1)
+				&& std::find(testedFlags.begin(), testedFlags.end(), addr) != testedFlags.end())
+				marked = true;
+			else if (!immAt(fn, *i, 0, 1) && isIndexedSlot(fn, addr))
+				enqueued = true;
+		}
+		if (marked && enqueued) return true;
+	}
 	return false;
 }
 
@@ -1050,6 +1084,7 @@ std::vector<IdiomResult> IdiomDetector::detect(const ssa::SSAFunction& fn) const
 		if (sh.varFloatDiv && sh.halfOrTwo && sh.floatCompare && !sh.memStore)
 			out.push_back(makeResult(IdiomKind::NewtonRaphson, 0.75f, "halved_sum_with_quotient"));
 	}
+	if (hasVisitThenEnqueue(fn)) out.push_back(makeResult(IdiomKind::Bfs, 0.80f, "mark_visited_then_enqueue"));
 	if (hasConversionChain(fn)) out.push_back(makeResult(IdiomKind::Conversion, 0.75f, "int_float_round_trips"));
 	if (hasFibonacciLoop(fn)) out.push_back(makeResult(IdiomKind::Fibonacci, 0.80f, "add_and_rotate_scalars"));
 	// A6: do not assign Knapsack or Lcs.

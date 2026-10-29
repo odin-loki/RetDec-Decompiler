@@ -2869,3 +2869,64 @@ TEST(IdiomDetectorTest, NewNodePushedOntoOneFixedHeadIsNotChaining)
 	// A linked-list push_front: same links, but no bucket index.
 	EXPECT_FALSE(detects(*makeHeadInsert(/*indexed=*/false), IdiomKind::HashTableChaining));
 }
+
+namespace {
+
+ssa::ValueId immValue(ssa::SSAFunction& fn, uint64_t imm)
+{
+	auto* v = fn.allocValue(ssa::ValueKind::Immediate);
+	v->imm = imm;
+	return v->id;
+}
+
+/// `if (!vis[v]) { vis[v] = 1; q[tail] = v; }` in a loop.
+std::unique_ptr<ssa::SSAFunction> makeVisitStep(bool testFlag, bool enqueue)
+{
+	auto fn = makeLoop();
+	const auto flag = reg(*fn, 64)->id;
+	auto* ld = fn->addInstr(1, ssa::IrInstr::Op::Load);
+	ld->uses.push_back({flag, 0});
+	const auto seen = defined(*fn, ld);
+	if (testFlag)
+	{
+		auto* cmp = fn->addInstr(1, ssa::IrInstr::Op::Compare);
+		cmp->uses.push_back({seen, 0});
+		cmp->uses.push_back({immValue(*fn, 0), 1});
+	}
+	auto* mark = fn->addInstr(1, ssa::IrInstr::Op::Store);
+	mark->uses.push_back({immValue(*fn, 1), 0});
+	mark->uses.push_back({flag, 1});
+	if (enqueue)
+	{
+		auto* shl = fn->addInstr(1, ssa::IrInstr::Op::Shl);
+		shl->uses.push_back({reg(*fn, 64)->id, 0});
+		shl->uses.push_back({immValue(*fn, 2), 1});
+		const auto scaled = defined(*fn, shl);
+		auto* add = fn->addInstr(1, ssa::IrInstr::Op::Add);
+		add->uses.push_back({scaled, 0});
+		add->uses.push_back({reg(*fn, 64)->id, 1});
+		auto* push = fn->addInstr(1, ssa::IrInstr::Op::Store);
+		push->uses.push_back({reg(*fn, 64)->id, 0});
+		push->uses.push_back({defined(*fn, add), 1});
+	}
+	fn->addInstr(1, ssa::IrInstr::Op::CondBranch);
+	return fn;
+}
+
+} // namespace
+
+TEST(IdiomDetectorTest, MarkingAnUnvisitedNodeAndEnqueueingItIsBfs)
+{
+	EXPECT_TRUE(detects(*makeVisitStep(true, true), IdiomKind::Bfs));
+}
+
+TEST(IdiomDetectorTest, SettingAFlagWithoutAQueueIsNotBfs)
+{
+	EXPECT_FALSE(detects(*makeVisitStep(true, false), IdiomKind::Bfs));
+}
+
+TEST(IdiomDetectorTest, AppendingWithoutTestingTheFlagIsNotBfs)
+{
+	// `a[i] = 1; out[n] = x;` writes the same shapes but checks nothing.
+	EXPECT_FALSE(detects(*makeVisitStep(false, true), IdiomKind::Bfs));
+}
