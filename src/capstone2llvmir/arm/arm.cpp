@@ -8000,7 +8000,8 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMveVec(cs_insn* i, cs_arm* ai, 
 			isSigned = dt[1] == 's';
 		}
 	}
-	if (isFp || lb == 0 || lb > 32 || ai->op_count < 2)
+	bool fpOk = std::string(i->mnemonic).find("nm") != std::string::npos;
+	if ((isFp && !fpOk) || lb == 0 || lb > 32 || ai->op_count < 2)
 	{
 		fallback();
 		return;
@@ -8023,7 +8024,9 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMveVec(cs_insn* i, cs_arm* ai, 
 		static const char* known[] = {"vmovlb", "vmovlt", "vmovnb", "vmovnt", "vmullb", "vmullt", "vshllb", "vshllt",
 				"vshrnb", "vshrnt", "vrshrnb", "vrshrnt", "vqmovnb", "vqmovnt", "vqmovunb", "vqmovunt", "vmulh",
 				"vrmulh", "vmaxa", "vmina", "vmladav", "vmladava", "vmladavx", "vmladavax", "vmlsdav", "vmlsdava",
-				"vmlsdavx", "vmlsdavax", "vmlav", "vmlava"};
+				"vmlsdavx", "vmlsdavax", "vmlav", "vmlava", "vqshrnb", "vqshrnt", "vqrshrnb", "vqrshrnt", "vqshrunb",
+				"vqshrunt", "vqrshrunb", "vqrshrunt", "vqdmullb", "vqdmullt", "vmlaldavx", "vmlaldavax", "vmlsldavx",
+				"vmlsldavax", "vrmlaldavhx", "vrmlaldavhax", "vrmlsldavhx", "vrmlsldavhax"};
 		bool isKnown = false, baseKnown = false;
 		for (auto* k : known) { isKnown |= op == k; baseKnown |= base == k; }
 		if (!isKnown && baseKnown) op = base;
@@ -8065,13 +8068,15 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMveVec(cs_insn* i, cs_arm* ai, 
 
 	// Narrowing into the even (B) or odd (T) half-lanes of the destination.
 	if (op == "vmovnb" || op == "vmovnt" || op == "vqmovnb" || op == "vqmovnt" || op == "vqmovunb"
-			|| op == "vqmovunt" || op == "vshrnb" || op == "vshrnt" || op == "vrshrnb" || op == "vrshrnt")
+			|| op == "vqmovunt" || op == "vshrnb" || op == "vshrnt" || op == "vrshrnb" || op == "vrshrnt"
+			|| op == "vqshrnb" || op == "vqshrnt" || op == "vqrshrnb" || op == "vqrshrnt" || op == "vqshrunb"
+			|| op == "vqshrunt" || op == "vqrshrunb" || op == "vqrshrunt")
 	{
 		bool top = op.back() == 't';
-		bool sat = op.compare(0, 3, "vqm") == 0;
-		bool usat = op.compare(0, 6, "vqmovu") == 0;
-		bool shr = op.find("shrn") != std::string::npos;
-		bool rnd = op.compare(0, 3, "vrs") == 0;
+		bool sat = op.compare(0, 2, "vq") == 0;
+		bool usat = op.compare(0, 6, "vqmovu") == 0 || op.find("shrun") != std::string::npos;
+		bool shr = op.find("shrn") != std::string::npos || op.find("shrun") != std::string::npos;
+		bool rnd = op.compare(0, 3, "vrs") == 0 || op.compare(0, 4, "vqrs") == 0;
 		if (lb < 16 || (shr && (ai->op_count != 3 || ai->operands[2].type != ARM_OP_IMM)))
 		{
 			fallback();
@@ -8081,15 +8086,16 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMveVec(cs_insn* i, cs_arm* ai, 
 		auto* d = loadNeonVector(reg(0), lb / 2, false, irb);
 		unsigned n = lanesOf(a);
 		auto* nt = irb.getIntNTy(lb / 2);
-		auto* wt = irb.getIntNTy(lb);
+		auto* wt = irb.getIntNTy(2 * lb);
+		bool srcSignedAll = isSigned || usat;
 		for (unsigned k = 0; k < n; ++k)
 		{
-			llvm::Value* e = irb.CreateExtractElement(a, uint64_t(k));
+			llvm::Value* e = ext(irb.CreateExtractElement(a, uint64_t(k)), wt, srcSignedAll);
 			if (shr)
 			{
 				uint64_t s = uint64_t(ai->operands[2].imm);
 				if (rnd && s) e = irb.CreateAdd(e, llvm::ConstantInt::get(wt, 1ull << (s - 1)));
-				e = irb.CreateLShr(e, s);
+				e = srcSignedAll ? irb.CreateAShr(e, s) : irb.CreateLShr(e, s);
 			}
 			if (sat)
 			{
@@ -8104,7 +8110,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMveVec(cs_insn* i, cs_arm* ai, 
 				}
 				else
 				{
-					lo = llvm::ConstantInt::get(wt, llvm::APInt::getSignedMinValue(h).sext(lb));
+					lo = llvm::ConstantInt::get(wt, llvm::APInt::getSignedMinValue(h).sext(2 * lb));
 					hi = llvm::ConstantInt::get(wt, (1ull << (h - 1)) - 1);
 				}
 				auto* gt = srcSigned ? irb.CreateICmpSGT(e, hi) : irb.CreateICmpUGT(e, hi);
@@ -8173,6 +8179,115 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMveVec(cs_insn* i, cs_arm* ai, 
 			sum = (sub && (k & 1)) ? irb.CreateSub(sum, p) : irb.CreateAdd(sum, p);
 		}
 		storeRegister(reg(0), sum, irb);
+		return;
+	}
+
+	// 64-bit accumulating reductions into RdaLo:RdaHi.
+	bool lal = op.rfind("vmlaldav", 0) == 0 || op.rfind("vmlsldav", 0) == 0 || op == "vmlalv" || op == "vmlalva";
+	bool rml = op.rfind("vrmlaldavh", 0) == 0 || op.rfind("vrmlsldavh", 0) == 0 || op == "vrmlalvh"
+			|| op == "vrmlalvha";
+	if (lal || rml)
+	{
+		if (ai->op_count != 4) { fallback(); return; }
+		bool sub = op.rfind("vmlsl", 0) == 0 || op.rfind("vrmlsl", 0) == 0;
+		bool acc = op.find("ava") != std::string::npos || op.back() == 'a';
+		bool xch = op.back() == 'x';
+		auto* i64 = irb.getInt64Ty();
+		auto* i72 = irb.getIntNTy(80);
+		auto* wt = rml ? i72 : i64;
+		auto* a = loadNeonVector(reg(2), lb, false, irb);
+		auto* b = loadNeonVector(reg(3), lb, false, irb);
+		llvm::Value* sum = llvm::ConstantInt::get(wt, 0);
+		if (acc)
+		{
+			auto* lo = irb.CreateZExt(irb.CreateZExtOrTrunc(loadRegister(reg(0), irb), i32), i64);
+			auto* hi = irb.CreateZExt(irb.CreateZExtOrTrunc(loadRegister(reg(1), irb), i32), i64);
+			llvm::Value* acc64 = irb.CreateOr(lo, irb.CreateShl(hi, 32));
+			sum = rml ? irb.CreateShl(irb.CreateSExt(acc64, wt), 8) : acc64;
+		}
+		unsigned n = lanesOf(a);
+		for (unsigned k = 0; k < n; ++k)
+		{
+			unsigned kb = xch ? (k ^ 1) : k;
+			auto* p = irb.CreateMul(ext(irb.CreateExtractElement(a, uint64_t(k)), wt, isSigned),
+					ext(irb.CreateExtractElement(b, uint64_t(kb)), wt, isSigned));
+			sum = (sub && (k & 1)) ? irb.CreateSub(sum, p) : irb.CreateAdd(sum, p);
+		}
+		if (rml)
+		{
+			sum = irb.CreateTrunc(irb.CreateAShr(irb.CreateAdd(sum, llvm::ConstantInt::get(wt, 0x80)), 8), i64);
+		}
+		storeRegister(reg(0), irb.CreateTrunc(sum, i32), irb);
+		storeRegister(reg(1), irb.CreateTrunc(irb.CreateLShr(sum, 32), i32), irb);
+		return;
+	}
+
+	if (op == "vabav")
+	{
+		if (ai->op_count != 3) { fallback(); return; }
+		auto* a = loadNeonVector(reg(1), lb, false, irb);
+		auto* b = loadNeonVector(reg(2), lb, false, irb);
+		llvm::Value* sum = irb.CreateZExtOrTrunc(loadRegister(reg(0), irb), i32);
+		for (unsigned k = 0; k < lanesOf(a); ++k)
+		{
+			auto* x = ext(irb.CreateExtractElement(a, uint64_t(k)), i32, isSigned);
+			auto* y = ext(irb.CreateExtractElement(b, uint64_t(k)), i32, isSigned);
+			auto* gt = isSigned ? irb.CreateICmpSGT(x, y) : irb.CreateICmpUGT(x, y);
+			sum = irb.CreateAdd(sum, irb.CreateSelect(gt, irb.CreateSub(x, y), irb.CreateSub(y, x)));
+		}
+		storeRegister(reg(0), sum, irb);
+		return;
+	}
+
+	if (op == "vqdmullb" || op == "vqdmullt")
+	{
+		if (ai->op_count != 3 || lb > 32 || lb < 16) { fallback(); return; }
+		bool top = op.back() == 't';
+		auto* a = loadNeonVector(reg(1), lb, false, irb);
+		bool scalarB = ai->operands[2].type == ARM_OP_REG && !isNeonRegister(reg(2));
+		llvm::Value* b = scalarB ? nullptr : loadNeonVector(reg(2), lb, false, irb);
+		llvm::Value* bs = scalarB ? irb.CreateTrunc(irb.CreateZExtOrTrunc(loadRegister(reg(2), irb), i32),
+				irb.getIntNTy(lb)) : nullptr;
+		auto* wt = irb.getIntNTy(2 * lb);
+		auto* vt = irb.getIntNTy(4 * lb);
+		unsigned n = lanesOf(a) / 2;
+		llvm::Value* d = llvm::UndefValue::get(llvm::FixedVectorType::get(wt, n));
+		auto* mx = llvm::ConstantInt::get(vt, llvm::APInt::getSignedMaxValue(2 * lb).sext(4 * lb));
+		for (unsigned k = 0; k < n; ++k)
+		{
+			unsigned s = 2 * k + (top ? 1 : 0);
+			auto* x = irb.CreateSExt(irb.CreateExtractElement(a, uint64_t(s)), vt);
+			auto* y = irb.CreateSExt(scalarB ? bs : irb.CreateExtractElement(b, uint64_t(s)), vt);
+			llvm::Value* p = irb.CreateShl(irb.CreateMul(x, y), 1);
+			p = irb.CreateSelect(irb.CreateICmpSGT(p, mx), mx, p);
+			d = irb.CreateInsertElement(d, irb.CreateTrunc(p, wt), uint64_t(k));
+		}
+		storeNeonVector(reg(0), d, irb);
+		return;
+	}
+
+	if ((op == "vmaxnmv" || op == "vminnmv" || op == "vmaxnmav" || op == "vminnmav") && isFp && lb == 32)
+	{
+		if (ai->op_count != 2) { fallback(); return; }
+		bool mx = op.compare(0, 5, "vmaxn") == 0;
+		bool ab = op.find("av") != std::string::npos;
+		auto* ft = irb.getFloatTy();
+		auto* a = loadNeonVector(reg(1), 32, true, irb);
+		auto fabs = [&](llvm::Value* v) {
+			return irb.CreateSelect(irb.CreateFCmpOLT(v, llvm::ConstantFP::get(ft, 0.0)), irb.CreateFNeg(v), v);
+		};
+		llvm::Value* r = irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(reg(0), irb), i32), ft);
+		if (ab) r = fabs(r);
+		for (unsigned k = 0; k < lanesOf(a); ++k)
+		{
+			llvm::Value* e = irb.CreateExtractElement(a, uint64_t(k));
+			if (ab) e = fabs(e);
+			// maxNum/minNum: a NaN operand yields the other operand.
+			auto* better = mx ? irb.CreateFCmpOGT(e, r) : irb.CreateFCmpOLT(e, r);
+			auto* rNan = irb.CreateFCmpUNO(r, r);
+			r = irb.CreateSelect(irb.CreateOr(better, rNan), e, r);
+		}
+		storeRegister(reg(0), irb.CreateBitCast(r, i32), irb);
 		return;
 	}
 	fallback();
