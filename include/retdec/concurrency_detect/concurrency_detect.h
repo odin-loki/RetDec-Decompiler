@@ -110,6 +110,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -266,6 +267,11 @@ struct ConcurrencyModel {
 
     ThreadLib primaryLib = ThreadLib::Unknown;   ///< dominant threading library
     bool      isMT       = false;                ///< true if any concurrency detected
+
+    /// Functions whose detections rest on a call to an imported threading or
+    /// sync API (a callee with no body in the module).  A user function that
+    /// merely shares such a name is not imported, so its caller is not here.
+    std::set<std::string> importedApiCallers;
 
     void merge(const ConcurrencyModel& other);
 };

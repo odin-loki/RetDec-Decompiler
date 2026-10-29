@@ -61,6 +61,7 @@ TOKEN_MAP = {
     "ringbuffer": "RingBuffer",
     "circularbuffer": "CircularBuffer",
     "mutex": "Mutex",
+    "pthread": "Pthread",
     "thread": "Thread",
     "atomic": "Atomic",
     "dfs": "DFS",

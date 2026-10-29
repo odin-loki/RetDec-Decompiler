@@ -555,6 +555,7 @@ void ConcurrencyModel::merge(const ConcurrencyModel& other)
 	spinlocks.insert(spinlocks.end(), other.spinlocks.begin(), other.spinlocks.end());
 	ompRegions.insert(ompRegions.end(), other.ompRegions.begin(), other.ompRegions.end());
 	tbbPatterns.insert(tbbPatterns.end(), other.tbbPatterns.begin(), other.tbbPatterns.end());
+	importedApiCallers.insert(other.importedApiCallers.begin(), other.importedApiCallers.end());
 	if (!isMT) isMT = other.isMT;
 	if (primaryLib == ThreadLib::Unknown) primaryLib = other.primaryLib;
 }
@@ -1189,8 +1190,29 @@ void ConcurrencyDetector::analyseFunction(const ssa::SSAFunction& fn, Concurrenc
 ConcurrencyModel ConcurrencyDetector::analyseModule(const ssa::SSAModule& mod)
 {
 	ConcurrencyModel result;
+	std::unordered_set<std::string> defined;
 	for (const auto& fnPtr: mod.functions)
-		if (fnPtr) analyseFunction(*fnPtr, result);
+		if (fnPtr && fnPtr->blockCount() > 0) defined.insert(fnPtr->name());
+	for (const auto& fnPtr: mod.functions)
+	{
+		if (!fnPtr) continue;
+		ConcurrencyModel one;
+		analyseFunction(*fnPtr, one);
+		// Call sites the detections came from, and whether their callee is
+		// an import rather than a function defined in this module.
+		std::unordered_set<uint64_t> sites;
+		for (const auto& t: one.threads) sites.insert(t.callSite);
+		for (const auto& l: one.locks) sites.insert(l.lockCall);
+		bool imported = false;
+		for (const auto& blk: fnPtr->blocks())
+		{
+			if (!blk) continue;
+			for (const auto& call: extractCalls(*blk))
+				if (sites.count(call.address) && !defined.count(call.target)) imported = true;
+		}
+		if (imported) one.importedApiCallers.insert(fnPtr->name());
+		result.merge(one);
+	}
 	return result;
 }
 

@@ -743,3 +743,36 @@ TEST(ConcurrencyEmitter, EmitWithSpinlock) {
 	EXPECT_NE(s.find("DCLP"),     std::string::npos);
 	EXPECT_NE(s.find("spin_fn"),  std::string::npos);
 }
+
+// A call to pthread_mutex_lock with no body in the module is an import, so the
+// caller's detection is structural evidence rather than a name match.
+TEST(ConcurrencyDetector, ACallToAnImportedLockMarksTheCallerAsImportedApi)
+{
+	SSAModule mod;
+	auto* fn = mod.addFunction("worker");
+	fn->addBlock("entry");
+	fn->addInstr(0, IrInstr::Op::Call, 0x1000)->calleeName = "pthread_mutex_lock";
+	mod.addFunction("pthread_mutex_lock"); // declaration only
+
+	ConcurrencyDetector det;
+	auto model = det.analyseModule(mod);
+	ASSERT_EQ(model.locks.size(), 1u);
+	EXPECT_EQ(model.importedApiCallers.count("worker"), 1u);
+}
+
+// A user function that only shares the API's name has a body, so calling it is
+// no evidence of threading.
+TEST(ConcurrencyDetector, ACallToALocalFunctionNamedLikeTheApiIsNotImportedApi)
+{
+	SSAModule mod;
+	auto* fn = mod.addFunction("worker");
+	fn->addBlock("entry");
+	fn->addInstr(0, IrInstr::Op::Call, 0x1000)->calleeName = "pthread_mutex_lock";
+	auto* local = mod.addFunction("pthread_mutex_lock");
+	local->addBlock("entry");
+
+	ConcurrencyDetector det;
+	auto model = det.analyseModule(mod);
+	ASSERT_EQ(model.locks.size(), 1u);
+	EXPECT_EQ(model.importedApiCallers.count("worker"), 0u);
+}

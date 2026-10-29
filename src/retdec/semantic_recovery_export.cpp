@@ -50,7 +50,10 @@ void appendDetection(SemanticDetectionMap& map, const std::string& fnName, commo
 void collectConcurrencyDetections(const concurrency_detect::ConcurrencyModel& cm, SemanticDetectionMap& map)
 {
 	auto addFn = [&](const std::string& fnName, const std::string& label, float confidence, const std::string& extra) {
-		std::string detail = "evidence:symbol_name";
+		// A call into an imported threading API is structural evidence; a
+		// function that only shares such a name is not.
+		std::string detail =
+			cm.importedApiCallers.count(fnName) ? "evidence:imported_api" : "evidence:symbol_name";
 		if (!extra.empty())
 		{
 			detail += " ";
@@ -65,7 +68,9 @@ void collectConcurrencyDetections(const concurrency_detect::ConcurrencyModel& cm
 	}
 	for (const auto& l: cm.locks)
 	{
-		addFn(l.funcName, "mutex", 0.75f, "");
+		const bool pthread = l.kind == concurrency_detect::MutexKind::PthreadMutex
+						  || l.kind == concurrency_detect::MutexKind::PthreadRwLock;
+		addFn(l.funcName, pthread ? "pthread_mutex" : "mutex", 0.75f, "");
 	}
 	for (const auto& a: cm.atomics)
 	{
