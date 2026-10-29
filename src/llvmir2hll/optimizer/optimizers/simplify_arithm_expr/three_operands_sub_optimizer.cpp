@@ -7,6 +7,8 @@
 
 #include <optional>
 
+#include <algorithm>
+
 #include "retdec/llvmir2hll/evaluator/arithm_expr_evaluator.h"
 #include "retdec/llvmir2hll/ir/add_op_expr.h"
 #include "retdec/llvmir2hll/ir/bit_and_op_expr.h"
@@ -634,13 +636,15 @@ void ThreeOperandsSubOptimizer::tryOptimizeOrOpExprWithRelOperators(ShPtr<
 		return;
 	}
 
-	// Evaluate two ConstInt's and thank to result optimize or not.
-	ShPtr<LtEqOpExpr> ltEqOpExpr(
-		LtEqOpExpr::create(firstOpConstInt, secOpConstInt));
-	ShPtr<ConstBool> constBool(
-		cast<ConstBool>(arithmExprEvaluator->evaluate(ltEqOpExpr)));
-	if (constBool && constBool->getValue()) {
-		// If firstConstInt is lower than secConstInt, can be optimized.
+	// `var == C1` is covered by `var <= C2` when C1 <= C2, compared the way
+	// the `<=` compares (signed or unsigned).
+	llvm::APSInt c1 = firstOpConstInt->getValue();
+	llvm::APSInt c2 = secOpConstInt->getValue();
+	unsigned width = std::max(c1.getBitWidth(), c2.getBitWidth());
+	bool isSigned = secOpLtEqOp->getVariant() == LtEqOpExpr::Variant::SCmp;
+	llvm::APInt a = isSigned ? c1.sextOrTrunc(width) : c1.zextOrTrunc(width);
+	llvm::APInt b = isSigned ? c2.sextOrTrunc(width) : c2.zextOrTrunc(width);
+	if (isSigned ? a.sle(b) : a.ule(b)) {
 		optimizeExpr(expr, secOpLtEqOp);
 	}
 }

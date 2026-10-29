@@ -90,6 +90,34 @@ EqualityOrGreaterThanOfDifferentOperandsIsKept) {
 	EXPECT_TRUE(isa<OrOpExpr>(returnStmt->getRetVal()));
 }
 
+// `a == -1 || a <=s 5`: -1 <= 5 signed, so the equality is redundant.
+TEST_F(ThreeOperandsSubOptimizerTests,
+EqualityCoveredByASignedLessOrEqualIsDropped) {
+	ShPtr<Variable> a(Variable::create("a", IntType::create(32)));
+	auto le = LtEqOpExpr::create(a, ConstInt::create(5, 32),
+		LtEqOpExpr::Variant::SCmp);
+	ShPtr<ReturnStmt> returnStmt(ReturnStmt::create(OrOpExpr::create(
+		EqOpExpr::create(a, ConstInt::create(-1, 32)), le)));
+
+	optimizer->tryOptimize(returnStmt->getRetVal());
+
+	EXPECT_EQ(le, returnStmt->getRetVal());
+}
+
+// `a == 0xffffffff || a <=u 5`: 0xffffffff is not <= 5 unsigned.
+TEST_F(ThreeOperandsSubOptimizerTests,
+EqualityNotCoveredByAnUnsignedLessOrEqualIsKept) {
+	ShPtr<Variable> a(Variable::create("a", IntType::create(32)));
+	ShPtr<ReturnStmt> returnStmt(ReturnStmt::create(OrOpExpr::create(
+		EqOpExpr::create(a, ConstInt::create(-1, 32)),
+		LtEqOpExpr::create(a, ConstInt::create(5, 32),
+			LtEqOpExpr::Variant::UCmp))));
+
+	optimizer->tryOptimize(returnStmt->getRetVal());
+
+	EXPECT_TRUE(isa<OrOpExpr>(returnStmt->getRetVal()));
+}
+
 //
 // Tests for operator +
 //
