@@ -347,7 +347,8 @@ ShPtr<Expression> WhileTrueToForLoopOptimizer::computeEndCondOfForLoop(
 		}
 
 		// The resulting condition is of the form `indVar < endValue`.
-		return LtOpExpr::create(indVarInfo->indVar, endValue);
+		return LtOpExpr::create(indVarInfo->indVar, endValue,
+			ltOpExpr->getVariant());
 	} else if (auto ltEqOpExpr = cast<LtEqOpExpr>(endCondOpExpr)) {
 		// <=
 		auto endValue = ltEqOpExpr->getSecondOperand();
@@ -362,7 +363,9 @@ ShPtr<Expression> WhileTrueToForLoopOptimizer::computeEndCondOfForLoop(
 		}
 
 		// The resulting condition is of the form `indVar < endValue`.
-		return LtOpExpr::create(indVarInfo->indVar, endValue);
+		return LtOpExpr::create(indVarInfo->indVar, endValue,
+			ltEqOpExpr->getVariant() == LtEqOpExpr::Variant::SCmp
+				? LtOpExpr::Variant::SCmp : LtOpExpr::Variant::UCmp);
 	} else if (auto gtOpExpr = cast<GtOpExpr>(endCondOpExpr)) {
 		// >
 
@@ -512,19 +515,27 @@ ShPtr<BinaryOpExpr> WhileTrueToForLoopOptimizer::exchangeCompOpAndOperands(
 	if (isa<GtOpExpr>(expr)) {
 		// x > y  ->  y < x
 		return LtOpExpr::create(
-			expr->getSecondOperand(), expr->getFirstOperand());
+			expr->getSecondOperand(), expr->getFirstOperand(),
+			cast<GtOpExpr>(expr)->getVariant() == GtOpExpr::Variant::SCmp
+				? LtOpExpr::Variant::SCmp : LtOpExpr::Variant::UCmp);
 	} else if (isa<LtOpExpr>(expr)) {
 		// x < y  ->  y > x
 		return GtOpExpr::create(
-			expr->getSecondOperand(), expr->getFirstOperand());
+			expr->getSecondOperand(), expr->getFirstOperand(),
+			cast<LtOpExpr>(expr)->getVariant() == LtOpExpr::Variant::SCmp
+				? GtOpExpr::Variant::SCmp : GtOpExpr::Variant::UCmp);
 	} else if (isa<LtEqOpExpr>(expr)) {
 		// x <= y  ->  y >= x
 		return GtEqOpExpr::create(
-			expr->getSecondOperand(), expr->getFirstOperand());
+			expr->getSecondOperand(), expr->getFirstOperand(),
+			cast<LtEqOpExpr>(expr)->getVariant() == LtEqOpExpr::Variant::SCmp
+				? GtEqOpExpr::Variant::SCmp : GtEqOpExpr::Variant::UCmp);
 	} else if (isa<GtEqOpExpr>(expr)) {
 		// x >= y  ->  y <= x
 		return LtEqOpExpr::create(
-			expr->getSecondOperand(), expr->getFirstOperand());
+			expr->getSecondOperand(), expr->getFirstOperand(),
+			cast<GtEqOpExpr>(expr)->getVariant() == GtEqOpExpr::Variant::SCmp
+				? LtEqOpExpr::Variant::SCmp : LtEqOpExpr::Variant::UCmp);
 	} else if (isa<EqOpExpr>(expr)) {
 		// x == y  ->  y == x
 		return EqOpExpr::create(

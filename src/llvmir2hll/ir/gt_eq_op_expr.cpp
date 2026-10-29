@@ -25,14 +25,16 @@ GtEqOpExpr::GtEqOpExpr(ShPtr<Expression> op1, ShPtr<Expression> op2,
 bool GtEqOpExpr::isEqualTo(ShPtr<Value> otherValue) const {
 	if (ShPtr<GtEqOpExpr> otherValueGtEqOpExpr = cast<GtEqOpExpr>(otherValue)) {
 		return op1->isEqualTo(otherValueGtEqOpExpr->getFirstOperand()) &&
-			op2->isEqualTo(otherValueGtEqOpExpr->getSecondOperand());
+			op2->isEqualTo(otherValueGtEqOpExpr->getSecondOperand()) &&
+			variant == otherValueGtEqOpExpr->getVariant();
 	}
 	return false;
 }
 
 ShPtr<Value> GtEqOpExpr::clone() {
 	ShPtr<GtEqOpExpr> gtEqOpExpr(GtEqOpExpr::create(
-		ucast<Expression>(op1->clone()), ucast<Expression>(op2->clone())));
+		ucast<Expression>(op1->clone()), ucast<Expression>(op2->clone()),
+		variant));
 	gtEqOpExpr->setMetadata(getMetadata());
 	return gtEqOpExpr;
 }

@@ -482,7 +482,8 @@ void ThreeOperandsSubOptimizer::visit(ShPtr<LtOpExpr> expr) {
 
 	std::optional<ExprPair> exprPair(tryOptimizeExpressionWithRelationalOperator(expr));
 	if (exprPair) {
-		optimizeExpr(expr, LtOpExpr::create(exprPair->first, exprPair->second));
+		optimizeExpr(expr, LtOpExpr::create(exprPair->first, exprPair->second,
+			expr->getVariant()));
 	}
 }
 
@@ -491,7 +492,8 @@ void ThreeOperandsSubOptimizer::visit(ShPtr<LtEqOpExpr> expr) {
 
 	std::optional<ExprPair> exprPair(tryOptimizeExpressionWithRelationalOperator(expr));
 	if (exprPair) {
-		optimizeExpr(expr, LtEqOpExpr::create(exprPair->first, exprPair->second));
+		optimizeExpr(expr, LtEqOpExpr::create(exprPair->first, exprPair->second,
+			expr->getVariant()));
 	}
 }
 
@@ -500,7 +502,8 @@ void ThreeOperandsSubOptimizer::visit(ShPtr<GtOpExpr> expr) {
 
 	std::optional<ExprPair> exprPair(tryOptimizeExpressionWithRelationalOperator(expr));
 	if (exprPair) {
-		optimizeExpr(expr, GtOpExpr::create(exprPair->first, exprPair->second));
+		optimizeExpr(expr, GtOpExpr::create(exprPair->first, exprPair->second,
+			expr->getVariant()));
 	}
 }
 
@@ -509,7 +512,8 @@ void ThreeOperandsSubOptimizer::visit(ShPtr<GtEqOpExpr> expr) {
 
 	std::optional<ExprPair> exprPair(tryOptimizeExpressionWithRelationalOperator(expr));
 	if (exprPair) {
-		optimizeExpr(expr, GtEqOpExpr::create(exprPair->first, exprPair->second));
+		optimizeExpr(expr, GtEqOpExpr::create(exprPair->first, exprPair->second,
+			expr->getVariant()));
 	}
 }
 

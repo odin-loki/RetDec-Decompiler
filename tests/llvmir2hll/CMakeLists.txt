@@ -147,6 +147,7 @@ add_executable(tests-llvmir2hll
 	semantics/semantics/gcc_general_semantics_tests.cpp
 	semantics/semantics/libc_semantics_tests.cpp
 	semantics/semantics/win_api_semantics_tests.cpp
+	support/expression_negater_tests.cpp
 	support/const_symbol_converter_tests.cpp
 	support/global_vars_sorter_tests.cpp
 	support/headers_for_declared_funcs_tests.cpp

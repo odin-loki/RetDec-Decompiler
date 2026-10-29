@@ -25,14 +25,16 @@ LtOpExpr::LtOpExpr(ShPtr<Expression> op1, ShPtr<Expression> op2,
 bool LtOpExpr::isEqualTo(ShPtr<Value> otherValue) const {
 	if (ShPtr<LtOpExpr> otherValueLtOpExpr = cast<LtOpExpr>(otherValue)) {
 		return op1->isEqualTo(otherValueLtOpExpr->getFirstOperand()) &&
-			op2->isEqualTo(otherValueLtOpExpr->getSecondOperand());
+			op2->isEqualTo(otherValueLtOpExpr->getSecondOperand()) &&
+			variant == otherValueLtOpExpr->getVariant();
 	}
 	return false;
 }
 
 ShPtr<Value> LtOpExpr::clone() {
 	ShPtr<LtOpExpr> ltOpExpr(LtOpExpr::create(
-		ucast<Expression>(op1->clone()), ucast<Expression>(op2->clone())));
+		ucast<Expression>(op1->clone()), ucast<Expression>(op2->clone()),
+		variant));
 	ltOpExpr->setMetadata(getMetadata());
 	return ltOpExpr;
 }

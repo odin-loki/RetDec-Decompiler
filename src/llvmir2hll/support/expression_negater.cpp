@@ -135,19 +135,31 @@ void ExpressionNegater::visit(ShPtr<NeqOpExpr> expr) {
 }
 
 void ExpressionNegater::visit(ShPtr<LtEqOpExpr> expr) {
-	exprStack.push(GtOpExpr::create(expr->getFirstOperand(), expr->getSecondOperand()));
+	// Keep the signedness: !(a <s b) is a >=s b, not a >=u b.
+	exprStack.push(GtOpExpr::create(expr->getFirstOperand(), expr->getSecondOperand(),
+		expr->getVariant() == LtEqOpExpr::Variant::SCmp ? GtOpExpr::Variant::SCmp
+			: GtOpExpr::Variant::UCmp));
 }
 
 void ExpressionNegater::visit(ShPtr<GtEqOpExpr> expr) {
-	exprStack.push(LtOpExpr::create(expr->getFirstOperand(), expr->getSecondOperand()));
+	// Keep the signedness: !(a <s b) is a >=s b, not a >=u b.
+	exprStack.push(LtOpExpr::create(expr->getFirstOperand(), expr->getSecondOperand(),
+		expr->getVariant() == GtEqOpExpr::Variant::SCmp ? LtOpExpr::Variant::SCmp
+			: LtOpExpr::Variant::UCmp));
 }
 
 void ExpressionNegater::visit(ShPtr<LtOpExpr> expr) {
-	exprStack.push(GtEqOpExpr::create(expr->getFirstOperand(), expr->getSecondOperand()));
+	// Keep the signedness: !(a <s b) is a >=s b, not a >=u b.
+	exprStack.push(GtEqOpExpr::create(expr->getFirstOperand(), expr->getSecondOperand(),
+		expr->getVariant() == LtOpExpr::Variant::SCmp ? GtEqOpExpr::Variant::SCmp
+			: GtEqOpExpr::Variant::UCmp));
 }
 
 void ExpressionNegater::visit(ShPtr<GtOpExpr> expr) {
-	exprStack.push(LtEqOpExpr::create(expr->getFirstOperand(), expr->getSecondOperand()));
+	// Keep the signedness: !(a <s b) is a >=s b, not a >=u b.
+	exprStack.push(LtEqOpExpr::create(expr->getFirstOperand(), expr->getSecondOperand(),
+		expr->getVariant() == GtOpExpr::Variant::SCmp ? LtEqOpExpr::Variant::SCmp
+			: LtEqOpExpr::Variant::UCmp));
 }
 
 void ExpressionNegater::visit(ShPtr<AddOpExpr> expr) {

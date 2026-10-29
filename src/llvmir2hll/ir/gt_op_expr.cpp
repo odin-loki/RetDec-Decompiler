@@ -25,7 +25,8 @@ GtOpExpr::GtOpExpr(ShPtr<Expression> op1, ShPtr<Expression> op2,
 bool GtOpExpr::isEqualTo(ShPtr<Value> otherValue) const {
 	if (ShPtr<GtOpExpr> otherValueGtOpExpr = cast<GtOpExpr>(otherValue)) {
 		return op1->isEqualTo(otherValueGtOpExpr->getFirstOperand()) &&
-			op2->isEqualTo(otherValueGtOpExpr->getSecondOperand());
+			op2->isEqualTo(otherValueGtOpExpr->getSecondOperand()) &&
+			variant == otherValueGtOpExpr->getVariant();
 	}
 	return false;
 }
@@ -33,7 +34,7 @@ bool GtOpExpr::isEqualTo(ShPtr<Value> otherValue) const {
 ShPtr<Value> GtOpExpr::clone() {
 	ShPtr<GtOpExpr> gtOpExpr(GtOpExpr::create(
 		ucast<Expression>(op1->clone()),
-		ucast<Expression>(op2->clone())));
+		ucast<Expression>(op2->clone()), variant));
 	gtOpExpr->setMetadata(getMetadata());
 	return gtOpExpr;
 }
