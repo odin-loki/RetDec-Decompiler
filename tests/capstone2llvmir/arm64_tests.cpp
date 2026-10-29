@@ -15257,6 +15257,24 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SME_ZA_instructions_are_op
 	EXPECT_NE(nullptr, _module.getFunction("__asm_smopa"));
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SVE_structured_loads_and_bf16_neon_are_opaque_calls)
+{
+	// ld2b {z0.b, z1.b}, p0/z, [x0]; ld1rb {z0.b}, p0/z, [x0]; fcmla v0.4s, v1.4s, v2.4s, #90; bfdot v0.4s, v1.8h, v2.8h
+	auto* f = translate(utils::hexStringToBytes("00 e0 20 a4 00 80 40 84 20 cc 82 6e 20 fc 42 6e"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("__asm_ld2b"));
+	EXPECT_NE(nullptr, _module.getFunction("__asm_ld1rb"));
+	EXPECT_NE(nullptr, _module.getFunction("__asm_fcmla"));
+	EXPECT_NE(nullptr, _module.getFunction("__asm_bfdot"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_BC_is_a_conditional_branch)
+{
+	auto* f = translate(utils::hexStringToBytes("50 00 00 54")); // bc.eq #8
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_bc"));
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FDIVR_sve_is_lifted)
 {
 	auto* f = translate(utils::hexStringToBytes("20 80 8c 65")); // fdivr z0.s, p0/m, z0.s, z1.s
