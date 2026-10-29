@@ -76,6 +76,56 @@ class Capstone2LlvmIrTranslatorArm64Tests :
 			_emulator->setGlobalVariableValue(gv, v);
 		}
 
+		// SVE Z registers are <16 x i8> and P registers <16 x i1> globals.
+		void setZ(uint32_t reg, uint64_t hi, uint64_t lo)
+		{
+			auto* gv = _translator->getRegister(reg);
+			llvm::GenericValue v;
+			v.AggregateVal.resize(16);
+			for (unsigned k = 0; k < 16; ++k)
+			{
+				uint64_t w = k < 8 ? lo : hi;
+				v.AggregateVal[k].IntVal = llvm::APInt(8, (w >> ((k % 8) * 8)) & 0xff);
+			}
+			_emulator->setGlobalVariableValue(gv, v);
+		}
+
+		uint64_t zPart(uint32_t reg, bool high)
+		{
+			auto* gv = _translator->getRegister(reg);
+			auto v = _emulator->getGlobalVariableValue(gv);
+			uint64_t r = 0;
+			for (unsigned k = 0; k < 8; ++k)
+			{
+				r |= v.AggregateVal[k + (high ? 8 : 0)].IntVal.getZExtValue() << (k * 8);
+			}
+			return r;
+		}
+
+		void setP(uint32_t reg, uint32_t bits)
+		{
+			auto* gv = _translator->getRegister(reg);
+			llvm::GenericValue v;
+			v.AggregateVal.resize(16);
+			for (unsigned k = 0; k < 16; ++k)
+			{
+				v.AggregateVal[k].IntVal = llvm::APInt(1, (bits >> k) & 1);
+			}
+			_emulator->setGlobalVariableValue(gv, v);
+		}
+
+		uint32_t getP(uint32_t reg)
+		{
+			auto* gv = _translator->getRegister(reg);
+			auto v = _emulator->getGlobalVariableValue(gv);
+			uint32_t r = 0;
+			for (unsigned k = 0; k < 16; ++k)
+			{
+				r |= uint32_t(v.AggregateVal[k].IntVal.getZExtValue()) << k;
+			}
+			return r;
+		}
+
 		uint64_t vLow(uint32_t reg)
 		{
 			auto* gv = getRegister(reg);
@@ -14832,6 +14882,132 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_IC_IVAU)
 	EXPECT_JUST_VALUES_CALLED({
 		{_module.getFunction("__asm_ic_ivau"), {0x2000}},
 	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SDIVR_sve_reversed_divide)
+{
+	setZ(ARM64_REG_Z0, 0xfffffff700000000ULL, 0x000000070000000aULL);
+	setZ(ARM64_REG_Z2, 0x0000001200000005ULL, 0x0000001500000064ULL);
+	setP(ARM64_REG_P1, 0x0111);
+
+	emulate_bin("40 04 96 04"); // sdivr z0.s, p1/m, z0.s, z2.s
+
+	EXPECT_EQ(0x000000030000000aULL, zPart(ARM64_REG_Z0, false));
+	EXPECT_EQ(0xfffffff700000000ULL, zPart(ARM64_REG_Z0, true));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_sdivr"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SADDLB_sve2_widens_even_lanes)
+{
+	setZ(ARM64_REG_Z1, 0x00007fff00008000ULL, 0x00040003fffe0001ULL);
+	setZ(ARM64_REG_Z2, 0x0000000100008000ULL, 0x0028001e0014000aULL);
+
+	emulate_bin("20 00 82 45"); // saddlb z0.s, z1.h, z2.h
+
+	EXPECT_EQ(0x000000210000000bULL, zPart(ARM64_REG_Z0, false));
+	EXPECT_EQ(0x00008000ffff0000ULL, zPart(ARM64_REG_Z0, true));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_saddlb"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SQXTNB_sve2_saturates_and_zeroes_top)
+{
+	setZ(ARM64_REG_Z0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setZ(ARM64_REG_Z1, 0ULL, 0xfff00005ff000100ULL);
+
+	emulate_bin("20 40 28 45"); // sqxtnb z0.b, z1.h
+
+	EXPECT_EQ(0x00f000050080007fULL, zPart(ARM64_REG_Z0, false));
+	EXPECT_EQ(0ULL, zPart(ARM64_REG_Z0, true));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_sqxtnb"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SHRNT_sve2_writes_odd_lanes)
+{
+	setZ(ARM64_REG_Z0, 0x1111111111111111ULL, 0x1111111111111111ULL);
+	setZ(ARM64_REG_Z1, 0x1234123412341234ULL, 0x1234123412341234ULL);
+
+	emulate_bin("20 14 2c 45"); // shrnt z0.b, z1.h, #4
+
+	EXPECT_EQ(0x2311231123112311ULL, zPart(ARM64_REG_Z0, false));
+	EXPECT_EQ(0x2311231123112311ULL, zPart(ARM64_REG_Z0, true));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_shrnt"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_NANDS_sve_pred_sets_flags)
+{
+	setP(ARM64_REG_P1, 0x00ff);
+	setP(ARM64_REG_P2, 0x000f);
+	setP(ARM64_REG_P3, 0x0005);
+
+	emulate_bin("50 46 c3 25"); // nands p0.b, p1/z, p2.b, p3.b
+
+	EXPECT_EQ(0x00faU, getP(ARM64_REG_P0));
+	EXPECT_EQ(0U, getRegisterValueUnsigned(ARM64_REG_CPSR_N));
+	EXPECT_EQ(0U, getRegisterValueUnsigned(ARM64_REG_CPSR_Z));
+	EXPECT_EQ(0U, getRegisterValueUnsigned(ARM64_REG_CPSR_C));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_nands"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_BSL1N_sve2_bitwise_select)
+{
+	setZ(ARM64_REG_Z0, 0xf0f0f0f0f0f0f0f0ULL, 0xf0f0f0f0f0f0f0f0ULL);
+	setZ(ARM64_REG_Z1, 0xaaaaaaaaaaaaaaaaULL, 0xaaaaaaaaaaaaaaaaULL);
+	setZ(ARM64_REG_Z2, 0xff00ff00ff00ff00ULL, 0xff00ff00ff00ff00ULL);
+
+	emulate_bin("40 3c 61 04"); // bsl1n z0.d, z0.d, z1.d, z2.d
+
+	EXPECT_EQ(0x0faa0faa0faa0faaULL, zPart(ARM64_REG_Z0, false));
+	EXPECT_EQ(0x0faa0faa0faa0faaULL, zPart(ARM64_REG_Z0, true));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_bsl1n"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ASRD_sve_rounds_toward_zero)
+{
+	setZ(ARM64_REG_Z0, 0ULL, 0x00000011fffffff7ULL);
+	setP(ARM64_REG_P1, 0x1111);
+
+	emulate_bin("a0 87 44 04"); // asrd z0.s, p1/m, z0.s, #3
+
+	EXPECT_EQ(0x00000002ffffffffULL, zPart(ARM64_REG_Z0, false));
+	EXPECT_EQ(0ULL, zPart(ARM64_REG_Z0, true));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_asrd"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_EORV_sve_reduces_active_lanes)
+{
+	setZ(ARM64_REG_Z2, 0x0000000800000004ULL, 0x0000000200000001ULL);
+	setP(ARM64_REG_P1, 0x1011);
+
+	emulate_bin("40 24 99 04"); // eorv s0, p1, z2.s
+
+	EXPECT_EQ(11U, getRegisterValueUnsigned(ARM64_REG_S0));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_eorv"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SQDMLALB_sve2_saturating_accumulate)
+{
+	setZ(ARM64_REG_Z0, 0ULL, 0x7fffffff00000001ULL);
+	setZ(ARM64_REG_Z1, 0ULL, 0x0000400000000003ULL);
+	setZ(ARM64_REG_Z2, 0ULL, 0x0000800000000005ULL);
+
+	emulate_bin("20 60 82 44"); // sqdmlalb z0.s, z1.h, z2.h
+
+	EXPECT_EQ(0x3fffffff0000001fULL, zPart(ARM64_REG_Z0, false));
+	EXPECT_EQ(0ULL, zPart(ARM64_REG_Z0, true));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_sqdmlalb"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_URSHLR_sve2_reversed_rounding_shift)
+{
+	setZ(ARM64_REG_Z0, 0ULL, 0x000000000002ffffULL);
+	setZ(ARM64_REG_Z2, 0ULL, 0x0000000000050003ULL);
+	setP(ARM64_REG_P1, 0x0005);
+
+	emulate_bin("40 84 47 44"); // urshlr z0.h, p1/m, z0.h, z2.h
+
+	EXPECT_EQ(0x0000000000140002ULL, zPart(ARM64_REG_Z0, false));
+	EXPECT_EQ(0ULL, zPart(ARM64_REG_Z0, true));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_urshlr"));
 }
 
 } // namespace tests

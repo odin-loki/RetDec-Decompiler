@@ -360,6 +360,8 @@ class Capstone2LlvmIrTranslatorArm64_impl :
 		void translateSveSplice(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateSveRev(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateSveReduce(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateSve2(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void sve2SetPredFlags(llvm::Value* pg, llvm::Value* r, llvm::IRBuilder<>& irb);
 
 		llvm::Value* loadAsFixedVec(uint32_t r, llvm::FixedVectorType* vecTy, llvm::IRBuilder<>& irb);
 		llvm::Value* loadSveZ(cs_arm64_op& op, llvm::IRBuilder<>& irb);

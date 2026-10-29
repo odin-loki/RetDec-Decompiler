@@ -6,6 +6,7 @@ add_library(capstone2llvmir STATIC
 	arm64/arm64_init.cpp
 	arm64/arm64.cpp
 	arm64/arm64_fp_ext.cpp
+	arm64/arm64_sve2.cpp
 	mips/mips_init.cpp
 	mips/mips.cpp
 	powerpc/powerpc_init.cpp
