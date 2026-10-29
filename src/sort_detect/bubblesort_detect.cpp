@@ -63,6 +63,73 @@ static bool hasSwapInBlock(const ssa::SSAFunction& fn, const ssa::BasicBlock& bl
 	return moves >= 2;
 }
 
+static const ssa::IrInstr* defOf(const ssa::SSAFunction& fn, ssa::ValueId id)
+{
+	const auto* v = fn.value(id);
+	return v ? v->defInstr : nullptr;
+}
+
+/// Skip masks: `(x & 0xffffffff)` is still x for this purpose.
+static const ssa::IrInstr* skipMask(const ssa::SSAFunction& fn, const ssa::IrInstr* d)
+{
+	while (d && d->op == ssa::IrInstr::Op::And && !d->uses.empty())
+	{
+		const ssa::IrInstr* next = nullptr;
+		for (const auto& u: d->uses)
+			if (const auto* x = defOf(fn, u.valueId)) next = x;
+		d = next;
+	}
+	return d;
+}
+
+/// The memory load a half-word shift reads, if `d` is `load >> 32` or
+/// `load << 32` (under masks).
+static const ssa::IrInstr* halfShiftedLoad(const ssa::SSAFunction& fn, const ssa::IrInstr* d, ssa::IrInstr::Op op)
+{
+	d = skipMask(fn, d);
+	if (!d || d->op != op) return nullptr;
+	bool by32 = false;
+	const ssa::IrInstr* src = nullptr;
+	for (const auto& u: d->uses)
+	{
+		const auto* v = fn.value(u.valueId);
+		if (v && v->kind == ssa::ValueKind::Immediate && v->imm == 32) by32 = true;
+		else if (const auto* x = skipMask(fn, defOf(fn, u.valueId)); x && x->op == ssa::IrInstr::Op::Load) src = x;
+	}
+	return by32 && src && !addrIsStack(fn, *src) ? src : nullptr;
+}
+
+// -O2 loads two adjacent 32-bit elements as one 64-bit word and swaps them by
+// writing back the word with its halves exchanged:
+//   w = *p; if (hi(w) < lo(w)) *p = (w >> 32) | (w << 32);
+static bool hasPackedPairSwap(const ssa::SSAFunction& fn)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* st: blk->instrs)
+		{
+			if (!st || st->op != ssa::IrInstr::Op::Store || addrIsStack(fn, *st)) continue;
+			for (const auto& u: st->uses)
+			{
+				if (u.operandIndex != 0) continue;
+				const auto* orI = defOf(fn, u.valueId);
+				if (!orI || orI->op != ssa::IrInstr::Op::Or) continue;
+				const ssa::IrInstr *hi = nullptr, *lo = nullptr;
+				for (const auto& o: orI->uses)
+				{
+					const auto* x = defOf(fn, o.valueId);
+					if (const auto* l = halfShiftedLoad(fn, x, ssa::IrInstr::Op::Shr)) hi = l;
+					if (const auto* l = halfShiftedLoad(fn, x, ssa::IrInstr::Op::Shl)) lo = l;
+				}
+				if (hi && hi == lo) return true;
+			}
+		}
+	}
+	return false;
+}
+
 static bool hasSwapPattern(const ssa::SSAFunction& fn)
 {
 	for (uint32_t b = 0; b < fn.blockCount(); ++b)
@@ -70,7 +137,7 @@ static bool hasSwapPattern(const ssa::SSAFunction& fn)
 		const auto* blk = fn.block(b);
 		if (blk && hasSwapInBlock(fn, *blk)) return true;
 	}
-	return false;
+	return hasPackedPairSwap(fn);
 }
 
 static int countPhis(const ssa::SSAFunction& fn)

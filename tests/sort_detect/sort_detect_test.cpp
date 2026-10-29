@@ -1144,6 +1144,51 @@ TEST(BubbleSortDetectorTest, BubbleSortIsDetected)
 	EXPECT_GE(r.confidence, 0.45f);
 }
 
+// -O2 swaps two adjacent ints by rewriting their 64-bit word with the halves
+// exchanged: *p = (w >> shift) | (w << shift), w = *p.
+static std::unique_ptr<ssa::SSAFunction> makePackedSwapBubbleSort(uint64_t shift)
+{
+	auto fn = makeBubbleSort("bubble_sort");
+	auto* inner = blockNamed(*fn, "inner");
+	for (auto* i: inner->instrs)
+		if (i->op == ssa::IrInstr::Op::Store) i->uses.clear();
+	auto def = [&](ssa::IrInstr* i) {
+		auto* v = fn->allocValue(ssa::ValueKind::VirtualReg);
+		i->defValue = v->id;
+		v->defInstr = i;
+		return v->id;
+	};
+	auto imm = [&](uint64_t x) {
+		auto* v = fn->allocValue(ssa::ValueKind::Immediate);
+		v->imm = x;
+		return v->id;
+	};
+	auto* ld = fn->addInstr(inner->id, ssa::IrInstr::Op::Load);
+	ld->uses.push_back({fn->allocValue(ssa::ValueKind::VirtualReg)->id, 0});
+	const auto w = def(ld);
+	auto* hi = fn->addInstr(inner->id, ssa::IrInstr::Op::Shr);
+	hi->uses = {{w, 0}, {imm(shift), 1}};
+	auto* lo = fn->addInstr(inner->id, ssa::IrInstr::Op::Shl);
+	lo->uses = {{w, 0}, {imm(shift), 1}};
+	auto* orI = fn->addInstr(inner->id, ssa::IrInstr::Op::Or);
+	orI->uses = {{def(hi), 0}, {def(lo), 1}};
+	auto* st = fn->addInstr(inner->id, ssa::IrInstr::Op::Store);
+	st->uses = {{def(orI), 0}, {fn->allocValue(ssa::ValueKind::VirtualReg)->id, 1}};
+	return fn;
+}
+
+TEST(BubbleSortDetectorTest, AdjacentPairSwappedInOneWordIsBubbleSort)
+{
+	auto r = BubbleSortDetector().detect(*makePackedSwapBubbleSort(32));
+	EXPECT_GE(r.confidence, 0.45f);
+}
+
+TEST(BubbleSortDetectorTest, WordRotatedByAQuarterIsNotASwap)
+{
+	auto r = BubbleSortDetector().detect(*makePackedSwapBubbleSort(16));
+	EXPECT_LT(r.confidence, 0.45f);
+}
+
 TEST(BubbleSortDetectorTest, StoresThatOnlySpillToTheStackAreNotASwap)
 {
 	auto fn = makeBubbleSort("bubble_sort");
