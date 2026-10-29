@@ -174,6 +174,7 @@ private:
 	void tryOptimizeBitXorOpWithRelationalOperator(ShPtr<BitXorOpExpr> expr);
 	std::optional<ExprPair> tryOptimizeExpressionWithRelationalOperator(
 		ShPtr<BinaryOpExpr> expr);
+	bool tryMergeEqualityIntoStrictCompare(ShPtr<OrOpExpr> expr);
 	void tryOptimizeOrOpExprWithRelOperators(ShPtr<OrOpExpr>);
 };
 

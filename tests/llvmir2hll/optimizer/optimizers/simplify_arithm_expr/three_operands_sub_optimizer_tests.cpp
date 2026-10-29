@@ -59,6 +59,37 @@ OptimizerHasNonEmptyID) {
 		"the optimizer should have a non-empty ID";
 }
 
+// `a == b || a < b` (a signed compare) reads better as `a <= b`.
+TEST_F(ThreeOperandsSubOptimizerTests,
+EqualityOrStrictLessThanOfTheSameOperandsBecomesLessOrEqual) {
+	ShPtr<Variable> a(Variable::create("a", IntType::create(32)));
+	ShPtr<Variable> b(Variable::create("b", IntType::create(32)));
+	ShPtr<ReturnStmt> returnStmt(ReturnStmt::create(OrOpExpr::create(
+		EqOpExpr::create(a, b),
+		LtOpExpr::create(a, b, LtOpExpr::Variant::SCmp))));
+
+	optimizer->tryOptimize(returnStmt->getRetVal());
+
+	auto out = cast<LtEqOpExpr>(returnStmt->getRetVal());
+	ASSERT_TRUE(out) << "got `" << returnStmt->getRetVal() << "`";
+	EXPECT_EQ(LtEqOpExpr::Variant::SCmp, out->getVariant());
+	EXPECT_EQ(a, out->getFirstOperand());
+	EXPECT_EQ(b, out->getSecondOperand());
+}
+
+TEST_F(ThreeOperandsSubOptimizerTests,
+EqualityOrGreaterThanOfDifferentOperandsIsKept) {
+	ShPtr<Variable> a(Variable::create("a", IntType::create(32)));
+	ShPtr<Variable> b(Variable::create("b", IntType::create(32)));
+	ShPtr<Variable> c(Variable::create("c", IntType::create(32)));
+	ShPtr<ReturnStmt> returnStmt(ReturnStmt::create(OrOpExpr::create(
+		GtOpExpr::create(a, c), EqOpExpr::create(a, b))));
+
+	optimizer->tryOptimize(returnStmt->getRetVal());
+
+	EXPECT_TRUE(isa<OrOpExpr>(returnStmt->getRetVal()));
+}
+
 //
 // Tests for operator +
 //

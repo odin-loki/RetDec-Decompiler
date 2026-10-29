@@ -544,7 +544,58 @@ void ThreeOperandsSubOptimizer::visit(ShPtr<BitXorOpExpr> expr) {
 void ThreeOperandsSubOptimizer::visit(ShPtr<OrOpExpr> expr) {
 	OrderedAllVisitor::visit(expr);
 
+	if (tryMergeEqualityIntoStrictCompare(expr)) {
+		return;
+	}
 	tryOptimizeOrOpExprWithRelOperators(expr);
+}
+
+/**
+* @brief Optimizes @code a == b || a < b @endcode to @code a <= b @endcode
+*        (and the same with @c >, in either operand order).
+*
+* @return @c true if @a expr was replaced.
+*/
+bool ThreeOperandsSubOptimizer::tryMergeEqualityIntoStrictCompare(
+		ShPtr<OrOpExpr> expr) {
+	auto eq = cast<EqOpExpr>(expr->getFirstOperand());
+	auto other = expr->getSecondOperand();
+	if (!eq) {
+		eq = cast<EqOpExpr>(expr->getSecondOperand());
+		other = expr->getFirstOperand();
+	}
+	if (!eq) {
+		return false;
+	}
+	auto sameOperands = [&](ShPtr<BinaryOpExpr> cmp) {
+		auto a = cmp->getFirstOperand();
+		auto b = cmp->getSecondOperand();
+		return (eq->getFirstOperand()->isEqualTo(a) &&
+				eq->getSecondOperand()->isEqualTo(b)) ||
+			(eq->getFirstOperand()->isEqualTo(b) &&
+				eq->getSecondOperand()->isEqualTo(a));
+	};
+	if (auto lt = cast<LtOpExpr>(other)) {
+		if (!sameOperands(lt)) {
+			return false;
+		}
+		optimizeExpr(expr, LtEqOpExpr::create(lt->getFirstOperand(),
+			lt->getSecondOperand(),
+			lt->getVariant() == LtOpExpr::Variant::SCmp
+				? LtEqOpExpr::Variant::SCmp : LtEqOpExpr::Variant::UCmp));
+		return true;
+	}
+	if (auto gt = cast<GtOpExpr>(other)) {
+		if (!sameOperands(gt)) {
+			return false;
+		}
+		optimizeExpr(expr, GtEqOpExpr::create(gt->getFirstOperand(),
+			gt->getSecondOperand(),
+			gt->getVariant() == GtOpExpr::Variant::SCmp
+				? GtEqOpExpr::Variant::SCmp : GtEqOpExpr::Variant::UCmp));
+		return true;
+	}
+	return false;
 }
 
 /**
