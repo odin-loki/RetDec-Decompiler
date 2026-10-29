@@ -457,8 +457,10 @@ bool Capstone2LlvmIrTranslatorArm_impl::isAllowedExtraMode(cs_mode m)
 	unsigned extra = static_cast<unsigned>(m);
 	unsigned be = static_cast<unsigned>(CS_MODE_BIG_ENDIAN);
 	unsigned v8 = static_cast<unsigned>(CS_MODE_V8);
+	unsigned mclass = static_cast<unsigned>(CS_MODE_MCLASS);
 	unsigned withoutBe = extra & ~be;
-	return withoutBe == 0 || withoutBe == v8;
+	// M-profile decoding (with v8) brings in the v8.1-M instructions.
+	return (withoutBe & ~(v8 | mclass)) == 0;
 }
 
 uint32_t Capstone2LlvmIrTranslatorArm_impl::getArchByteSize()
@@ -528,7 +530,10 @@ void Capstone2LlvmIrTranslatorArm_impl::translateInstruction(cs_insn* i, llvm::I
 				|| armIsId(i, ARM_INS_BL) || armIsId(i, ARM_INS_BLX)
 				|| armIsId(i, ARM_INS_BXNS) || armIsId(i, ARM_INS_BLXNS)
 				|| armIsId(i, ARM_INS_CBZ) || armIsId(i, ARM_INS_CBNZ)
-				|| armIsId(i, ARM_INS_TBB) || armIsId(i, ARM_INS_TBH);
+				|| armIsId(i, ARM_INS_TBB) || armIsId(i, ARM_INS_TBH)
+				// v8.1-M conditional selects use cc as their own operand.
+				|| i->id == ARM_INS_CSEL || i->id == ARM_INS_CSINC
+				|| i->id == ARM_INS_CSINV || i->id == ARM_INS_CSNEG;
 		if (armCcUncond(ai) || branchInsn)
 		{
 			_inCondition = false;
@@ -7528,6 +7533,126 @@ void Capstone2LlvmIrTranslatorArm_impl::translateVsel(cs_insn* i, cs_arm* ai, ll
 	default: translatePseudoAsmGeneric(i, ai, irb); return;
 	}
 	storeOp(ai->operands[0], irb.CreateSelect(cond, sn, sm), irb, eOpConv::FPCAST_OR_BITCAST);
+}
+
+namespace {
+
+uint32_t armT32Reg(unsigned n)
+{
+	if (n <= 12) return ARM_REG_R0 + n;
+	return n == 13 ? ARM_REG_SP : (n == 14 ? ARM_REG_LR : ARM_REG_PC);
+}
+
+} // anonymous namespace
+
+/**
+ * ARM_INS_CSEL, ARM_INS_CSINC, ARM_INS_CSINV, ARM_INS_CSNEG (v8.1-M)
+ *
+ * Fields come from the T32 encoding because the CSET/CINC/CNEG/... aliases
+ * drop operands in Capstone's detail. Register 15 reads as zero.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateCsel(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	if (i->size != 4)
+	{
+		throwUnexpectedOperands(i);
+	}
+	unsigned hw1 = i->bytes[0] | (unsigned(i->bytes[1]) << 8);
+	unsigned hw2 = i->bytes[2] | (unsigned(i->bytes[3]) << 8);
+	unsigned rn = hw1 & 0xf;
+	unsigned op = (hw2 >> 12) & 0x3;
+	unsigned rd = (hw2 >> 8) & 0xf;
+	unsigned cond = (hw2 >> 4) & 0xf;
+	unsigned rm = hw2 & 0xf;
+
+	auto* i32 = irb.getInt32Ty();
+	auto readZr = [&](unsigned r) -> llvm::Value* {
+		return r == 15
+				? static_cast<llvm::Value*>(llvm::ConstantInt::get(i32, 0))
+				: loadRegister(armT32Reg(r), irb);
+	};
+	auto* a = readZr(rn);
+	auto* b = readZr(rm);
+	switch (op)
+	{
+		case 1: b = irb.CreateAdd(b, llvm::ConstantInt::get(i32, 1)); break;
+		case 2: b = irb.CreateNot(b); break;
+		case 3: b = irb.CreateNeg(b); break;
+		default: break;
+	}
+
+	auto savedCc = ai->cc;
+	ai->cc = static_cast<ARMCC_CondCodes>(cond);
+	auto* c = generateInsnConditionCode(irb, ai);
+	ai->cc = savedCc;
+
+	storeRegister(armT32Reg(rd), irb.CreateSelect(c, a, b), irb);
+}
+
+/**
+ * ARM_INS_LSLL, ARM_INS_LSRL, ARM_INS_ASRL (v8.1-M)
+ *
+ * Shift the 64-bit RdaHi:RdaLo pair. The register form takes a signed
+ * byte from Rm, and a negative amount shifts the other way.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateLongShift(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, ai, irb);
+	if (ai->operands[0].type != ARM_OP_REG || ai->operands[1].type != ARM_OP_REG)
+	{
+		throwUnexpectedOperands(i);
+	}
+
+	auto* i32 = irb.getInt32Ty();
+	auto* i64 = irb.getInt64Ty();
+	auto* lo = irb.CreateZExt(loadRegister(ai->operands[0].reg, irb), i64);
+	auto* hi = irb.CreateZExt(loadRegister(ai->operands[1].reg, irb), i64);
+	llvm::Value* v = irb.CreateOr(irb.CreateShl(hi, 32), lo);
+
+	bool arith = i->id == ARM_INS_ASRL;
+	bool left = i->id == ARM_INS_LSLL;
+	auto shiftBy = [&](bool toLeft, llvm::Value* amt) -> llvm::Value* {
+		// Amounts of 64 and up give 0, or the sign fill for ASRL.
+		auto* big = irb.CreateICmpUGT(amt, llvm::ConstantInt::get(i64, 63));
+		auto* safe = irb.CreateSelect(big, llvm::ConstantInt::get(i64, 63), amt);
+		if (toLeft)
+		{
+			return irb.CreateSelect(big, llvm::ConstantInt::get(i64, 0), irb.CreateShl(v, safe));
+		}
+		if (arith)
+		{
+			return irb.CreateAShr(v, safe);
+		}
+		return irb.CreateSelect(big, llvm::ConstantInt::get(i64, 0), irb.CreateLShr(v, safe));
+	};
+
+	llvm::Value* res = nullptr;
+	cs_arm_op& sh = ai->operands[2];
+	if (sh.type == ARM_OP_IMM)
+	{
+		res = shiftBy(left, llvm::ConstantInt::get(i64, static_cast<uint32_t>(sh.imm)));
+	}
+	else if (sh.type == ARM_OP_REG)
+	{
+		auto* rm = loadRegister(sh.reg, irb);
+		auto* amt = irb.CreateSExt(irb.CreateTrunc(rm, irb.getInt8Ty()), i64);
+		auto* neg = irb.CreateICmpSLT(amt, llvm::ConstantInt::get(i64, 0));
+		auto* mag = irb.CreateSelect(neg, irb.CreateNeg(amt), amt);
+		// LSLL with a negative amount is LSRL; ASRL with one is LSLL.
+		bool savedArith = arith;
+		auto* fwd = shiftBy(left, mag);
+		arith = false;
+		auto* back = shiftBy(!left, mag);
+		arith = savedArith;
+		res = irb.CreateSelect(neg, back, fwd);
+	}
+	else
+	{
+		throwUnexpectedOperands(i);
+	}
+
+	storeRegister(ai->operands[0].reg, irb.CreateTrunc(res, i32), irb);
+	storeRegister(ai->operands[1].reg, irb.CreateTrunc(irb.CreateLShr(res, 32), i32), irb);
 }
 
 } // namespace capstone2llvmir
