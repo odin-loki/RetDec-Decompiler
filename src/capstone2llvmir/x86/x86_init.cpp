@@ -926,7 +926,7 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorX86_impl::*)(cs_insn* i, cs
 		{X86_INS_FPREM, &Capstone2LlvmIrTranslatorX86_impl::translateFprem},
 		{X86_INS_FPREM1, &Capstone2LlvmIrTranslatorX86_impl::translateFprem},
 		{X86_INS_FPTAN, &Capstone2LlvmIrTranslatorX86_impl::translateFtan},
-		{X86_INS_FFREEP, nullptr},
+		{X86_INS_FFREEP, &Capstone2LlvmIrTranslatorX86_impl::translateFfreep},
 		{X86_INS_FRNDINT, &Capstone2LlvmIrTranslatorX86_impl::translateFrndint},
 		{X86_INS_FRSTOR, &Capstone2LlvmIrTranslatorX86_impl::translateFrstor},
 		{X86_INS_FNSAVE, &Capstone2LlvmIrTranslatorX86_impl::translateFnsave},

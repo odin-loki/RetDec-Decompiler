@@ -6229,6 +6229,20 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFfree(cs_insn* i, cs_x86* xi, l
 }
 
 /**
+ * X86_INS_FFREEP
+ *
+ * FFREE then a pop. The tag word is not modelled, which is why FFREE alone
+ * translates to nothing, but the pop moves TOP, and every later ST(i) is
+ * read through TOP. As a nullptr entry the pop was lost, so the stack was
+ * off by one after `ffreep st(0)` -- the idiom some compilers use in place
+ * of `fstp st(0)` to discard the top value.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateFfreep(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	x87IncTop(irb);
+}
+
+/**
  * X86_INS_FNSTSW
  */
 void Capstone2LlvmIrTranslatorX86_impl::translateFnstsw(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)

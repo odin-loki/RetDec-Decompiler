@@ -13643,6 +13643,29 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_FINCSTP_rotate)
 }
 
 //
+// X86_INS_FFREEP
+//
+
+// DF C0	FFREEP ST(0)	Free ST(0) and pop.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_FFREEP_pops)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{X87_REG_TOP, 0x3},
+	});
+
+	emulate_bin("df c0");
+
+	EXPECT_JUST_REGISTERS_LOADED({X87_REG_TOP});
+	EXPECT_JUST_REGISTERS_STORED({
+		{X87_REG_TOP, 0x4},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
 // X86_INS_FDECSTP
 //
 
