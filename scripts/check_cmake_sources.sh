@@ -121,39 +121,9 @@ UNBUILT_SRC = {
 }
 
 UNBUILT = {
-    # These eleven were recorded as "not carried through the LLVM 23.1.0
-    # migration and not yet re-enabled". That reason did not survive being
-    # checked: all eleven compile and pass against the distribution llvm-dev,
-    # and scripts/ci/check_fileformat_tests.sh (FF-01) has built and run the
-    # whole directory since then -- 135 test cases, of which 83 ran nowhere
-    # before. They stay out of tests/fileformat/CMakeLists.txt because nothing
-    # builds that target: ctest-linux names retdec-decompiler, retdec-gui and
-    # retdec-gui-tests and no other, so listing them there would move them from
-    # one gate to none. What is still untested is the pinned LLVM, which is the
-    # only part of the original reason that was ever about the migration.
-    "tests/fileformat/ar_archive_format_probe_tests.cpp":
-        "run by scripts/ci/check_fileformat_tests.sh (FF-01) against the system "
-        "LLVM; not in the CMake target because CI builds no test target",
-    "tests/fileformat/coff_format_tests.cpp": "as above",
-    "tests/fileformat/elf_format_tests.cpp": "as above",
-    "tests/fileformat/format_detection_tests.cpp": "as above",
-    "tests/fileformat/format_factory_tests.cpp": "as above",
-    "tests/fileformat/intel_hex_format_20bit_tests.cpp": "as above",
-    "tests/fileformat/intel_hex_format_tests.cpp": "as above",
-    "tests/fileformat/intel_hex_token_test.cpp": "as above",
-    "tests/fileformat/macho_format_tests.cpp": "as above",
-    "tests/fileformat/pe_format_tests.cpp": "as above",
-    "tests/fileformat/raw_data_format_tests.cpp": "as above",
-    # Not one of the eleven: this one is new. It drives the two
-    # getDeclaredFileLength overrides, and the COFF half needs the `coffBytes`
-    # fixture, which coff_format_tests.cpp defines and the CMake target does not
-    # name. Listing it there would break that build to no purpose, since nothing
-    # builds it; FF-01 globs the directory and runs it.
-    "tests/fileformat/declared_file_length_tests.cpp":
-        "run by scripts/ci/check_fileformat_tests.sh (FF-01); its COFF fixture "
-        "lives in coff_format_tests.cpp, which the CMake target does not name",
-    "tests/common/calling_convention_tests.cpp":
-        "not listed in tests/common/CMakeLists.txt; same migration gap",
+    # The twelve fileformat suites and calling_convention_tests.cpp used to
+    # be listed here; they are now in their CMake targets and pass against
+    # the pinned LLVM (146 fileformat cases, ctest-macos runs them all).
     "tests/managed_integration/fuzz/fuzz_pelib.cpp":
         "driven by scripts/standalone_fuzz.sh only -- PeLib needs no LLVM, so "
         "the harness does not need the RETDEC_FUZZ toolchain either",
