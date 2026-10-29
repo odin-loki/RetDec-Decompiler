@@ -307,6 +307,11 @@ struct IrInstr
 	// For Compare: which comparison this is, when the front end knew.
 	CmpPred cmpPred = CmpPred::None;
 
+	/// Floating-point: the instruction produces or consumes a floating-point
+	/// value (fadd/fmul/fdiv/fcmp, int<->float conversions, float loads).
+	/// The opcode alone does not say, since FMul maps to Op::Mul.
+	bool isFloat = false;
+
 	// For flag-producing instructions
 	bool writesFlagBundle = false;
 	uint8_t flagMask = 0; ///< which FlagBits are defined

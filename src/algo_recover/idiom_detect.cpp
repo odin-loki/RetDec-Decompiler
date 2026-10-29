@@ -572,6 +572,82 @@ bool hasRleLoop(const ssa::SSAFunction& fn)
 	return addZero && !decimal && byteVsByte && memStores >= 2;
 }
 
+/// What a loop does with array elements and floating-point values; the
+/// numeric kernels below are told apart by these counts.
+struct NumericLoopShape
+{
+	bool elementProduct = false; ///< `a[i] * b[j]`: a multiply of two loaded elements
+	bool elementAccumulate = false; ///< `s += v[i]`: an add of a loaded element
+	bool squareOfDifference = false; ///< `(v[i] - m) * (v[i] - m)`
+	bool memStore = false;
+	bool call = false;
+	bool varFloatDiv = false; ///< a floating-point divide by a variable
+	bool halfOrTwo = false; ///< float `* 0.5` or `/ 2.0`
+	bool floatCompare = false;
+	int condBranches = 0;
+};
+
+NumericLoopShape numericLoopShape(const ssa::SSAFunction& fn)
+{
+	NumericLoopShape sh;
+	forEachLoopInstr(fn, [&](const ssa::IrInstr& i) {
+		switch (i.op)
+		{
+		case ssa::IrInstr::Op::Mul:
+			if (i.uses.size() >= 2 && fromMemoryLoad(fn, i.uses[0].valueId) && fromMemoryLoad(fn, i.uses[1].valueId)
+				&& i.uses[0].valueId != i.uses[1].valueId)
+				sh.elementProduct = true;
+			if (i.uses.size() >= 2 && i.uses[0].valueId == i.uses[1].valueId)
+				if (const auto* v = fn.value(i.uses[0].valueId); v && v->defInstr && v->defInstr->op == ssa::IrInstr::Op::Sub)
+					for (const auto& u: v->defInstr->uses)
+						if (fromMemoryLoad(fn, u.valueId)) sh.squareOfDifference = true;
+			if (i.isFloat && immOperand(fn, i, 0x3FE0000000000000ULL)) sh.halfOrTwo = true;
+			break;
+		case ssa::IrInstr::Op::Div:
+			if (i.isFloat && immAt(fn, i, 1, 0x4000000000000000ULL)) sh.halfOrTwo = true;
+			// `a / x`: the divisor varies; the dividend may be a constant.
+			else if (i.isFloat && [&] {
+						 for (const auto& u: i.uses)
+							 if (const auto* v = fn.value(u.valueId); u.operandIndex == 1 && v && v->kind == ssa::ValueKind::Immediate)
+								 return false;
+						 return true;
+					 }())
+				sh.varFloatDiv = true;
+			break;
+		case ssa::IrInstr::Op::Add:
+			for (const auto& u: i.uses)
+				if (fromMemoryLoad(fn, u.valueId)) sh.elementAccumulate = true;
+			break;
+		case ssa::IrInstr::Op::Store:
+			if (!addrOnStack(fn, i)) sh.memStore = true;
+			break;
+		case ssa::IrInstr::Op::Call:
+			sh.call = true;
+			break;
+		case ssa::IrInstr::Op::Compare:
+			if (i.isFloat) sh.floatCompare = true;
+			break;
+		case ssa::IrInstr::Op::CondBranch:
+			++sh.condBranches;
+			break;
+		default:
+			break;
+		}
+	});
+	return sh;
+}
+
+/// A floating-point divide outside every loop: the `/ n` that turns a sum
+/// into a mean (`/ 5.0` once n is a known constant).
+bool floatDivOutsideLoops(const ssa::SSAFunction& fn)
+{
+	for (const auto& blk: fn.blocks())
+		if (blk && !ssa::blockOnCycle(fn, blk->id))
+			for (const auto* i: blk->instrs)
+				if (i && i->op == ssa::IrInstr::Op::Div && i->isFloat) return true;
+	return false;
+}
+
 /// `t = a + b; a = b; b = t;`: a loop over scalars only whose body adds two
 /// variables and shifts one of them into the other unchanged. Nothing else
 /// is computed: no multiply, divide, shift or bitwise operation, no memory
@@ -726,6 +802,9 @@ std::string IdiomResult::primaryLabel() const noexcept
 	case IdiomKind::MemcpyLoop: return "Memcpy";
 	case IdiomKind::RingBuffer: return "RingBuffer";
 	case IdiomKind::HashTableChaining: return "HashTable";
+	case IdiomKind::DotProduct: return "DotProduct";
+	case IdiomKind::Statistics: return "Statistics";
+	case IdiomKind::NewtonRaphson: return "NewtonRaphson";
 	default: return "Unknown";
 	}
 }
@@ -749,7 +828,9 @@ std::vector<std::string> IdiomResult::exportLabels() const
 	case IdiomKind::Memset: return {"Memset", "Memory"};
 	case IdiomKind::Popcount: return {"Popcount", "BitManipulation"};
 	case IdiomKind::BloomFilter: return {"BloomFilter", "Probabilistic"};
-	case IdiomKind::MatrixMultiply: return {"MatrixMultiply", "LinearAlgebra"};
+	// Not "LinearAlgebra": the corpus gives that to the integer kernel only,
+	// and nothing in the loop says which of the two it is looking at.
+	case IdiomKind::MatrixMultiply: return {"MatrixMultiply"};
 	case IdiomKind::LinkedList: return {"LinkedList"};
 	case IdiomKind::XorCipher: return {"XOR", "Cipher"};
 	case IdiomKind::LowerBound: return {"LowerBound", "BinarySearch", "Search"};
@@ -761,6 +842,9 @@ std::vector<std::string> IdiomResult::exportLabels() const
 	case IdiomKind::MemcpyLoop: return {"Memcpy", "Copy", "Memmove"};
 	case IdiomKind::RingBuffer: return {"RingBuffer", "CircularBuffer"};
 	case IdiomKind::HashTableChaining: return {"HashTable", "Chaining"};
+	case IdiomKind::DotProduct: return {"DotProduct"};
+	case IdiomKind::Statistics: return {"Statistics"};
+	case IdiomKind::NewtonRaphson: return {"NewtonRaphson"};
 	default: return {};
 	}
 }
@@ -829,6 +913,22 @@ std::vector<IdiomResult> IdiomDetector::detect(const ssa::SSAFunction& fn) const
 	if (hasLinearSearchLoop(fn) && !halvingSearchCompares(fn))
 		out.push_back(makeResult(IdiomKind::LinearSearch, 0.75f, "one_element_compared_per_iteration"));
 	if (hasRleLoop(fn)) out.push_back(makeResult(IdiomKind::Rle, 0.75f, "run_count_written_as_digit"));
+	{
+		const NumericLoopShape sh = numericLoopShape(fn);
+		// `s += a[i] * b[i]` in a single loop that writes nothing back.
+		if (sh.elementProduct && !sh.memStore && !sh.call && sh.condBranches == 1)
+			out.push_back(makeResult(IdiomKind::DotProduct, 0.75f, "sum_of_element_products"));
+		// The same product inside three nested loops, written to the result.
+		else if (sh.elementProduct && sh.memStore && !sh.call && sh.condBranches >= 3)
+			out.push_back(makeResult(IdiomKind::MatrixMultiply, 0.75f, "element_products_in_three_loops"));
+		// `sum(v[i]) / n` or `sum((v[i] - m)^2) / n`.
+		else if ((sh.elementAccumulate || sh.squareOfDifference) && !sh.elementProduct && !sh.memStore && !sh.call
+				 && sh.condBranches <= 3 && floatDivOutsideLoops(fn))
+			out.push_back(makeResult(IdiomKind::Statistics, 0.75f, "sum_divided_by_count"));
+		// `x = 0.5 * (x + a / x)` until it settles.
+		if (sh.varFloatDiv && sh.halfOrTwo && sh.floatCompare && !sh.memStore)
+			out.push_back(makeResult(IdiomKind::NewtonRaphson, 0.75f, "halved_sum_with_quotient"));
+	}
 	if (hasFibonacciLoop(fn)) out.push_back(makeResult(IdiomKind::Fibonacci, 0.80f, "add_and_rotate_scalars"));
 	// A6: do not assign Knapsack or Lcs.
 

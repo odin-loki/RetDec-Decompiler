@@ -633,3 +633,46 @@ TEST(LlvmToSsa, ADefinedValuePointsBackToItsInstruction)
 	}
 	EXPECT_GT(defs, 0u);
 }
+
+// The lifter loads a double as an i64 and bitcasts it. An fmul of two such
+// elements has to reach both loads, be marked floating-point, and carry a
+// float constant as its bit pattern.
+TEST(LlvmToSsa, FloatMultiplySeesThroughBitcastsToItsLoads)
+{
+	static const char* kIR = R"(
+define double @dot(ptr %a, ptr %b) {
+entry:
+  %x = load i64, ptr %a
+  %y = load i64, ptr %b
+  %fx = bitcast i64 %x to double
+  %fy = bitcast i64 %y to double
+  %p = fmul double %fx, %fy
+  %h = fmul double %p, 5.000000e-01
+  ret double %h
+}
+)";
+	llvm::LLVMContext ctx;
+	auto module = parseIR(ctx, kIR);
+	ASSERT_NE(module, nullptr);
+	auto ssaMod = buildSsaModule(*module);
+	const auto* fn = findFn(*ssaMod, "dot");
+	ASSERT_NE(fn, nullptr);
+	int products = 0, halves = 0;
+	for (uint32_t b = 0; b < fn->blockCount(); ++b)
+		if (const auto* blk = fn->block(b))
+			for (const auto* i: blk->instrs)
+			{
+				if (!i || i->op != IrInstr::Op::Mul) continue;
+				EXPECT_TRUE(i->isFloat);
+				int loads = 0;
+				for (const auto& u: i->uses)
+				{
+					const auto* v = fn->value(u.valueId);
+					if (v && v->defInstr && v->defInstr->op == IrInstr::Op::Load) ++loads;
+					if (v && v->kind == retdec::ssa::ValueKind::Immediate && v->imm == 0x3FE0000000000000ULL) ++halves;
+				}
+				if (loads == 2) ++products;
+			}
+	EXPECT_EQ(products, 1);
+	EXPECT_EQ(halves, 1);
+}

@@ -445,6 +445,9 @@ enum class IdiomKind : uint8_t
 	MemcpyLoop,
 	RingBuffer,
 	HashTableChaining,
+	DotProduct,
+	Statistics,
+	NewtonRaphson,
 };
 
 struct IdiomResult

@@ -224,6 +224,13 @@ static ssa::IrInstr* translateInstr(const llvm::Instruction& li, ssa::SSAFunctio
 	ssa::IrInstr* instr = fn.addInstr(blk.id, op, vma);
 	if (instr && !calleeStr.empty()) instr->calleeName = std::move(calleeStr);
 	if (instr) instr->cmpPred = pred;
+	if (instr)
+	{
+		bool fp = li.getType()->isFPOrFPVectorTy();
+		for (const auto& o: li.operands())
+			if (o->getType()->isFPOrFPVectorTy()) fp = true;
+		instr->isFloat = fp;
+	}
 
 	// defValue and uses are filled in by buildSsaModule, which is the only
 	// place that has the whole function in hand. A use has to name the value
@@ -368,12 +375,28 @@ std::unique_ptr<ssa::SSAModule> buildSsaModule(const llvm::Module& m)
 				// a value nothing defines and cut the def-use chain -- `icmp
 				// (trunc (add (load slot) 1)), n` would lose its load. Look
 				// through them to the value they resize.
+				// The same goes for a bitcast between an integer and a float
+				// of one width: the lifter loads a double as an i64 and
+				// bitcasts it, and without this an fmul of two array
+				// elements would not see either load.
 				while (llvm::isa<llvm::TruncInst>(op) || llvm::isa<llvm::ZExtInst>(op)
-					   || llvm::isa<llvm::SExtInst>(op))
+					   || llvm::isa<llvm::SExtInst>(op)
+					   || (llvm::isa<llvm::BitCastInst>(op) && !op->getType()->isPointerTy()))
 					op = llvm::cast<llvm::Instruction>(op)->getOperand(0);
 
 				ssa::ValueId id = ssa::kInvalidValue;
-				if (const auto* c = llvm::dyn_cast<llvm::ConstantInt>(op))
+				if (const auto* cf = llvm::dyn_cast<llvm::ConstantFP>(op))
+				{
+					// A float constant as its IEEE bit pattern, the way it
+					// sits in the binary (0.5 is 0x3FE0000000000000).
+					const llvm::APInt bits = cf->getValueAPF().bitcastToAPInt();
+					if (bits.getBitWidth() > 64) continue;
+					ssa::IrValue* val = fn->allocValue(ssa::ValueKind::Immediate);
+					val->imm = bits.getZExtValue();
+					val->width = static_cast<uint8_t>(bits.getBitWidth());
+					id = val->id;
+				}
+				else if (const auto* c = llvm::dyn_cast<llvm::ConstantInt>(op))
 				{
 					if (c->getBitWidth() > 64) continue;
 					// A constant is a fresh Immediate each time it appears:

@@ -2369,6 +2369,110 @@ TEST(IdiomDetectorTest, DecimalDigitConversionIsNotRle)
 	EXPECT_FALSE(detects(*makeRunLengthLoop(true), IdiomKind::Rle));
 }
 
+/// A load of an array element in the loop; returns its value.
+ssa::ValueId loadElement(ssa::SSAFunction& fn, ssa::BlockId b = 1)
+{
+	auto* l = fn.addInstr(b, ssa::IrInstr::Op::Load);
+	l->uses.push_back({reg(fn, 64)->id, 0});
+	auto* e = reg(fn, 64);
+	l->defValue = e->id;
+	e->defInstr = l;
+	return e->id;
+}
+
+ssa::IrInstr* floatOp(ssa::SSAFunction& fn, ssa::IrInstr::Op op, ssa::ValueId a, ssa::ValueId b, ssa::BlockId blk = 1)
+{
+	auto* i = fn.addInstr(blk, op);
+	i->isFloat = true;
+	i->uses.push_back({a, 0});
+	i->uses.push_back({b, 1});
+	auto* d = reg(fn, 64);
+	i->defValue = d->id;
+	d->defInstr = i;
+	return i;
+}
+
+ssa::ValueId floatImm(ssa::SSAFunction& fn, uint64_t bits)
+{
+	auto* v = fn.allocValue(ssa::ValueKind::Immediate);
+	v->imm = bits;
+	return v->id;
+}
+
+TEST(IdiomDetectorTest, SumOfElementProductsIsADotProduct)
+{
+	auto fn = makeLoop();
+	floatOp(*fn, ssa::IrInstr::Op::Mul, loadElement(*fn), loadElement(*fn));
+	pad(*fn);
+	EXPECT_TRUE(detects(*fn, IdiomKind::DotProduct));
+	EXPECT_FALSE(detects(*fn, IdiomKind::MatrixMultiply));
+}
+
+TEST(IdiomDetectorTest, ElementProductsWrittenBackInThreeLoopsAreAMatrixMultiply)
+{
+	auto fn = makeLoop();
+	auto* p = floatOp(*fn, ssa::IrInstr::Op::Mul, loadElement(*fn), loadElement(*fn));
+	storeToMemory(*fn, p->defValue);
+	pad(*fn);
+	fn->addInstr(1, ssa::IrInstr::Op::CondBranch);
+	fn->addInstr(1, ssa::IrInstr::Op::CondBranch);
+	EXPECT_TRUE(detects(*fn, IdiomKind::MatrixMultiply));
+	EXPECT_FALSE(detects(*fn, IdiomKind::DotProduct));
+}
+
+TEST(IdiomDetectorTest, ElementProductWrittenBackInOneLoopIsNeither)
+{
+	// `c[i] = a[i] * b[i]` is an elementwise transform.
+	auto fn = makeLoop();
+	auto* p = floatOp(*fn, ssa::IrInstr::Op::Mul, loadElement(*fn), loadElement(*fn));
+	storeToMemory(*fn, p->defValue);
+	pad(*fn);
+	EXPECT_FALSE(detects(*fn, IdiomKind::DotProduct));
+	EXPECT_FALSE(detects(*fn, IdiomKind::MatrixMultiply));
+}
+
+TEST(IdiomDetectorTest, SumDividedAfterTheLoopIsStatistics)
+{
+	auto fn = makeLoop();
+	auto* exit = fn->addBlock("exit");
+	fn->block(1)->succs.push_back(exit->id);
+	auto* sum = floatOp(*fn, ssa::IrInstr::Op::Add, loadElement(*fn), reg(*fn, 64)->id);
+	pad(*fn);
+	floatOp(*fn, ssa::IrInstr::Op::Div, sum->defValue, reg(*fn, 64)->id, exit->id);
+	EXPECT_TRUE(detects(*fn, IdiomKind::Statistics));
+}
+
+TEST(IdiomDetectorTest, SumWithoutADivideIsNotStatistics)
+{
+	auto fn = makeLoop();
+	floatOp(*fn, ssa::IrInstr::Op::Add, loadElement(*fn), reg(*fn, 64)->id);
+	pad(*fn);
+	EXPECT_FALSE(detects(*fn, IdiomKind::Statistics));
+}
+
+/// `x = 0.5 * (x + a / x)` with a float convergence test.
+std::unique_ptr<ssa::SSAFunction> makeNewtonLoop(bool halve)
+{
+	auto fn = makeLoop();
+	auto* q = floatOp(*fn, ssa::IrInstr::Op::Div, reg(*fn, 64)->id, reg(*fn, 64)->id);
+	auto* s = floatOp(*fn, ssa::IrInstr::Op::Add, q->defValue, reg(*fn, 64)->id);
+	floatOp(*fn, ssa::IrInstr::Op::Mul, s->defValue, floatImm(*fn, halve ? 0x3FE0000000000000ULL : 0x4008000000000000ULL));
+	auto* cmp = fn->addInstr(1, ssa::IrInstr::Op::Compare);
+	cmp->isFloat = true;
+	fn->addInstr(1, ssa::IrInstr::Op::CondBranch);
+	return fn;
+}
+
+TEST(IdiomDetectorTest, HalvedSumWithAQuotientIsNewtonRaphson)
+{
+	EXPECT_TRUE(detects(*makeNewtonLoop(true), IdiomKind::NewtonRaphson));
+}
+
+TEST(IdiomDetectorTest, QuotientScaledByThreeIsNotNewtonRaphson)
+{
+	EXPECT_FALSE(detects(*makeNewtonLoop(false), IdiomKind::NewtonRaphson));
+}
+
 TEST(IdiomDetectorTest, LowBitAddedThenShiftedOutIsPopcount)
 {
 	auto fn = makeLoop();
