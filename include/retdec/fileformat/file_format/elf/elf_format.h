@@ -73,6 +73,7 @@ class ElfFormat : public FileFormat
 		ELFIO::section* addPltRelocationTable(ELFIO::section *dynamicSection, const DynamicTable &table, ELFIO::section *symbolTable);
 		ELFIO::section* addGlobalOffsetTable(ELFIO::section *dynamicSection, const DynamicTable &table);
 		ELFIO::Elf_Half fixSymbolLink(ELFIO::Elf_Half symbolLink, ELFIO::Elf64_Addr symbolValue);
+		bool resolvePpc64FunctionDescriptor(unsigned long long address, unsigned long long &entry) const;
 		bool getRelocationMask(unsigned relType, std::vector<std::uint8_t> &mask);
 		void loadRelocations(const ELFIO::elfio *file, const ELFIO::section *symbolTable, std::unordered_multimap<std::string, unsigned long long> &nameAddressMap);
 		void loadSymbols(const ELFIO::elfio *file, const ELFIO::symbol_section_accessor *elfSymbolTable, const ELFIO::section *elfSection);

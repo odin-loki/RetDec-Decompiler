@@ -1898,12 +1898,31 @@ void ElfFormat::loadSymbols(const ELFIO::elfio *file, const ELFIO::symbol_sectio
 		else
 		{
 			const auto a = isObjectFile() ? value + file->sections[link]->get_address() : value;
-			symbol->setLinkToSection(link);
-			symbol->setAddress(a);
-			symbol->setIsThumbSymbol(isArm() && a % 2);
+			unsigned long long codeAddr = 0;
+			const bool isDescriptor = type == STT_FUNC && !isObjectFile()
+				&& resolvePpc64FunctionDescriptor(a, codeAddr);
+			const auto realA = isDescriptor ? codeAddr : a;
+			if(isDescriptor)
+			{
+				// ELFv1: the symbol names a function descriptor in .opd;
+				// its size describes the descriptor, not the code.
+				symbol->invalidateSize();
+				symbol->invalidateLinkToSection();
+				auto* codeSec = getSectionFromAddress(realA);
+				if(codeSec)
+				{
+					symbol->setLinkToSection(codeSec->getIndex());
+				}
+			}
+			else
+			{
+				symbol->setLinkToSection(link);
+			}
+			symbol->setAddress(realA);
+			symbol->setIsThumbSymbol(isArm() && realA % 2);
 			if(section->get_type() == SHT_DYNSYM)
 			{
-				newExport.setAddress(isObjectFile() ? value + file->sections[link]->get_address() : value);
+				newExport.setAddress(isDescriptor ? realA : (isObjectFile() ? value + file->sections[link]->get_address() : value));
 				newExport.setName(name);
 				exportTable->addExport(newExport);
 			}
@@ -2908,7 +2927,8 @@ bool ElfFormat::getEpAddress(std::uint64_t &result) const
 	const unsigned long long epAddress = reader.get_entry();
 	if(epAddress)
 	{
-		result = epAddress;
+		unsigned long long codeAddr = 0;
+		result = resolvePpc64FunctionDescriptor(epAddress, codeAddr) ? codeAddr : epAddress;
 		return true;
 	}
 	else if(!isArm() || isObjectFile())
@@ -3207,6 +3227,76 @@ unsigned long long ElfFormat::getBaseOffset() const
 
 const std::string& ElfFormat::getTelfhash() const {
 	return telfhash;
+}
+
+/**
+ * On 64-bit PowerPC (ELFv1 ABI) function symbols and the entry
+ * point refer to 24-byte function descriptors in @c .opd. If @a address lies
+ * in @c .opd, store the code address held in the descriptor's first
+ * doubleword into @a entry.
+ */
+bool ElfFormat::resolvePpc64FunctionDescriptor(unsigned long long address, unsigned long long &entry) const
+{
+	// Do not trust e_flags: some linkers mark ELFv1 output as ABI v2.
+	// ELFv2 objects never contain .opd, so its presence is the signal.
+	if(reader.get_machine() != EM_PPC64 || reader.get_class() != ELFCLASS64)
+	{
+		return false;
+	}
+	for(ELFIO::Elf_Half i = 0, n = reader.sections.size(); i < n; ++i)
+	{
+		const ELFIO::section* sec = reader.sections[i];
+		if(!sec || sec->get_name() != ".opd" || sec->get_type() == SHT_NOBITS)
+		{
+			continue;
+		}
+		const auto start = sec->get_address();
+		const auto size = sec->get_size();
+		if(address < start || address - start + 8 > size || !sec->get_data())
+		{
+			return false;
+		}
+		const auto* p = reinterpret_cast<const unsigned char*>(sec->get_data()) + (address - start);
+		unsigned long long v = 0;
+		for(int i = 0; i < 8; ++i)
+		{
+			const int idx = reader.get_encoding() == ELFDATA2MSB ? i : 7 - i;
+			v = (v << 8) | p[idx];
+		}
+		if(!v)
+		{
+			// Position-independent: the descriptor is filled in at load time
+			// by an R_PPC64_RELATIVE relocation whose addend is the code address.
+			for(ELFIO::Elf_Half j = 0; j < n && !v; ++j)
+			{
+				ELFIO::section* rs = reader.sections[j];
+				if(!rs || rs->get_type() != SHT_RELA)
+				{
+					continue;
+				}
+				ELFIO::relocation_section_accessor acc(reader, rs);
+				for(ELFIO::Elf_Xword k = 0, m = acc.get_loaded_entries_num(); k < m; ++k)
+				{
+					ELFIO::Elf64_Addr off = 0;
+					ELFIO::Elf_Word sym = 0, rtype = 0;
+					ELFIO::Elf_Sxword addend = 0;
+					if(acc.get_entry(k, off, sym, rtype, addend) && off == address
+						&& rtype == 22 /* R_PPC64_RELATIVE */)
+					{
+						v = static_cast<unsigned long long>(addend);
+						break;
+					}
+				}
+			}
+		}
+		if(!v)
+		{
+			return false;
+		}
+		entry = v;
+		return true;
+	}
+	return false;
 }
 
 } // namespace fileformat
