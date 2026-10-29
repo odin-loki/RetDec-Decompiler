@@ -8214,6 +8214,140 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateSveLdSt(cs_insn* i, cs_arm64*
 }
 
 /**
+ * SVE LD2/LD3/LD4 and ST2/ST3/ST4 {B,H,W,D} -- structured (de)interleaving
+ * contiguous loads and stores, and LD1R{B,H,W,D,SB,SH,SW} -- load one
+ * element and replicate it to every active lane.
+ *
+ * Vector length is modelled as 128 bits, as for every other SVE form here.
+ * Structure k occupies memory elements N*k .. N*k+N-1 and its member r goes
+ * to lane k of Z(t+r). Inactive lanes of a load are zeroed; an inactive
+ * store lane leaves memory as it was. The Q forms and LD1RO* keep the
+ * opaque fallback.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateSveStructLdSt(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	unsigned n = 0;
+	unsigned memBits = 0;
+	bool store = false;
+	bool replicate = false;
+	bool sign = false;
+	switch (i->id)
+	{
+	case ARM64_INS_LD2B: n = 2; memBits = 8; break;
+	case ARM64_INS_LD2H: n = 2; memBits = 16; break;
+	case ARM64_INS_LD2W: n = 2; memBits = 32; break;
+	case ARM64_INS_LD2D: n = 2; memBits = 64; break;
+	case ARM64_INS_LD3B: n = 3; memBits = 8; break;
+	case ARM64_INS_LD3H: n = 3; memBits = 16; break;
+	case ARM64_INS_LD3W: n = 3; memBits = 32; break;
+	case ARM64_INS_LD3D: n = 3; memBits = 64; break;
+	case ARM64_INS_LD4B: n = 4; memBits = 8; break;
+	case ARM64_INS_LD4H: n = 4; memBits = 16; break;
+	case ARM64_INS_LD4W: n = 4; memBits = 32; break;
+	case ARM64_INS_LD4D: n = 4; memBits = 64; break;
+	case ARM64_INS_ST2B: n = 2; memBits = 8; store = true; break;
+	case ARM64_INS_ST2H: n = 2; memBits = 16; store = true; break;
+	case ARM64_INS_ST2W: n = 2; memBits = 32; store = true; break;
+	case ARM64_INS_ST2D: n = 2; memBits = 64; store = true; break;
+	case ARM64_INS_ST3B: n = 3; memBits = 8; store = true; break;
+	case ARM64_INS_ST3H: n = 3; memBits = 16; store = true; break;
+	case ARM64_INS_ST3W: n = 3; memBits = 32; store = true; break;
+	case ARM64_INS_ST3D: n = 3; memBits = 64; store = true; break;
+	case ARM64_INS_ST4B: n = 4; memBits = 8; store = true; break;
+	case ARM64_INS_ST4H: n = 4; memBits = 16; store = true; break;
+	case ARM64_INS_ST4W: n = 4; memBits = 32; store = true; break;
+	case ARM64_INS_ST4D: n = 4; memBits = 64; store = true; break;
+	case ARM64_INS_LD1RB: n = 1; memBits = 8; replicate = true; break;
+	case ARM64_INS_LD1RH: n = 1; memBits = 16; replicate = true; break;
+	case ARM64_INS_LD1RW: n = 1; memBits = 32; replicate = true; break;
+	case ARM64_INS_LD1RD: n = 1; memBits = 64; replicate = true; break;
+	case ARM64_INS_LD1RSB: n = 1; memBits = 8; replicate = true; sign = true; break;
+	case ARM64_INS_LD1RSH: n = 1; memBits = 16; replicate = true; sign = true; break;
+	case ARM64_INS_LD1RSW: n = 1; memBits = 32; replicate = true; sign = true; break;
+	default: break;
+	}
+
+	cs_arm64_op* zOp = nullptr;
+	cs_arm64_op* pOp = nullptr;
+	cs_arm64_op* memOp = nullptr;
+	for (unsigned j = 0; j < ai->op_count; ++j)
+	{
+		auto& op = ai->operands[j];
+		if (op.type == ARM64_OP_MEM) memOp = &op;
+		else if (op.type == ARM64_OP_REG && isSveZReg(op.reg) && zOp == nullptr) zOp = &op;
+		else if (isSvePredOp(op) && pOp == nullptr) pOp = &op;
+	}
+	if (n == 0 || zOp == nullptr || pOp == nullptr || memOp == nullptr
+			|| isSveZReg(memOp->mem.base) || isSveZReg(memOp->mem.index))
+	{
+		translateArm64Opaque(i, ai, irb);
+		return;
+	}
+
+	unsigned destBits = replicate ? vasElemBits(zOp->vas) : memBits;
+	if (destBits == 0 || destBits < memBits)
+	{
+		translateArm64Opaque(i, ai, irb);
+		return;
+	}
+	unsigned lanes = 128 / destBits;
+	auto* elTy = irb.getIntNTy(memBits);
+	auto* destEl = irb.getIntNTy(destBits);
+	auto* vecTy = llvm::FixedVectorType::get(destEl, lanes);
+	llvm::Value* mask = svePredToLaneMask(loadRegister(pOp->reg, irb), destBits, irb);
+	auto* addrTy = getDefaultType();
+	llvm::Value* base = irb.CreateZExtOrTrunc(generateGetOperandMemAddr(*memOp, irb), addrTy);
+	unsigned z0 = zOp->reg - ARM64_REG_Z0;
+	auto zReg = [&](unsigned r) { return uint32_t(ARM64_REG_Z0 + (z0 + r) % 32); };
+
+	if (replicate)
+	{
+		llvm::Value* el = irb.CreateLoad(elTy, intToPtr(irb, base, elTy));
+		el = sign ? irb.CreateSExt(el, destEl) : irb.CreateZExt(el, destEl);
+		llvm::Value* splat = irb.CreateVectorSplat(lanes, el);
+		storeSveZ(zOp->reg, irb.CreateSelect(mask, splat, llvm::Constant::getNullValue(vecTy)), irb);
+		return;
+	}
+
+	std::vector<llvm::Value*> regs(n);
+	for (unsigned r = 0; r < n; ++r)
+	{
+		regs[r] = store
+				? irb.CreateBitCast(loadRegister(zReg(r), irb), vecTy)
+				: llvm::Constant::getNullValue(vecTy);
+	}
+	for (unsigned k = 0; k < lanes; ++k)
+	{
+		llvm::Value* take = irb.CreateExtractElement(mask, irb.getInt32(k));
+		for (unsigned r = 0; r < n; ++r)
+		{
+			llvm::Value* addr = irb.CreateAdd(base,
+					llvm::ConstantInt::get(addrTy, (uint64_t(n) * k + r) * (memBits / 8)));
+			auto* ptr = intToPtr(irb, addr, elTy);
+			if (store)
+			{
+				llvm::Value* lane = irb.CreateExtractElement(regs[r], irb.getInt32(k));
+				llvm::Value* old = irb.CreateLoad(elTy, ptr);
+				irb.CreateStore(irb.CreateSelect(take, lane, old), ptr);
+			}
+			else
+			{
+				llvm::Value* v = irb.CreateLoad(elTy, ptr);
+				v = irb.CreateSelect(take, v, llvm::ConstantInt::get(elTy, 0));
+				regs[r] = irb.CreateInsertElement(regs[r], v, irb.getInt32(k));
+			}
+		}
+	}
+	if (!store)
+	{
+		for (unsigned r = 0; r < n; ++r)
+		{
+			storeSveZ(zReg(r), regs[r], irb);
+		}
+	}
+}
+
+/**
  * SVE ADD on Zn. Returns false when this is not an SVE Z-register ADD so
  * translateAdd can keep the GPR / NEON paths.
  */

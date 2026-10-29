@@ -233,6 +233,7 @@ class Capstone2LlvmIrTranslatorArm64_impl :
 		void translateNeonWiden(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		llvm::Value* loadNeonVector(uint32_t reg, unsigned laneBits, unsigned lanes, llvm::IRBuilder<>& irb);
 		void translateNeonLaneBinary(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateSveStructLdSt(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateNeonComplexDot(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		llvm::Value* loadNeonByElement(cs_arm64_op& op, unsigned laneBits, unsigned lanes, unsigned group, llvm::IRBuilder<>& irb);
 		void translateNeonFpLaneBinary(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);

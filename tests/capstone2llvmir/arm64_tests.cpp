@@ -15321,15 +15321,30 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SME_ZA_instructions_are_op
 	EXPECT_NE(nullptr, _module.getFunction("__asm_smopa"));
 }
 
-TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SVE_structured_loads_and_bf16_neon_are_opaque_calls)
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SVE_structured_loads_and_bf16_neon_are_lifted)
 {
 	// ld2b {z0.b, z1.b}, p0/z, [x0]; ld1rb {z0.b}, p0/z, [x0]; fcmla v0.4s, v1.4s, v2.4s, #90; bfdot v0.4s, v1.8h, v2.8h
 	auto* f = translate(utils::hexStringToBytes("00 e0 20 a4 00 80 40 84 20 cc 82 6e 20 fc 42 6e"));
 	ASSERT_NE(nullptr, f);
-	EXPECT_NE(nullptr, _module.getFunction("__asm_ld2b"));
-	EXPECT_NE(nullptr, _module.getFunction("__asm_ld1rb"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_ld2b"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_ld1rb"));
 	EXPECT_EQ(nullptr, _module.getFunction("__asm_fcmla"));
 	EXPECT_EQ(nullptr, _module.getFunction("__asm_bfdot"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SVE_LD3D_ST2W_LD1RB_are_lifted)
+{
+	// ld3d {z2.d, z3.d, z4.d}, p0/z, [x0]; st2w {z0.s, z1.s}, p0, [x0]; ld1rb {z0.s}, p0/z, [x0]
+	auto* f = translate(utils::hexStringToBytes("02 e0 c0 a5 00 e0 30 e5 00 c0 40 84"));
+	ASSERT_NE(nullptr, f);
+	std::string ir;
+	llvm::raw_string_ostream os(ir);
+	f->print(os);
+	os.flush();
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_NE(std::string::npos, ir.find("@z4")) << ir;
+	EXPECT_NE(std::string::npos, ir.find("store i32")) << ir;
+	EXPECT_NE(std::string::npos, ir.find("zext i8")) << ir;
 }
 
 TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_BC_is_a_conditional_branch)
