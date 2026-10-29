@@ -90,6 +90,7 @@ private:
 	virtual void visit(ShPtr<BitXorOpExpr> expr) override;
 	virtual void visit(ShPtr<BitShlOpExpr> expr) override;
 	virtual void visit(ShPtr<BitShrOpExpr> expr) override;
+	bool emitSignExtendedShift(ShPtr<BitShrOpExpr> expr);
 	virtual void visit(ShPtr<TernaryOpExpr> expr) override;
 	virtual void visit(ShPtr<CallExpr> expr) override;
 	virtual void visit(ShPtr<CommaOpExpr> expr) override;

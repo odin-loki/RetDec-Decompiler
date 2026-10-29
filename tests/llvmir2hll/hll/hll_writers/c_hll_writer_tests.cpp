@@ -13,6 +13,7 @@
 #include "llvmir2hll/hll/hll_writers/hll_writer_tests.h"
 #include "retdec/llvmir2hll/ir/add_op_expr.h"
 #include "retdec/llvmir2hll/ir/assign_op_expr.h"
+#include "retdec/llvmir2hll/ir/bit_shl_op_expr.h"
 #include "retdec/llvmir2hll/ir/bit_shr_op_expr.h"
 #include "retdec/llvmir2hll/ir/call_expr.h"
 #include "retdec/llvmir2hll/ir/call_stmt.h"
@@ -71,7 +72,7 @@ TEST_F(CHLLWriterTests, LogicalShiftRightOfASignedValueIsEmittedThroughAnUnsigne
 
 	auto code = emitCodeForCurrentModule();
 
-	ASSERT_TRUE(contains(code, "(uint32_t)x>>1")) << code;
+	ASSERT_TRUE(contains(code, "(uint32_t)x >> 1")) << code;
 }
 
 TEST_F(CHLLWriterTests, ArithmeticalShiftRightOfASignedValueIsEmittedPlain)
@@ -98,6 +99,34 @@ TEST_F(CHLLWriterTests, LogicalShiftRightOfAnUnsignedValueNeedsNoCast)
 
 	ASSERT_TRUE(contains(code, "x >> 1")) << code;
 	ASSERT_FALSE(contains(code, "(uint32_t)x")) << code;
+}
+
+TEST_F(CHLLWriterTests, ArithmeticalShiftRightOfAnUnsignedValueIsEmittedThroughASignedCast)
+{
+	auto x = Variable::create("x", IntType::create(32, false));
+	module->addGlobalVar(
+		Variable::create("g", IntType::create(32, false)),
+		BitShrOpExpr::create(x, ConstInt::create(1, 32), BitShrOpExpr::Variant::Arithmetical));
+
+	auto code = emitCodeForCurrentModule();
+
+	ASSERT_TRUE(contains(code, "(int32_t)x >> 1")) << code;
+}
+
+// `x << 32 >> 30` (ashr) sign-extends the low half of x and scales it by 4.
+TEST_F(CHLLWriterTests, SignExtendingShiftPairIsEmittedAsACastAndAMultiply)
+{
+	auto x = Variable::create("x", IntType::create(64, false));
+	module->addGlobalVar(
+		Variable::create("g", IntType::create(64, false)),
+		BitShrOpExpr::create(
+			BitShlOpExpr::create(x, ConstInt::create(32, 64)),
+			ConstInt::create(30, 64), BitShrOpExpr::Variant::Arithmetical));
+
+	auto code = emitCodeForCurrentModule();
+
+	ASSERT_TRUE(contains(code, "(int64_t)(int32_t)x * 4")) << code;
+	ASSERT_FALSE(contains(code, "<<")) << code;
 }
 
 TEST_F(CHLLWriterTests,

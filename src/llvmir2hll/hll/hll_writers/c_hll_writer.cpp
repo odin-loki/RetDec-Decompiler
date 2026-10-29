@@ -93,6 +93,7 @@
 #include "retdec/llvmir2hll/ir/unreachable_stmt.h"
 #include "retdec/llvmir2hll/ir/var_def_stmt.h"
 #include "retdec/llvmir2hll/ir/variable.h"
+#include "retdec/llvmir2hll/ir/constant.h"
 #include "retdec/llvmir2hll/ir/void_type.h"
 #include "retdec/llvmir2hll/ir/while_loop_stmt.h"
 #include "retdec/llvmir2hll/semantics/semantics.h"
@@ -861,6 +862,54 @@ void CHLLWriter::visit(ShPtr<BitShlOpExpr> expr)
 	emitBinaryOpExpr("<<", expr);
 }
 
+/// `x << 32 >> k` with an arithmetic shift is how LLVM sign-extends the low
+/// half of a 64-bit value and scales it: an array index. Emits it as
+/// `(int64_t)(int32_t)x * 2^(32-k)` and returns true, or returns false
+/// when @a expr is not that shape.
+bool CHLLWriter::emitSignExtendedShift(ShPtr<BitShrOpExpr> expr)
+{
+	if (!expr->isArithmetical())
+	{
+		return false;
+	}
+	auto shl = cast<BitShlOpExpr>(expr->getFirstOperand());
+	auto k = cast<ConstInt>(expr->getSecondOperand());
+	auto ty = shl ? cast<IntType>(shl->getType()) : nullptr;
+	auto by = shl ? cast<ConstInt>(shl->getSecondOperand()) : nullptr;
+	if (!k || !by || !ty || ty->getSize() != 64 || by->getValue() != 32
+			|| k->getValue().ugt(32) || k->getValue().ult(29))
+	{
+		return false;
+	}
+	const unsigned scale = 1u << (32 - k->getValue().getZExtValue());
+	bool bracketsAreNeeded = scale != 1 || bracketsManager->areBracketsNeeded(expr);
+	if (bracketsAreNeeded)
+	{
+		out->punctuation('(');
+	}
+	out->punctuation('(');
+	IntType::create(64, true)->accept(this);
+	out->punctuation(')');
+	out->punctuation('(');
+	IntType::create(32, true)->accept(this);
+	out->punctuation(')');
+	const auto& x = shl->getFirstOperand();
+	const bool wrap = !isa<Variable>(x) && !isa<Constant>(x);
+	if (wrap) out->punctuation('(');
+	x->accept(this);
+	if (wrap) out->punctuation(')');
+	if (scale != 1)
+	{
+		out->operatorX("*", true, true);
+		out->constantInt(std::to_string(scale));
+	}
+	if (bracketsAreNeeded)
+	{
+		out->punctuation(')');
+	}
+	return true;
+}
+
 void CHLLWriter::visit(ShPtr<BitShrOpExpr> expr)
 {
 	// C's `>>` on a signed operand shifts in copies of the sign bit on every
@@ -876,8 +925,18 @@ void CHLLWriter::visit(ShPtr<BitShrOpExpr> expr)
 	// Nothing is emitted when the operand is already unsigned, or when its
 	// type is not an integer we can name -- there `>>` is either already right
 	// or not ours to guess at.
+	//
+	// The arithmetic shift is the mirror image: `ashr` of an unsigned value
+	// (the `x << 32 >> 30` of a sign-extended index) needs a cast to the
+	// signed type, or C shifts in zeros.
+	if (emitSignExtendedShift(expr))
+	{
+		return;
+	}
 	ShPtr<IntType> intTy(cast<IntType>(expr->getFirstOperand()->getType()));
-	if (expr->isLogical() && intTy && intTy->isSigned() && !intTy->isBool())
+	const bool needsUnsigned = expr->isLogical() && intTy && intTy->isSigned();
+	const bool needsSigned = expr->isArithmetical() && intTy && intTy->isUnsigned();
+	if ((needsUnsigned || needsSigned) && !intTy->isBool())
 	{
 		bool bracketsAreNeeded = bracketsManager->areBracketsNeeded(expr);
 		if (bracketsAreNeeded)
@@ -885,10 +944,15 @@ void CHLLWriter::visit(ShPtr<BitShrOpExpr> expr)
 			out->punctuation('(');
 		}
 		out->punctuation('(');
-		IntType::create(intTy->getSize(), false)->accept(this);
+		IntType::create(intTy->getSize(), needsSigned)->accept(this);
 		out->punctuation(')');
-		expr->getFirstOperand()->accept(this);
-		out->operatorX(">>");
+		// The cast binds tighter than any binary operator in the operand.
+		const auto& op = expr->getFirstOperand();
+		const bool wrap = !isa<Variable>(op) && !isa<Constant>(op);
+		if (wrap) out->punctuation('(');
+		op->accept(this);
+		if (wrap) out->punctuation(')');
+		out->operatorX(">>", true, true);
 		expr->getSecondOperand()->accept(this);
 		if (bracketsAreNeeded)
 		{
