@@ -48,7 +48,7 @@ ENV HOME=/home/retdec
 
 RUN apt-get update -y && \
 	DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-	openssl graphviz upx python3 \
+	openssl graphviz upx python3 libgomp1 \
 	&& rm -rf /var/lib/apt/lists/*
 
 USER retdec

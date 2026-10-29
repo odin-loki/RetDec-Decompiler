@@ -16,6 +16,7 @@ set(LIBCRYPTO_CURRENTDIR_SOURCES ${LIBCRYPTO_CURRENTDIR_SOURCES}
     ${CMAKE_SOURCE_DIR}/openssl/crypto/evp/digest.c
     ${CMAKE_SOURCE_DIR}/openssl/crypto/evp/evp_enc.c
     ${CMAKE_SOURCE_DIR}/openssl/crypto/evp/s_lib.c
+    ${CMAKE_SOURCE_DIR}/openssl/crypto/evp/skeymgmt_meth.c
     ${CMAKE_SOURCE_DIR}/openssl/crypto/evp/evp_lib.c
     ${CMAKE_SOURCE_DIR}/openssl/crypto/evp/evp_fetch.c
     ${CMAKE_SOURCE_DIR}/openssl/crypto/evp/evp_utils.c

@@ -11,7 +11,7 @@ LABEL org.opencontainers.image.licenses="MIT"
 
 RUN apt-get update -y && \
 	DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-	openssl graphviz upx python3 ca-certificates \
+	openssl graphviz upx python3 ca-certificates libgomp1 \
 	&& rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m retdec
