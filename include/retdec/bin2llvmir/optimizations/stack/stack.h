@@ -9,6 +9,7 @@
 #define RETDEC_BIN2LLVMIR_OPTIMIZATIONS_STACK_STACK_H
 
 #include <optional>
+#include <map>
 #include <unordered_set>
 
 #include <llvm/IR/Module.h>
@@ -58,6 +59,10 @@ class StackAnalysis : public llvm::ModulePass
 		DebugFormat* _dbgf = nullptr;
 
 		std::unordered_set<llvm::Value*> _toRemove;
+		/// One typed view per (slot, type), so that every access of a slot
+		/// at the same type shares a variable.
+		std::map<std::pair<llvm::AllocaInst*, llvm::Type*>, llvm::AllocaInst*>
+				_typedViews;
 };
 
 } // namespace bin2llvmir

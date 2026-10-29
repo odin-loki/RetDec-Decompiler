@@ -362,13 +362,22 @@ void StackAnalysis::handleInstruction(
 		// Same stack offset can be observed with incompatible types in complex
 		// lowered IR. Keep this access typed-correct by using a dedicated alloca
 		// instead of forcing incompatible loads/stores on the shared slot.
+		// Accesses at the same type share one alloca: giving each access its
+		// own made a store and the later loads of the same slot unrelated
+		// variables, so the store was removed as dead.
 		auto ip = inst->getFunction()->getEntryBlock().getFirstInsertionPt();
-		if (ip != inst->getFunction()->getEntryBlock().end())
+		auto& view = _typedViews[{a, t}];
+		if (view)
+		{
+			a = view;
+		}
+		else if (ip != inst->getFunction()->getEntryBlock().end())
 		{
 			std::string typedName = a->hasName()
 					? (a->getName().str() + ".typed")
 					: "stack_var_typed";
 			a = new AllocaInst(t, Abi::DEFAULT_ADDR_SPACE, typedName, &*ip);
+			view = a;
 		}
 	}
 
