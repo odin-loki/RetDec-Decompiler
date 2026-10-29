@@ -31,7 +31,8 @@ bool ModOpExpr::isEqualTo(ShPtr<Value> otherValue) const {
 
 ShPtr<Value> ModOpExpr::clone() {
 	ShPtr<ModOpExpr> modOpExpr(ModOpExpr::create(
-		ucast<Expression>(op1->clone()), ucast<Expression>(op2->clone())));
+		ucast<Expression>(op1->clone()), ucast<Expression>(op2->clone()),
+		variant));
 	modOpExpr->setMetadata(getMetadata());
 	return modOpExpr;
 }

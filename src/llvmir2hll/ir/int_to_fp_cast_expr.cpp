@@ -35,7 +35,7 @@ bool IntToFPCastExpr::isEqualTo(ShPtr<Value> otherValue) const {
 */
 ShPtr<Value> IntToFPCastExpr::clone() {
 	ShPtr<IntToFPCastExpr> castExpr(IntToFPCastExpr::create(
-		ucast<Expression>(op->clone()), dstType));
+		ucast<Expression>(op->clone()), dstType, variant));
 	castExpr->setMetadata(getMetadata());
 	return castExpr;
 }

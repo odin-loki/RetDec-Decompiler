@@ -31,7 +31,8 @@ bool DivOpExpr::isEqualTo(ShPtr<Value> otherValue) const {
 
 ShPtr<Value> DivOpExpr::clone() {
 	ShPtr<DivOpExpr> divOpExpr(DivOpExpr::create(
-		ucast<Expression>(op1->clone()), ucast<Expression>(op2->clone())));
+		ucast<Expression>(op1->clone()), ucast<Expression>(op2->clone()),
+		variant));
 	divOpExpr->setMetadata(getMetadata());
 	return divOpExpr;
 }

@@ -58,6 +58,7 @@ add_executable(tests-llvmir2hll
 	ir/tests_with_module.cpp
 	ir/ufor_loop_stmt.cpp
 	ir/unknown_type_tests.cpp
+	ir/variant_clone_tests.cpp
 	ir/variable_tests.cpp
 	ir/void_type_tests.cpp
 	llvm/llvm_intrinsic_converter_tests.cpp

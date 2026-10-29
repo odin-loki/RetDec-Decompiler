@@ -36,7 +36,7 @@ bool ExtCastExpr::isEqualTo(ShPtr<Value> otherValue) const {
 */
 ShPtr<Value> ExtCastExpr::clone() {
 	ShPtr<ExtCastExpr> castExpr(ExtCastExpr::create(
-		ucast<Expression>(op->clone()), dstType));
+		ucast<Expression>(op->clone()), dstType, variant));
 	castExpr->setMetadata(getMetadata());
 	return castExpr;
 }
