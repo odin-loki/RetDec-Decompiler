@@ -122,9 +122,49 @@ bool hasByteTestedAgainstZero(const ssa::SSAFunction& fn)
 	return false;
 }
 
+// Blocks reachable from `from` without entering `stop`.
+std::vector<uint8_t> reachWithout(const ssa::SSAFunction& fn, ssa::BlockId from, ssa::BlockId stop)
+{
+	std::vector<uint8_t> seen(fn.blocks().size(), 0);
+	std::vector<ssa::BlockId> work{from};
+	while (!work.empty())
+	{
+		const ssa::BlockId cur = work.back();
+		work.pop_back();
+		if (cur >= seen.size() || seen[cur]) continue;
+		seen[cur] = 1;
+		if (const auto* cb = fn.block(cur))
+			for (ssa::BlockId s: cb->succs)
+				if (s != stop) work.push_back(s);
+	}
+	return seen;
+}
+
+// A string walk that only walks: some loop whose body calls nothing.  A loop
+// that tests each byte for NUL but hands it to a function -- `for (i = 0;
+// msg[i]; ++i) push(msg[i]);` -- consumes the string; it does not measure it.
+bool hasCallFreeLoop(const ssa::SSAFunction& fn)
+{
+	for (const auto& [tail, header]: ssa::retreatingEdges(fn))
+	{
+		const auto fromHeader = reachWithout(fn, header, header);
+		bool calls = false;
+		for (ssa::BlockId b = 0; b < fromHeader.size() && !calls; ++b)
+		{
+			if (!fromHeader[b] || !reachWithout(fn, b, header)[tail]) continue;
+			if (const auto* blk = fn.block(b))
+				for (const auto* i: blk->instrs)
+					if (i && i->op == ssa::IrInstr::Op::Call) calls = true;
+		}
+		if (!calls) return true;
+	}
+	return false;
+}
+
 bool hasNullTerminatedLoop(const ssa::SSAFunction& fn)
 {
-	return hasBackEdge(fn) && hasByteTestedAgainstZero(fn) && countOp(fn, ssa::IrInstr::Op::Mul) == 0;
+	return hasBackEdge(fn) && hasByteTestedAgainstZero(fn) && countOp(fn, ssa::IrInstr::Op::Mul) == 0
+		&& hasCallFreeLoop(fn);
 }
 
 // A graph DFS recurses from inside the loop over a node's neighbours. Any

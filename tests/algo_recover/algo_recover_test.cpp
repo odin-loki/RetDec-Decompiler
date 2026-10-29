@@ -2036,6 +2036,14 @@ TEST(IdiomDetectorTest, AByteTestedAgainstZeroInALoopIsStrlen)
 // has no loop, but LLVM lays `common.ret` out above the block that branches
 // to it. An edge to a lower block id is not a back edge, so this is not a
 // string walk -- it was reported as Strlen in every corpus binary.
+TEST(IdiomDetectorTest, AByteLoopThatHandsEachByteToACallIsNotStrlen)
+{
+	// for (i = 0; msg[i]; ++i) push(msg[i]); consumes the string, not measures it.
+	auto fn = makeByteWalk(/*compareAgainstZero=*/true, /*loadBytes=*/1);
+	fn->addInstr(1, ssa::IrInstr::Op::Call)->calleeName = "push";
+	EXPECT_FALSE(detects(*fn, IdiomKind::Strlen));
+}
+
 TEST(IdiomDetectorTest, AByteTestedAgainstZeroWithoutALoopIsNotStrlen)
 {
 	auto fn = makeByteWalk(/*compareAgainstZero=*/true, /*loadBytes=*/1);
