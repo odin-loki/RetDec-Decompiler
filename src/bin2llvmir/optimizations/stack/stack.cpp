@@ -439,13 +439,26 @@ void StackAnalysis::mergeWalkedLocals(llvm::Function& f)
 		}
 		return ld;
 	};
+	// Likewise a slot only ever stored to: a varargs prologue spills a1..a7
+	// next to the first spill whose address va_start takes (`sw a1,-28(s0)
+	// ... sw a7,-4(s0)`), and va_arg reads them only through that address.
+	auto onlyWritten = [](AllocaInst* a) {
+		bool st = false;
+		for (auto* u : a->users())
+		{
+			auto* si = dyn_cast<StoreInst>(u);
+			if (si && si->getPointerOperand() == a) st = true;
+			else return false;
+		}
+		return st;
+	};
 	std::sort(slots.begin(), slots.end(),
 			[](auto& x, auto& y) { return x.second < y.second; });
 	bool readOnly = false;
 	for (auto& [a, o] : slots)
 	{
 		if (o <= *hi) continue;
-		if (!onlyRead(a)) break;
+		if (!onlyRead(a) && !onlyWritten(a)) break;
 		hi = o;
 		readOnly = true;
 	}
