@@ -19556,6 +19556,161 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XVCVBF16SPN)
 	EXPECT_EQ(0x4049000000000000ULL, vLow(PPC_REG_V2)) << dumpFunction(_function);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_DARN)
+{
+	ALL_MODES;
+
+	auto* f = translate(utils::hexStringToBytes("7c 61 05 e6")); // darn r3, 1
+	ASSERT_NE(nullptr, f);
+	auto* in = _module.getFunction("llvm.ppc.darn");
+	ASSERT_NE(nullptr, in);
+	bool hit = false;
+	for (auto& bb : *f)
+		for (auto& ins : bb)
+			if (auto* c = llvm::dyn_cast<llvm::CallInst>(&ins))
+				hit |= c->getCalledFunction() == in;
+	EXPECT_TRUE(hit);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_darn"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_DARN_32)
+{
+	ALL_MODES;
+
+	auto* f = translate(utils::hexStringToBytes("7c 60 05 e6")); // darn r3, 0
+	ASSERT_NE(nullptr, f);
+	auto* in = _module.getFunction("llvm.ppc.darn32");
+	ASSERT_NE(nullptr, in);
+	bool hit = false;
+	for (auto& bb : *f)
+		for (auto& ins : bb)
+			if (auto* c = llvm::dyn_cast<llvm::CallInst>(&ins))
+				hit |= c->getCalledFunction() == in;
+	EXPECT_TRUE(hit);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_darn"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VCIPHER)
+{
+	ALL_MODES;
+
+	auto* f = translate(utils::hexStringToBytes("10 43 25 08")); // vcipher v2, v3, v4
+	ASSERT_NE(nullptr, f);
+	auto* in = _module.getFunction("llvm.ppc.altivec.crypto.vcipher");
+	ASSERT_NE(nullptr, in);
+	bool hit = false;
+	for (auto& bb : *f)
+		for (auto& ins : bb)
+			if (auto* c = llvm::dyn_cast<llvm::CallInst>(&ins))
+				hit |= c->getCalledFunction() == in;
+	EXPECT_TRUE(hit);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_vcipher"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VSBOX)
+{
+	ALL_MODES;
+
+	auto* f = translate(utils::hexStringToBytes("10 43 05 c8")); // vsbox v2, v3
+	ASSERT_NE(nullptr, f);
+	auto* in = _module.getFunction("llvm.ppc.altivec.crypto.vsbox");
+	ASSERT_NE(nullptr, in);
+	bool hit = false;
+	for (auto& bb : *f)
+		for (auto& ins : bb)
+			if (auto* c = llvm::dyn_cast<llvm::CallInst>(&ins))
+				hit |= c->getCalledFunction() == in;
+	EXPECT_TRUE(hit);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_vsbox"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSCVHPDP)
+{
+	ALL_MODES;
+
+	double src = 0;
+	uint64_t bits = 0x000000000000c100ULL; // half -2.5 in bits 48:63
+	std::memcpy(&src, &bits, sizeof src);
+	setRegisters({{PPC_REG_F2, src}});
+	emulate_bin("f0 30 15 6c"); // xscvhpdp f1, f2
+	EXPECT_EQ(-2.5, getRegisterValueDouble(PPC_REG_F1)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSCVDPHP)
+{
+	ALL_MODES;
+
+	setRegisters({{PPC_REG_F2, 1.5_f64}});
+	emulate_bin("f0 31 15 6c"); // xscvdphp f1, f2
+	EXPECT_EQ(0x3e00ULL, ppcDoubleRegBits(getRegisterValueDouble(PPC_REG_F1))) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XVCVHPSP)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_VSL2, 0xffff3c000000c000ULL, 0x00007c0000000001ULL);
+	emulate_bin("f0 38 17 6c"); // xvcvhpsp vs1, vs2
+
+	EXPECT_EQ(0x3f800000c0000000ULL, vHigh(PPC_REG_VSL1)) << dumpFunction(_function);
+	EXPECT_EQ(0x7f80000033800000ULL, vLow(PPC_REG_VSL1)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XVCVSPHP)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_VSL2, 0x3f800000477ff000ULL, 0x8000000033400000ULL);
+	emulate_bin("f0 39 17 6c"); // xvcvsphp vs1, vs2
+
+	EXPECT_EQ(0x00003c0000007c00ULL, vHigh(PPC_REG_VSL1)) << dumpFunction(_function);
+	EXPECT_EQ(0x0000800000000001ULL, vLow(PPC_REG_VSL1)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XXGENPCVBM_be_exp)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V2, 0x8000ff0000900000ULL, 0x800000007f000080ULL);
+	emulate_bin("f0 20 17 28"); // xxgenpcvbm vs1, v2, 0
+
+	EXPECT_EQ(0x0011011314021617ULL, vHigh(PPC_REG_VSL1)) << dumpFunction(_function);
+	EXPECT_EQ(0x03191a1b1c1d1e04ULL, vLow(PPC_REG_VSL1)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XXGENPCVBM_be_comp)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V2, 0x8000ff0000900000ULL, 0x800000007f000080ULL);
+	emulate_bin("f0 21 17 28"); // xxgenpcvbm vs1, v2, 1
+
+	EXPECT_EQ(0x000205080f000000ULL, vHigh(PPC_REG_VSL1)) << dumpFunction(_function);
+	EXPECT_EQ(0x0000000000000000ULL, vLow(PPC_REG_VSL1)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XXGENPCVHM_le_exp)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V2, 0x8000ff0000900000ULL, 0x800000007f000080ULL);
+	emulate_bin("f0 22 17 2a"); // xxgenpcvhm vs1, v2, 2
+
+	EXPECT_EQ(0x050403021b1a1918ULL, vHigh(PPC_REG_VSL1)) << dumpFunction(_function);
+	EXPECT_EQ(0x0100151413121110ULL, vLow(PPC_REG_VSL1)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XXGENPCVWM_le_comp)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V2, 0x8000ff0000900000ULL, 0x800000007f000080ULL);
+	emulate_bin("f0 23 17 68"); // xxgenpcvwm vs1, v2, 3
+
+	EXPECT_EQ(0x0000000000000000ULL, vHigh(PPC_REG_VSL1)) << dumpFunction(_function);
+	EXPECT_EQ(0x0f0e0d0c07060504ULL, vLow(PPC_REG_VSL1)) << dumpFunction(_function);
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

@@ -15,6 +15,8 @@
 
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Constants.h>
+#include <llvm/IR/Intrinsics.h>
+#include <llvm/IR/IntrinsicsPowerPC.h>
 
 #include "capstone2llvmir/powerpc/powerpc_impl.h"
 
@@ -11484,6 +11486,251 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecIsa31Ops(cs_insn* i, cs_
 				return irb.CreateSelect(isNan, nan, rounded);
 			}));
 			return;
+		default:
+			break;
+	}
+	translatePseudoAsmGeneric(i, pi, irb);
+}
+
+/**
+ * AES VCIPHER[LAST]/VNCIPHER[LAST]/VSBOX as the llvm.ppc.altivec.crypto
+ * intrinsics, DARN as llvm.ppc.darn32/darn/darnraw by L, the half-precision
+ * conversions XSCVHPDP/XSCVDPHP/XVCVHPSP/XVCVSPHP, and XXGENPCV[BHWD]M
+ * permute-control generation (BE/LE expansion and compression).
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecCryptoHalf(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	if (pi->op_count < 1)
+	{
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+	cs_ppc_op ops[4];
+	for (unsigned k = 0; k < pi->op_count && k < 4; ++k)
+	{
+		ops[k] = pi->operands[k];
+		if (ops[k].type == PPC_OP_REG && ops[k].reg >= PPC_REG_VF0 && ops[k].reg <= PPC_REG_VF31)
+		{
+			ops[k].reg = ppc_reg(PPC_REG_V0 + (ops[k].reg - PPC_REG_VF0));
+		}
+		if (ops[k].type == PPC_OP_REG && ops[k].reg >= PPC_REG_X0 && ops[k].reg <= PPC_REG_X31)
+		{
+			ops[k].reg = ppc_reg(PPC_REG_R0 + (ops[k].reg - PPC_REG_X0));
+		}
+	}
+	auto* i16 = irb.getInt16Ty();
+	auto* i32 = irb.getInt32Ty();
+	auto* i64 = irb.getInt64Ty();
+	auto* i128 = irb.getInt128Ty();
+	auto* v2i64 = llvm::FixedVectorType::get(i64, 2);
+	auto c128 = [&](uint64_t v) { return llvm::ConstantInt::get(i128, v); };
+	auto vr = [&](unsigned k) { return loadOpI128(ops[k], irb); };
+	auto out = [&](llvm::Value* v) { storeOpI128(ops[0], v, irb); };
+	auto intr = [&](llvm::Intrinsic::ID id, llvm::ArrayRef<llvm::Value*> args) -> llvm::Value* {
+		auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, id);
+		return irb.CreateCall(f, args);
+	};
+	auto c64 = [&](uint64_t v) { return llvm::ConstantInt::get(i64, v); };
+	// Half -> float/double, exact: the magnitude is an integer times 2^-24.
+	auto halfToFp = [&](llvm::Value* h, llvm::Type* fty) -> llvm::Value* {
+		auto* h64 = irb.CreateZExt(h, i64);
+		auto* e = irb.CreateAnd(irb.CreateLShr(h64, 10), c64(31));
+		auto* m = irb.CreateAnd(h64, c64(0x3ff));
+		auto* sgn = irb.CreateICmpNE(irb.CreateAnd(h64, c64(0x8000)), c64(0));
+		auto* isSub = irb.CreateICmpEQ(e, c64(0));
+		auto* norm = irb.CreateShl(irb.CreateOr(m, c64(0x400)), irb.CreateSelect(isSub, c64(0), irb.CreateSub(e, c64(1))));
+		auto* mag = irb.CreateFMul(irb.CreateUIToFP(irb.CreateSelect(isSub, m, norm), fty),
+				llvm::ConstantFP::get(fty, std::ldexp(1.0, -24)));
+		llvm::Value* special = nullptr;
+		if (fty->isDoubleTy())
+		{
+			special = irb.CreateOr(c64(0x7ff0000000000000ULL), irb.CreateShl(m, 42));
+			special = irb.CreateSelect(irb.CreateICmpNE(m, c64(0)), irb.CreateOr(special, c64(1ULL << 51)), special);
+			special = irb.CreateBitCast(special, fty);
+		}
+		else
+		{
+			auto* m32 = irb.CreateTrunc(m, i32);
+			llvm::Value* sp = irb.CreateOr(irb.getInt32(0x7f800000), irb.CreateShl(m32, 13));
+			sp = irb.CreateSelect(irb.CreateICmpNE(m32, irb.getInt32(0)), irb.CreateOr(sp, irb.getInt32(1u << 22)), sp);
+			special = irb.CreateBitCast(sp, fty);
+		}
+		llvm::Value* v = irb.CreateSelect(irb.CreateICmpEQ(e, c64(31)), special, mag);
+		return irb.CreateSelect(sgn, irb.CreateFNeg(v), v);
+	};
+	// Double -> half with round-to-nearest-even, built on the integer bits.
+	auto dblToHalf = [&](llvm::Value* d) -> llvm::Value* {
+		auto* b = irb.CreateBitCast(d, i64);
+		auto* sgn = irb.CreateShl(irb.CreateLShr(b, 63), 15);
+		auto* E = irb.CreateAnd(irb.CreateLShr(b, 52), c64(0x7ff));
+		auto* M = irb.CreateAnd(b, c64((1ULL << 52) - 1));
+		auto* S = irb.CreateOr(M, c64(1ULL << 52));
+		auto* e = irb.CreateSub(E, c64(1023));
+		auto* normal = irb.CreateICmpSGE(e, llvm::ConstantInt::getSigned(i64, -14));
+		llvm::Value* sh = irb.CreateSelect(normal, c64(42), irb.CreateSub(c64(28), e));
+		sh = irb.CreateSelect(irb.CreateICmpUGT(sh, c64(63)), c64(63), sh);
+		auto* base = irb.CreateSelect(normal, irb.CreateShl(irb.CreateAdd(e, c64(14)), 10), c64(0));
+		auto* q = irb.CreateLShr(S, sh);
+		auto* rem = irb.CreateAnd(S, irb.CreateSub(irb.CreateShl(c64(1), sh), c64(1)));
+		auto* halfway = irb.CreateShl(c64(1), irb.CreateSub(sh, c64(1)));
+		auto* inc = irb.CreateOr(irb.CreateICmpUGT(rem, halfway),
+				irb.CreateAnd(irb.CreateICmpEQ(rem, halfway), irb.CreateICmpNE(irb.CreateAnd(q, c64(1)), c64(0))));
+		llvm::Value* r = irb.CreateAdd(irb.CreateAdd(base, q), irb.CreateZExt(inc, i64));
+		r = irb.CreateSelect(irb.CreateICmpSGT(e, c64(15)), c64(0x7c00), r);
+		auto* nan = irb.CreateOr(c64(0x7e00), irb.CreateLShr(M, 42));
+		auto* special = irb.CreateSelect(irb.CreateICmpEQ(M, c64(0)), c64(0x7c00), nan);
+		r = irb.CreateSelect(irb.CreateICmpEQ(E, c64(0x7ff)), special, r);
+		return irb.CreateTrunc(irb.CreateOr(r, sgn), i16);
+	};
+
+	switch (i->id)
+	{
+		case PPC_INS_DARN:
+		{
+			if (pi->op_count != 2 || ops[1].type != PPC_OP_IMM || ops[1].imm > 2)
+			{
+				break;
+			}
+			llvm::Value* r = ops[1].imm == 0 ? irb.CreateZExt(intr(llvm::Intrinsic::ppc_darn32, {}), i64)
+					: intr(ops[1].imm == 1 ? llvm::Intrinsic::ppc_darn : llvm::Intrinsic::ppc_darnraw, {});
+			storeRegister(ops[0].reg, irb.CreateZExtOrTrunc(r, getDefaultType()), irb);
+			return;
+		}
+		case PPC_INS_VCIPHER:
+		case PPC_INS_VCIPHERLAST:
+		case PPC_INS_VNCIPHER:
+		case PPC_INS_VNCIPHERLAST:
+		case PPC_INS_VSBOX:
+		{
+			bool sbox = i->id == PPC_INS_VSBOX;
+			if (pi->op_count != (sbox ? 2u : 3u))
+			{
+				break;
+			}
+			llvm::Intrinsic::ID id = llvm::Intrinsic::ppc_altivec_crypto_vsbox;
+			switch (i->id)
+			{
+				case PPC_INS_VCIPHER: id = llvm::Intrinsic::ppc_altivec_crypto_vcipher; break;
+				case PPC_INS_VCIPHERLAST: id = llvm::Intrinsic::ppc_altivec_crypto_vcipherlast; break;
+				case PPC_INS_VNCIPHER: id = llvm::Intrinsic::ppc_altivec_crypto_vncipher; break;
+				case PPC_INS_VNCIPHERLAST: id = llvm::Intrinsic::ppc_altivec_crypto_vncipherlast; break;
+				default: break;
+			}
+			std::vector<llvm::Value*> args = {irb.CreateBitCast(vr(1), v2i64)};
+			if (!sbox) args.push_back(irb.CreateBitCast(vr(2), v2i64));
+			out(irb.CreateBitCast(intr(id, args), i128));
+			return;
+		}
+		case PPC_INS_XSCVHPDP:
+		{
+			if (pi->op_count != 2) break;
+			auto* d = irb.CreateBitCast(halfToFp(irb.CreateTrunc(irb.CreateLShr(vr(1), 64), i16), irb.getDoubleTy()), i64);
+			out(irb.CreateShl(irb.CreateZExt(d, i128), 64));
+			return;
+		}
+		case PPC_INS_XSCVDPHP:
+		{
+			if (pi->op_count != 2) break;
+			auto* d = irb.CreateBitCast(irb.CreateTrunc(irb.CreateLShr(vr(1), 64), i64), irb.getDoubleTy());
+			out(irb.CreateShl(irb.CreateZExt(dblToHalf(d), i128), 64));
+			return;
+		}
+		case PPC_INS_XVCVHPSP:
+		case PPC_INS_XVCVSPHP:
+		{
+			if (pi->op_count != 2) break;
+			bool toSp = i->id == PPC_INS_XVCVHPSP;
+			auto* b = vr(1);
+			llvm::Value* r = c128(0);
+			for (unsigned sh = 0; sh < 128; sh += 32)
+			{
+				auto* w = irb.CreateTrunc(irb.CreateLShr(b, sh), i32);
+				llvm::Value* e;
+				if (toSp)
+				{
+					e = irb.CreateBitCast(halfToFp(irb.CreateTrunc(w, i16), irb.getFloatTy()), i32);
+				}
+				else
+				{
+					auto* f = irb.CreateFPExt(irb.CreateBitCast(w, irb.getFloatTy()), irb.getDoubleTy());
+					e = irb.CreateZExt(dblToHalf(f), i32);
+				}
+				r = irb.CreateOr(r, irb.CreateShl(irb.CreateZExt(e, i128), sh));
+			}
+			out(r);
+			return;
+		}
+		case PPC_INS_XXGENPCVBM:
+		case PPC_INS_XXGENPCVHM:
+		case PPC_INS_XXGENPCVWM:
+		case PPC_INS_XXGENPCVDM:
+		{
+			if (pi->op_count != 3 || ops[2].type != PPC_OP_IMM || ops[2].imm > 3) break;
+			unsigned sz = i->id == PPC_INS_XXGENPCVBM ? 1 : i->id == PPC_INS_XXGENPCVHM ? 2
+					: i->id == PPC_INS_XXGENPCVWM ? 4 : 8;
+			bool le = ops[2].imm >= 2;
+			bool comp = ops[2].imm & 1;
+			auto* b = vr(1);
+			// Byte offset (big-endian numbering) of an element, its mask bit, and
+			// the running count j of selected bytes before it.
+			auto msbOf = [&](unsigned p) {
+				return irb.CreateTrunc(irb.CreateLShr(b, 127 - 8 * p), irb.getInt1Ty());
+			};
+			llvm::Value* r = nullptr;
+			if (!comp)
+			{
+				// Start from the all-zero-mask result and overwrite selected elements.
+				uint64_t hi = 0, lo = 0;
+				for (unsigned p = 0; p < 16; ++p)
+				{
+					uint64_t v = le ? 0x1f - p : 0x10 + p;
+					if (p < 8) hi |= v << (8 * (7 - p));
+					else lo |= v << (8 * (15 - p));
+				}
+				r = llvm::ConstantInt::get(i128, (llvm::APInt(128, hi).shl(64)) | llvm::APInt(128, lo));
+			}
+			else
+			{
+				r = c128(0);
+			}
+			llvm::Value* j = c128(0);
+			for (unsigned i0 = 0; i0 < 16; i0 += sz)
+			{
+				unsigned p = le ? 16 - i0 - sz : i0;
+				auto* sel = msbOf(p);
+				if (!comp)
+				{
+					// Bytes p+pos(k) get j+k; pos(k) = k (BE) or sz-1-k (LE).
+					llvm::Value* pat = c128(0);
+					for (unsigned k = 0; k < sz; ++k)
+					{
+						unsigned bytePos = p + (le ? sz - 1 - k : k);
+						pat = irb.CreateOr(pat, irb.CreateShl(irb.CreateAdd(j, c128(k)), 8 * (15 - bytePos)));
+					}
+					llvm::APInt fieldMask = llvm::APInt::getBitsSet(128, 8 * (16 - p - sz), 8 * (16 - p));
+					auto* cleared = irb.CreateAnd(r, llvm::ConstantInt::get(i128, ~fieldMask));
+					r = irb.CreateSelect(sel, irb.CreateOr(cleared, pat), r);
+				}
+				else
+				{
+					// The element's scan indices i0+k land at destination byte d+pos(k),
+					// d = j (BE) or 16-j-sz (LE).
+					uint64_t pat = 0;
+					for (unsigned t = 0; t < sz; ++t)
+					{
+						uint64_t v = le ? i0 + sz - 1 - t : i0 + t;
+						pat |= v << (8 * (sz - 1 - t));
+					}
+					llvm::Value* shift = le ? irb.CreateMul(j, c128(8))
+							: irb.CreateMul(irb.CreateSub(c128(16 - sz), j), c128(8));
+					auto* placed = irb.CreateShl(c128(pat), shift);
+					r = irb.CreateSelect(sel, irb.CreateOr(r, placed), r);
+				}
+				j = irb.CreateAdd(j, irb.CreateSelect(sel, c128(sz), c128(0)));
+			}
+			out(r);
+			return;
+		}
 		default:
 			break;
 	}
