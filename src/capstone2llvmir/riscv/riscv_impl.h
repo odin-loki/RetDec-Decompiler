@@ -180,6 +180,7 @@ class Capstone2LlvmIrTranslatorRiscv_impl :
 		void translateFcmp(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateFpFma(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateFsqrt(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateFround(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateFsgnj(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateFminMax(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateFclass(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
@@ -237,6 +238,7 @@ class Capstone2LlvmIrTranslatorRiscv_impl :
 		void translateVfwiden(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateZip(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateXperm(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateShaSm3(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 };
 
 } // namespace capstone2llvmir

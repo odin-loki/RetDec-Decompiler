@@ -1676,6 +1676,178 @@ TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_FMIN_S)
 }
 
 //
+// RISCV_INS_FMINM_S  fminm.s fa0, fa1, fa2   bytes 53 A5 C5 28
+//
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_FMINM_S)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_F11_32, 1.5_f32},
+		{RISCV_REG_F12_32, 2.25_f32},
+	});
+
+	emulate_bin("53 A5 C5 28");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_F11_32, RISCV_REG_F12_32});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_F10_32, 1.5_f32},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+//
+// RISCV_INS_FMAXM_S  fmaxm.s fa0, fa1, fa2   bytes 53 B5 C5 28
+//
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_FMAXM_S)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_F11_32, 1.5_f32},
+		{RISCV_REG_F12_32, 2.25_f32},
+	});
+
+	emulate_bin("53 B5 C5 28");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_F11_32, RISCV_REG_F12_32});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_F10_32, 2.25_f32},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+//
+// RISCV_INS_FROUND_S_rdn  fround.s fa0, fa1, rdn   bytes 53 A5 45 40
+//
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_FROUND_S_rdn)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_F11_32, 2.5_f32},
+	});
+
+	emulate_bin("53 A5 45 40");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_F11_32});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_F10_32, 2.0_f32},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+//
+// RISCV_INS_FROUND_S_rmm  fround.s fa0, fa1, rmm   bytes 53 C5 45 40
+//
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_FROUND_S_rmm)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_F11_32, 2.5_f32},
+	});
+
+	emulate_bin("53 C5 45 40");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_F11_32});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_F10_32, 3.0_f32},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+//
+// RISCV_INS_FROUND_S_rtz  fround.s fa0, fa1, rtz (2.75 -> 2.0)   bytes 53 95 45 40
+//
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_FROUND_S_rtz)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_F11_32, 2.75_f32},
+	});
+
+	emulate_bin("53 95 45 40");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_F11_32});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_F10_32, 2.0_f32},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+//
+// RISCV_INS_FROUNDNX_S_rup  froundnx.s fa0, fa1, rup   bytes 53 B5 55 40
+//
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_FROUNDNX_S_rup)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_F11_32, 2.25_f32},
+	});
+
+	emulate_bin("53 B5 55 40");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_F11_32});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_F10_32, 3.0_f32},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+//
+// RISCV_INS_FLEQ_S  fleq.s a0, fa1, fa2   bytes 53 C5 C5 A0
+//
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_FLEQ_S)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_F11_32, 2.25_f32},
+		{RISCV_REG_F12_32, 2.25_f32},
+	});
+
+	emulate_bin("53 C5 C5 A0");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_F11_32, RISCV_REG_F12_32});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 0x1},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+//
+// RISCV_INS_FLTQ_S  fltq.s a0, fa1, fa2   bytes 53 D5 C5 A0
+//
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_FLTQ_S)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_F11_32, 2.25_f32},
+		{RISCV_REG_F12_32, 2.25_f32},
+	});
+
+	emulate_bin("53 D5 C5 A0");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_F11_32, RISCV_REG_F12_32});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 0x0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+//
 // RISCV_INS_FMV_W_X  fmv.w.x fa0, a1   bytes 53 85 05 F0
 // 0x3f800000 is 1.0f as IEEE bits.
 //
@@ -2100,6 +2272,223 @@ TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_REV8)
 			{RISCV_REG_A0, 0x67452301},
 		});
 	}
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// Zknh / Zksh scalar hash functions
+//
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_SHA256SUM0)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_A1, 0x12345678},
+	});
+
+	emulate_bin("13 95 05 10");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, sx32(0x66146474)},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_SHA256SUM1)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_A1, 0x12345678},
+	});
+
+	emulate_bin("13 95 15 10");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, sx32(0x3561ABDA)},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_SHA256SIG0)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_A1, 0x12345678},
+	});
+
+	emulate_bin("13 95 25 10");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, sx32(0xE7FCE6EE)},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_SHA256SIG1)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_A1, 0x12345678},
+	});
+
+	emulate_bin("13 95 35 10");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, sx32(0xA1F78649)},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_SHA512SUM0)
+{
+	ONLY_MODE_RV64;
+
+	setRegisters({
+		{RISCV_REG_A1, 0x0123456789ABCDEFULL},
+	});
+
+	emulate_bin("13 95 45 10");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 0xB7C57A100C7EC1ABULL},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_SHA512SUM1)
+{
+	ONLY_MODE_RV64;
+
+	setRegisters({
+		{RISCV_REG_A1, 0x0123456789ABCDEFULL},
+	});
+
+	emulate_bin("13 95 55 10");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 0x7703112333475567ULL},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_SHA512SIG0)
+{
+	ONLY_MODE_RV64;
+
+	setRegisters({
+		{RISCV_REG_A1, 0x0123456789ABCDEFULL},
+	});
+
+	emulate_bin("13 95 65 10");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 0x6F92C77C6C4F1AA1ULL},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_SHA512SIG1)
+{
+	ONLY_MODE_RV64;
+
+	setRegisters({
+		{RISCV_REG_A1, 0x0123456789ABCDEFULL},
+	});
+
+	emulate_bin("13 95 75 10");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 0x70A3460DBBD4317AULL},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_SM3P0)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_A1, 0x12345678},
+	});
+
+	emulate_bin("13 95 85 10");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, sx32(0xD6688234)},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_SM3P1)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_A1, 0x12345678},
+	});
+
+	emulate_bin("13 95 95 10");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, sx32(0x05014549)},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_PREFETCH_R_is_nothing)
+{
+	ALL_MODES;
+
+	emulate_bin("13 60 15 00");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_PREFETCH_W_is_nothing)
+{
+	ALL_MODES;
+
+	emulate_bin("13 60 35 00");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_PREFETCH_I_is_nothing)
+{
+	ALL_MODES;
+
+	emulate_bin("13 60 05 00");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();
 }

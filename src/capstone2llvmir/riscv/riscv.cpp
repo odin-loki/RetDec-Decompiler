@@ -1650,6 +1650,10 @@ llvm::Type* Capstone2LlvmIrTranslatorRiscv_impl::fpTypeOfInsn(unsigned id, llvm:
 		case RISCV_INS_FMV_D_X:
 		case RISCV_INS_FMV_X_D:
 		case RISCV_INS_FCLASS_D:
+		case RISCV_INS_FMINM_D:
+		case RISCV_INS_FMAXM_D:
+		case RISCV_INS_FROUND_D:
+		case RISCV_INS_FROUNDNX_D:
 			return irb.getDoubleTy();
 		default:
 			return irb.getFloatTy();
@@ -2120,10 +2124,16 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateFcmp(cs_insn* i, cs_riscv* ri
 			break;
 		case RISCV_INS_FLT_S:
 		case RISCV_INS_FLT_D:
+		// Zfa FLTQ/FLEQ differ from FLT/FLE only in not raising invalid
+		// on a quiet NaN, which the flags model does not carry.
+		case RISCV_INS_FLTQ_S:
+		case RISCV_INS_FLTQ_D:
 			cmp = irb.CreateFCmpOLT(op1, op2);
 			break;
 		case RISCV_INS_FLE_S:
 		case RISCV_INS_FLE_D:
+		case RISCV_INS_FLEQ_S:
+		case RISCV_INS_FLEQ_D:
 			cmp = irb.CreateFCmpOLE(op1, op2);
 			break;
 		default:
@@ -2249,6 +2259,7 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateFminMax(cs_insn* i, cs_riscv*
 	auto* rs1 = asFp(loadOp(ri->operands[1], irb), ty, irb);
 	auto* rs2 = asFp(loadOp(ri->operands[2], irb), ty, irb);
 	llvm::Intrinsic::ID iid = llvm::Intrinsic::minnum;
+	bool nanPropagating = false;
 	switch (i->id)
 	{
 		case RISCV_INS_FMIN_S:
@@ -2259,10 +2270,29 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateFminMax(cs_insn* i, cs_riscv*
 		case RISCV_INS_FMAX_D:
 			iid = llvm::Intrinsic::maxnum;
 			break;
+		case RISCV_INS_FMINM_S:
+		case RISCV_INS_FMINM_D:
+			iid = llvm::Intrinsic::minnum;
+			nanPropagating = true;
+			break;
+		case RISCV_INS_FMAXM_S:
+		case RISCV_INS_FMAXM_D:
+			iid = llvm::Intrinsic::maxnum;
+			nanPropagating = true;
+			break;
 		default:
 			throw GenericError("Unhandled insn ID in translateFminMax().");
 	}
-	storeOp(ri->operands[0], fpIntrinsic(irb, iid, {rs1, rs2}), irb, eOpConv::FPCAST_OR_BITCAST);
+	llvm::Value* res = fpIntrinsic(irb, iid, {rs1, rs2});
+	if (nanPropagating)
+	{
+		// Zfa FMINM/FMAXM return the canonical NaN when either input is a
+		// NaN, where FMIN/FMAX return the other operand. llvm.minimum would
+		// say that directly, but llvmir-emul cannot evaluate it.
+		auto* anyNan = irb.CreateFCmpUNO(rs1, rs2);
+		res = irb.CreateSelect(anyNan, llvm::ConstantFP::getNaN(ty), res);
+	}
+	storeOp(ri->operands[0], res, irb, eOpConv::FPCAST_OR_BITCAST);
 }
 
 /**
@@ -6041,6 +6071,110 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateXperm(
 		res = irb.CreateOr(res, irb.CreateShl(chunk, llvm::ConstantInt::get(ty, k * bits)));
 	}
 	storeOp(ri->operands[0], res, irb);
+}
+
+
+/**
+ * Zknh SHA256SIG0/SIG1/SUM0/SUM1 (RV32 and RV64), SHA512SIG0/SIG1/SUM0/SUM1
+ * (RV64) and Zksh SM3P0/P1: each is a fixed XOR of rotates and shifts of
+ * rs1. The 32-bit ones work on the low word and sign-extend the result to
+ * XLEN, as the scalar-crypto spec defines them.
+ *
+ * Rotates are spelled as shift/or pairs rather than llvm.fshr so llvmir-emul
+ * can evaluate them.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateShaSm3(
+		cs_insn* i,
+		cs_riscv* ri,
+		llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, ri, irb);
+
+	bool wide = false;
+	switch (i->id)
+	{
+		case RISCV_INS_SHA512SIG0:
+		case RISCV_INS_SHA512SIG1:
+		case RISCV_INS_SHA512SUM0:
+		case RISCV_INS_SHA512SUM1:
+			wide = true;
+			break;
+		default:
+			break;
+	}
+	if (wide && !isXlen64())
+	{
+		translatePseudoAsmGeneric(i, ri, irb);
+		return;
+	}
+
+	auto* ty = wide ? irb.getInt64Ty() : irb.getInt32Ty();
+	const unsigned n = wide ? 64u : 32u;
+	auto* x = irb.CreateZExtOrTrunc(loadOp(ri->operands[1], irb), ty);
+
+	auto ror = [&](unsigned k) -> llvm::Value* {
+		return irb.CreateOr(
+				irb.CreateLShr(x, llvm::ConstantInt::get(ty, k)),
+				irb.CreateShl(x, llvm::ConstantInt::get(ty, n - k)));
+	};
+	auto rol = [&](unsigned k) -> llvm::Value* { return ror(n - k); };
+	auto shr = [&](unsigned k) -> llvm::Value* {
+		return irb.CreateLShr(x, llvm::ConstantInt::get(ty, k));
+	};
+	auto xor3 = [&](llvm::Value* a, llvm::Value* b, llvm::Value* c) {
+		return irb.CreateXor(irb.CreateXor(a, b), c);
+	};
+
+	llvm::Value* r = nullptr;
+	switch (i->id)
+	{
+		case RISCV_INS_SHA256SIG0: r = xor3(ror(7), ror(18), shr(3)); break;
+		case RISCV_INS_SHA256SIG1: r = xor3(ror(17), ror(19), shr(10)); break;
+		case RISCV_INS_SHA256SUM0: r = xor3(ror(2), ror(13), ror(22)); break;
+		case RISCV_INS_SHA256SUM1: r = xor3(ror(6), ror(11), ror(25)); break;
+		case RISCV_INS_SHA512SIG0: r = xor3(ror(1), ror(8), shr(7)); break;
+		case RISCV_INS_SHA512SIG1: r = xor3(ror(19), ror(61), shr(6)); break;
+		case RISCV_INS_SHA512SUM0: r = xor3(ror(28), ror(34), ror(39)); break;
+		case RISCV_INS_SHA512SUM1: r = xor3(ror(14), ror(18), ror(41)); break;
+		case RISCV_INS_SM3P0: r = xor3(x, rol(9), rol(17)); break;
+		case RISCV_INS_SM3P1: r = xor3(x, rol(15), rol(23)); break;
+		default:
+			throw GenericError("Unhandled insn ID in translateShaSm3().");
+	}
+
+	storeOp(ri->operands[0], irb.CreateSExtOrTrunc(r, getDefaultType()), irb);
+}
+
+/**
+ * Zfa FROUND_S/D and FROUNDNX_S/D: round to an integral value in the same
+ * format, under the static rounding mode the instruction names. FROUNDNX
+ * additionally raises inexact, which the flags model does not carry, so
+ * the two translate alike. The dynamic mode reads frm, which is not
+ * tracked, and becomes the default round-to-nearest-even.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateFround(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	if (ri->op_count < 2)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, ri, irb);
+		return;
+	}
+
+	auto* ty = fpTypeOfInsn(i->id, irb);
+	auto* src = asFp(loadOp(ri->operands[1], irb), ty, irb);
+	llvm::Intrinsic::ID iid = llvm::Intrinsic::nearbyint;
+	switch (ri->rounding_mode)
+	{
+		case RISCV_RM_RTZ: iid = llvm::Intrinsic::trunc; break;
+		case RISCV_RM_RDN: iid = llvm::Intrinsic::floor; break;
+		case RISCV_RM_RUP: iid = llvm::Intrinsic::ceil; break;
+		case RISCV_RM_RMM: iid = llvm::Intrinsic::round; break;
+		case RISCV_RM_RNE: iid = llvm::Intrinsic::roundeven; break;
+		default: iid = llvm::Intrinsic::nearbyint; break;
+	}
+	storeOp(ri->operands[0], fpIntrinsic(irb, iid, {src}), irb,
+			eOpConv::FPCAST_OR_BITCAST);
 }
 
 } // namespace capstone2llvmir
