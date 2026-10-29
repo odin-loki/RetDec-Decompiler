@@ -7757,7 +7757,48 @@ static bool sveLdIsFirstFault(unsigned id)
  */
 void Capstone2LlvmIrTranslatorArm64_impl::translateArm64Opaque(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {
-	translatePseudoAsmGeneric(i, ai, irb);
+	// SME operands (ZA tiles and slices, ZT0, vector groups) are not values
+	// the generic path can load or store.  Pass the ordinary registers it
+	// reads and write the one ordinary register it writes, if any; the
+	// matrix state stays inside the call.
+	bool plain = true;
+	for (unsigned j = 0; j < ai->op_count; ++j)
+	{
+		auto& op = ai->operands[j];
+		bool ok = op.type == ARM64_OP_IMM || op.type == ARM64_OP_MEM || op.type == ARM64_OP_FP
+				|| (op.type == ARM64_OP_REG && getRegister(op.reg) != nullptr);
+		plain = plain && ok;
+	}
+	if (plain)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	std::vector<llvm::Value*> vals;
+	std::vector<llvm::Type*> types;
+	cs_arm64_op* out = nullptr;
+	unsigned outs = 0;
+	for (unsigned j = 0; j < ai->op_count; ++j)
+	{
+		auto& op = ai->operands[j];
+		if (op.type != ARM64_OP_REG || getRegister(op.reg) == nullptr) continue;
+		auto access = getOperandAccess(op);
+		if (access & CS_AC_WRITE)
+		{
+			out = &op;
+			++outs;
+		}
+		if (access == CS_AC_INVALID || (access & CS_AC_READ))
+		{
+			auto* v = loadRegister(op.reg, irb);
+			vals.push_back(v);
+			types.push_back(v->getType());
+		}
+	}
+	llvm::Type* ret = outs == 1 ? getRegisterType(out->reg) : irb.getVoidTy();
+	auto* c = irb.CreateCall(getPseudoAsmFunction(i, ret, types), vals);
+	if (outs == 1) storeRegister(out->reg, c, irb);
 }
 
 void Capstone2LlvmIrTranslatorArm64_impl::translateSveLdSt(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)

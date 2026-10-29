@@ -15248,6 +15248,15 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_PACGA_and_LD64B_are_opaque
 }
 
 
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SME_ZA_instructions_are_opaque_calls)
+{
+	// zero {za}; smopa za0.s, p0/m, p1/m, z0.b, z1.b; mova z0.s, p0/m, za0h.s[w12, 0]; luti2 z0.b, zt0, z1[0]
+	auto* f = translate(utils::hexStringToBytes("ff 00 08 c0 00 20 81 a0 00 00 82 c0 20 00 cc c0"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("__asm_zero"));
+	EXPECT_NE(nullptr, _module.getFunction("__asm_smopa"));
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FDIVR_sve_is_lifted)
 {
 	auto* f = translate(utils::hexStringToBytes("20 80 8c 65")); // fdivr z0.s, p0/m, z0.s, z1.s
