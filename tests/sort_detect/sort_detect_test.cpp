@@ -1377,6 +1377,44 @@ TEST(InsertionSortDetectorTest, ADecrementWrittenAsAnAddIsStillFound)
 	EXPECT_EQ(r.algorithm, SortAlgorithm::InsertionSort);
 }
 
+// ─── SelectionSortDetector tests ─────────────────────────────────────────────
+
+// entry 0 -> outer 1 -> inner header 2 <-> scan 4; 2 -> swap 3 -> 1.
+static std::unique_ptr<ssa::SSAFunction> makeSelectionShape(bool swapAfterCompare)
+{
+	auto fn = makeFunc("select", {ssa::IrInstr::Op::Add}, 4);
+	fn->block(0)->succs.push_back(1);
+	fn->block(1)->succs.push_back(2);
+	fn->block(2)->succs.push_back(4);
+	fn->block(4)->succs.push_back(2);
+	fn->block(2)->succs.push_back(3);
+	fn->block(3)->succs.push_back(1);
+	// Bubble sort swaps right after its compare, inside the inner loop.
+	if (swapAfterCompare) fn->block(4)->succs.push_back(3);
+	fn->addInstr(4, ssa::IrInstr::Op::Load);
+	fn->addInstr(4, ssa::IrInstr::Op::Load);
+	fn->addInstr(4, ssa::IrInstr::Op::Compare);
+	fn->addInstr(3, ssa::IrInstr::Op::Load);
+	fn->addInstr(3, ssa::IrInstr::Op::Load);
+	fn->addInstr(3, ssa::IrInstr::Op::Store);
+	fn->addInstr(3, ssa::IrInstr::Op::Store);
+	return fn;
+}
+
+TEST(SelectionSortDetectorTest, ReadOnlyScanThenSwapInTheOuterLoop)
+{
+	auto fn = makeSelectionShape(false);
+	auto r = SelectionSortDetector{}.detect(*fn);
+	EXPECT_GE(r.confidence, 0.50f);
+	EXPECT_EQ(r.algorithm, SortAlgorithm::SelectionSort);
+}
+
+TEST(SelectionSortDetectorTest, AScanThatWritesIsNotSelectionSort)
+{
+	auto fn = makeSelectionShape(true);
+	EXPECT_LT(SelectionSortDetector{}.detect(*fn).confidence, 0.50f);
+}
+
 // ─── ElementTypeRecoverer tests ───────────────────────────────────────────────
 
 TEST(ElementTypeRecovererTest, NoCompareReturnsUnknown)

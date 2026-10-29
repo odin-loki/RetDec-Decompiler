@@ -1,3 +1,4 @@
+#include <set>
 /**
  * @file src/sort_detect/sort_detector.cpp
  * @brief SortDetector orchestrator, ElementTypeRecoverer, and utility implementations.
@@ -214,6 +215,82 @@ SortResult InsertionSortDetector::detect(const ssa::SSAFunction& fn) const {
     return result;
 }
 
+// ─── SelectionSortDetector ─────
+
+namespace {
+
+bool onStack(const ssa::SSAFunction& fn, const ssa::IrInstr& i) {
+    const uint32_t idx = i.op == ssa::IrInstr::Op::Store ? 1 : 0;
+    for (const auto& u : i.uses)
+        if (u.operandIndex == idx)
+            if (const auto* a = fn.value(u.valueId); a && a->isStackSlot) return true;
+    return false;
+}
+
+struct MemOps { int loads = 0, stores = 0, compares = 0; };
+
+MemOps memOps(const ssa::SSAFunction& fn, const ssa::BasicBlock& blk) {
+    MemOps m;
+    for (const auto* i : blk.instrs) {
+        if (!i) continue;
+        if (i->op == ssa::IrInstr::Op::Load && !onStack(fn, *i)) ++m.loads;
+        if (i->op == ssa::IrInstr::Op::Store && !onStack(fn, *i)) ++m.stores;
+        if (i->op == ssa::IrInstr::Op::Compare) ++m.compares;
+    }
+    return m;
+}
+
+bool decrementsInLoop(const ssa::SSAFunction& fn) {
+    for (const auto& blk : fn.blocks()) {
+        if (!blk || !ssa::blockOnCycle(fn, blk->id)) continue;
+        for (const auto* i : blk->instrs) {
+            if (!i || (i->op != ssa::IrInstr::Op::Add && i->op != ssa::IrInstr::Op::Sub)) continue;
+            for (const auto& u : i->uses) {
+                const auto* v = fn.value(u.valueId);
+                if (!v || v->kind != ssa::ValueKind::Immediate) continue;
+                const auto s = static_cast<int64_t>(v->imm);
+                const bool neg = (s < 0 && s > -16) || (v->imm >= 0xfffffff0ull && v->imm <= 0xffffffffull);
+                if ((i->op == ssa::IrInstr::Op::Add && neg) ||
+                        (i->op == ssa::IrInstr::Op::Sub && u.operandIndex == 1 && v->imm == 1))
+                    return true;
+            }
+        }
+    }
+    return false;
+}
+
+} // namespace
+
+SortResult SelectionSortDetector::detect(const ssa::SSAFunction& fn) const {
+    SortResult result;
+    result.algorithm = SortAlgorithm::SelectionSort;
+    if (!ssa::hasNestedLoop(fn) || decrementsInLoop(fn)) return result;
+
+    // The scan: compares two elements it read and writes nothing. Nothing
+    // it branches to swaps either -- that is bubble sort's inner loop.
+    bool scan = false, swap = false;
+    std::set<uint32_t> nextToScan;
+    for (const auto& blk : fn.blocks()) {
+        if (!blk || !ssa::blockOnCycle(fn, blk->id)) continue;
+        const auto m = memOps(fn, *blk);
+        if (m.loads >= 2 && m.compares >= 1 && m.stores == 0) {
+            scan = true;
+            nextToScan.insert(blk->succs.begin(), blk->succs.end());
+        }
+    }
+    for (const auto& blk : fn.blocks()) {
+        if (!blk || !ssa::blockOnCycle(fn, blk->id)) continue;
+        const auto m = memOps(fn, *blk);
+        if (m.stores >= 2 && m.loads >= 2) { // a swap reads both first
+            if (nextToScan.count(blk->id)) return result;
+            swap = true;
+        }
+    }
+    if (scan && swap) result.confidence = 0.55f;
+    result.compilerVariant = CompilerVariant::Unknown;
+    return result;
+}
+
 // ─── SortDetector ─────────────────────────────────────────────────────────────
 
 SortDetector::SortDetector(Config cfg) : cfg_(std::move(cfg)) {
@@ -224,6 +301,7 @@ SortDetector::SortDetector(Config cfg) : cfg_(std::move(cfg)) {
     if (cfg_.runBubble)     detectors_.push_back(std::make_unique<BubbleSortDetector>());
     if (cfg_.runRadix)      detectors_.push_back(std::make_unique<RadixsortDetector>());
     if (cfg_.runInsertion)  detectors_.push_back(std::make_unique<InsertionSortDetector>());
+    if (cfg_.runSelection)  detectors_.push_back(std::make_unique<SelectionSortDetector>());
 }
 
 bool SortDetector::passesPreflight(const ssa::SSAFunction& fn) const {

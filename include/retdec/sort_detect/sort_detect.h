@@ -420,6 +420,19 @@ public:
 };
 
 /**
+ * Selection sort detector: an inner loop that only reads, looking for the
+ * smallest element, and a swap in the outer loop.
+ */
+class SelectionSortDetector : public ISortDetector {
+public:
+	SortResult detect(const ssa::SSAFunction& fn) const override;
+	SortAlgorithm algorithm() const noexcept override
+	{
+		return SortAlgorithm::SelectionSort;
+	}
+};
+
+/**
  * Quicksort detector (standalone partition-based sort).
  */
 class QuicksortDetector : public ISortDetector {
@@ -492,6 +505,7 @@ public:
 		bool runHeap = true;
 		bool runIntrosort = true;
 		bool runInsertion = true;
+		bool runSelection = true;
 		bool runQuicksort = true;
 		bool runBubble = true;
 	};
