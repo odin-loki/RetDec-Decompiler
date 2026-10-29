@@ -4401,6 +4401,78 @@ TEST_F(ParamReturnTests, x86WatcomPassDouble)
 	checkModuleAgainstExpectedIr(exp);
 }
 
+// Capstone 6 numbers X29/X30 as aliases of FP/LR, before X0, so the old
+// `X0 <= id <= X30` range was empty and no AArch64 function got parameters.
+TEST_F(ParamReturnTests, arm64DefinitionTakesItsUninitialisedRegisterReads)
+{
+	parseInput(R"(
+		@x0 = global i64 0
+		@x1 = global i64 0
+		@x29 = global i64 0
+		@x30 = global i64 0
+		@sp = global i64 0
+		define void @add() {
+			%a = load i64, i64* @x0
+			%b = load i64, i64* @x1
+			%c = add i64 %a, %b
+			store i64 %c, i64* @x0
+			ret void
+		}
+	)");
+	auto c = config::Config::fromJsonString(R"({
+		"architecture" : {
+			"bitSize" : 64,
+			"endian" : "little",
+			"name" : "arm aarch64"
+		}
+	})");
+	auto config = Config::fromConfig(module.get(), c);
+	AbiArm64 abi(module.get(), &config);
+	abi.addRegister(ARM64_REG_X0, getGlobalByName("x0"));
+	abi.addRegister(ARM64_REG_X1, getGlobalByName("x1"));
+	abi.addRegister(ARM64_REG_X29, getGlobalByName("x29"));
+	abi.addRegister(ARM64_REG_X30, getGlobalByName("x30"));
+	abi.addRegister(ARM64_REG_SP, getGlobalByName("sp"));
+
+	EXPECT_TRUE(abi.isGeneralPurposeRegister(getGlobalByName("x0")));
+	EXPECT_TRUE(abi.isGeneralPurposeRegister(getGlobalByName("x1")));
+	EXPECT_TRUE(abi.isGeneralPurposeRegister(getGlobalByName("x29")));
+	EXPECT_TRUE(abi.isGeneralPurposeRegister(getGlobalByName("x30")));
+	EXPECT_FALSE(abi.isGeneralPurposeRegister(getGlobalByName("sp")));
+
+	auto typeConfig = std::make_unique<ctypesparser::TypeConfig>();
+	auto demangler = DemanglerProvider::addDemangler(module.get(), &config, std::move(typeConfig));
+	pass.runOnModuleCustom(*module, &config, &abi, demangler);
+
+	auto* f = module->getFunction("add");
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(2u, f->arg_size());
+}
+
+TEST_F(ParamReturnTests, mipsArgumentRegistersAreGeneralPurpose)
+{
+	parseInput(R"(
+		@a0 = global i32 0
+		@ra = global i32 0
+		@zero = global i32 0
+	)");
+	auto c = config::Config::fromJsonString(R"({
+		"architecture" : {
+			"bitSize" : 32,
+			"endian" : "little",
+			"name" : "mips"
+		}
+	})");
+	auto config = Config::fromConfig(module.get(), c);
+	auto abi = AbiProvider::addAbi(module.get(), &config);
+	abi->addRegister(MIPS_REG_A0, getGlobalByName("a0"));
+	abi->addRegister(MIPS_REG_RA, getGlobalByName("ra"));
+	abi->addRegister(MIPS_REG_ZERO, getGlobalByName("zero"));
+	EXPECT_TRUE(abi->isGeneralPurposeRegister(getGlobalByName("a0")));
+	EXPECT_TRUE(abi->isGeneralPurposeRegister(getGlobalByName("ra")));
+	EXPECT_TRUE(abi->isGeneralPurposeRegister(getGlobalByName("zero")));
+}
+
 } // namespace tests
 } // namespace bin2llvmir
 } // namespace retdec

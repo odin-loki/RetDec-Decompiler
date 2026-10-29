@@ -5,6 +5,9 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <algorithm>
+#include <iterator>
+
 #include "retdec/bin2llvmir/providers/abi/mips64.h"
 #include "capstone2llvmir/capstone6_compat.h"
 
@@ -46,7 +49,14 @@ AbiMips64::AbiMips64(llvm::Module* m, Config* c) :
 bool AbiMips64::isGeneralPurposeRegister(const llvm::Value* val) const
 {
 	uint32_t rid = getRegisterId(val);
-	return MIPS_REG_0 <= rid && rid <= MIPS_REG_31;
+	// Capstone 6 sorts MIPS registers by name, so MIPS_REG_0 (ZERO) is
+	// numbered after MIPS_REG_31 (RA) and the old range check was empty.
+	static const uint32_t gprs[] = {
+			MIPS_REG_0, MIPS_REG_1, MIPS_REG_2, MIPS_REG_3, MIPS_REG_4, MIPS_REG_5, MIPS_REG_6, MIPS_REG_7,
+			MIPS_REG_8, MIPS_REG_9, MIPS_REG_10, MIPS_REG_11, MIPS_REG_12, MIPS_REG_13, MIPS_REG_14, MIPS_REG_15,
+			MIPS_REG_16, MIPS_REG_17, MIPS_REG_18, MIPS_REG_19, MIPS_REG_20, MIPS_REG_21, MIPS_REG_22, MIPS_REG_23,
+			MIPS_REG_24, MIPS_REG_25, MIPS_REG_26, MIPS_REG_27, MIPS_REG_28, MIPS_REG_29, MIPS_REG_30, MIPS_REG_31};
+	return std::find(std::begin(gprs), std::end(gprs), rid) != std::end(gprs);
 }
 
 bool AbiMips64::isNopInstruction(cs_insn* insn)

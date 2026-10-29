@@ -43,7 +43,13 @@ AbiArm64::AbiArm64(llvm::Module* m, Config* c) :
 bool AbiArm64::isGeneralPurposeRegister(const llvm::Value* val) const
 {
 	uint32_t rid = getRegisterId(val);
-	return ARM64_REG_X0 <= rid && rid <= ARM64_REG_X30;
+	// Capstone 6 numbers X0..X28 as one run but X29 and X30 are aliases of
+	// FP and LR, which sort first -- so `X0 <= rid && rid <= X30` was an
+	// empty range, no register was general purpose, and param-return found
+	// no arguments for any AArch64 function.
+	return (ARM64_REG_X0 <= rid && rid <= ARM64_REG_X28)
+			|| rid == ARM64_REG_X29
+			|| rid == ARM64_REG_X30;
 }
 
 bool AbiArm64::isNopInstruction(cs_insn* insn)
