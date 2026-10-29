@@ -45,6 +45,13 @@ class ConstantsAnalysis : public llvm::ModulePass
 		void foldUnwrittenMxcsr();
 		void widenIndexedGlobals();
 		bool isObjectAddress(uint64_t addr) const;
+		bool isPcAddendIntoCode(
+				SymbolicTree* max,
+				SymbolicTree* root,
+				llvm::ConstantInt* c,
+				llvm::Instruction* userI,
+				llvm::Instruction* inst,
+				bool storeValue);
 		void checkForGlobalInInstruction(
 				ReachingDefinitionsAnalysis& RDA,
 				llvm::Instruction* inst,

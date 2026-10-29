@@ -405,6 +405,38 @@ static bool isNonAddressOperandUse(Instruction* userI)
 	}
 }
 
+/**
+ * A code address added to a run-time value is a PC, not an object: ppc32 PIC
+ * does `bl .+4; mflr r30; lwz r6,-28(r30); add r30,r6,r30`, so every GOT
+ * access is `r30 + off` with r30 = 0x106dc + <literal>.  Making 0x106dc a
+ * global printed `*(int *)("8c" + 0x20cc4)` and read garbage (f_st_arr).
+ */
+bool ConstantsAnalysis::isPcAddendIntoCode(
+		SymbolicTree* max,
+		SymbolicTree* root,
+		ConstantInt* c,
+		Instruction* userI,
+		Instruction* inst,
+		bool storeValue)
+{
+	// `mflr r30` right after `bl .+4` stores the bare PC into a register.
+	bool pcIntoReg = max == root && storeValue && isa_and_nonnull<StoreInst>(inst)
+			&& _abi && _abi->isRegister(
+				cast<StoreInst>(inst)->getPointerOperand());
+	if (!pcIntoReg)
+	{
+		if (max == root || userI == nullptr) return false;
+		if (userI->getOpcode() != Instruction::Add
+				&& userI->getOpcode() != Instruction::Sub)
+			return false;
+	}
+	uint64_t addr = c->getZExtValue();
+	if (_config->getLlvmFunction(addr) != nullptr) return false;
+	auto* seg = _image->getImage()->getSegmentFromAddress(addr);
+	auto* sec = seg ? seg->getSecSeg() : nullptr;
+	return sec && sec->isCode() && !sec->isSomeData();
+}
+
 void ConstantsAnalysis::checkForGlobalInInstruction(
 		ReachingDefinitionsAnalysis& RDA,
 		Instruction* inst,
@@ -427,6 +459,7 @@ void ConstantsAnalysis::checkForGlobalInInstruction(
 	if (_image->getImage()->hasDataOnAddress(maxC->getZExtValue()))
 	if (!isa_and_nonnull<CmpInst>(userI) || isObjectAddress(maxC->getZExtValue()))
 	if (!isNonAddressOperandUse(userI))
+	if (!isPcAddendIntoCode(max, &root, maxC, userI, inst, storeValue))
 	{
 		IrModifier irm(_module, _config);
 		// Stage 20: Width-seeded — use load/store width for global pointee type
