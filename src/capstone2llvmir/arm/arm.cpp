@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <cctype>
 #include <iomanip>
 
 #include <llvm/ADT/APInt.h>
@@ -534,7 +535,9 @@ void Capstone2LlvmIrTranslatorArm_impl::translateInstruction(cs_insn* i, llvm::I
 				|| armIsId(i, ARM_INS_BXAUT)
 				// v8.1-M conditional selects use cc as their own operand.
 				|| i->id == ARM_INS_CSEL || i->id == ARM_INS_CSINC
-				|| i->id == ARM_INS_CSINV || i->id == ARM_INS_CSNEG;
+				|| i->id == ARM_INS_CSINV || i->id == ARM_INS_CSNEG
+				// MVE VPT carries its compare condition in cc.
+				|| i->id == ARM_INS_VPT;
 		if (armCcUncond(ai) || branchInsn)
 		{
 			_inCondition = false;
@@ -8809,6 +8812,157 @@ void Capstone2LlvmIrTranslatorArm_impl::translateNeonDot(cs_insn* i, cs_arm* ai,
 		}
 	}
 	storeNeonVector(rd, r, irb);
+}
+
+
+/**
+ * MVE predication: VPR.P0 is modelled as a 16-bit byte mask in ARM_REG_VPR.
+ * VCTP, VPNOT and the VPT compare write it and VPSEL reads it. The VPT/VPST
+ * mask fields and the predication of the instructions inside a VPT block
+ * are not modelled; those instructions execute unpredicated.
+ * Capstone drops the last vector operand of VPT/VPSEL, so operands are
+ * parsed from op_str.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateMvePred(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	auto fallback = [&]() { translatePseudoAsmGeneric(i, ai, irb); };
+	std::string m = i->mnemonic;
+	auto dot = m.find('.');
+	std::string op = m.substr(0, dot);
+	std::string dt = dot == std::string::npos ? "" : m.substr(dot + 1);
+	auto* i32 = irb.getInt32Ty();
+	std::vector<std::string> toks;
+	{
+		std::string cur;
+		for (const char* c = i->op_str; c && *c; ++c)
+		{
+			if (*c == ',' || *c == ' ')
+			{
+				if (!cur.empty()) toks.push_back(cur);
+				cur.clear();
+			}
+			else cur += *c;
+		}
+		if (!cur.empty()) toks.push_back(cur);
+	}
+	auto regOf = [](const std::string& t) -> uint32_t {
+		if (t.size() >= 2 && t[0] == 'q' && std::isdigit(t[1])) return ARM_REG_Q0 + std::atoi(t.c_str() + 1);
+		if (t.size() >= 2 && t[0] == 'r' && std::isdigit(t[1])) return ARM_REG_R0 + std::atoi(t.c_str() + 1);
+		if (t == "sp") return ARM_REG_SP;
+		if (t == "lr") return ARM_REG_LR;
+		if (t == "zr") return ARM_REG_INVALID;
+		return ARM_REG_INVALID;
+	};
+	if (op == "vpst")
+	{
+		return;
+	}
+	if (op == "vpnot")
+	{
+		auto* p = loadRegister(ARM_REG_VPR, irb);
+		storeRegister(ARM_REG_VPR, irb.CreateAnd(irb.CreateXor(p, irb.getInt32(0xffff)), irb.getInt32(0xffff)), irb);
+		return;
+	}
+	if (op == "vctp" && toks.size() == 1)
+	{
+		unsigned lb = unsigned(std::atoi(dt.c_str()));
+		auto r = regOf(toks[0]);
+		if ((lb != 8 && lb != 16 && lb != 32 && lb != 64) || r == ARM_REG_INVALID)
+		{
+			fallback();
+			return;
+		}
+		auto* n = irb.CreateZExtOrTrunc(loadRegister(r, irb), i32);
+		auto* lanes = irb.getInt32(128 / lb);
+		auto* cnt = irb.CreateSelect(irb.CreateICmpULT(n, lanes), n, lanes);
+		auto* bits = irb.CreateZExt(irb.CreateMul(cnt, irb.getInt32(lb / 8)), irb.getInt64Ty());
+		auto* mask = irb.CreateSub(irb.CreateShl(irb.getInt64(1), bits), irb.getInt64(1));
+		storeRegister(ARM_REG_VPR, irb.CreateTrunc(mask, i32), irb);
+		return;
+	}
+	if (op == "vpsel" && toks.size() == 3)
+	{
+		auto d = regOf(toks[0]), a = regOf(toks[1]), b = regOf(toks[2]);
+		if (d == ARM_REG_INVALID || a == ARM_REG_INVALID || b == ARM_REG_INVALID)
+		{
+			fallback();
+			return;
+		}
+		auto* va = loadNeonVector(a, 8, false, irb);
+		auto* vb = loadNeonVector(b, 8, false, irb);
+		auto* p = loadRegister(ARM_REG_VPR, irb);
+		llvm::Value* r = llvm::UndefValue::get(va->getType());
+		for (unsigned k = 0; k < 16; ++k)
+		{
+			auto* bit = irb.CreateICmpNE(irb.CreateAnd(p, irb.getInt32(1u << k)), irb.getInt32(0));
+			r = irb.CreateInsertElement(r, irb.CreateSelect(bit,
+					irb.CreateExtractElement(va, k), irb.CreateExtractElement(vb, k)), k);
+		}
+		storeNeonVector(d, r, irb);
+		return;
+	}
+	if (op.compare(0, 3, "vpt") == 0 && toks.size() == 3 && !dt.empty())
+	{
+		char kind = dt[0];
+		unsigned lb = unsigned(std::atoi(dt.c_str() + 1));
+		auto qa = regOf(toks[1]);
+		auto rb = regOf(toks[2]);
+		if ((lb != 8 && lb != 16 && lb != 32) || qa == ARM_REG_INVALID || rb == ARM_REG_INVALID)
+		{
+			fallback();
+			return;
+		}
+		bool fp = kind == 'f';
+		const std::string& c = toks[0];
+		unsigned n = 128 / lb;
+		auto* va = loadNeonVector(qa, lb, fp, irb);
+		bool scalar = rb >= ARM_REG_R0 && rb <= ARM_REG_R12 ? true : (rb == ARM_REG_SP || rb == ARM_REG_LR);
+		llvm::Value* vb = scalar ? nullptr : loadNeonVector(rb, lb, fp, irb);
+		llvm::Value* sv = nullptr;
+		if (scalar)
+		{
+			sv = loadRegister(rb, irb);
+			sv = irb.CreateTrunc(sv, irb.getIntNTy(lb));
+			if (fp) sv = irb.CreateBitCast(sv, lb == 16 ? irb.getHalfTy() : irb.getFloatTy());
+		}
+		llvm::Value* p = irb.getInt32(0);
+		for (unsigned k = 0; k < n; ++k)
+		{
+			auto* x = irb.CreateExtractElement(va, k);
+			auto* y = scalar ? sv : irb.CreateExtractElement(vb, k);
+			llvm::Value* t = nullptr;
+			if (fp)
+			{
+				if (c == "eq") t = irb.CreateFCmpOEQ(x, y);
+				else if (c == "ne") t = irb.CreateFCmpUNE(x, y);
+				else if (c == "ge") t = irb.CreateFCmpOGE(x, y);
+				else if (c == "lt") t = irb.CreateFCmpOLT(x, y);
+				else if (c == "gt") t = irb.CreateFCmpOGT(x, y);
+				else if (c == "le") t = irb.CreateFCmpOLE(x, y);
+			}
+			else
+			{
+				if (c == "eq") t = irb.CreateICmpEQ(x, y);
+				else if (c == "ne") t = irb.CreateICmpNE(x, y);
+				else if (c == "cs" || c == "hs") t = irb.CreateICmpUGE(x, y);
+				else if (c == "hi") t = irb.CreateICmpUGT(x, y);
+				else if (c == "ge") t = irb.CreateICmpSGE(x, y);
+				else if (c == "lt") t = irb.CreateICmpSLT(x, y);
+				else if (c == "gt") t = irb.CreateICmpSGT(x, y);
+				else if (c == "le") t = irb.CreateICmpSLE(x, y);
+			}
+			if (t == nullptr)
+			{
+				fallback();
+				return;
+			}
+			unsigned bm = ((1u << (lb / 8)) - 1) << (k * lb / 8);
+			p = irb.CreateOr(p, irb.CreateSelect(t, irb.getInt32(bm), irb.getInt32(0)));
+		}
+		storeRegister(ARM_REG_VPR, p, irb);
+		return;
+	}
+	fallback();
 }
 
 } // namespace capstone2llvmir
