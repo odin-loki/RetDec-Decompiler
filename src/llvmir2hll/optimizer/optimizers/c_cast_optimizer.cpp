@@ -62,8 +62,16 @@ ShPtr<Expression> CCastOptimizer::checkAndOptimize(ShPtr<Expression> dst,
 		if (ShPtr<IntType> dstType = cast<IntType>(dst->getType())) {
 			if (ShPtr<IntType> srcType = cast<IntType>(src->getType())) {
 				// Both are signed or unsigned.
-				if (dstType->isSigned() == srcType->isSigned()) {
-					if (cast<IntType>(srcCast->getOperand()->getType()) ||
+				// The implicit conversion only reproduces the cast when the
+				// cast does not narrow below the destination: in
+				// `uint64_t r = (unsigned char)(x >> 24);` the cast is the
+				// mask and must stay.
+				auto opInt = cast<IntType>(srcCast->getOperand()->getType());
+				bool keepsBits = srcType->getSize() >= dstType->getSize()
+						|| (opInt && opInt->getSize() <= srcType->getSize()
+							&& opInt->isSigned() == srcType->isSigned());
+				if (dstType->isSigned() == srcType->isSigned() && keepsBits) {
+					if (opInt ||
 							cast<FloatType>(srcCast->getOperand()->getType())) {
 						// Cast expression removed.
 						optimized = true;
