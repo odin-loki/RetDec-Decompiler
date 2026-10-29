@@ -8552,6 +8552,8 @@ static unsigned dspLaneBits(unsigned id)
 	switch (id)
 	{
 		case MIPS_INS_ABSQ_S_QB:
+		case MIPS_INS_ADDU_QB:
+		case MIPS_INS_SUBU_QB:
 		case MIPS_INS_ADDUH_QB:
 		case MIPS_INS_ADDUH_R_QB:
 		case MIPS_INS_ADDU_S_QB:
@@ -8608,6 +8610,9 @@ static unsigned dspLaneBits(unsigned id)
 		case MIPS_INS_SHRLV_PH:
 		case MIPS_INS_MULQ_S_PH:
 		case MIPS_INS_MULQ_RS_PH:
+		case MIPS_INS_ADDU_PH:
+		case MIPS_INS_SUBU_PH:
+		case MIPS_INS_MUL_PH:
 			return 16;
 		default:
 			return 32;
@@ -8698,6 +8703,18 @@ void Capstone2LlvmIrTranslatorMips_impl::translateDspArith(cs_insn* i, cs_mips* 
 					op2,
 					bits,
 					i->id == MIPS_INS_SUBQ_PH ? llvm::Instruction::Sub : llvm::Instruction::Add,
+					irb);
+			break;
+		case MIPS_INS_ADDU_QB:
+		case MIPS_INS_ADDU_PH:
+		case MIPS_INS_SUBU_QB:
+		case MIPS_INS_SUBU_PH:
+		case MIPS_INS_MUL_PH:
+			// Modular lane arithmetic; the DSPControl overflow flags are not modelled.
+			r = dspPackedBin(op1, op2, bits,
+					i->id == MIPS_INS_MUL_PH ? llvm::Instruction::Mul
+					: (i->id == MIPS_INS_SUBU_QB || i->id == MIPS_INS_SUBU_PH) ? llvm::Instruction::Sub
+					: llvm::Instruction::Add,
 					irb);
 			break;
 		case MIPS_INS_ADDQ_S_PH:
