@@ -7220,5 +7220,181 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateCoreVMem(cs_insn* i, cs_riscv
 }
 
 
+
+/**
+ * CORE-V complex/DSP SIMD: CV_ADD_DIVn/SUB_DIVn, CPLXMUL.{R,I}[.DIVn],
+ * SUBROTMJ[.DIVn], CPLXCONJ, PACK*, SHUFFLE*.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateCoreVDsp(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	auto* i32 = irb.getInt32Ty();
+	auto* i16 = irb.getInt16Ty();
+	auto* i8 = irb.getInt8Ty();
+	auto fallback = [&]() { translatePseudoAsmGeneric(i, ri, irb); };
+	if (ri->op_count < 2 || ri->operands[0].type != RISCV_OP_REG)
+	{
+		fallback();
+		return;
+	}
+	auto ldr = [&](unsigned k) -> llvm::Value* {
+		auto& o = ri->operands[k];
+		if (o.type != RISCV_OP_REG || o.reg == RISCV_REG_X0) return llvm::ConstantInt::get(i32, 0);
+		return irb.CreateZExtOrTrunc(loadRegister(o.reg, irb), i32);
+	};
+	auto lane = [&](llvm::Value* v, unsigned bits, unsigned k) {
+		return irb.CreateTrunc(irb.CreateLShr(v, llvm::ConstantInt::get(i32, k * bits)), irb.getIntNTy(bits));
+	};
+	auto build = [&](const std::vector<llvm::Value*>& ls) {
+		unsigned bits = 32 / ls.size();
+		llvm::Value* r = llvm::ConstantInt::get(i32, 0);
+		for (unsigned k = 0; k < ls.size(); ++k)
+		{
+			r = irb.CreateOr(r, irb.CreateShl(irb.CreateZExt(ls[k], i32), llvm::ConstantInt::get(i32, k * bits)));
+		}
+		return r;
+	};
+	// Pick lane idx (dynamic, already masked) of v.
+	auto pick = [&](llvm::Value* v, unsigned bits, llvm::Value* idx) {
+		auto* sh = irb.CreateMul(irb.CreateZExt(idx, i32), llvm::ConstantInt::get(i32, bits));
+		return irb.CreateTrunc(irb.CreateLShr(v, sh), irb.getIntNTy(bits));
+	};
+	unsigned div = 0;
+	std::string m = i->mnemonic;
+	if (m.find(".div2") != std::string::npos) div = 1;
+	else if (m.find(".div4") != std::string::npos) div = 2;
+	else if (m.find(".div8") != std::string::npos) div = 3;
+	auto rd = ri->operands[0].reg;
+	llvm::Value* r = nullptr;
+	switch (i->id)
+	{
+		case RISCV_INS_CV_ADD_DIV2: case RISCV_INS_CV_ADD_DIV4: case RISCV_INS_CV_ADD_DIV8:
+		case RISCV_INS_CV_SUB_DIV2: case RISCV_INS_CV_SUB_DIV4: case RISCV_INS_CV_SUB_DIV8:
+		{
+			bool add = m.compare(0, 6, "cv.add") == 0;
+			auto* a = ldr(1);
+			auto* b = ldr(2);
+			std::vector<llvm::Value*> ls;
+			for (unsigned k = 0; k < 2; ++k)
+			{
+				auto* x = irb.CreateSExt(lane(a, 16, k), i32);
+				auto* y = irb.CreateSExt(lane(b, 16, k), i32);
+				auto* s = add ? irb.CreateAdd(x, y) : irb.CreateSub(x, y);
+				ls.push_back(irb.CreateTrunc(irb.CreateAShr(s, llvm::ConstantInt::get(i32, div)), i16));
+			}
+			r = build(ls);
+			break;
+		}
+		case RISCV_INS_CV_CPLXMUL_R: case RISCV_INS_CV_CPLXMUL_R_DIV2:
+		case RISCV_INS_CV_CPLXMUL_R_DIV4: case RISCV_INS_CV_CPLXMUL_R_DIV8:
+		case RISCV_INS_CV_CPLXMUL_I: case RISCV_INS_CV_CPLXMUL_I_DIV2:
+		case RISCV_INS_CV_CPLXMUL_I_DIV4: case RISCV_INS_CV_CPLXMUL_I_DIV8:
+		{
+			bool im = m.compare(0, 12, "cv.cplxmul.i") == 0;
+			auto* a = ldr(1);
+			auto* b = ldr(2);
+			auto* d = ldr(0);
+			auto sx = [&](llvm::Value* v, unsigned k) { return irb.CreateSExt(lane(v, 16, k), i32); };
+			llvm::Value* p = im
+					? irb.CreateAdd(irb.CreateMul(sx(a, 0), sx(b, 1)), irb.CreateMul(sx(a, 1), sx(b, 0)))
+					: irb.CreateSub(irb.CreateMul(sx(a, 0), sx(b, 0)), irb.CreateMul(sx(a, 1), sx(b, 1)));
+			auto* v = irb.CreateTrunc(irb.CreateAShr(p, llvm::ConstantInt::get(i32, 15 + div)), i16);
+			r = im ? build({lane(d, 16, 0), v}) : build({v, lane(d, 16, 1)});
+			break;
+		}
+		case RISCV_INS_CV_SUBROTMJ: case RISCV_INS_CV_SUBROTMJ_DIV2:
+		case RISCV_INS_CV_SUBROTMJ_DIV4: case RISCV_INS_CV_SUBROTMJ_DIV8:
+		{
+			auto* a = ldr(1);
+			auto* b = ldr(2);
+			auto sx = [&](llvm::Value* v, unsigned k) { return irb.CreateSExt(lane(v, 16, k), i32); };
+			auto* sh = llvm::ConstantInt::get(i32, div);
+			auto* re = irb.CreateTrunc(irb.CreateAShr(irb.CreateSub(sx(a, 1), sx(b, 1)), sh), i16);
+			auto* imv = irb.CreateTrunc(irb.CreateAShr(irb.CreateSub(sx(b, 0), sx(a, 0)), sh), i16);
+			r = build({re, imv});
+			break;
+		}
+		case RISCV_INS_CV_CPLXCONJ:
+		{
+			auto* a = ldr(1);
+			r = build({lane(a, 16, 0), irb.CreateNeg(lane(a, 16, 1))});
+			break;
+		}
+		case RISCV_INS_CV_PACK:
+		case RISCV_INS_CV_PACK_H:
+		{
+			unsigned k = i->id == RISCV_INS_CV_PACK_H ? 1 : 0;
+			r = build({lane(ldr(2), 16, k), lane(ldr(1), 16, k)});
+			break;
+		}
+		case RISCV_INS_CV_PACKHI_B:
+		case RISCV_INS_CV_PACKLO_B:
+		{
+			auto* d = ldr(0);
+			auto* a = lane(ldr(1), 8, 0);
+			auto* b = lane(ldr(2), 8, 0);
+			r = i->id == RISCV_INS_CV_PACKHI_B
+					? build({lane(d, 8, 0), lane(d, 8, 1), b, a})
+					: build({b, a, lane(d, 8, 2), lane(d, 8, 3)});
+			break;
+		}
+		case RISCV_INS_CV_SHUFFLE_H:
+		case RISCV_INS_CV_SHUFFLE_B:
+		case RISCV_INS_CV_SHUFFLE2_H:
+		case RISCV_INS_CV_SHUFFLE2_B:
+		{
+			bool h = i->id == RISCV_INS_CV_SHUFFLE_H || i->id == RISCV_INS_CV_SHUFFLE2_H;
+			bool two = i->id == RISCV_INS_CV_SHUFFLE2_H || i->id == RISCV_INS_CV_SHUFFLE2_B;
+			unsigned bits = h ? 16 : 8, n = 32 / bits;
+			auto* a = ldr(1);
+			auto* c = ldr(2);
+			auto* d = ldr(0);
+			auto* lt = irb.getIntNTy(bits);
+			std::vector<llvm::Value*> ls;
+			for (unsigned k = 0; k < n; ++k)
+			{
+				auto* ck = lane(c, bits, k);
+				auto* idx = irb.CreateAnd(ck, llvm::ConstantInt::get(lt, n - 1));
+				llvm::Value* v = pick(a, bits, idx);
+				if (two)
+				{
+					auto* useA = irb.CreateICmpNE(irb.CreateAnd(ck, llvm::ConstantInt::get(lt, n)),
+							llvm::ConstantInt::get(lt, 0));
+					v = irb.CreateSelect(useA, v, pick(d, bits, idx));
+				}
+				ls.push_back(v);
+			}
+			r = build(ls);
+			break;
+		}
+		case RISCV_INS_CV_SHUFFLE_SCI_H:
+		{
+			if (ri->op_count != 3 || ri->operands[2].type != RISCV_OP_IMM) { fallback(); return; }
+			unsigned im = static_cast<unsigned>(ri->operands[2].imm);
+			auto* a = ldr(1);
+			r = build({lane(a, 16, im & 1), lane(a, 16, (im >> 1) & 1)});
+			break;
+		}
+		case RISCV_INS_CV_SHUFFLEI0_SCI_B: case RISCV_INS_CV_SHUFFLEI1_SCI_B:
+		case RISCV_INS_CV_SHUFFLEI2_SCI_B: case RISCV_INS_CV_SHUFFLEI3_SCI_B:
+		{
+			if (ri->op_count != 3 || ri->operands[2].type != RISCV_OP_IMM) { fallback(); return; }
+			unsigned im = static_cast<unsigned>(ri->operands[2].imm);
+			unsigned top = i->id == RISCV_INS_CV_SHUFFLEI0_SCI_B ? 0 : i->id == RISCV_INS_CV_SHUFFLEI1_SCI_B ? 1
+					: i->id == RISCV_INS_CV_SHUFFLEI2_SCI_B ? 2 : 3;
+			auto* a = ldr(1);
+			r = build({lane(a, 8, im & 3), lane(a, 8, (im >> 2) & 3), lane(a, 8, (im >> 4) & 3), lane(a, 8, top)});
+			break;
+		}
+		default:
+			fallback();
+			return;
+	}
+	(void)i8;
+	if (rd != RISCV_REG_X0)
+	{
+		storeRegister(rd, irb.CreateSExtOrTrunc(r, getDefaultType()), irb);
+	}
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec

@@ -6041,6 +6041,297 @@ TEST_P(Capstone2LlvmIrTranslatorRiscvTests, CV_LBU_postinc_imm)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_ADD_DIV2)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X11, 0x3fffd},
+		{RISCV_REG_X12, 0x50001},
+	});
+
+	emulate_bin("7b a5 c5 6c");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0x4ffff},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_SUB_DIV4)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X11, 0x100000},
+		{RISCV_REG_X12, 0x40008},
+	});
+
+	emulate_bin("7b c5 c5 74");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0x3fffe},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_CPLXMUL_R)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X10, 0x12340000},
+		{RISCV_REG_X11, 0x4000},
+		{RISCV_REG_X12, 0x40004000},
+	});
+
+	emulate_bin("7b 85 c5 54");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0x12342000},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_CPLXMUL_I_DIV2)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X10, 0xabcd},
+		{RISCV_REG_X11, 0x4000},
+		{RISCV_REG_X12, 0x40004000},
+	});
+
+	emulate_bin("7b a5 c5 56");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0x1000abcd},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_SUBROTMJ)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X11, 0x50003},
+		{RISCV_REG_X12, 0x10002},
+	});
+
+	emulate_bin("7b 85 c5 64");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0xffff0004},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_CPLXCONJ)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X11, 0x50003},
+	});
+
+	emulate_bin("7b 85 05 5c");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0xfffb0003},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_PACK)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X11, 0x11112222},
+		{RISCV_REG_X12, 0x33334444},
+	});
+
+	emulate_bin("7b 85 c5 f0");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0x22224444},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_PACK_H)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X11, 0x11112222},
+		{RISCV_REG_X12, 0x33334444},
+	});
+
+	emulate_bin("7b 85 c5 f2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0x11113333},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_PACKHI_B)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X10, 0xaabbccdd},
+		{RISCV_REG_X11, 0x22},
+		{RISCV_REG_X12, 0x44},
+	});
+
+	emulate_bin("7b 95 c5 fa");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0x2244ccdd},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_PACKLO_B)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X10, 0xaabbccdd},
+		{RISCV_REG_X11, 0x22},
+		{RISCV_REG_X12, 0x44},
+	});
+
+	emulate_bin("7b 95 c5 f8");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0xaabb2244},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_SHUFFLE_H)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X11, 0x11112222},
+		{RISCV_REG_X12, 0x1},
+	});
+
+	emulate_bin("7b 85 c5 c0");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0x22221111},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_SHUFFLE_B)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X11, 0x44332211},
+		{RISCV_REG_X12, 0x10203},
+	});
+
+	emulate_bin("7b 95 c5 c0");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0x11223344},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_SHUFFLE_SCI_H)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X11, 0x11112222},
+	});
+
+	emulate_bin("7b e5 05 c2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0x22221111},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_SHUFFLEI2_SCI_B)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X11, 0x44332211},
+	});
+
+	emulate_bin("7b f5 d5 d2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0x33223344},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_SHUFFLE2_H)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X10, 0xaaaabbbb},
+		{RISCV_REG_X11, 0x11112222},
+		{RISCV_REG_X12, 0x30000},
+	});
+
+	emulate_bin("7b 85 c5 e0");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0x1111bbbb},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_SHUFFLE2_B)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X10, 0xddccbbaa},
+		{RISCV_REG_X11, 0x44332211},
+		{RISCV_REG_X12, 0x4000701},
+	});
+
+	emulate_bin("7b 95 c5 e0");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0x11aa44bb},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
