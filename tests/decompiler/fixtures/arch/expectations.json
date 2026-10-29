@@ -1,0 +1,6 @@
+{
+  "_comment": "Cross-compiled from sumsq.c with clang-18 --target=<triple> -O1 -nostdlib -fuse-ld=lld -Wl,-e,main [-no-pie]. Each fixture must decompile and its C must contain every listed substring.",
+  "sumsq-powerpc64le-pie": ["sq(uint64_t a1)", "return a1 * a1;", "int main(int argc, char ** argv)", "0x55555556"],
+  "sumsq-powerpc64-pie": ["sq(uint64_t a1)", "return a1 * a1;", "int main(int argc, char ** argv)", "0x55555556", "!function_"],
+  "sumsq-powerpc64-nopie": ["int main(int argc, char ** argv)", "(argc - 1)", "0x55555556", "!function_"]
+}

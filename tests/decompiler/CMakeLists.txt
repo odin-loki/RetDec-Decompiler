@@ -369,6 +369,21 @@ set_tests_properties(decompiler_validate_pipeline_profiles PROPERTIES
     LABELS "decompiler;unit;schema"
 )
 
+# ── Cross-architecture fixtures (checked-in binaries, see fixtures/arch) ─────
+add_test(
+    NAME decompiler_arch_fixtures
+    COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_CURRENT_SOURCE_DIR}/arch_fixtures_test.py"
+        "${RETDEC_DECOMPILER}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/arch"
+        "${CMAKE_CURRENT_BINARY_DIR}/arch_fixtures"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+set_tests_properties(decompiler_arch_fixtures PROPERTIES
+    TIMEOUT 600
+    LABELS "decompiler;integration;arch"
+)
+
 # ── Install smoke (post cmake --install; Windows only) ────────────────────────
 if(WIN32)
     # GHA and modern Windows have pwsh; fall back to Windows PowerShell 5.1.
