@@ -26,8 +26,8 @@
  *   - A Compare of the two pointers followed by a Branch that exits the loop.
  *
  * Swap:
- *   - Two Load instructions and two Store instructions, with cross-assignment
- *     (value from Load A stored to addr B, value from Load B stored to addr A).
+ *   - Two Store instructions whose stored values come from two different
+ *     Loads (value from Load A stored to addr B, value from Load B to addr A).
  *   - Or a Call to `std::swap` / `swap`.
  *
  * No recursion:
@@ -45,6 +45,7 @@
 #include "retdec/ssa/ssa.h"
 
 #include <algorithm>
+#include <unordered_set>
 
 namespace retdec {
 namespace algo_recover {
@@ -97,9 +98,33 @@ static bool hasNamedSwap(const ssa::SSAFunction& fn)
 	return false;
 }
 
+// A structural swap is two stores, each writing back a value that a different
+// load read: `t = *a; *a = *b; *b = t`. Counting loads and stores was not
+// enough -- any loop that spills two registers and reloads them has both.
 static bool hasStructuralSwap(const ssa::SSAFunction& fn)
 {
-	return countOp(fn, ssa::IrInstr::Op::Load) >= 2 && countOp(fn, ssa::IrInstr::Op::Store) >= 2;
+	std::unordered_set<ssa::ValueId> loaded;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+			if (i && i->op == ssa::IrInstr::Op::Load && i->defValue != ssa::kInvalidValue)
+				loaded.insert(i->defValue);
+	}
+	std::unordered_set<ssa::ValueId> storedBack;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i || i->op != ssa::IrInstr::Op::Store) continue;
+			for (const auto& u: i->uses)
+				if (u.operandIndex == 0 && loaded.count(u.valueId)) storedBack.insert(u.valueId);
+		}
+	}
+	return storedBack.size() >= 2;
 }
 
 // Swap: ≥2 Loads and ≥2 Stores, or a call to swap.
@@ -172,6 +197,15 @@ AlgorithmResult PartitionDetector::detect(const ssa::SSAFunction& fn) const
 
 	auto ev = analyse(fn);
 	result.confidence = ev.confidence;
+
+	// A detector whose defining signal is absent reports nothing: the partial
+	// scores of its supporting signals alone (loads, a loop, a small add) are
+	// present in nearly every function and used to label plain loops.
+	if (!ev.found)
+	{
+		result.confidence = 0.0f;
+		return result;
+	}
 
 	EmissionTier tier = EmissionTier::Low;
 	if (ev.confidence >= 0.75f)

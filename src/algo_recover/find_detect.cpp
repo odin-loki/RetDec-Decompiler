@@ -40,6 +40,10 @@
 #include "retdec/algo_recover/algo_recover.h"
 #include "retdec/ssa/ssa.h"
 
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
 #include <algorithm>
 
 namespace retdec {
@@ -162,6 +166,63 @@ static bool hasCountPattern(const ssa::SSAFunction& fn)
 	return hasPhi && countOp(fn, ssa::IrInstr::Op::Compare) >= 1 && !hasEarlyExit(fn);
 }
 
+// Dataflow check, when the operands are wired: does some Compare look at a
+// value read from memory the function never writes? That is the element a
+// search inspects. A counter kept in a stack slot -- `i = *slot; ...;
+// *slot = i + 1` at -O0 or after reg2mem -- is loaded too, but its slot is
+// stored to, so `i != n` on it is a loop bound, not a search.
+//
+// Returns -1 (unknown) when no Compare operand can be traced to a Load at
+// all -- unwired hand-built shapes, or operands this adapter does not
+// translate -- so missing operands are never read as evidence either way.
+static int comparesReadOnlyMemory(const ssa::SSAFunction& fn)
+{
+	std::unordered_map<ssa::ValueId, const ssa::IrInstr*> def;
+	std::unordered_set<ssa::ValueId> storedTo;
+	std::vector<const ssa::IrInstr*> compares;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i) continue;
+			if (i->defValue != ssa::kInvalidValue) def[i->defValue] = i;
+			if (i->op == ssa::IrInstr::Op::Store && i->uses.size() >= 2) storedTo.insert(i->uses[1].valueId);
+			if (i->op == ssa::IrInstr::Op::Compare && !i->uses.empty()) compares.push_back(i);
+		}
+	}
+	if (compares.empty()) return -1;
+
+	bool sawLoad = false;
+	for (const auto* c: compares)
+	{
+		std::vector<std::pair<ssa::ValueId, int>> work;
+		for (const auto& u: c->uses)
+			work.push_back({u.valueId, 0});
+		std::unordered_set<ssa::ValueId> seen;
+		while (!work.empty())
+		{
+			auto [v, depth] = work.back();
+			work.pop_back();
+			if (!seen.insert(v).second || depth > 8) continue;
+			auto it = def.find(v);
+			if (it == def.end()) continue;
+			const auto* d = it->second;
+			if (d->op == ssa::IrInstr::Op::Load)
+			{
+				if (d->uses.empty() || !storedTo.count(d->uses[0].valueId)) return 1;
+				sawLoad = true;
+				continue;
+			}
+			if (d->op == ssa::IrInstr::Op::Call) continue;
+			for (const auto& u: d->uses)
+				work.push_back({u.valueId, depth + 1});
+		}
+	}
+	return sawLoad ? 0 : -1;
+}
+
 } // anonymous namespace
 
 FindEvidence FindDetector::analyseFind(const ssa::SSAFunction& fn) const
@@ -169,6 +230,7 @@ FindEvidence FindDetector::analyseFind(const ssa::SSAFunction& fn) const
 	FindEvidence ev;
 	if (!hasBackEdge(fn)) return ev;
 	if (countOp(fn, ssa::IrInstr::Op::Load) < 1) return ev;
+	if (comparesReadOnlyMemory(fn) == 0) return ev;
 
 	ev.hasCompare = countOp(fn, ssa::IrInstr::Op::Compare) >= 1;
 	ev.hasEarlyExit = hasEarlyExit(fn);

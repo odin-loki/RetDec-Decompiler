@@ -56,6 +56,39 @@ static void addCall(ssa::SSAFunction& fn, const std::string& callee)
 	if (instr) instr->calleeName = callee;
 }
 
+/// A call passed one argument, as a for_each callback is passed the element.
+static void addCallWithArg(ssa::SSAFunction& fn, const std::string& callee)
+{
+	auto* instr = fn.addInstr(fn.block(0)->id, ssa::IrInstr::Op::Call);
+	if (!instr) return;
+	instr->calleeName = callee;
+	ssa::Use u;
+	u.valueId = fn.allocValue(ssa::ValueKind::VirtualReg)->id;
+	instr->uses.push_back(u);
+}
+
+/// Wire the first two Loads' results crosswise into the first two Stores,
+/// the way `t = *a; *a = *b; *b = t` does.
+static void wireSwap(ssa::SSAFunction& fn)
+{
+	std::vector<ssa::IrInstr*> loads, stores;
+	for (auto* i: fn.block(0)->instrs)
+	{
+		if (i->op == ssa::IrInstr::Op::Load) loads.push_back(i);
+		if (i->op == ssa::IrInstr::Op::Store) stores.push_back(i);
+	}
+	for (std::size_t k = 0; k < 2 && k < loads.size() && k < stores.size(); ++k)
+	{
+		ssa::IrValue* v = fn.allocValue(ssa::ValueKind::VirtualReg);
+		loads[k]->defValue = v->id;
+		v->defInstr = loads[k];
+		ssa::Use u;
+		u.valueId = v->id;
+		u.operandIndex = 0;
+		stores[1 - k]->uses.push_back(u);
+	}
+}
+
 static void addImmInstr(ssa::SSAFunction& fn, ssa::IrInstr::Op op, uint64_t immVal)
 {
 	auto* instr = fn.addInstr(fn.block(0)->id, op);
@@ -514,9 +547,10 @@ static std::unique_ptr<ssa::SSAFunction> makeGccO0MemcpyLoopShape()
 	useVal(da, i->id, 1);
 	ssa::IrValue* dp = defOf(*fn, da);
 
+	// LLVM operand order: store value, then address.
 	ssa::IrInstr* st = fn->addInstr(body->id, ssa::IrInstr::Op::Store);
-	useVal(st, dp->id, 0);
-	useVal(st, elem->id, 1);
+	useVal(st, elem->id, 0);
+	useVal(st, dp->id, 1);
 
 	ssa::IrInstr* inc = fn->addInstr(body->id, ssa::IrInstr::Op::Add);
 	useVal(inc, i->id, 0);
@@ -666,6 +700,100 @@ TEST(TransformDetectorTest, LambdaCallDetected)
 	auto r = det.detect(*fn);
 	EXPECT_TRUE(r.hasLambda);
 	EXPECT_EQ(r.kind, AlgorithmKind::Transform);
+}
+
+TEST(FindDetectorTest, BoundCheckOnASpilledCounterIsNotASearch)
+{
+	// i = *slot; *slot = i + 1; if (i + 1 != n) loop -- the compared value
+	// comes from a slot the loop writes, so it is a counter, not an element.
+	auto fn = makeFunc("spill_bound", {}, 1);
+	addBackEdge(*fn);
+	auto* blk = fn->block(0);
+	ssa::IrValue* slot = fn->allocValue(ssa::ValueKind::VirtualReg);
+	ssa::IrValue* n = fn->allocValue(ssa::ValueKind::VirtualReg);
+	auto* ld = fn->addInstr(blk->id, ssa::IrInstr::Op::Load);
+	useVal(ld, slot->id);
+	ssa::IrValue* i = defOf(*fn, ld);
+	auto* add = fn->addInstr(blk->id, ssa::IrInstr::Op::Add);
+	useVal(add, i->id, 0);
+	ssa::IrValue* i1 = defOf(*fn, add);
+	auto* st = fn->addInstr(blk->id, ssa::IrInstr::Op::Store);
+	useVal(st, i1->id, 0);
+	useVal(st, slot->id, 1);
+	auto* cmp = fn->addInstr(blk->id, ssa::IrInstr::Op::Compare);
+	useVal(cmp, i1->id, 0);
+	useVal(cmp, n->id, 1);
+	FindDetector det;
+	EXPECT_LT(det.detect(*fn).confidence, 0.10f);
+}
+
+TEST(FindDetectorTest, CompareOnALoadedElementIsASearch)
+{
+	auto fn = makeFunc("wired_find", {}, 1);
+	addBackEdge(*fn);
+	auto* blk = fn->block(0);
+	ssa::IrValue* p = fn->allocValue(ssa::ValueKind::VirtualReg);
+	ssa::IrValue* key = fn->allocValue(ssa::ValueKind::VirtualReg);
+	auto* ld = fn->addInstr(blk->id, ssa::IrInstr::Op::Load);
+	useVal(ld, p->id);
+	ssa::IrValue* e = defOf(*fn, ld);
+	auto* cmp = fn->addInstr(blk->id, ssa::IrInstr::Op::Compare);
+	useVal(cmp, e->id, 0);
+	useVal(cmp, key->id, 1);
+	FindDetector det;
+	EXPECT_GE(det.detect(*fn).confidence, 0.40f);
+}
+
+TEST(TransformDetectorTest, CounterKeptInASpillSlotIsNotATransform)
+{
+	// i = *slot; r = tick(); *slot = i + 1; *out = r; -- the only load is
+	// stored back to its own slot, and the other store is a call result.
+	auto fn = makeFunc("spill_counter", {}, 1);
+	addBackEdge(*fn);
+	auto* blk = fn->block(0);
+	ssa::IrValue* slot = fn->allocValue(ssa::ValueKind::VirtualReg);
+	ssa::IrValue* out = fn->allocValue(ssa::ValueKind::VirtualReg);
+	auto* ld = fn->addInstr(blk->id, ssa::IrInstr::Op::Load);
+	useVal(ld, slot->id);
+	ssa::IrValue* i = defOf(*fn, ld);
+	auto* call = fn->addInstr(blk->id, ssa::IrInstr::Op::Call);
+	call->calleeName = "tick";
+	ssa::IrValue* r = defOf(*fn, call);
+	auto* add = fn->addInstr(blk->id, ssa::IrInstr::Op::Add);
+	useVal(add, i->id, 0);
+	ssa::IrValue* i1 = defOf(*fn, add);
+	auto* st1 = fn->addInstr(blk->id, ssa::IrInstr::Op::Store);
+	useVal(st1, i1->id, 0);
+	useVal(st1, slot->id, 1);
+	auto* st2 = fn->addInstr(blk->id, ssa::IrInstr::Op::Store);
+	useVal(st2, r->id, 0);
+	useVal(st2, out->id, 1);
+	fn->addInstr(blk->id, ssa::IrInstr::Op::Compare);
+	TransformDetector det;
+	EXPECT_LT(det.detect(*fn).confidence, 0.10f);
+}
+
+TEST(TransformDetectorTest, LoadedElementStoredElsewhereIsATransform)
+{
+	// *dst = f(*src) in a loop.
+	auto fn = makeFunc("xfrm_wired", {ssa::IrInstr::Op::Add, ssa::IrInstr::Op::Add}, 1);
+	addBackEdge(*fn);
+	auto* blk = fn->block(0);
+	ssa::IrValue* src = fn->allocValue(ssa::ValueKind::VirtualReg);
+	ssa::IrValue* dst = fn->allocValue(ssa::ValueKind::VirtualReg);
+	auto* ld = fn->addInstr(blk->id, ssa::IrInstr::Op::Load);
+	useVal(ld, src->id);
+	ssa::IrValue* x = defOf(*fn, ld);
+	auto* call = fn->addInstr(blk->id, ssa::IrInstr::Op::Call);
+	call->calleeName = "f";
+	useVal(call, x->id, 0);
+	ssa::IrValue* y = defOf(*fn, call);
+	auto* st = fn->addInstr(blk->id, ssa::IrInstr::Op::Store);
+	useVal(st, y->id, 0);
+	useVal(st, dst->id, 1);
+	fn->addInstr(blk->id, ssa::IrInstr::Op::Compare);
+	TransformDetector det;
+	EXPECT_GE(det.detect(*fn).confidence, 0.30f);
 }
 
 TEST(TransformDetectorTest, BackInserterDetected)
@@ -1105,6 +1233,7 @@ TEST(PartitionDetectorTest, ConvergingPtrsAndSwapDetected)
 		},
 		1);
 	addBackEdge(*fn);
+	wireSwap(*fn);
 	PartitionDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_GE(r.confidence, 0.70f);
@@ -1126,6 +1255,7 @@ TEST(PartitionDetectorTest, RecursionLowersConfidence)
 		},
 		1);
 	addBackEdge(*fn);
+	wireSwap(*fn);
 	// Self-recursive call lowers confidence.
 	addCall(*fn, "sort_part");
 	PartitionDetector det;
@@ -1168,6 +1298,7 @@ TEST(PartitionDetectorTest, StructuralSwapIsNotSymbolNameEvidence)
 		},
 		1);
 	addBackEdge(*fn);
+	wireSwap(*fn);
 	PartitionDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_GE(r.confidence, 0.55f);
@@ -1189,9 +1320,33 @@ TEST(PartitionDetectorTest, HighTierEmittedContainsPartition)
 		},
 		1);
 	addBackEdge(*fn);
+	wireSwap(*fn);
 	PartitionDetector det;
 	auto r = det.detect(*fn);
 	if (r.tier == EmissionTier::High) EXPECT_NE(r.emittedForm.find("std::partition"), std::string::npos);
+}
+
+TEST(PartitionDetectorTest, SpillAndReloadIsNotASwap)
+{
+	// A counted loop that spills two registers and reloads them has two
+	// loads, two stores, an add and a sub -- but nothing it loads is stored.
+	auto fn = makeFunc(
+		"spill_loop",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Store,
+			ssa::IrInstr::Op::Store,
+			ssa::IrInstr::Op::Add,
+			ssa::IrInstr::Op::Sub,
+			ssa::IrInstr::Op::Compare,
+		},
+		1);
+	addBackEdge(*fn);
+	PartitionDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.75f);
+	EXPECT_NE(r.tier, EmissionTier::High);
 }
 
 // ─── BinarySearchDetector tests ───────────────────────────────────────────────
@@ -1356,7 +1511,7 @@ TEST(ForEachDetectorTest, CallPlusNoPhiAndNoStore)
 		},
 		1);
 	addBackEdge(*fn);
-	addCall(*fn, "process");
+	addCallWithArg(*fn, "process");
 	ForEachDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_GE(r.confidence, 0.70f); // call + no phi + no store
@@ -1372,7 +1527,7 @@ TEST(ForEachDetectorTest, PhiReducesConfidence)
 		},
 		1);
 	addBackEdge(*fn);
-	addCall(*fn, "f");
+	addCallWithArg(*fn, "f");
 	addPhi(*fn);
 	ForEachDetector det;
 	auto r = det.detect(*fn);
@@ -1405,10 +1560,44 @@ TEST(ForEachDetectorTest, HighTierEmittedContainsForEach)
 		},
 		1);
 	addBackEdge(*fn);
-	addCall(*fn, "f");
+	addCallWithArg(*fn, "f");
 	ForEachDetector det;
 	auto r = det.detect(*fn);
 	if (r.tier == EmissionTier::High) EXPECT_NE(r.emittedForm.find("std::for_each"), std::string::npos);
+}
+
+TEST(ForEachDetectorTest, CallAfterTheLoopIsNotForEach)
+{
+	// The loop (block 1 -> block 1) has no call; puts(msg) runs once after it.
+	auto fn = makeFunc("count_then_print", {ssa::IrInstr::Op::Load}, 2);
+	fn->block(0)->succs.push_back(1);
+	fn->block(1)->succs.push_back(1);
+	fn->block(1)->succs.push_back(2);
+	auto* call = fn->addInstr(fn->block(2)->id, ssa::IrInstr::Op::Call);
+	call->calleeName = "puts";
+	ssa::Use u;
+	u.valueId = fn->allocValue(ssa::ValueKind::VirtualReg)->id;
+	call->uses.push_back(u);
+	ForEachDetector det;
+	EXPECT_LT(det.detect(*fn).confidence, 0.10f);
+}
+
+TEST(ForEachDetectorTest, ArgumentlessCallInCountedLoopIsNotForEach)
+{
+	// for (i = 0; i < n; ++i) tick(); -- nothing is handed an element.
+	auto fn = makeFunc(
+		"tick_loop",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Add,
+			ssa::IrInstr::Op::Compare,
+		},
+		1);
+	addBackEdge(*fn);
+	addCall(*fn, "tick");
+	ForEachDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.10f);
 }
 
 // ─── IteratorPatternRecovery tests ────────────────────────────────────────────
@@ -1501,6 +1690,26 @@ TEST(AlgorithmDetectorTest, EmptyFunctionSkipped)
 	auto r = det.detect(*fn);
 	EXPECT_EQ(r.kind, AlgorithmKind::Unknown);
 	EXPECT_EQ(det.stats().functionsSkipped, 1u);
+}
+
+TEST(AlgorithmDetectorTest, LowTierResultIsNotReported)
+{
+	// A loop with a compare and some stores scores accumulate at 0.35 on one
+	// generic signal; that is below the medium tier and is not an idiom.
+	AlgorithmDetector det;
+	auto fn = makeFunc(
+		"counted",
+		{
+			ssa::IrInstr::Op::Compare,
+			ssa::IrInstr::Op::Store,
+			ssa::IrInstr::Op::Store,
+			ssa::IrInstr::Op::Assign,
+			ssa::IrInstr::Op::Assign,
+		},
+		1);
+	addBackEdge(*fn);
+	auto r = det.detect(*fn);
+	EXPECT_EQ(r.kind, AlgorithmKind::Unknown) << r.kindName() << " " << r.confidence;
 }
 
 TEST(AlgorithmDetectorTest, FindBeatsForEach)

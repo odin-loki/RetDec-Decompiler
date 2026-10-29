@@ -166,6 +166,12 @@ AlgorithmResult AlgorithmDetector::detect(const ssa::SSAFunction& fn) const
 
 	if (best.kind == AlgorithmKind::Unknown || best.confidence < 0.01f) return best;
 
+	// Below the medium tier a result is a single supporting signal -- a loop
+	// with a compare, a phi and an add -- which every counted loop has. It
+	// used to be exported anyway and printed as "std::accumulate detected
+	// (confidence 0.35)" over plain loops; the annotation is for idioms.
+	if (best.confidence < cfg_.mediumTierThreshold) return AlgorithmResult{};
+
 	// Re-apply tier with our config thresholds.
 	best.tier = assignTier(best.confidence);
 

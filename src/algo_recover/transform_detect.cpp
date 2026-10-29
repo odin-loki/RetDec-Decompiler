@@ -38,6 +38,10 @@
 #include "retdec/algo_recover/algo_recover.h"
 #include "retdec/ssa/ssa.h"
 
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
 #include <algorithm>
 
 namespace retdec {
@@ -103,6 +107,58 @@ static bool hasBackInserterCall(const ssa::SSAFunction& fn)
 	return false;
 }
 
+// Dataflow check, when the operands are wired: does some Store write a value
+// computed from a Load of a *different* address? That is dst[i] = f(src[i]).
+// A loop over register spills -- `i = *slot; *slot = i + 1` -- loads and
+// stores only the same slot, and a call result stored to a spill slot is not
+// derived from any load, so neither is a transform.
+//
+// Returns Unknown when no Store has its (value, address) operands, as in the
+// hand-built shapes, so the absence of operands is never read as evidence.
+enum class Flow { Unknown, Yes, No };
+
+static Flow loadFlowsToOtherStore(const ssa::SSAFunction& fn)
+{
+	std::unordered_map<ssa::ValueId, const ssa::IrInstr*> def;
+	std::vector<const ssa::IrInstr*> stores;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i) continue;
+			if (i->defValue != ssa::kInvalidValue) def[i->defValue] = i;
+			if (i->op == ssa::IrInstr::Op::Store && i->uses.size() >= 2) stores.push_back(i);
+		}
+	}
+	if (stores.empty()) return Flow::Unknown;
+
+	for (const auto* st: stores)
+	{
+		const ssa::ValueId addr = st->uses[1].valueId;
+		std::vector<std::pair<ssa::ValueId, int>> work{{st->uses[0].valueId, 0}};
+		std::unordered_set<ssa::ValueId> seen;
+		while (!work.empty())
+		{
+			auto [v, depth] = work.back();
+			work.pop_back();
+			if (!seen.insert(v).second || depth > 8) continue;
+			auto it = def.find(v);
+			if (it == def.end()) continue;
+			const auto* d = it->second;
+			if (d->op == ssa::IrInstr::Op::Load)
+			{
+				if (!d->uses.empty() && d->uses[0].valueId != addr) return Flow::Yes;
+				continue;
+			}
+			for (const auto& u: d->uses)
+				work.push_back({u.valueId, depth + 1});
+		}
+	}
+	return Flow::No;
+}
+
 } // anonymous namespace
 
 TransformEvidence TransformDetector::analyse(const ssa::SSAFunction& fn) const
@@ -125,6 +181,7 @@ TransformEvidence TransformDetector::analyse(const ssa::SSAFunction& fn) const
 	ev.hasLambdaCall = hasDerivedStore(fn) && !indexedCopy;
 	ev.hasBackInserter = hasBackInserterCall(fn);
 	ev.found = ev.hasSrcDstLoad;
+	if (loadFlowsToOtherStore(fn) == Flow::No) return TransformEvidence{};
 	ev.confidence = score(ev);
 	return ev;
 }

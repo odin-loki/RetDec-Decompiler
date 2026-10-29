@@ -34,6 +34,8 @@
 #include "retdec/algo_recover/algo_recover.h"
 #include "retdec/ssa/ssa.h"
 
+#include <vector>
+
 #include <algorithm>
 #include <numeric>
 
@@ -77,6 +79,38 @@ static bool hasPhi(const ssa::SSAFunction& fn)
 	return false;
 }
 
+// Blocks inside some loop: for each back edge b -> h, the blocks h..b.
+static std::vector<bool> loopBlocks(const ssa::SSAFunction& fn)
+{
+	std::vector<bool> in(fn.blockCount(), false);
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (uint32_t h: blk->succs)
+			if (h <= b)
+				for (uint32_t x = h; x <= b; ++x) in[x] = true;
+	}
+	return in;
+}
+
+// A call inside the loop that could be applied to an element: it takes at
+// least one operand. A call with no arguments cannot be handed the element,
+// so a counted loop that just calls `tick()` n times is not a for_each, and
+// a call after the loop is not applied per element at all.
+static bool hasLoopCallWithOperand(const ssa::SSAFunction& fn)
+{
+	const auto in = loopBlocks(fn);
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk || !in[b]) continue;
+		for (const auto* i: blk->instrs)
+			if (i && i->op == ssa::IrInstr::Op::Call && !i->uses.empty()) return true;
+	}
+	return false;
+}
+
 } // anonymous namespace
 
 ForEachEvidence ForEachDetector::analyse(const ssa::SSAFunction& fn) const
@@ -85,7 +119,7 @@ ForEachEvidence ForEachDetector::analyse(const ssa::SSAFunction& fn) const
 	if (!hasBackEdge(fn)) return ev;
 	if (countOp(fn, ssa::IrInstr::Op::Load) < 1) return ev;
 
-	ev.hasLoopCall = countOp(fn, ssa::IrInstr::Op::Call) >= 1;
+	ev.hasLoopCall = hasLoopCallWithOperand(fn);
 	ev.hasNoPhi = !hasPhi(fn);
 	ev.hasNoDstStore = countOp(fn, ssa::IrInstr::Op::Store) == 0;
 	ev.found = ev.hasLoopCall;
@@ -112,6 +146,15 @@ AlgorithmResult ForEachDetector::detect(const ssa::SSAFunction& fn) const
 
 	auto ev = analyse(fn);
 	result.confidence = ev.confidence;
+
+	// A detector whose defining signal is absent reports nothing: the partial
+	// scores of its supporting signals alone (loads, a loop, a small add) are
+	// present in nearly every function and used to label plain loops.
+	if (!ev.found)
+	{
+		result.confidence = 0.0f;
+		return result;
+	}
 
 	EmissionTier tier = EmissionTier::Low;
 	if (ev.confidence >= 0.75f)
