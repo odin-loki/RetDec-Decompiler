@@ -43,6 +43,7 @@ class ConstantsAnalysis : public llvm::ModulePass
 		bool run();
 		void widenNarrowConstantLoads();
 		void foldUnwrittenMxcsr();
+		void widenIndexedGlobals();
 		void checkForGlobalInInstruction(
 				ReachingDefinitionsAnalysis& RDA,
 				llvm::Instruction* inst,

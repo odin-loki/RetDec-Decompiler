@@ -6,6 +6,8 @@
 */
 
 #include <cassert>
+#include <map>
+#include <tuple>
 #include <iomanip>
 #include <set>
 #include <sstream>
@@ -115,9 +117,101 @@ bool ConstantsAnalysis::run()
 	IrModifier::eraseUnusedInstructionsRecursive(_toRemove);
 
 	widenNarrowConstantLoads();
+	widenIndexedGlobals();
 	foldUnwrittenMxcsr();
 
 	return false;
+}
+
+/**
+ * `g_arr[i & 15]` lifts to `load (add (shl i, 2), ptrtoint @g)`, but @g was
+ * typed by the first access, e.g. as one i64.  Emitted as a scalar, the C
+ * then indexes past an 8-byte object (garbage in the buildable output).  Give
+ * a global that is indexed with a variable offset the size of its symbol, or
+ * for an unnamed read-only table the bytes up to the next global or the end
+ * of its section, as an array of its access type.
+ */
+void ConstantsAnalysis::widenIndexedGlobals()
+{
+	auto& dl = _module->getDataLayout();
+	auto* img = _image->getImage();
+	auto* ff = _image->getFileFormat();
+	std::map<uint64_t, GlobalVariable*> byAddr;
+	for (auto& gv : _module->globals())
+	{
+		auto a = _config->getGlobalAddress(&gv);
+		if (a.isDefined()) byAddr[a] = &gv;
+	}
+	std::vector<std::tuple<GlobalVariable*, uint64_t, uint64_t>> work;
+	for (auto& [addr, gv] : byAddr)
+	{
+		auto* et = gv->getValueType();
+		if (!et->isIntegerTy() || !gv->hasInitializer()) continue;
+		bool indexed = false;
+		for (auto* u : gv->users())
+		{
+			auto* ce = dyn_cast<ConstantExpr>(u);
+			if (!ce || ce->getOpcode() != Instruction::PtrToInt) continue;
+			for (auto* uu : ce->users())
+			{
+				// The address escapes into arithmetic or a register (an x86
+				// `lea` of the table base), not just a fixed-offset access.
+				if (isa<Instruction>(uu) && !isa<LoadInst>(uu))
+				{
+					indexed = true;
+				}
+			}
+		}
+		if (!indexed) continue;
+		uint64_t es = dl.getTypeAllocSize(et);
+		uint64_t size = 0;
+		const auto* sym = ff ? ff->getSymbol(addr) : nullptr;
+		unsigned long long ss = 0;
+		if (sym && sym->getSize(ss) && ss > es)
+		{
+			size = ss;
+		}
+		else if (!sym && gv->isConstant())
+		{
+			auto* seg = img->getSegmentFromAddress(addr);
+			if (seg == nullptr) continue;
+			uint64_t end = seg->getEndAddress();
+			auto next = byAddr.upper_bound(addr);
+			if (next != byAddr.end() && next->first < end) end = next->first;
+			size = std::min<uint64_t>(end - addr, 1024);
+		}
+		while (es > 1 && size % es) es /= 2;
+		if (size <= es) continue;
+		work.emplace_back(gv, size / es, es);
+	}
+	for (auto& [gv, n, es] : work)
+	{
+		Type* et = Type::getIntNTy(_module->getContext(), es * 8);
+		auto addr = _config->getGlobalAddress(gv);
+		auto* at = ArrayType::get(et, n);
+		std::vector<Constant*> elems;
+		bool le = dl.isLittleEndian();
+		std::vector<std::uint8_t> bytes;
+		bool have = img->getXBytes(addr, es * n, bytes) && bytes.size() >= es * n;
+		for (uint64_t k = 0; k < n; ++k)
+		{
+			APInt v(et->getIntegerBitWidth(), 0);
+			for (uint64_t j = 0; have && j < es; ++j)
+			{
+				uint64_t b = bytes[k * es + (le ? es - 1 - j : j)];
+				v = v.shl(8) | APInt(et->getIntegerBitWidth(), b);
+			}
+			elems.push_back(ConstantInt::get(et, v));
+		}
+		auto* ngv = new GlobalVariable(*_module, at, gv->isConstant(),
+				gv->getLinkage(), ConstantArray::get(at, elems));
+		ngv->takeName(gv);
+		gv->replaceAllUsesWith(ngv);
+		auto* cgv = _config->getConfigGlobalVariable(gv);
+		std::string realName = cgv ? cgv->getName() : std::string();
+		gv->eraseFromParent();
+		_config->insertGlobalVariable(ngv, addr, false, realName);
+	}
 }
 
 /**
