@@ -1260,7 +1260,9 @@ void ParamReturn::applyToIr(DataFlowEntry& de)
 	traceParamReturn("applyToIr rebuild callsites: " + fnName);
 	// When arg types were recovered (e.g. reg+stack ABIs), the dataflow may list
 	// more pointer operands than real parameters; cap loads to the type count.
-	const std::size_t ptrArgLimit = definitionArgTypes.empty()
+	// Variadic callees take extra per-call operands (e.g. printf's format
+	// arguments), so the fixed parameter count must not cap them.
+	const std::size_t ptrArgLimit = definitionArgTypes.empty() || de.isVariadic()
 			? std::numeric_limits<std::size_t>::max()
 			: definitionArgTypes.size();
 	if (fnc->isDeclaration())
@@ -1327,6 +1329,37 @@ void ParamReturn::applyToIr(DataFlowEntry& de)
 				l = IrModifier::convertValueToType(
 						l, t ? t : _abi->getDefaultType(), call);
 				loads.push_back(l);
+			}
+			// A variadic definition (e.g. a PLT stub of printf) gets the extra
+			// operands this call site passes beyond the fixed parameters.
+			if (de.isVariadic())
+			{
+				for (auto& ce : de.callEntries())
+				{
+					if (ce.getCallInstruction() != call)
+					{
+						continue;
+					}
+					auto& cargs = ce.args();
+					for (std::size_t i = loads.size(); i < cargs.size(); ++i)
+					{
+						auto* argPtr = cargs[i];
+						if (argPtr == nullptr || !argPtr->getType()->isPointerTy())
+						{
+							break;
+						}
+						std::size_t ti = i - definitionArgTypes.size();
+						Type* t = i >= definitionArgTypes.size()
+								&& ti < ce.argTypes().size()
+								? ce.argTypes()[ti]
+								: nullptr;
+						Value* l = llvm_utils::createLoadInst(argPtr, "", call);
+						l = IrModifier::convertValueToType(
+								l, t ? t : _abi->getDefaultType(), call);
+						loads.push_back(l);
+					}
+					break;
+				}
 			}
 			loadsOfCalls.emplace(call, std::move(loads));
 		}

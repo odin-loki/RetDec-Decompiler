@@ -4546,6 +4546,73 @@ TEST_F(ParamReturnTests, mipsArgumentRegistersAreGeneralPurpose)
 	EXPECT_TRUE(abi->isGeneralPurposeRegister(getGlobalByName("zero")));
 }
 
+TEST_F(ParamReturnTests, x86_64CallOfDefinedVariadicFunctionKeepsFormatArguments)
+{
+	// gcc -O2 calls printf through its PLT stub; the stub is a defined
+	// variadic function, and the call's format argument must survive.
+	parseInput(R"(
+		target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
+
+		@fmt = constant [4 x i8] c"%d \00"
+		@rdi = global i64 0
+		@rsi = global i64 0
+		@rax = global i64 0
+		define void @stub() {
+			ret void
+		}
+		define void @fnc() {
+			store i64 ptrtoint (ptr @fmt to i64), i64* @rdi
+			store i64 7, i64* @rsi
+			call void @stub()
+			ret void
+		}
+	)");
+	auto c = config::Config::fromJsonString(R"JSON({
+		"architecture" : {
+			"bitSize" : 64,
+			"endian" : "little",
+			"name" : "x86"
+		},
+		"fileFormat" : "elf64",
+		"functions" : [
+			{
+				"name" : "stub",
+				"fncType" : "userDefined",
+				"isVariadic" : true,
+				"parameters" : [
+					{ "name" : "format", "type" : { "llvmIr" : "ptr" } }
+				]
+			}
+		]
+	})JSON");
+	auto config = Config::fromConfig(module.get(), c);
+	auto abi = AbiProvider::addAbi(module.get(), &config);
+
+	abi->addRegister(X86_REG_RDI, getGlobalByName("rdi"));
+	abi->addRegister(X86_REG_RSI, getGlobalByName("rsi"));
+	abi->addRegister(X86_REG_RAX, getGlobalByName("rax"));
+
+	auto typeConfig = std::make_unique<ctypesparser::TypeConfig>();
+	auto demangler = DemanglerProvider::addDemangler(
+		module.get(),
+		&config,
+		std::move(typeConfig));
+
+	pass.runOnModuleCustom(*module, &config, abi, demangler);
+
+	std::string out;
+	llvm::raw_string_ostream os(out);
+	module->getFunction("fnc")->print(os);
+	os.flush();
+	// The call passes the format and the value it formats.
+	EXPECT_NE(std::string::npos, out.find("@stub(ptr")) << out;
+	EXPECT_NE(std::string::npos, out.find("@rsi")) << out;
+	std::size_t callPos = out.find("@stub(");
+	ASSERT_NE(std::string::npos, callPos) << out;
+	std::string callLine = out.substr(callPos, out.find('\n', callPos) - callPos);
+	EXPECT_NE(std::string::npos, callLine.find(',')) << out;
+}
+
 } // namespace tests
 } // namespace bin2llvmir
 } // namespace retdec
