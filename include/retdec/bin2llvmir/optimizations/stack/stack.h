@@ -40,6 +40,9 @@ class StackAnalysis : public llvm::ModulePass
 		bool run();
 		void mergeWalkedLocals(llvm::Function& f);
 		void mergeStoredOverLocals(llvm::Function& f);
+		bool returnRegisterCrossesCall(
+				ReachingDefinitionsAnalysis& RDA,
+				SymbolicTree& root);
 		void handleInstruction(
 				ReachingDefinitionsAnalysis& RDA,
 				llvm::Instruction* inst,

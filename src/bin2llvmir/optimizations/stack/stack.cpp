@@ -6,6 +6,7 @@
 */
 
 #include <algorithm>
+#include <set>
 #include <regex>
 
 #include <llvm/IR/Constants.h>
@@ -422,7 +423,33 @@ void StackAnalysis::mergeWalkedLocals(llvm::Function& f)
 		lo = lo ? std::min(*lo, *o) : *o;
 		hi = hi ? std::max(*hi, *o) : *o;
 	}
-	if (!lo || *lo == *hi) return;
+	if (!lo) return;
+
+	// A slot above the highest taken address that is loaded but never stored
+	// directly can only have been written through that address, typically by
+	// a callee filling a struct (`addi a0,sp,20; jal init; lw a1,36(sp)`).
+	// Grow the object over such slots; stop at the first slot written
+	// directly, e.g. a saved register.
+	auto onlyRead = [](AllocaInst* a) {
+		bool ld = false;
+		for (auto* u : a->users())
+		{
+			if (isa<LoadInst>(u)) ld = true;
+			else return false;
+		}
+		return ld;
+	};
+	std::sort(slots.begin(), slots.end(),
+			[](auto& x, auto& y) { return x.second < y.second; });
+	bool readOnly = false;
+	for (auto& [a, o] : slots)
+	{
+		if (o <= *hi) continue;
+		if (!onlyRead(a)) break;
+		hi = o;
+		readOnly = true;
+	}
+	if (*lo == *hi) return;
 
 	std::vector<std::pair<AllocaInst*, int>> members;
 	int end = *hi;
@@ -446,7 +473,7 @@ void StackAnalysis::mergeWalkedLocals(llvm::Function& f)
 		}
 		if (st && !other) writeOnly = true;
 	}
-	if (!writeOnly) return;
+	if (!writeOnly && !readOnly) return;
 
 	IRBuilder<> irb(&*f.getEntryBlock().getFirstInsertionPt());
 	auto* frameTy = ArrayType::get(irb.getInt8Ty(), end - *lo);
@@ -461,6 +488,58 @@ void StackAnalysis::mergeWalkedLocals(llvm::Function& f)
 	}
 }
 
+namespace {
+
+bool isRealCall(const llvm::Instruction& i)
+{
+	auto* c = dyn_cast<CallInst>(&i);
+	if (c == nullptr) return false;
+	auto* f = c->getCalledFunction();
+	return f == nullptr || !f->isIntrinsic();
+}
+
+/// Is there a call on the way from @a def to @a use?  Exact within one block;
+/// across blocks only the tail of @a def's block and the head of @a use's are
+/// scanned.
+bool callBetween(llvm::Instruction* def, llvm::Instruction* use)
+{
+	if (def->getParent() == use->getParent() && def->comesBefore(use))
+	{
+		for (auto* i = def->getNextNode(); i && i != use; i = i->getNextNode())
+			if (isRealCall(*i)) return true;
+		return false;
+	}
+	for (auto* i = def->getNextNode(); i; i = i->getNextNode())
+		if (isRealCall(*i)) return true;
+	for (auto& i : *use->getParent())
+	{
+		if (&i == use) break;
+		if (isRealCall(i)) return true;
+	}
+	return false;
+}
+
+} // anonymous namespace
+
+bool StackAnalysis::returnRegisterCrossesCall(
+		ReachingDefinitionsAnalysis& RDA,
+		SymbolicTree& root)
+{
+	auto* cc = _abi ? _abi->getDefaultCallingConvention() : nullptr;
+	if (cc == nullptr) return false;
+	std::set<llvm::Value*> rets;
+	for (auto r : cc->getReturnRegisters())
+		if (auto* g = _abi->getRegister(r)) rets.insert(g);
+	for (SymbolicTree* n : root.getPostOrder())
+	{
+		auto* l = dyn_cast<LoadInst>(n->value);
+		if (l == nullptr || rets.count(l->getPointerOperand()) == 0) continue;
+		for (auto* d : RDA.defsFromUse(l))
+			if (callBetween(d->def, l)) return true;
+	}
+	return false;
+}
+
 void StackAnalysis::handleInstruction(
 		ReachingDefinitionsAnalysis& RDA,
 		llvm::Instruction* inst,
@@ -472,6 +551,15 @@ void StackAnalysis::handleInstruction(
 
 	auto root = SymbolicTree::PrecomputedRdaWithValueMap(RDA, val, &val2val);
 	LOG << root << std::endl;
+
+	// Calls carry no arguments or results yet, so RDA sees the return
+	// register flow straight through them: `mv a0,sp; jal sum; mv s0,a0`
+	// made s0 a stack address instead of sum's result.
+	if (returnRegisterCrossesCall(RDA, root))
+	{
+		LOG << "===> return register redefined by a call" << std::endl;
+		return;
+	}
 
 	if (!root.isVal2ValMapUsed())
 	{
