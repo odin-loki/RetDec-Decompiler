@@ -8985,6 +8985,8 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateTwin(cs_insn* i, cs_ppc* pi
 		case PPC_INS_DIVDUO: sid = PPC_INS_DIVDU; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateDivw; break;
 		case PPC_INS_DIVWEO: sid = PPC_INS_DIVWE; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translatePpcMisc; break;
 		case PPC_INS_DIVWEUO: sid = PPC_INS_DIVWEU; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translatePpcMisc; break;
+		case PPC_INS_DIVDEO: sid = PPC_INS_DIVDE; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateDivde; break;
+		case PPC_INS_DIVDEUO: sid = PPC_INS_DIVDEU; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateDivde; break;
 		case PPC_INS_SUBFO: sid = PPC_INS_SUBF; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateSubf; break;
 		case PPC_INS_SUBFCO: sid = PPC_INS_SUBFC; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateSubfc; break;
 		case PPC_INS_SUBFEO: sid = PPC_INS_SUBFE; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateSubfe; break;
@@ -9032,8 +9034,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateTwin(cs_insn* i, cs_ppc* pi
 
 /**
  * XER[OV] of an OE=1 form, from its source operands and, for the
- * carry-in forms, XER[CA]. DIVWE(U)O returns nullptr and leaves OV/SO
- * untouched.
+ * carry-in forms, XER[CA].
  */
 llvm::Value* Capstone2LlvmIrTranslatorPowerpc_impl::overflowOf(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
 {
@@ -9125,6 +9126,29 @@ llvm::Value* Capstone2LlvmIrTranslatorPowerpc_impl::overflowOf(cs_insn* i, cs_pp
 		case PPC_INS_DIVWUO: return pi->op_count == 3 ? divOv(irb.getInt32Ty(), false) : nullptr;
 		case PPC_INS_DIVDO: return pi->op_count == 3 ? divOv(irb.getInt64Ty(), true) : nullptr;
 		case PPC_INS_DIVDUO: return pi->op_count == 3 ? divOv(irb.getInt64Ty(), false) : nullptr;
+		case PPC_INS_DIVWEO:
+		case PPC_INS_DIVWEUO:
+		case PPC_INS_DIVDEO:
+		case PPC_INS_DIVDEUO:
+		{
+			// Extended divide: (RA << n) / RB overflows when RB is zero or the
+			// quotient does not fit in n bits.
+			if (pi->op_count != 3) return nullptr;
+			bool dw = i->id == PPC_INS_DIVDEO || i->id == PPC_INS_DIVDEUO;
+			bool sg = i->id == PPC_INS_DIVWEO || i->id == PPC_INS_DIVDEO;
+			unsigned n = dw ? 64 : 32;
+			auto* t = irb.getIntNTy(n);
+			auto* w = irb.getIntNTy(2 * n);
+			auto* a = irb.CreateTrunc(irb.CreateZExtOrTrunc(loadOp(pi->operands[1], irb), irb.getInt64Ty()), t);
+			auto* b = irb.CreateTrunc(irb.CreateZExtOrTrunc(loadOp(pi->operands[2], irb), irb.getInt64Ty()), t);
+			auto* zero = irb.CreateICmpEQ(b, llvm::ConstantInt::get(t, 0));
+			auto* bs = irb.CreateSelect(zero, llvm::ConstantInt::get(t, 1), b);
+			auto* dvd = irb.CreateShl(sg ? irb.CreateSExt(a, w) : irb.CreateZExt(a, w), n);
+			auto* q = sg ? irb.CreateSDiv(dvd, irb.CreateSExt(bs, w)) : irb.CreateUDiv(dvd, irb.CreateZExt(bs, w));
+			auto* qt = irb.CreateTrunc(q, t);
+			auto* fits = irb.CreateICmpEQ(q, sg ? irb.CreateSExt(qt, w) : irb.CreateZExt(qt, w));
+			return irb.CreateOr(zero, irb.CreateNot(fits));
+		}
 		default:
 			return nullptr;
 	}

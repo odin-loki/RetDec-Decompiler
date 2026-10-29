@@ -1013,6 +1013,8 @@ Capstone2LlvmIrTranslatorPowerpc_impl::_i2fm =
 		{PPC_INS_DIVDO, &Capstone2LlvmIrTranslatorPowerpc_impl::translateTwin},
 		{PPC_INS_DIVDUO, &Capstone2LlvmIrTranslatorPowerpc_impl::translateTwin},
 		{PPC_INS_DIVWEO, &Capstone2LlvmIrTranslatorPowerpc_impl::translateTwin},
+		{PPC_INS_DIVDEO, &Capstone2LlvmIrTranslatorPowerpc_impl::translateTwin},
+		{PPC_INS_DIVDEUO, &Capstone2LlvmIrTranslatorPowerpc_impl::translateTwin},
 		{PPC_INS_DIVWEUO, &Capstone2LlvmIrTranslatorPowerpc_impl::translateTwin},
 		{PPC_INS_MODSW, &Capstone2LlvmIrTranslatorPowerpc_impl::translatePpcMisc},
 		{PPC_INS_MODUW, &Capstone2LlvmIrTranslatorPowerpc_impl::translatePpcMisc},
