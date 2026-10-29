@@ -1033,6 +1033,79 @@ TEST_F(ParamReturnTests, x86_64PtrCallBasicFunctionality)
 	checkModuleAgainstExpectedIr(exp);
 }
 
+TEST_F(ParamReturnTests, x86_64ElfWithMsvcFingerprintUsesSystemVRegisters)
+{
+	parseInput(R"(
+		target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
+
+		@r = global i64 0
+		@rdi = global i64 0
+		@rsi = global i64 0
+		@rax = global i64 0
+		define void @fnc() {
+			store i64 123, i64* @rdi
+			store i64 456, i64* @rsi
+			%a = bitcast i64* @r to void()*
+			call void %a()
+			ret void
+		}
+	)");
+	auto c = config::Config::fromJsonString(R"JSON({
+		"architecture" : {
+			"bitSize" : 64,
+			"endian" : "little",
+			"name" : "x86"
+		},
+		"fileFormat" : "elf64",
+		"tools" :
+		[
+			{"name" : "gcc"},
+			{"name" : "msvc (codegen fingerprint)"}
+		]
+	})JSON");
+	auto config = Config::fromConfig(module.get(), c);
+	auto abi = AbiProvider::addAbi(module.get(), &config);
+
+	abi->addRegister(X86_REG_RDI, getGlobalByName("rdi"));
+	abi->addRegister(X86_REG_RSI, getGlobalByName("rsi"));
+	abi->addRegister(X86_REG_RAX, getGlobalByName("rax"));
+
+	auto typeConfig = std::make_unique<ctypesparser::TypeConfig>();
+	auto demangler = DemanglerProvider::addDemangler(
+		module.get(),
+		&config,
+		std::move(typeConfig));
+
+	pass.runOnModuleCustom(*module, &config, abi, demangler);
+
+	std::string exp = R"IR(
+		target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
+
+		@r = global i64 0
+		@rdi = global i64 0
+		@rsi = global i64 0
+		@rax = global i64 0
+
+		define i64 @fnc() {
+			store i64 123, i64* @rdi
+			store i64 456, i64* @rsi
+			%a = bitcast i64* @r to void()*
+			%1 = load i64, i64* @rdi, !retdec.pointee !0
+			%2 = load i64, i64* @rsi, !retdec.pointee !0
+			%3 = getelementptr i8, ptr %a, i64 0, !retdec.pointee !1
+			call void %3(i64 %1, i64 %2)
+			%4 = load i64, i64* @rax, !retdec.pointee !0
+			ret i64 %4
+		}
+
+		declare void @0()
+
+		!0 = !{!"i64"}
+		!1 = !{!"void (i64, i64)"}
+)IR";
+	checkModuleAgainstExpectedIr(exp);
+}
+
 TEST_F(ParamReturnTests, x86_64PtrCallPrevBbIsUsedOnlyIfItIsASinglePredecessor)
 {
 	parseInput(R"(

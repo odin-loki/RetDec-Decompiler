@@ -5,6 +5,7 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <algorithm>
 #include <llvm/IR/GlobalVariable.h>
 #include <llvm/IR/Module.h>
 
@@ -53,6 +54,20 @@ Config Config::fromConfig(llvm::Module* m, retdec::config::Config& c)
 	for (auto& s : config.getConfig().structures)
 	{
 		llvm_utils::stringToLlvmType(m->getContext(), s.getLlvmIr());
+	}
+
+	// MSVC never produces ELF or Mach-O images, so an MSVC tool entry on one
+	// is only a code-shape guess (e.g. cpdetect's prologue fingerprint). Left
+	// in, it switches x86-64 to the Microsoft ABI, which reads arguments from
+	// rcx/rdx and drops the real System V ones.
+	auto& ff = config.getConfig().fileFormat;
+	if (ff.isElf() || ff.isMacho())
+	{
+		auto& tools = config.getConfig().tools;
+		tools.erase(
+				std::remove_if(tools.begin(), tools.end(),
+						[](const common::ToolInfo& t) { return t.isMsvc(); }),
+				tools.end());
 	}
 
 	// TODO: needed?
