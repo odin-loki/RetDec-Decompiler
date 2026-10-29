@@ -140,6 +140,7 @@ enum class SortAlgorithm : uint8_t
 	SelectionSort, ///< Simple O(n²) selection sort
 	BubbleSort,    ///< Bubble sort
 	Timsort,       ///< Python/Java-style Timsort (mergesort + insertion sort)
+	ShellSort,     ///< Gapped insertion sort with a halving gap
 };
 
 enum class CompilerVariant : uint8_t

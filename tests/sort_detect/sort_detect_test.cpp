@@ -1219,6 +1219,32 @@ TEST(InsertionSortDetectorTest, BasicPattern)
 	EXPECT_EQ(r.algorithm, SortAlgorithm::InsertionSort);
 }
 
+// for (gap = n / 2; gap > 0; gap /= 2): the halving gap is Shell sort's.
+TEST(InsertionSortDetectorTest, AGapHalvedInALoopIsShellSort)
+{
+	auto fn = makeFunc(
+		"gapped",
+		{ssa::IrInstr::Op::Sub,
+		 ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::Store,
+		 ssa::IrInstr::Op::CondBranch},
+		3);
+	addNestedLoop(*fn);
+	addElementMove(*fn);
+	ssa::BlockId onCycle = 0;
+	for (uint32_t b = 0; b < fn->blockCount(); ++b)
+		if (ssa::blockOnCycle(*fn, b)) onCycle = b;
+	auto* sar = fn->addInstr(onCycle, ssa::IrInstr::Op::Sar);
+	auto* one = fn->allocValue(ssa::ValueKind::Immediate);
+	one->imm = 1;
+	sar->uses.push_back({one->id, 1});
+	InsertionSortDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_GE(r.confidence, 0.40f);
+	EXPECT_EQ(r.algorithm, SortAlgorithm::ShellSort);
+}
+
 // ─── ElementTypeRecoverer tests ───────────────────────────────────────────────
 
 TEST(ElementTypeRecovererTest, NoCompareReturnsUnknown)

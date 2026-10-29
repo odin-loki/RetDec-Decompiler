@@ -163,7 +163,7 @@ std::optional<sort_detect::SortResult> deserializeSort(const rapidjson::Value& o
         const SA all[] = {
             SA::Quicksort, SA::Introsort, SA::Mergesort, SA::Heapsort,
             SA::Radixsort, SA::InsertionSort, SA::SelectionSort,
-            SA::BubbleSort, SA::Timsort
+            SA::BubbleSort, SA::Timsort, SA::ShellSort
         };
         for (SA a : all) {
             sort_detect::SortResult probe;

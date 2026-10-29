@@ -34,6 +34,7 @@ std::string SortResult::algorithmName() const noexcept {
     case SortAlgorithm::SelectionSort: return "selection sort";
     case SortAlgorithm::BubbleSort:    return "bubble sort";
     case SortAlgorithm::Timsort:       return "timsort";
+    case SortAlgorithm::ShellSort:     return "shell sort";
     }
     return "?";
 }
@@ -157,6 +158,25 @@ ElementType ElementTypeRecoverer::recover(const ssa::SSAFunction& fn,
 
 // ─── InsertionSortDetector ────────────────────────────────────────────────────
 
+/// `gap /= 2` or `gap >>= 1` in a block on a cycle.
+static bool hasHalvingInLoop(const ssa::SSAFunction& fn) {
+    for (const auto& blk : fn.blocks()) {
+        if (!blk || !ssa::blockOnCycle(fn, blk->id)) continue;
+        for (const auto* i : blk->instrs) {
+            if (!i) continue;
+            const bool shift = i->op == ssa::IrInstr::Op::Shr || i->op == ssa::IrInstr::Op::Sar;
+            const bool div = i->op == ssa::IrInstr::Op::Div;
+            if (!shift && !div) continue;
+            for (const auto& u : i->uses) {
+                const auto* v = fn.value(u.valueId);
+                if (v && v->kind == ssa::ValueKind::Immediate && v->imm == (shift ? 1u : 2u)) return true;
+            }
+        }
+    }
+    return false;
+}
+
+
 SortResult InsertionSortDetector::detect(const ssa::SSAFunction& fn) const {
     SortResult result;
     result.algorithm = SortAlgorithm::InsertionSort;
@@ -164,6 +184,10 @@ SortResult InsertionSortDetector::detect(const ssa::SSAFunction& fn) const {
     InsertionSortFingerprint isf;
     auto ev = isf.analyse(fn);
     result.confidence = ev.found ? ev.confidence : 0.0f;
+    // A gap that halves on a loop makes it Shell sort: insertion sort's inner
+    // step is always one, so it never halves anything inside a loop.
+    if (result.confidence > 0.0f && hasHalvingInLoop(fn))
+        result.algorithm = SortAlgorithm::ShellSort;
 
     // Variant: insertion sort is typically small and standalone.
     result.compilerVariant = CompilerVariant::Unknown;
