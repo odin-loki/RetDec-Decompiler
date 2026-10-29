@@ -17901,6 +17901,97 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_EFSCMPGT)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_EVFSADD)
+{
+	ONLY_MODE_SPE;
+
+	setRegisters({
+		{PPC_REG_S4, 0x3fc0000040000000ULL},
+		{PPC_REG_S5, 0x400000003f800000ULL},
+	});
+
+	emulate_bin("10 64 2a 80");
+
+	EXPECT_EQ(0x4060000040400000ULL, getRegisterValueUnsigned(PPC_REG_S3)) << dumpFunction(_function);
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_EVFSCMPGT)
+{
+	ONLY_MODE_SPE;
+
+	setRegisters({
+		{PPC_REG_S4, 0x3fc0000040000000ULL},
+		{PPC_REG_S5, 0x400000003f800000ULL},
+	});
+
+	emulate_bin("10 84 2a 8c");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_CR1LT, false}, {PPC_REG_CR1GT, true}, {PPC_REG_CR1EQ, true}, {PPC_REG_CR1UN, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_EVSEL)
+{
+	ONLY_MODE_SPE;
+
+	setRegisters({
+		{PPC_REG_S4, 0x1111111122222222ULL},
+		{PPC_REG_S5, 0x3333333344444444ULL},
+		{PPC_REG_CR1LT, 1},
+		{PPC_REG_CR1GT, 0},
+	});
+
+	emulate_bin("10 64 2a 79");
+
+	EXPECT_EQ(0x1111111144444444ULL, getRegisterValueUnsigned(PPC_REG_S3)) << dumpFunction(_function);
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_EVFSCFSF)
+{
+	ONLY_MODE_SPE;
+
+	setRegisters({
+		{PPC_REG_S5, 0x40000000c0000000ULL},
+	});
+
+	emulate_bin("10 60 2a 93");
+
+	EXPECT_EQ(0x3f000000bf000000ULL, getRegisterValueUnsigned(PPC_REG_S3)) << dumpFunction(_function);
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_EFSCTSF)
+{
+	ONLY_MODE_SPE;
+
+	setRegisters({
+		{PPC_REG_S5, 0x3f000000ULL},
+	});
+
+	emulate_bin("10 60 2a d7");
+
+	EXPECT_EQ(0x40000000ULL, getRegisterValueUnsigned(PPC_REG_S3)) << dumpFunction(_function);
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_EFSCTSF_saturates)
+{
+	ONLY_MODE_SPE;
+
+	setRegisters({
+		{PPC_REG_S5, 0x3f800000ULL},
+	});
+
+	emulate_bin("10 60 2a d7");
+
+	EXPECT_EQ(0x7fffffffULL, getRegisterValueUnsigned(PPC_REG_S3)) << dumpFunction(_function);
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_EFDADD)
 {
 	ONLY_MODE_SPE;

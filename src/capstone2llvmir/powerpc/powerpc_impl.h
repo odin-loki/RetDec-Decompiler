@@ -208,6 +208,7 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		void translateSpeFloat(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateTwin(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translatePpcMisc(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateSpeVecFloat(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translatePpcDecimalAssist(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translatePpcRaw(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateVecLane(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);

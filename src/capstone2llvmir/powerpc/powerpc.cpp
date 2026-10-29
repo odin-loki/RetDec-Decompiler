@@ -10008,6 +10008,146 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateSpeDouble(cs_insn* i, cs_pp
 }
 
 
+/**
+ * SPE fractional conversions, EFSCFD, the vector single-precision EVFS*
+ * family and EVSEL. Each 64-bit GPR holds two singles (high word = element
+ * 0). Rounding mode and SPEFSCR are not modelled; float->fraction
+ * conversions truncate and saturate.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateSpeVecFloat(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	uint32_t w = (uint32_t(i->bytes[0]) << 24) | (uint32_t(i->bytes[1]) << 16)
+			| (uint32_t(i->bytes[2]) << 8) | uint32_t(i->bytes[3]);
+	unsigned rd = (w >> 21) & 31, ra = (w >> 16) & 31, rb = (w >> 11) & 31;
+	auto* i64 = irb.getInt64Ty();
+	auto* i32 = irb.getInt32Ty();
+	auto* ft = irb.getFloatTy();
+	auto* dt = irb.getDoubleTy();
+	auto opOf = [](unsigned n) {
+		cs_ppc_op o{};
+		o.type = PPC_OP_REG;
+		o.reg = ppc_reg(PPC_REG_R0 + n);
+		return o;
+	};
+	auto ld = [&](unsigned n) { auto o = opOf(n); return loadSpeI64(o, irb); };
+	auto st = [&](llvm::Value* v) { auto o = opOf(rd); storeSpeI64(o, irb.CreateZExtOrTrunc(v, i64), irb); };
+	auto hi = [&](llvm::Value* v) { return irb.CreateTrunc(irb.CreateLShr(v, 32), i32); };
+	auto lo = [&](llvm::Value* v) { return irb.CreateTrunc(v, i32); };
+	auto pack = [&](llvm::Value* h, llvm::Value* l) {
+		return irb.CreateOr(irb.CreateShl(irb.CreateZExt(h, i64), 32), irb.CreateZExt(l, i64));
+	};
+	auto stLow = [&](llvm::Value* v) {
+		auto* keep = irb.CreateAnd(ld(rd), llvm::ConstantInt::get(i64, 0xffffffff00000000ull));
+		st(irb.CreateOr(keep, irb.CreateZExt(v, i64)));
+	};
+	auto f = [&](llvm::Value* v) { return irb.CreateBitCast(v, ft); };
+	auto bits = [&](llvm::Value* v) { return irb.CreateBitCast(v, i32); };
+	auto cdbl = [&](double v) { return llvm::ConstantFP::get(dt, v); };
+	// Fraction <-> float. `x` is a float or double value.
+	auto fromFrac = [&](llvm::Value* x, bool sg, llvm::Type* to) -> llvm::Value* {
+		auto* d = sg ? irb.CreateSIToFP(x, dt) : irb.CreateUIToFP(x, dt);
+		d = irb.CreateFMul(d, cdbl(sg ? std::ldexp(1.0, -31) : std::ldexp(1.0, -32)));
+		return to == dt ? d : irb.CreateFPTrunc(d, to);
+	};
+	auto toFrac = [&](llvm::Value* x, bool sg) -> llvm::Value* {
+		if (!x->getType()->isDoubleTy()) x = irb.CreateFPExt(x, dt);
+		auto* d = irb.CreateFMul(x, cdbl(sg ? std::ldexp(1.0, 31) : std::ldexp(1.0, 32)));
+		auto* maxV = cdbl(sg ? std::ldexp(1.0, 31) : std::ldexp(1.0, 32));
+		auto* minV = cdbl(sg ? -std::ldexp(1.0, 31) : 0.0);
+		auto* safe = irb.CreateSelect(irb.CreateFCmpUNO(d, d), cdbl(0.0), d);
+		safe = irb.CreateSelect(irb.CreateFCmpOGE(safe, maxV), cdbl(0.0), safe);
+		safe = irb.CreateSelect(irb.CreateFCmpOLT(safe, minV), cdbl(0.0), safe);
+		llvm::Value* r = sg ? irb.CreateFPToSI(safe, i32) : irb.CreateFPToUI(safe, i32);
+		r = irb.CreateSelect(irb.CreateFCmpOGE(d, maxV), llvm::ConstantInt::get(i32, sg ? 0x7fffffffu : 0xffffffffu), r);
+		r = irb.CreateSelect(irb.CreateFCmpOLT(d, minV), llvm::ConstantInt::get(i32, sg ? 0x80000000u : 0u), r);
+		return irb.CreateSelect(irb.CreateFCmpUNO(d, d), llvm::ConstantInt::get(i32, 0), r);
+	};
+	auto each = [&](unsigned src, const std::function<llvm::Value*(llvm::Value*)>& op) {
+		auto* v = ld(src);
+		st(pack(op(hi(v)), op(lo(v))));
+	};
+	auto each2 = [&](const std::function<llvm::Value*(llvm::Value*, llvm::Value*)>& op) {
+		auto* a = ld(ra);
+		auto* b = ld(rb);
+		st(pack(op(hi(a), hi(b)), op(lo(a), lo(b))));
+	};
+	auto* sign = llvm::ConstantInt::get(i32, 0x80000000u);
+	static const uint32_t crf[8][4] = {
+		{PPC_REG_CR0LT, PPC_REG_CR0GT, PPC_REG_CR0EQ, PPC_REG_CR0UN},
+		{PPC_REG_CR1LT, PPC_REG_CR1GT, PPC_REG_CR1EQ, PPC_REG_CR1UN},
+		{PPC_REG_CR2LT, PPC_REG_CR2GT, PPC_REG_CR2EQ, PPC_REG_CR2UN},
+		{PPC_REG_CR3LT, PPC_REG_CR3GT, PPC_REG_CR3EQ, PPC_REG_CR3UN},
+		{PPC_REG_CR4LT, PPC_REG_CR4GT, PPC_REG_CR4EQ, PPC_REG_CR4UN},
+		{PPC_REG_CR5LT, PPC_REG_CR5GT, PPC_REG_CR5EQ, PPC_REG_CR5UN},
+		{PPC_REG_CR6LT, PPC_REG_CR6GT, PPC_REG_CR6EQ, PPC_REG_CR6UN},
+		{PPC_REG_CR7LT, PPC_REG_CR7GT, PPC_REG_CR7EQ, PPC_REG_CR7UN},
+	};
+	switch (i->id)
+	{
+		case PPC_INS_EVFSADD: each2([&](auto* a, auto* b) { return bits(irb.CreateFAdd(f(a), f(b))); }); return;
+		case PPC_INS_EVFSSUB: each2([&](auto* a, auto* b) { return bits(irb.CreateFSub(f(a), f(b))); }); return;
+		case PPC_INS_EVFSMUL: each2([&](auto* a, auto* b) { return bits(irb.CreateFMul(f(a), f(b))); }); return;
+		case PPC_INS_EVFSDIV: each2([&](auto* a, auto* b) { return bits(irb.CreateFDiv(f(a), f(b))); }); return;
+		case PPC_INS_EVFSABS: each(ra, [&](auto* v) { return irb.CreateAnd(v, llvm::ConstantInt::get(i32, 0x7fffffffu)); }); return;
+		case PPC_INS_EVFSNABS: each(ra, [&](auto* v) { return irb.CreateOr(v, sign); }); return;
+		case PPC_INS_EVFSNEG: each(ra, [&](auto* v) { return irb.CreateXor(v, sign); }); return;
+		case PPC_INS_EVFSCFSI: each(rb, [&](auto* v) { return bits(irb.CreateSIToFP(v, ft)); }); return;
+		case PPC_INS_EVFSCFUI: each(rb, [&](auto* v) { return bits(irb.CreateUIToFP(v, ft)); }); return;
+		case PPC_INS_EVFSCFSF: each(rb, [&](auto* v) { return bits(fromFrac(v, true, ft)); }); return;
+		case PPC_INS_EVFSCFUF: each(rb, [&](auto* v) { return bits(fromFrac(v, false, ft)); }); return;
+		case PPC_INS_EVFSCTSI: case PPC_INS_EVFSCTSIZ: each(rb, [&](auto* v) { return irb.CreateFPToSI(f(v), i32); }); return;
+		case PPC_INS_EVFSCTUI: each(rb, [&](auto* v) { return irb.CreateFPToUI(f(v), i32); }); return;
+		case PPC_INS_EVFSCTSF: each(rb, [&](auto* v) { return toFrac(f(v), true); }); return;
+		case PPC_INS_EFSCFSF: stLow(bits(fromFrac(lo(ld(rb)), true, ft))); return;
+		case PPC_INS_EFSCFUF: stLow(bits(fromFrac(lo(ld(rb)), false, ft))); return;
+		case PPC_INS_EFSCTSF: stLow(toFrac(f(lo(ld(rb))), true)); return;
+		case PPC_INS_EFSCTUF: stLow(toFrac(f(lo(ld(rb))), false)); return;
+		case PPC_INS_EFSCFD: stLow(bits(irb.CreateFPTrunc(irb.CreateBitCast(ld(rb), dt), ft))); return;
+		case PPC_INS_EFDCFSF: st(irb.CreateBitCast(fromFrac(lo(ld(rb)), true, dt), i64)); return;
+		case PPC_INS_EFDCFUF: st(irb.CreateBitCast(fromFrac(lo(ld(rb)), false, dt), i64)); return;
+		case PPC_INS_EFDCTSF: stLow(toFrac(irb.CreateBitCast(ld(rb), dt), true)); return;
+		case PPC_INS_EFDCTUF: stLow(toFrac(irb.CreateBitCast(ld(rb), dt), false)); return;
+		case PPC_INS_EVFSCMPEQ: case PPC_INS_EVFSTSTEQ:
+		case PPC_INS_EVFSCMPGT: case PPC_INS_EVFSTSTGT:
+		case PPC_INS_EVFSCMPLT: case PPC_INS_EVFSTSTLT:
+		{
+			auto* a = ld(ra);
+			auto* b = ld(rb);
+			auto cmp = [&](llvm::Value* x, llvm::Value* y) -> llvm::Value* {
+				switch (i->id)
+				{
+					case PPC_INS_EVFSCMPEQ: case PPC_INS_EVFSTSTEQ: return irb.CreateFCmpOEQ(f(x), f(y));
+					case PPC_INS_EVFSCMPGT: case PPC_INS_EVFSTSTGT: return irb.CreateFCmpOGT(f(x), f(y));
+					default: return irb.CreateFCmpOLT(f(x), f(y));
+				}
+			};
+			auto* ch = cmp(hi(a), hi(b));
+			auto* cl = cmp(lo(a), lo(b));
+			unsigned bf = (w >> 23) & 7;
+			storeRegister(crf[bf][0], ch, irb);
+			storeRegister(crf[bf][1], cl, irb);
+			storeRegister(crf[bf][2], irb.CreateOr(ch, cl), irb);
+			storeRegister(crf[bf][3], irb.CreateAnd(ch, cl), irb);
+			return;
+		}
+		case PPC_INS_EVSEL:
+		{
+			unsigned crs = w & 7;
+			auto* a = ld(ra);
+			auto* b = ld(rb);
+			auto* ch = loadRegister(crf[crs][0], irb);
+			auto* cl = loadRegister(crf[crs][1], irb);
+			auto toI1 = [&](llvm::Value* v) { return irb.CreateICmpNE(v, llvm::ConstantInt::get(v->getType(), 0)); };
+			st(pack(irb.CreateSelect(toI1(ch), hi(a), hi(b)), irb.CreateSelect(toI1(cl), lo(a), lo(b))));
+			return;
+		}
+		default:
+			translatePseudoAsmGeneric(i, pi, irb);
+			return;
+	}
+}
+
+
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxGprMove(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
 {
 	// Moves between GPRs and VSRs; doubleword 0 is the high half of the 128-bit value.
