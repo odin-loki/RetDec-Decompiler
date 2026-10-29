@@ -533,6 +533,45 @@ bool hasLinearSearchLoop(const ssa::SSAFunction& fn)
 	return memLoads == 1 && !memStore && !call && compares >= 2 && elementVsValue;
 }
 
+/// `out[o++] = c; out[o++] = '0' + run;` after counting a run of equal
+/// bytes: a loop that adds '0' to a count, writes at least two bytes out,
+/// and compares a byte it read with another value. Turning a number into
+/// decimal digits (`'0' + n % 10`) also adds '0', so a divide, remainder or
+/// multiply by ten rules it out.
+bool hasRleLoop(const ssa::SSAFunction& fn)
+{
+	bool addZero = false, decimal = false, byteVsByte = false;
+	int memStores = 0;
+	forEachLoopInstr(fn, [&](const ssa::IrInstr& i) {
+		switch (i.op)
+		{
+		case ssa::IrInstr::Op::Add:
+			if (immOperand(fn, i, 0x30)) addZero = true;
+			break;
+		case ssa::IrInstr::Op::Div: case ssa::IrInstr::Op::Rem: case ssa::IrInstr::Op::Mul:
+			if (immOperand(fn, i, 10)) decimal = true;
+			break;
+		case ssa::IrInstr::Op::Store:
+			if (!addrOnStack(fn, i)) ++memStores;
+			break;
+		case ssa::IrInstr::Op::Compare:
+		{
+			bool elem = false, imm = false;
+			for (const auto& u: i.uses)
+			{
+				if (fromMemoryLoad(fn, u.valueId)) elem = true;
+				if (const auto* v = fn.value(u.valueId); v && v->kind == ssa::ValueKind::Immediate) imm = true;
+			}
+			if (elem && !imm) byteVsByte = true;
+			break;
+		}
+		default:
+			break;
+		}
+	});
+	return addZero && !decimal && byteVsByte && memStores >= 2;
+}
+
 /// `t = a + b; a = b; b = t;`: a loop over scalars only whose body adds two
 /// variables and shifts one of them into the other unchanged. Nothing else
 /// is computed: no multiply, divide, shift or bitwise operation, no memory
@@ -789,6 +828,7 @@ std::vector<IdiomResult> IdiomDetector::detect(const ssa::SSAFunction& fn) const
 	if (hasBloomFilterBit(fn)) out.push_back(makeResult(IdiomKind::BloomFilter, 0.75f, "string_hash_mod_pow2_bit"));
 	if (hasLinearSearchLoop(fn) && !halvingSearchCompares(fn))
 		out.push_back(makeResult(IdiomKind::LinearSearch, 0.75f, "one_element_compared_per_iteration"));
+	if (hasRleLoop(fn)) out.push_back(makeResult(IdiomKind::Rle, 0.75f, "run_count_written_as_digit"));
 	if (hasFibonacciLoop(fn)) out.push_back(makeResult(IdiomKind::Fibonacci, 0.80f, "add_and_rotate_scalars"));
 	// A6: do not assign Knapsack or Lcs.
 

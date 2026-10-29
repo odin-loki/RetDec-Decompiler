@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- Algorithm recovery: run-length encoding is detected from a loop that compares a byte it read with another, writes at least two bytes out, and adds '0' to a count; a divide, remainder or multiply by ten (decimal digit conversion) rules it out.
 - Algorithm recovery: a linear search is detected from a loop that reads one element per iteration, writes no memory, calls nothing, and compares the element with a key other than zero alongside its bound test (a zero compare is a terminator scan like strlen).
 - Algorithm recovery: a Bloom filter is detected from a multiplicative string hash in a loop whose result, reduced modulo a power of two after the loop, sets (`1 << n`) or tests (`(x >> n) & 1`) a single bit.
 - Algorithm recovery: libgcc's __udivmoddi4 on ppc and mips (and a lowered switch on ppc) is no longer reported as heapsort or a vector-like container. An iterative heapsort now needs an element loaded through a pointer inside a loop, and the vector three-pointer layout counts only loads through pointers, not reloads of the function's own stack slots.

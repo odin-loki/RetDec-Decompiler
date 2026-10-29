@@ -2338,6 +2338,37 @@ TEST(IdiomDetectorTest, ScanForAZeroTerminatorIsNotLinearSearch)
 	EXPECT_FALSE(detects(*makeScan(0), IdiomKind::LinearSearch));
 }
 
+/// Read a byte, compare it with the run's byte, write the byte and
+/// `'0' + run`; `decimal` also takes the run `% 10` as itoa would.
+std::unique_ptr<ssa::SSAFunction> makeRunLengthLoop(bool decimal)
+{
+	auto fn = makeLoop();
+	auto* l = fn->addInstr(1, ssa::IrInstr::Op::Load);
+	l->uses.push_back({reg(*fn, 64)->id, 0});
+	auto* e = reg(*fn, 8);
+	l->defValue = e->id;
+	e->defInstr = l;
+	auto* cmp = fn->addInstr(1, ssa::IrInstr::Op::Compare);
+	cmp->uses.push_back({e->id, 0});
+	cmp->uses.push_back({reg(*fn, 8)->id, 1});
+	auto* digit = opImm(*fn, ssa::IrInstr::Op::Add, 0x30);
+	if (decimal) opImm(*fn, ssa::IrInstr::Op::Rem, 10);
+	storeToMemory(*fn, e->id);
+	storeToMemory(*fn, digit->defValue);
+	pad(*fn);
+	return fn;
+}
+
+TEST(IdiomDetectorTest, RunCountWrittenAsADigitIsRle)
+{
+	EXPECT_TRUE(detects(*makeRunLengthLoop(false), IdiomKind::Rle));
+}
+
+TEST(IdiomDetectorTest, DecimalDigitConversionIsNotRle)
+{
+	EXPECT_FALSE(detects(*makeRunLengthLoop(true), IdiomKind::Rle));
+}
+
 TEST(IdiomDetectorTest, LowBitAddedThenShiftedOutIsPopcount)
 {
 	auto fn = makeLoop();
