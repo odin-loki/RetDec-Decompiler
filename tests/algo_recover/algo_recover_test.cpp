@@ -2764,3 +2764,48 @@ TEST(IdiomDetectorTest, RecursionInALoopThatOnlyReadsTheStackIsNotDfs)
 		if (i->op == ssa::IrInstr::Op::Load) const_cast<ssa::IrInstr*>(i)->uses.push_back({slot->id, 0});
 	EXPECT_FALSE(detects(*fn, IdiomKind::Dfs));
 }
+
+namespace {
+
+/// Straight-line code (or a loop when `inLoop`) with the given conversions.
+std::unique_ptr<ssa::SSAFunction> makeConversions(int toFloat, int toInt, bool inLoop)
+{
+	// Straight line: entry -> mid -> exit, enough blocks for the preflight.
+	auto fn = inLoop ? makeLoop() : std::make_unique<ssa::SSAFunction>("conv");
+	if (!inLoop)
+	{
+		auto* e = fn->addBlock("entry");
+		auto* m = fn->addBlock("mid");
+		auto* x = fn->addBlock("exit");
+		e->succs.push_back(m->id);
+		m->succs.push_back(x->id);
+	}
+	const ssa::BlockId b = 1;
+	for (int k = 0; k < 6; ++k) fn->addInstr(b, ssa::IrInstr::Op::Add);
+	for (int k = 0; k < toFloat + toInt; ++k)
+	{
+		auto* c = fn->addInstr(b, ssa::IrInstr::Op::Assign);
+		c->isFloat = true;
+		c->fpConv = k < toFloat ? ssa::IrInstr::FpConv::ToFloat : ssa::IrInstr::FpConv::ToInt;
+	}
+	return fn;
+}
+
+} // namespace
+
+TEST(IdiomDetectorTest, StraightLineRoundTripsAreConversion)
+{
+	EXPECT_TRUE(detects(*makeConversions(3, 1, false), IdiomKind::Conversion));
+}
+
+TEST(IdiomDetectorTest, ConversionsInsideALoopAreNotConversion)
+{
+	// A numeric kernel converting each element is not a conversion routine.
+	EXPECT_FALSE(detects(*makeConversions(3, 1, true), IdiomKind::Conversion));
+}
+
+TEST(IdiomDetectorTest, OneWayConversionsAreNotConversion)
+{
+	EXPECT_FALSE(detects(*makeConversions(4, 0, false), IdiomKind::Conversion));
+	EXPECT_FALSE(detects(*makeConversions(1, 1, false), IdiomKind::Conversion));
+}

@@ -230,6 +230,10 @@ static ssa::IrInstr* translateInstr(const llvm::Instruction& li, ssa::SSAFunctio
 		for (const auto& o: li.operands())
 			if (o->getType()->isFPOrFPVectorTy()) fp = true;
 		instr->isFloat = fp;
+		if (llvm::isa<llvm::SIToFPInst>(li) || llvm::isa<llvm::UIToFPInst>(li))
+			instr->fpConv = ssa::IrInstr::FpConv::ToFloat;
+		else if (llvm::isa<llvm::FPToSIInst>(li) || llvm::isa<llvm::FPToUIInst>(li))
+			instr->fpConv = ssa::IrInstr::FpConv::ToInt;
 	}
 
 	// defValue and uses are filled in by buildSsaModule, which is the only

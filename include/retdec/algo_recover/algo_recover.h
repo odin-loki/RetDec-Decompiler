@@ -448,6 +448,7 @@ enum class IdiomKind : uint8_t
 	DotProduct,
 	Statistics,
 	NewtonRaphson,
+	Conversion,
 };
 
 struct IdiomResult

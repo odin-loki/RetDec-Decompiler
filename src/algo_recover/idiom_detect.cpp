@@ -765,6 +765,27 @@ bool hasDfsStructure(const ssa::SSAFunction& fn)
 		&& countOp(fn, ssa::IrInstr::Op::Load) >= 2 && ssa::countElementMoves(fn) == 0;
 }
 
+/// Straight-line code converting both ways between integers and floats
+/// several times, e.g. `(long long)(float)(double)v`.  Numeric kernels convert
+/// a count once or twice; they also loop.  Intrinsics (fabs) are fine.
+bool hasConversionChain(const ssa::SSAFunction& fn)
+{
+	int toFloat = 0, toInt = 0;
+	for (const auto& blk: fn.blocks())
+	{
+		if (!blk) continue;
+		if (ssa::blockOnCycle(fn, blk->id)) return false;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i) continue;
+			if (i->op == ssa::IrInstr::Op::Call && i->calleeName.rfind("llvm.", 0) != 0) return false;
+			if (i->fpConv == ssa::IrInstr::FpConv::ToFloat) ++toFloat;
+			if (i->fpConv == ssa::IrInstr::FpConv::ToInt) ++toInt;
+		}
+	}
+	return toFloat >= 1 && toInt >= 1 && toFloat + toInt >= 4;
+}
+
 IdiomResult makeResult(IdiomKind kind, float confidence, const std::string& detail)
 {
 	IdiomResult r;
@@ -811,6 +832,7 @@ std::string IdiomResult::primaryLabel() const noexcept
 	case IdiomKind::DotProduct: return "DotProduct";
 	case IdiomKind::Statistics: return "Statistics";
 	case IdiomKind::NewtonRaphson: return "NewtonRaphson";
+	case IdiomKind::Conversion: return "Conversion";
 	default: return "Unknown";
 	}
 }
@@ -851,6 +873,7 @@ std::vector<std::string> IdiomResult::exportLabels() const
 	case IdiomKind::DotProduct: return {"DotProduct"};
 	case IdiomKind::Statistics: return {"Statistics"};
 	case IdiomKind::NewtonRaphson: return {"NewtonRaphson"};
+	case IdiomKind::Conversion: return {"Conversion"};
 	default: return {};
 	}
 }
@@ -935,6 +958,7 @@ std::vector<IdiomResult> IdiomDetector::detect(const ssa::SSAFunction& fn) const
 		if (sh.varFloatDiv && sh.halfOrTwo && sh.floatCompare && !sh.memStore)
 			out.push_back(makeResult(IdiomKind::NewtonRaphson, 0.75f, "halved_sum_with_quotient"));
 	}
+	if (hasConversionChain(fn)) out.push_back(makeResult(IdiomKind::Conversion, 0.75f, "int_float_round_trips"));
 	if (hasFibonacciLoop(fn)) out.push_back(makeResult(IdiomKind::Fibonacci, 0.80f, "add_and_rotate_scalars"));
 	// A6: do not assign Knapsack or Lcs.
 

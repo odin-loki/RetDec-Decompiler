@@ -312,6 +312,10 @@ struct IrInstr
 	/// The opcode alone does not say, since FMul maps to Op::Mul.
 	bool isFloat = false;
 
+	/// Int<->float conversion (sitofp/uitofp, fptosi/fptoui); otherwise None.
+	enum class FpConv : uint8_t { None, ToFloat, ToInt };
+	FpConv fpConv = FpConv::None;
+
 	// For flag-producing instructions
 	bool writesFlagBundle = false;
 	uint8_t flagMask = 0; ///< which FlagBits are defined

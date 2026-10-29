@@ -286,7 +286,7 @@ std::vector<algo_recover::IdiomResult> deserializeIdioms(const rapidjson::Value&
 		if (!o.HasMember("kind") || !o["kind"].IsInt()) continue;
 		const int k = o["kind"].GetInt();
 		if (k <= static_cast<int>(algo_recover::IdiomKind::Unknown)) continue;
-		if (k > static_cast<int>(algo_recover::IdiomKind::NewtonRaphson)) continue;
+		if (k > static_cast<int>(algo_recover::IdiomKind::Conversion)) continue;
 
 		algo_recover::IdiomResult r;
 		r.kind = static_cast<algo_recover::IdiomKind>(k);
