@@ -6044,7 +6044,10 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateMulOpl(cs_insn* i, cs_arm64* 
 	auto *val = irb.CreateMul(op1, op2);
 
 	llvm::Value* op3;
-	if (op3_zero)
+	// Capstone decodes the smull/umull aliases (smaddl/umaddl with xzr) from
+	// binary as SMADDL/UMADDL with only THREE operands. operands[3] was then
+	// an empty slot that loaded as undef, and the whole product folded away.
+	if (op3_zero || ai->op_count == 3)
 	{
 		op3 = llvm::ConstantInt::get(res_type, 0);
 	}
