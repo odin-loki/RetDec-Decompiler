@@ -7037,7 +7037,7 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateTheadFmem(cs_insn* i, cs_risc
 			|| id == RISCV_INS_TH_FSRD || id == RISCV_INS_TH_FSURD;
 	llvm::Value* idx = gpr(2);
 	if (u) idx = irb.CreateZExt(irb.CreateTrunc(idx, irb.getInt32Ty()), xt);
-	auto* ea = irb.CreateAdd(gpr(1), irb.CreateShl(idx, ri->operands[3].imm & 3));
+	auto* ea = irb.CreateAdd(gpr(1), irb.CreateShl(idx, ((uint32_t(i->bytes[3]) >> 1) & 3)));
 	auto* fty = dbl ? irb.getDoubleTy() : irb.getFloatTy();
 	auto* ity = irb.getIntNTy(dbl ? 64 : 32);
 	if (st)
