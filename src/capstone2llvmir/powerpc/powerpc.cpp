@@ -360,6 +360,22 @@ llvm::Value* Capstone2LlvmIrTranslatorPowerpc_impl::loadRegister(
 		throw GenericError("loadRegister() unhandled reg.");
 	}
 
+	// vs0..vs31 share their high doubleword with f0..f31: the high half
+	// comes from the FPR, the low half from the VSL register.
+	if (dstType == nullptr && r >= PPC_REG_VSL0 && r <= PPC_REG_VSL31)
+	{
+		if (auto* f = getRegister(PPC_REG_F0 + (r - PPC_REG_VSL0)))
+		{
+			auto* i64 = irb.getInt64Ty();
+			auto* i128 = irb.getInt128Ty();
+			auto* hi = irb.CreateBitCast(createLoad(irb, f), i64);
+			auto* lo = irb.CreateTrunc(createLoad(irb, llvmReg), i64);
+			return irb.CreateOr(
+					irb.CreateShl(irb.CreateZExt(hi, i128), 64),
+					irb.CreateZExt(lo, i128));
+		}
+	}
+
 	llvmReg = generateTypeConversion(irb, llvmReg, dstType, ct);
 
 	return createLoad(irb, llvmReg);
@@ -455,13 +471,33 @@ llvm::StoreInst* Capstone2LlvmIrTranslatorPowerpc_impl::storeRegister(
 		throw GenericError("storeRegister() unhandled reg.");
 	}
 	auto* destTy = llvmReg->getValueType();
+	llvm::GlobalVariable* fpr = nullptr;
+	if (r >= PPC_REG_VSL0 && r <= PPC_REG_VSL31)
+	{
+		fpr = getRegister(PPC_REG_F0 + (r - PPC_REG_VSL0));
+	}
 	if (destTy->isIntegerTy(128) && val->getType()->isFloatingPointTy())
 	{
+		if (fpr != nullptr)
+		{
+			// Only the shared high doubleword changes.
+			auto* d = irb.CreateFPCast(val, irb.getDoubleTy());
+			auto* fs = irb.CreateStore(d, fpr);
+			attachPointeeType(fs, fpr->getValueType());
+			return fs;
+		}
 		val = insertHighDouble(createLoad(irb, llvmReg), val, irb);
 	}
 	else
 	{
 		val = generateTypeConversion(irb, val, destTy, ct);
+	}
+
+	if (fpr != nullptr && val->getType()->isIntegerTy(128))
+	{
+		auto* hi = irb.CreateTrunc(irb.CreateLShr(val, 64), irb.getInt64Ty());
+		auto* fs = irb.CreateStore(irb.CreateBitCast(hi, irb.getDoubleTy()), fpr);
+		attachPointeeType(fs, fpr->getValueType());
 	}
 
 	auto* s = irb.CreateStore(val, llvmReg);
@@ -4670,8 +4706,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecFpArith(cs_insn* i, cs_p
  *
  * Vector fmul+fadd/fsub, same shape as ARM64 scalar FMLA (llvmir-emul
  * does not honour the addend of llvm.fma on some packed views). VSL0 is
- * i128; f0 stays a separate double — loadOpI128 / storeOpI128 already
- * keep that split.
+ * i128 whose high doubleword is f0 (see loadRegister / storeRegister).
  */
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecFpFma(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
 {

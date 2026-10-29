@@ -98,12 +98,28 @@ class Capstone2LlvmIrTranslatorPowerpcTests :
 			const uint64_t words[2] = {lo, hi};
 			v.IntVal = llvm::APInt(128, llvm::ArrayRef<uint64_t>(words, 2));
 			_emulator->setGlobalVariableValue(gv, v);
+			if (reg >= PPC_REG_VSL0 && reg <= PPC_REG_VSL31)
+			{
+				// vs0..vs31 share the high doubleword with f0..f31.
+				auto* f = getRegister(PPC_REG_F0 + (reg - PPC_REG_VSL0));
+				llvm::GenericValue fv;
+				std::memcpy(&fv.DoubleVal, &hi, 8);
+				_emulator->setGlobalVariableValue(f, fv);
+			}
 		}
 
 		uint64_t vHigh(uint32_t reg)
 		{
 			auto* gv = getRegister(reg);
 			assert(gv);
+			if (reg >= PPC_REG_VSL0 && reg <= PPC_REG_VSL31)
+			{
+				auto* f = getRegister(PPC_REG_F0 + (reg - PPC_REG_VSL0));
+				double d = _emulator->getGlobalVariableValue(f).DoubleVal;
+				uint64_t bits;
+				std::memcpy(&bits, &d, 8);
+				return bits;
+			}
 			return _emulator->getGlobalVariableValue(gv).IntVal.lshr(64).trunc(64).getZExtValue();
 		}
 
@@ -19034,6 +19050,32 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XXINSERTW)
 
 	EXPECT_EQ(0xffffffff44556677ULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
 	EXPECT_EQ(0xffffffffffffffffULL, vLow(PPC_REG_V2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_VSL_writes_alias_FPR)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_VSL3, 0x3ff8000000000000ULL, 0x1234ULL); // 1.5 : 0x1234
+	emulate_bin("f0 43 1c 90"); // xxlor vs2, vs3, vs3
+
+	EXPECT_EQ(0x3ff8000000000000ULL, vHigh(PPC_REG_VSL2)) << dumpFunction(_function);
+	EXPECT_EQ(0x1234ULL, vLow(PPC_REG_VSL2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_FPR_writes_alias_VSL)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_VSL2, 0x0ULL, 0x5555ULL);
+	setRegisters({
+		{PPC_REG_F3, 1.0_f64},
+		{PPC_REG_F4, 2.0_f64},
+	});
+	emulate_bin("f0 43 21 00 f0 a2 14 91"); // xsadddp f2, f3, f4; xxlor vs37, vs2, vs2
+
+	EXPECT_EQ(0x4008000000000000ULL, vHigh(PPC_REG_V5)) << dumpFunction(_function);
+	EXPECT_EQ(0x5555ULL, vLow(PPC_REG_V5)) << dumpFunction(_function);
 }
 
 } // namespace tests
