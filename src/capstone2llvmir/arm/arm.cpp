@@ -8179,5 +8179,185 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMveVec(cs_insn* i, cs_arm* ai, 
 }
 
 
+
+/**
+ * MVE contiguous loads/stores VLDR{B,H,W,D}/VSTR{B,H,W,D} (immediate offset,
+ * pre/post-indexed; gathers/scatters fall back), VIDUP/VDDUP, and the
+ * complex ops VCADD/VHCADD (integer and fp) and VCMLA (fp, non-fused).
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateMveMisc(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	auto fallback = [&]() { translatePseudoAsmGeneric(i, ai, irb); };
+	std::string m = i->mnemonic;
+	auto dot = m.find('.');
+	std::string op = m.substr(0, dot);
+	std::string dt = dot == std::string::npos ? "" : m.substr(dot + 1);
+	unsigned lb = 0;
+	bool sgn = false, fp = false;
+	if (!dt.empty())
+	{
+		size_t p = 0;
+		if (dt[0] == 's' || dt[0] == 'u' || dt[0] == 'i' || dt[0] == 'f')
+		{
+			sgn = dt[0] == 's';
+			fp = dt[0] == 'f';
+			p = 1;
+		}
+		lb = unsigned(std::atoi(dt.c_str() + p));
+	}
+	if (lb != 8 && lb != 16 && lb != 32 && lb != 64)
+	{
+		fallback();
+		return;
+	}
+	auto* ty = getDefaultType();
+	unsigned n = 128 / lb;
+
+	if ((op.size() == 5 && (op.compare(0, 4, "vldr") == 0 || op.compare(0, 4, "vstr") == 0)))
+	{
+		bool load = op[1] == 'l';
+		unsigned mb = op[4] == 'b' ? 8 : op[4] == 'h' ? 16 : op[4] == 'w' ? 32 : op[4] == 'd' ? 64 : 0;
+		if (mb == 0 || mb > lb || ai->op_count != 2 || ai->operands[1].type != ARM_OP_MEM
+				|| ai->operands[0].type != ARM_OP_REG)
+		{
+			fallback();
+			return;
+		}
+		auto& mo = ai->operands[1];
+		if (mo.mem.index != ARM_REG_INVALID || mo.mem.base == ARM_REG_INVALID || lb == 64)
+		{
+			fallback();
+			return;
+		}
+		int64_t disp = mo.mem.disp;
+		if (mo.subtracted && disp > 0) disp = -disp;
+		auto* base = loadRegister(mo.mem.base, irb);
+		auto* offV = llvm::ConstantInt::getSigned(ty, disp);
+		bool post = _insn && _insn->detail && _insn->detail->arm.post_index;
+		llvm::Value* addr = post ? base : irb.CreateAdd(base, offV);
+		auto* memTy = irb.getIntNTy(mb);
+		auto* laneTy = irb.getIntNTy(lb);
+		auto q = ai->operands[0].reg;
+		if (load)
+		{
+			llvm::Value* v = llvm::UndefValue::get(llvm::FixedVectorType::get(laneTy, n));
+			for (unsigned k = 0; k < n; ++k)
+			{
+				auto* at = irb.CreateAdd(addr, llvm::ConstantInt::get(ty, k * mb / 8));
+				llvm::Value* e = loadIntPtr(irb, at, memTy);
+				e = sgn ? irb.CreateSExtOrTrunc(e, laneTy) : irb.CreateZExtOrTrunc(e, laneTy);
+				v = irb.CreateInsertElement(v, e, uint64_t(k));
+			}
+			storeNeonVector(q, v, irb);
+		}
+		else
+		{
+			auto* v = loadNeonVector(q, lb, false, irb);
+			for (unsigned k = 0; k < n; ++k)
+			{
+				auto* at = irb.CreateAdd(addr, llvm::ConstantInt::get(ty, k * mb / 8));
+				storeIntPtr(irb, irb.CreateTrunc(irb.CreateExtractElement(v, uint64_t(k)), memTy), at, memTy);
+			}
+		}
+		if (insnWriteback())
+		{
+			storeRegister(mo.mem.base, irb.CreateAdd(base, offV), irb);
+		}
+		return;
+	}
+
+	if (op == "vidup" || op == "vddup")
+	{
+		if (ai->op_count != 3 || ai->operands[1].type != ARM_OP_REG || ai->operands[2].type != ARM_OP_IMM || lb > 32)
+		{
+			fallback();
+			return;
+		}
+		bool up = op == "vidup";
+		uint64_t step = static_cast<uint64_t>(ai->operands[2].imm);
+		auto rn = ai->operands[1].reg;
+		auto* start = loadRegister(rn, irb);
+		auto* laneTy = irb.getIntNTy(lb);
+		llvm::Value* v = llvm::UndefValue::get(llvm::FixedVectorType::get(laneTy, n));
+		for (unsigned k = 0; k < n; ++k)
+		{
+			auto* d = llvm::ConstantInt::get(ty, k * step);
+			auto* e = up ? irb.CreateAdd(start, d) : irb.CreateSub(start, d);
+			v = irb.CreateInsertElement(v, irb.CreateTrunc(e, laneTy), uint64_t(k));
+		}
+		storeNeonVector(ai->operands[0].reg, v, irb);
+		auto* tot = llvm::ConstantInt::get(ty, n * step);
+		storeRegister(rn, up ? irb.CreateAdd(start, tot) : irb.CreateSub(start, tot), irb);
+		return;
+	}
+
+	if (op == "vcadd" || op == "vhcadd" || op == "vcmla")
+	{
+		if (ai->op_count != 4 || ai->operands[3].type != ARM_OP_IMM || lb == 8 || lb == 64)
+		{
+			fallback();
+			return;
+		}
+		if (operandLane(ai->operands[2]) >= 0 || neonBitWidth(ai->operands[0].reg) == 0)
+		{
+			fallback();
+			return;
+		}
+		n = neonBitWidth(ai->operands[0].reg) / lb;
+		int64_t rot = ai->operands[3].imm;
+		bool half = op == "vhcadd";
+		if (half && fp) { fallback(); return; }
+		if (op == "vcmla" && !fp) { fallback(); return; }
+		auto* a = loadNeonVector(ai->operands[1].reg, lb, fp, irb);
+		auto* b = loadNeonVector(ai->operands[2].reg, lb, fp, irb);
+		auto* d = loadNeonVector(ai->operands[0].reg, lb, fp, irb);
+		auto add = [&](llvm::Value* x, llvm::Value* y) { return fp ? irb.CreateFAdd(x, y) : irb.CreateAdd(x, y); };
+		auto sub = [&](llvm::Value* x, llvm::Value* y) { return fp ? irb.CreateFSub(x, y) : irb.CreateSub(x, y); };
+		auto mul = [&](llvm::Value* x, llvm::Value* y) { return irb.CreateFMul(x, y); };
+		llvm::Value* r = d;
+		auto* laneTy = irb.getIntNTy(lb);
+		auto* wideTy = irb.getIntNTy(lb * 2);
+		auto hv = [&](llvm::Value* x, llvm::Value* y, bool isAdd) -> llvm::Value* {
+			if (!half) return isAdd ? add(x, y) : sub(x, y);
+			auto* xw = irb.CreateSExt(x, wideTy);
+			auto* yw = irb.CreateSExt(y, wideTy);
+			auto* s = isAdd ? irb.CreateAdd(xw, yw) : irb.CreateSub(xw, yw);
+			return irb.CreateTrunc(irb.CreateAShr(s, llvm::ConstantInt::get(wideTy, 1)), laneTy);
+		};
+		for (unsigned k = 0; k + 1 < n + 1; k += 2)
+		{
+			auto* ae = irb.CreateExtractElement(a, uint64_t(k));
+			auto* ao = irb.CreateExtractElement(a, uint64_t(k + 1));
+			auto* be = irb.CreateExtractElement(b, uint64_t(k));
+			auto* bo = irb.CreateExtractElement(b, uint64_t(k + 1));
+			llvm::Value *re = nullptr, *im = nullptr;
+			if (op == "vcmla")
+			{
+				auto* de = irb.CreateExtractElement(d, uint64_t(k));
+				auto* dO = irb.CreateExtractElement(d, uint64_t(k + 1));
+				switch (rot)
+				{
+					case 0: re = add(de, mul(ae, be)); im = add(dO, mul(ae, bo)); break;
+					case 90: re = sub(de, mul(ao, bo)); im = add(dO, mul(ao, be)); break;
+					case 180: re = sub(de, mul(ae, be)); im = sub(dO, mul(ae, bo)); break;
+					case 270: re = add(de, mul(ao, bo)); im = sub(dO, mul(ao, be)); break;
+					default: fallback(); return;
+				}
+			}
+			else
+			{
+				if (rot == 90) { re = hv(ae, bo, false); im = hv(ao, be, true); }
+				else if (rot == 270) { re = hv(ae, bo, true); im = hv(ao, be, false); }
+				else { fallback(); return; }
+			}
+			r = irb.CreateInsertElement(r, re, uint64_t(k));
+			r = irb.CreateInsertElement(r, im, uint64_t(k + 1));
+		}
+		storeNeonVector(ai->operands[0].reg, r, irb);
+		return;
+	}
+	fallback();
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec
