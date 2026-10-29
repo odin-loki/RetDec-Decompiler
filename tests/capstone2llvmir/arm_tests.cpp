@@ -5500,6 +5500,312 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSL_reg)
 // ARM_INS_LSR
 //
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSL_reg_s_same_reg)
+{
+	// Register-specified shift into the same register: only Rs[7:0] counts.
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x3},
+		{ARM_REG_R2, 0x4},
+		{ARM_REG_R3, 0x3},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("lsls r1, r1, r2");
+
+	EXPECT_EQ(0x30u, getRegisterValueUnsigned(ARM_REG_R1));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSL_reg_same_reg)
+{
+	// Register-specified shift into the same register: only Rs[7:0] counts.
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x3},
+		{ARM_REG_R2, 0x4},
+		{ARM_REG_R3, 0x3},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("lsl r1, r1, r2");
+
+	EXPECT_EQ(0x30u, getRegisterValueUnsigned(ARM_REG_R1));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSL_reg_s_other_reg)
+{
+	// Register-specified shift into the same register: only Rs[7:0] counts.
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x3},
+		{ARM_REG_R2, 0x4},
+		{ARM_REG_R3, 0x3},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("lsls r1, r3, r2");
+
+	EXPECT_EQ(0x30u, getRegisterValueUnsigned(ARM_REG_R1));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSR_reg_s_same_reg)
+{
+	// Register-specified shift into the same register: only Rs[7:0] counts.
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x30},
+		{ARM_REG_R2, 0x4},
+		{ARM_REG_R3, 0x30},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("lsrs r1, r1, r2");
+
+	EXPECT_EQ(0x3u, getRegisterValueUnsigned(ARM_REG_R1));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ASR_reg_s_same_reg)
+{
+	// Register-specified shift into the same register: only Rs[7:0] counts.
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x80000000},
+		{ARM_REG_R2, 0x4},
+		{ARM_REG_R3, 0x80000000},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("asrs r1, r1, r2");
+
+	EXPECT_EQ(0xf8000000u, getRegisterValueUnsigned(ARM_REG_R1));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ROR_reg_s_same_reg)
+{
+	// Register-specified shift into the same register: only Rs[7:0] counts.
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x3},
+		{ARM_REG_R2, 0x4},
+		{ARM_REG_R3, 0x3},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("rors r1, r1, r2");
+
+	EXPECT_EQ(0x30000000u, getRegisterValueUnsigned(ARM_REG_R1));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSL_reg_s_same_reg_by_32)
+{
+	// Register-specified shift into the same register: only Rs[7:0] counts.
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x3},
+		{ARM_REG_R2, 0x20},
+		{ARM_REG_R3, 0x3},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("lsls r1, r1, r2");
+
+	EXPECT_EQ(0x0u, getRegisterValueUnsigned(ARM_REG_R1));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSR_reg_s_same_reg_by_260)
+{
+	// Register-specified shift into the same register: only Rs[7:0] counts.
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x30},
+		{ARM_REG_R2, 0x104},
+		{ARM_REG_R3, 0x30},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("lsrs r1, r1, r2");
+
+	EXPECT_EQ(0x3u, getRegisterValueUnsigned(ARM_REG_R1));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSL_reg_same_reg_by_32)
+{
+	// Register shifts of 32 or more: LSL/LSR give 0, ASR the sign, ROR mod 32.
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x3},
+		{ARM_REG_R2, 0x20},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("lsl r1, r1, r2");
+
+	EXPECT_EQ(0x0u, getRegisterValueUnsigned(ARM_REG_R1));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ASR_reg_s_same_reg_by_40)
+{
+	// Register shifts of 32 or more: LSL/LSR give 0, ASR the sign, ROR mod 32.
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x80000000},
+		{ARM_REG_R2, 0x28},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("asrs r1, r1, r2");
+
+	EXPECT_EQ(0xffffffffu, getRegisterValueUnsigned(ARM_REG_R1));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ASR_reg_same_reg_by_40)
+{
+	// Register shifts of 32 or more: LSL/LSR give 0, ASR the sign, ROR mod 32.
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x80000000},
+		{ARM_REG_R2, 0x28},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("asr r1, r1, r2");
+
+	EXPECT_EQ(0xffffffffu, getRegisterValueUnsigned(ARM_REG_R1));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSR_reg_s_same_reg_by_33)
+{
+	// Register shifts of 32 or more: LSL/LSR give 0, ASR the sign, ROR mod 32.
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0xffffffff},
+		{ARM_REG_R2, 0x21},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("lsrs r1, r1, r2");
+
+	EXPECT_EQ(0x0u, getRegisterValueUnsigned(ARM_REG_R1));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ROR_reg_s_same_reg_by_36)
+{
+	// Register shifts of 32 or more: LSL/LSR give 0, ASR the sign, ROR mod 32.
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x3},
+		{ARM_REG_R2, 0x24},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("rors r1, r1, r2");
+
+	EXPECT_EQ(0x30000000u, getRegisterValueUnsigned(ARM_REG_R1));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSL_thumb_reg_s)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x3},
+		{ARM_REG_R2, 0x4},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("lsls r1, r2");
+
+	EXPECT_EQ(0x30u, getRegisterValueUnsigned(ARM_REG_R1));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSR_thumb_reg_s)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x30},
+		{ARM_REG_R2, 0x4},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("lsrs r1, r2");
+
+	EXPECT_EQ(0x3u, getRegisterValueUnsigned(ARM_REG_R1));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ASR_thumb_reg_s)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x80000000},
+		{ARM_REG_R2, 0x4},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("asrs r1, r2");
+
+	EXPECT_EQ(0xf8000000u, getRegisterValueUnsigned(ARM_REG_R1));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ROR_thumb_reg_s)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x3},
+		{ARM_REG_R2, 0x4},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("rors r1, r2");
+
+	EXPECT_EQ(0x30000000u, getRegisterValueUnsigned(ARM_REG_R1));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSL_thumb2_reg_s)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x3},
+		{ARM_REG_R2, 0x4},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("lsls.w r1, r1, r2");
+
+	EXPECT_EQ(0x30u, getRegisterValueUnsigned(ARM_REG_R1));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ASR_thumb2_reg)
+{
+	ONLY_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x80000000},
+		{ARM_REG_R2, 0x28},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("asr.w r1, r1, r2");
+
+	EXPECT_EQ(0xffffffffu, getRegisterValueUnsigned(ARM_REG_R1));
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSR_imm_s_same_reg)
 {
 	// arm -O1 f_bits: `lsrs r1, r1, #1` lost its shift, so the popcount

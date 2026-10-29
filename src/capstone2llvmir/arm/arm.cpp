@@ -3612,16 +3612,33 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMls(cs_insn* i, cs_arm* ai, llv
  */
 void Capstone2LlvmIrTranslatorArm_impl::translateMov(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
 {
-	EXPECT_IS_BINARY(i, ai, irb);
-
-	op1 = loadOpBinaryOp1(ai, irb);
+	// Capstone 6 also drops the shift from the flag-setting register-shift
+	// form `lsls r1, r1, r2` (= movs r1, r1, lsl r2): three plain register
+	// operands under the MOV id, which the binary-op check rejected. The
+	// encoding decode below rebuilds the shift from the bytes.
+	bool regShift3 = _basicMode == CS_MODE_ARM && i->size == 4
+			&& ai->op_count == 3
+			&& ai->operands[0].type == ARM_OP_REG
+			&& ai->operands[1].type == ARM_OP_REG
+			&& ai->operands[2].type == ARM_OP_REG
+			&& ai->operands[1].shift.type == ARM_SFT_INVALID;
+	if (regShift3)
+	{
+		op1 = loadRegister(ai->operands[1].reg, irb);
+	}
+	else
+	{
+		EXPECT_IS_BINARY(i, ai, irb);
+		op1 = loadOpBinaryOp1(ai, irb);
+	}
 
 	// Capstone 6 decodes ARM-mode `movs r1, r1, lsr #1` (the `lsrs r1, r1, #1`
 	// alias with Rd == Rm) as a plain two-operand `movs r1, r1`: no alias id
 	// and no shift on the source. arm -O1 f_bits' popcount loop then never
 	// shifted and never ended. Recover a register-form shift the decoder
 	// dropped from the encoding itself.
-	if (_basicMode == CS_MODE_ARM && i->size == 4 && ai->op_count == 2
+	if (_basicMode == CS_MODE_ARM && i->size == 4
+			&& (ai->op_count == 2 || regShift3)
 			&& ai->operands[1].type == ARM_OP_REG
 			&& ai->operands[1].shift.type == ARM_SFT_INVALID)
 	{
