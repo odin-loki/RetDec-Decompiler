@@ -213,6 +213,39 @@ add_custom_command(
 add_custom_target(retdec-decompiler-runtime-share ALL DEPENDS "${_DEC_SHARE_STAMP}")
 add_dependencies(retdec-decompiler-corpus-fixtures retdec-decompiler-runtime-share)
 
+# ── Concurrent decompilations match serial ones ───────────────────────────────
+# parallelBatchDecompile() used to run its jobs one at a time behind a lock,
+# because every pipeline cleared the process-wide bin2llvmir providers. They
+# are per module now; this decompiles three fixtures serially and then three
+# copies of each at once, and requires identical output.
+add_executable(parallel_decompile_check parallel_decompile_check.cpp)
+target_compile_features(parallel_decompile_check PRIVATE cxx_std_20)
+target_link_libraries(parallel_decompile_check retdec::retdec retdec::config retdec::deps::llvm)
+if(MSVC)
+	target_link_libraries(parallel_decompile_check
+		-WHOLEARCHIVE:$<TARGET_FILE_NAME:retdec::bin2llvmir>
+		-WHOLEARCHIVE:$<TARGET_FILE_NAME:retdec::llvmir2hll>)
+elseif(APPLE)
+	target_link_libraries(parallel_decompile_check
+		-Wl,-force_load retdec::bin2llvmir -Wl,-force_load retdec::llvmir2hll)
+else()
+	target_link_libraries(parallel_decompile_check
+		-Wl,--whole-archive retdec::bin2llvmir -Wl,--no-whole-archive
+		-Wl,--whole-archive retdec::llvmir2hll -Wl,--no-whole-archive)
+endif()
+add_dependencies(parallel_decompile_check retdec-decompiler-corpus-fixtures)
+add_test(NAME parallel_decompile_matches_serial
+    COMMAND parallel_decompile_check
+        "$<TARGET_FILE_DIR:retdec-decompiler>/../share/retdec/decompiler-config.json"
+        "${CMAKE_CURRENT_BINARY_DIR}/parallel_decompile_work"
+        3 4
+        "${_CORPUS_FIXTURES_DIR}/hello${CMAKE_EXECUTABLE_SUFFIX}"
+        "${_CORPUS_FIXTURES_DIR}/vector_sort${CMAKE_EXECUTABLE_SUFFIX}"
+        "${_FIB_BIN}")
+set_tests_properties(parallel_decompile_matches_serial PROPERTIES
+    TIMEOUT 600
+    LABELS "decompiler;integration;concurrency")
+
 # ── CLI smoke ─────────────────────────────────────────────────────────────────
 add_test(
     NAME decompiler_smoke_cli_fib
@@ -463,3 +496,4 @@ if(WIN32)
         ENVIRONMENT "RETDEC_GUI_HEADLESS=1;QT_QPA_PLATFORM=offscreen"
     )
 endif()
+
