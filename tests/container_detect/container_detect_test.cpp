@@ -270,6 +270,32 @@ TEST(VectorDetectorTest, ThreeLoadsPlusSubHigherConfidence)
 	EXPECT_EQ(r.toString().find("evidence:symbol_name"), std::string::npos);
 }
 
+TEST(VectorDetectorTest, StackSlotLoadsAreNotAThreePointerLayout)
+{
+	// libgcc's __udivmoddi4 on ppc/mips: register arithmetic spilled to the
+	// stack reloads its own slots, which says nothing about begin/end/cap.
+	auto fn = makeFunc(
+		"udivmod_like",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Sub,
+			ssa::IrInstr::Op::Add,
+		});
+	for (const auto& blk: fn->blocks())
+		if (blk)
+			for (auto* i: blk->instrs)
+				if (i && i->op == ssa::IrInstr::Op::Load)
+				{
+					auto* slot = fn->allocValue(ssa::ValueKind::VirtualReg);
+					slot->isStackSlot = true;
+					i->uses.push_back({slot->id, 0});
+				}
+	VectorDetector det;
+	EXPECT_LT(det.detect(*fn).confidence, 0.30f);
+}
+
 TEST(VectorDetectorTest, GrowthPatternDetected)
 {
 	auto fn = makeFunc(

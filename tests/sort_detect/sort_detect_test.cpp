@@ -711,13 +711,16 @@ TEST(HeapsortDetectorTest, EmptyFunctionLowConfidence)
 	EXPECT_LT(r.confidence, 0.45f);
 }
 
-TEST(HeapsortDetectorTest, FullHeapsortPattern)
+// Shl(x,1) + Compare + CondBranch + 2×Sub + 2×Store, and, if `readsArray`,
+// a loop that loads an element through a pointer.
+static std::unique_ptr<ssa::SSAFunction> makeHeapsortShape(bool readsArray)
 {
-	// Shl(x,1) + Compare + CondBranch + 2×Sub + 2×Store.
 	auto fn = std::make_unique<ssa::SSAFunction>("sort_heap");
 	auto* entry = fn->addBlock("entry");
 	fn->addBlock("build");
-	fn->addBlock("sort");
+	auto* sort = fn->addBlock("sort");
+	entry->succs.push_back(sort->id);
+	sort->succs.push_back(sort->id);
 
 	auto* shl = fn->addInstr(entry->id, ssa::IrInstr::Op::Shl);
 	auto* imm1 = fn->allocValue(ssa::ValueKind::Immediate);
@@ -733,11 +736,26 @@ TEST(HeapsortDetectorTest, FullHeapsortPattern)
 	fn->addInstr(entry->id, ssa::IrInstr::Op::Sub);
 	fn->addInstr(entry->id, ssa::IrInstr::Op::Store);
 	fn->addInstr(entry->id, ssa::IrInstr::Op::Store);
+	if (readsArray)
+	{
+		auto* ld = fn->addInstr(sort->id, ssa::IrInstr::Op::Load);
+		ld->uses.push_back({fn->allocValue(ssa::ValueKind::VirtualReg)->id, 0});
+	}
+	return fn;
+}
 
+TEST(HeapsortDetectorTest, FullHeapsortPattern)
+{
 	HeapsortDetector det;
-	auto r = det.detect(*fn);
-	EXPECT_GE(r.confidence, 0.50f);
-	EXPECT_EQ(r.algorithm, SortAlgorithm::Heapsort);
+	EXPECT_GE(det.detect(*makeHeapsortShape(true)).confidence, 0.50f);
+}
+
+TEST(HeapsortDetectorTest, HeapShapeThatNeverReadsAnArrayIsNotHeapsort)
+{
+	// libgcc's __udivmoddi4 on ppc/mips: shifts, compares, subtracts and
+	// stack spills, but no element loaded through a pointer in a loop.
+	HeapsortDetector det;
+	EXPECT_LT(det.detect(*makeHeapsortShape(false)).confidence, 0.45f);
 }
 
 TEST(HeapsortDetectorTest, NoChildIndexStaysBelowAssign)

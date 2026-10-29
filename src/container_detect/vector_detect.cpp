@@ -66,11 +66,34 @@ static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)
 	return n;
 }
 
+// Loads through a pointer, not from the function's own stack slots: the
+// begin/end/capacity fields and the elements of a vector live in memory.
+// Register arithmetic spilled to the stack (libgcc's __udivmoddi4 on ppc
+// and mips) has many stack loads and none of these.
+static int countMemoryLoads(const ssa::SSAFunction& fn)
+{
+	int n = 0;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* instr: blk->instrs)
+		{
+			if (!instr || instr->op != ssa::IrInstr::Op::Load) continue;
+			bool stack = false;
+			for (const auto& u: instr->uses)
+				if (const auto* a = fn.value(u.valueId); u.operandIndex == 0 && a && a->isStackSlot) stack = true;
+			if (!stack) ++n;
+		}
+	}
+	return n;
+}
+
 // Three-pointer layout: does the function have ≥3 Loads + at least one Sub
 // (end - begin) + at least one Add (begin + index)?
 static bool hasThreePointerLayout(const ssa::SSAFunction& fn)
 {
-	return countOp(fn, ssa::IrInstr::Op::Load) >= 3 && countOp(fn, ssa::IrInstr::Op::Sub) >= 1
+	return countMemoryLoads(fn) >= 3 && countOp(fn, ssa::IrInstr::Op::Sub) >= 1
 		&& countOp(fn, ssa::IrInstr::Op::Add) >= 1;
 }
 
@@ -184,7 +207,7 @@ VectorEvidence VectorDetector::analyseStructure(const ssa::SSAFunction& fn) cons
 {
 	VectorEvidence ev;
 	ev.hasBeginEndCap = hasThreePointerLayout(fn);
-	ev.hasSizeArith = countOp(fn, ssa::IrInstr::Op::Sub) >= 1 && countOp(fn, ssa::IrInstr::Op::Load) >= 2;
+	ev.hasSizeArith = countOp(fn, ssa::IrInstr::Op::Sub) >= 1 && countMemoryLoads(fn) >= 2;
 
 	float gf = 0.0f;
 	CompilerVariant cv = CompilerVariant::Unknown;

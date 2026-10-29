@@ -95,6 +95,31 @@ bool HeapsortDetector::hasSortPhase(const ssa::SSAFunction& fn) const
 	return ::retdec::sort_detect::hasSortPhase(fn);
 }
 
+namespace {
+
+/// Loads from memory other than the stack inside a loop: the array elements a
+/// heap sifts through.
+static int loopMemoryLoads(const ssa::SSAFunction& fn)
+{
+	int n = 0;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk || !ssa::blockOnCycle(fn, b)) continue;
+		for (const auto* instr: blk->instrs)
+		{
+			if (!instr || instr->op != ssa::IrInstr::Op::Load) continue;
+			bool stack = false;
+			for (const auto& u: instr->uses)
+				if (const auto* a = fn.value(u.valueId); u.operandIndex == 0 && a && a->isStackSlot) stack = true;
+			if (!stack) ++n;
+		}
+	}
+	return n;
+}
+
+}
+
 SortResult HeapsortDetector::detect(const ssa::SSAFunction& fn) const
 {
 	SortResult result;
@@ -130,8 +155,13 @@ SortResult HeapsortDetector::detect(const ssa::SSAFunction& fn) const
 	// AES GF / T-table mixers have many Xors; sentinel sift-down stays
 	// at 3–6 on this compiler. Eight or more is not a heap.
 	if (countOp(fn, ssa::IrInstr::Op::Xor) >= 8) score = std::min(score, 0.40f);
+	// A heap is an array: an iterative sift reads its elements from memory
+	// inside a loop. Register-only arithmetic with shifts and compares, such
+	// as libgcc's __udivmoddi4 or a lowered switch, has none. The recursive
+	// heapify above is scored separately and keeps its score.
+	if (score > 0.55f && loopMemoryLoads(fn) == 0) score = std::min(score, 0.40f);
 
-	if (std::getenv("RETDEC_SORT_DIAG")) std::fprintf(stderr, "HEAP %s sift=%d left=%d build=%d sortph=%d score=%.2f subs=%d stores=%d shl=%d mul=%d\n", fn.name().c_str(), sde.found, sde.hasLeftArith, hasBuildHeapPhase(fn), hasSortPhase(fn), score, countOp(fn, ssa::IrInstr::Op::Sub), countOp(fn, ssa::IrInstr::Op::Store), countOp(fn, ssa::IrInstr::Op::Shl), countOp(fn, ssa::IrInstr::Op::Mul));
+	if (std::getenv("RETDEC_SORT_DIAG")) std::fprintf(stderr, "HEAP %s sift=%d left=%d build=%d sortph=%d score=%.2f subs=%d stores=%d shl=%d mul=%d \n", fn.name().c_str(), sde.found, sde.hasLeftArith, hasBuildHeapPhase(fn), hasSortPhase(fn), score, countOp(fn, ssa::IrInstr::Op::Sub), countOp(fn, ssa::IrInstr::Op::Store), countOp(fn, ssa::IrInstr::Op::Shl), countOp(fn, ssa::IrInstr::Op::Mul));
 	result.confidence = score > 1.0f ? 1.0f : score;
 
 	// Variant detection from function / callee names.
