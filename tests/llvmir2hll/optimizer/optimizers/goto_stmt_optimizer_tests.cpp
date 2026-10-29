@@ -278,6 +278,29 @@ GotoToTailWithoutReturnIsKept) {
 	EXPECT_TRUE(target->hasLabel());
 }
 
+// goto L; ... L: a = 3; goto R; ... R: return 1;  ==>  a = 3; return 1;
+TEST_F(GotoStmtOptimizerTests,
+TailEndingInGotoToReturnIsCopiedWithTheReturn) {
+	ShPtr<Variable> varA(Variable::create("a", IntType::create(32)));
+	testFunc->addLocalVar(varA);
+	auto ret = ReturnStmt::create(ConstInt::create(1, 32));
+	ret->setLabel("R");
+	auto gotoRet = GotoStmt::create(ret);
+	auto target = AssignStmt::create(varA, ConstInt::create(3, 32), gotoRet);
+	target->setLabel("L");
+	auto skipped = AssignStmt::create(varA, ConstInt::create(1, 32), target);
+	auto gotoStmt = GotoStmt::create(target);
+	auto ifGoto = IfStmt::create(varA, gotoStmt, skipped);
+	gotoRet->setSuccessor(ret);
+	testFunc->setBody(ifGoto);
+
+	Optimizer::optimize<GotoStmtOptimizer>(module, true);
+
+	auto copy = cast<AssignStmt>(ifGoto->getFirstIfBody());
+	ASSERT_TRUE(copy) << "expected a copy of `a = 3`";
+	EXPECT_TRUE(isa<ReturnStmt>(copy->getSuccessor()));
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec

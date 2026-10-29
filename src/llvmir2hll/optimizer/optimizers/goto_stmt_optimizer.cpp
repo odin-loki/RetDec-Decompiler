@@ -86,11 +86,23 @@ void collectGotos(ShPtr<Statement> stmt, std::set<ShPtr<GotoStmt>> &out,
 /// plain statements; otherwise empty.
 std::vector<ShPtr<Statement>> shortReturningTail(ShPtr<Statement> target) {
 	std::vector<ShPtr<Statement>> tail;
+	std::size_t plain = 0; // statements other than empty ones
 	for (auto cur = target; cur; cur = cur->getSuccessor()) {
-		if (tail.size() >= 4 || (cur != target && cur->hasLabel())) {
+		if (plain >= 5 || (cur != target && cur->hasLabel())) {
+			break;
+		}
+		// A goto straight to a return ends the tail as that return.
+		if (auto g = cast<GotoStmt>(cur)) {
+			if (isa<ReturnStmt>(g->getTarget())) {
+				tail.push_back(g->getTarget());
+				return tail;
+			}
 			break;
 		}
 		tail.push_back(cur);
+		if (!isa<EmptyStmt>(cur)) {
+			++plain;
+		}
 		if (isa<ReturnStmt>(cur)) {
 			return tail;
 		}
