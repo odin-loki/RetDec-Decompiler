@@ -52,7 +52,9 @@
     "stem": "queue_array",
     "algorithms": [
       "Queue",
-      "FIFO"
+      "FIFO",
+      "RingBuffer",
+      "CircularBuffer"
     ]
   },
   {
@@ -178,7 +180,8 @@
     "algorithms": [
       "Mutex",
       "Concurrency",
-      "Pthread"
+      "Pthread",
+      "Thread"
     ]
   },
   {
