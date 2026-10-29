@@ -20,6 +20,8 @@
 #include "retdec/llvmir2hll/ir/empty_stmt.h"
 #include "retdec/llvmir2hll/ir/function.h"
 #include "retdec/llvmir2hll/ir/int_type.h"
+#include "retdec/llvmir2hll/ir/lt_op_expr.h"
+#include "retdec/llvmir2hll/support/visitors/ordered_all_visitor.h"
 #include "retdec/llvmir2hll/ir/module.h"
 #include "retdec/llvmir2hll/ir/pointer_type.h"
 #include "retdec/llvmir2hll/ir/return_stmt.h"
@@ -42,6 +44,50 @@ namespace tests {
 * @brief Tests for the @c basic_block_converter module.
 */
 class BasicBlockConverterTests: public LLVMIR2BIRConverterBaseTests {};
+
+namespace {
+
+/// Collects every less-than comparison in a function body.
+class LtCollector: public OrderedAllVisitor {
+public:
+	std::vector<ShPtr<LtOpExpr>> found;
+	using OrderedAllVisitor::visit;
+	void visit(ShPtr<LtOpExpr> expr) override {
+		found.push_back(expr);
+		OrderedAllVisitor::visit(expr);
+	}
+};
+
+} // anonymous namespace
+
+// x86 leaves `a <s b` as SF != OF of `a - b`; it must read as `a < b`.
+TEST_F(BasicBlockConverterTests,
+SignedLessThanFlagIdiomIsConvertedToAPlainComparison) {
+	auto module = convertLLVMIR2BIR(R"(
+		define i1 @function(i32 %a, i32 %b) {
+			%d = sub i32 %a, %b
+			%x1 = xor i32 %d, %a
+			%x2 = xor i32 %a, %b
+			%m = and i32 %x1, %x2
+			%s = xor i32 %m, %d
+			%c = icmp slt i32 %s, 0
+			ret i1 %c
+		}
+	)");
+
+	auto f = module->getFuncByName("function");
+	ASSERT_TRUE(f);
+	LtCollector c;
+	f->getBody()->accept(&c);
+	ASSERT_EQ(1u, c.found.size());
+	auto lt = c.found[0];
+	EXPECT_EQ(LtOpExpr::Variant::SCmp, lt->getVariant());
+	auto a = cast<Variable>(lt->getFirstOperand());
+	auto b = cast<Variable>(lt->getSecondOperand());
+	ASSERT_TRUE(a && b);
+	EXPECT_EQ("a", a->getName());
+	EXPECT_EQ("b", b->getName());
+}
 
 TEST_F(BasicBlockConverterTests,
 SequenceOfStatementsIsConvertedCorrectly) {

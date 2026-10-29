@@ -18,6 +18,7 @@
 #include <llvm/IR/Value.h>
 
 #include <cstdint>
+#include <utility>
 
 #include "retdec/llvmir2hll/ir/add_op_expr.h"
 #include "retdec/llvmir2hll/ir/address_op_expr.h"
@@ -657,6 +658,63 @@ ShPtr<Expression> LLVMInstructionConverter::convertBinaryOpToExpression(
 	return nullptr;
 }
 
+namespace {
+
+/// Returns @a i's operands as (x, y) when @a i is the binary @a opcode.
+bool binOperands(llvm::Value *v, unsigned opcode,
+		llvm::Value *&x, llvm::Value *&y) {
+	auto *bo = llvm::dyn_cast<llvm::BinaryOperator>(v);
+	if (!bo || bo->getOpcode() != opcode) {
+		return false;
+	}
+	x = bo->getOperand(0);
+	y = bo->getOperand(1);
+	return true;
+}
+
+/**
+* @brief Recognizes the flag idiom a compiler leaves for a signed less-than.
+*
+* Lifted x86 code computes `SF != OF` of `d = a - b` as
+* `((d ^ a) & (a ^ b) ^ d) <s 0`, which is exactly `a <s b`. On success, @a a
+* and @a b are set.
+*/
+bool matchSignedLessThanFlags(llvm::Value *x, llvm::Value *&a,
+		llvm::Value *&b) {
+	llvm::Value *l, *r;
+	if (!binOperands(x, llvm::Instruction::Xor, l, r)) {
+		return false;
+	}
+	for (int i = 0; i < 2; ++i, std::swap(l, r)) {
+		// l = (d ^ a) & (a ^ b), r = d = a - b.
+		llvm::Value *sa, *sb;
+		if (!binOperands(r, llvm::Instruction::Sub, sa, sb)) {
+			continue;
+		}
+		llvm::Value *p, *q;
+		if (!binOperands(l, llvm::Instruction::And, p, q)) {
+			continue;
+		}
+		for (int j = 0; j < 2; ++j, std::swap(p, q)) {
+			llvm::Value *p1, *p2, *q1, *q2;
+			if (!binOperands(p, llvm::Instruction::Xor, p1, p2) ||
+					!binOperands(q, llvm::Instruction::Xor, q1, q2)) {
+				continue;
+			}
+			bool dXorA = (p1 == r && p2 == sa) || (p2 == r && p1 == sa);
+			bool aXorB = (q1 == sa && q2 == sb) || (q1 == sb && q2 == sa);
+			if (dXorA && aXorB) {
+				a = sa;
+				b = sb;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+} // anonymous namespace
+
 /**
 * @brief Converts the given LLVM icmp instruction @a inst with compare predicate
 *        @a predicate into an expression in BIR.
@@ -666,6 +724,21 @@ ShPtr<Expression> LLVMInstructionConverter::convertBinaryOpToExpression(
 */
 ShPtr<Expression> LLVMInstructionConverter::convertICmpInstToExpression(
 		llvm::User &inst, unsigned predicate) {
+	if (predicate == llvm::CmpInst::Predicate::ICMP_SLT ||
+			predicate == llvm::CmpInst::Predicate::ICMP_SGE) {
+		auto *zero = llvm::dyn_cast<llvm::ConstantInt>(inst.getOperand(1));
+		llvm::Value *a = nullptr, *b = nullptr;
+		if (zero && zero->isZero() &&
+				matchSignedLessThanFlags(inst.getOperand(0), a, b)) {
+			auto ea = getConverter()->convertValueToExpression(a);
+			auto eb = getConverter()->convertValueToExpression(b);
+			if (predicate == llvm::CmpInst::Predicate::ICMP_SLT) {
+				return LtOpExpr::create(ea, eb, LtOpExpr::Variant::SCmp);
+			}
+			return GtEqOpExpr::create(ea, eb, GtEqOpExpr::Variant::SCmp);
+		}
+	}
+
 	auto op1 = getConverter()->convertValueToExpression(inst.getOperand(0));
 	auto op2 = getConverter()->convertValueToExpression(inst.getOperand(1));
 
