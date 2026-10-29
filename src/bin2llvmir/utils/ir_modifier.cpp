@@ -871,6 +871,12 @@ GlobalVariable* IrModifier::getGlobalVariable(
 	if (c == nullptr)
 	{
 		c = objf->getConstant(_config, dbgf, addr);
+		// A word read can run off the end of the segment (a 4-byte float as
+		// the last item of ppc64 .rodata): fall back to the access type.
+		if (c == nullptr && preferredPointeeType && preferredPointeeType->isSized())
+		{
+			c = objf->getConstant(t, addr);
+		}
 		c = detectGlobalVariableInitializerCycle(_module, gv, c, objf, addr);
 		if (c == nullptr)
 		{
