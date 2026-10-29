@@ -204,7 +204,7 @@ void ConstantsAnalysis::widenIndexedGlobals()
 		auto addr = _config->getGlobalAddress(gv);
 		auto* at = ArrayType::get(et, n);
 		std::vector<Constant*> elems;
-		bool le = dl.isLittleEndian();
+		bool le = img->getEndianness() == retdec::utils::Endianness::LITTLE;
 		std::vector<std::uint8_t> bytes;
 		bool have = img->getXBytes(addr, es * n, bytes) && bytes.size() >= es * n;
 		for (uint64_t k = 0; k < n; ++k)
@@ -278,7 +278,7 @@ void ConstantsAnalysis::widenNarrowConstantLoads()
 		if (!img->getXBytes(addr, want, bytes) || bytes.size() < want) continue;
 		unsigned bits = load->getType()->getIntegerBitWidth();
 		APInt v(bits, 0);
-		bool le = dl.isLittleEndian();
+		bool le = img->getEndianness() == retdec::utils::Endianness::LITTLE;
 		for (uint64_t k = 0; k < want; ++k)
 		{
 			uint64_t b = bytes[le ? want - 1 - k : k];
