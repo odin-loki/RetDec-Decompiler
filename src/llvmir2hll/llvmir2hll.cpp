@@ -216,6 +216,79 @@ void printErrorUnsupportedObject(
 namespace {
 
 /**
+ * The lifter can create a global for a whole object (a struct array walked
+ * through computed pointers) and separate globals for fields of it that some
+ * code reads at constant addresses. As distinct C variables, the stores
+ * through the array never reached the field reads (x64 -O2 f_st_arr). Turn
+ * each zero-initialised global lying inside a zero-initialised aggregate
+ * global into an address inside that aggregate. Addresses come from the
+ * `global_var_<hex>` names.
+ */
+void mergeGlobalsInsideAggregates(llvm::Module& m)
+{
+	const auto& dl = m.getDataLayout();
+	auto addrOf = [](const llvm::GlobalVariable& g, uint64_t& a) {
+		auto n = g.getName();
+		if (!n.consume_front("global_var_"))
+		{
+			return false;
+		}
+		return !n.getAsInteger(16, a);
+	};
+	struct Obj { uint64_t lo, hi; llvm::GlobalVariable* g; };
+	std::vector<Obj> outers;
+	for (auto& g : m.globals())
+	{
+		uint64_t a = 0;
+		auto* ty = g.getValueType();
+		if (!addrOf(g, a) || !g.hasInitializer() || g.isConstant()
+				|| !(ty->isArrayTy() || ty->isStructTy())
+				|| !g.getInitializer()->isNullValue())
+		{
+			continue;
+		}
+		outers.push_back({a, a + dl.getTypeAllocSize(ty), &g});
+	}
+	if (outers.empty())
+	{
+		return;
+	}
+	std::vector<std::pair<llvm::GlobalVariable*, Obj>> work;
+	for (auto& g : m.globals())
+	{
+		uint64_t a = 0;
+		if (!addrOf(g, a) || !g.hasInitializer() || g.isConstant()
+				|| !g.getInitializer()->isNullValue())
+		{
+			continue;
+		}
+		uint64_t e = a + dl.getTypeAllocSize(g.getValueType());
+		for (auto& o : outers)
+		{
+			if (o.g != &g && o.lo <= a && e <= o.hi && !(o.lo == a && e == o.hi))
+			{
+				work.push_back({&g, {a - o.lo, 0, o.g}});
+				break;
+			}
+		}
+	}
+	for (auto& [g, o] : work)
+	{
+		auto& ctx = m.getContext();
+		// `(intptr)&outer + off` as an integer, the form the lifter itself
+		// uses for such addresses, so the writer keeps each access's type.
+		auto* ity = dl.getIntPtrType(ctx);
+		auto* addr = llvm::ConstantExpr::getIntToPtr(
+				llvm::ConstantExpr::getAdd(
+					llvm::ConstantExpr::getPtrToInt(o.g, ity),
+					llvm::ConstantInt::get(ity, o.lo)),
+				g->getType());
+		g->replaceAllUsesWith(addr);
+		g->eraseFromParent();
+	}
+}
+
+/**
  * Find the scalar that occupies bytes [off, off + size) of @a v, looking
  * through bitcasts and constant-index insert/extractelement (little-endian
  * lane layout). Returns nullptr when the bytes come from anything else.
@@ -537,6 +610,7 @@ bool LlvmIr2Hll::runOnModule(llvm::Module &m)
 {
 	expandIntegerIntrinsics(m);
 	foldVectorLaneExtracts(m);
+	mergeGlobalsInsideAggregates(m);
 	logLlvmInputIrShapeDiag(m);
 
 	LlvmIr2HllPhaseTimer diagTimer(llvmIr2HllDiagEnabled());

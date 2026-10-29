@@ -208,6 +208,15 @@ public:
 		}
 		OrderedAllVisitor::visit(expr);
 	}
+	// The same inlining puts `c ? v : 1` (unsigned v) under a sign
+	// extension, which C then widened with zeros (x64 -O1 f_s64: the
+	// sdiv i128 divisor of a negative y).
+	void visit(ShPtr<ExtCastExpr> expr) override {
+		if (expr->getVariant() == ExtCastExpr::Variant::SExt) {
+			expr->setOperand(fix(true, expr->getOperand()));
+		}
+		OrderedAllVisitor::visit(expr);
+	}
 	// Copy propagation can inline a `(uint32_t)x` truncation into a signed
 	// int-to-float conversion, which then converted as unsigned (x64 -O1
 	// f_fl: `(float)(int)a` printed as `(uint32_t)a`).

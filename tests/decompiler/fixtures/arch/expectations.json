@@ -72,5 +72,12 @@
   "uint64_t v6 = 8;",
   "!int128_t",
   "!/ 0;"
+ ],
+ "audit3-x86_64-pie": [
+  "*(uint16_t *)((uint64_t)&g1 + 4);",
+  "(int128_t)(int64_t)("
+ ],
+ "audit3-x86_64-pie-o1": [
+  "(int128_t)(int64_t)("
  ]
 }
