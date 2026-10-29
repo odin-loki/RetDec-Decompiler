@@ -8705,5 +8705,152 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVscr(
 	storeOpI128(pi->operands[0], bits, irb);
 }
 
+/**
+ * Overflow-enable (OE=1) forms compute the same result as the plain
+ * instruction; the XER OV/SO side effect is not modelled, so they reuse the
+ * plain translator with the id swapped for the duration of the call.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateTwin(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	unsigned sid = 0;
+	void (Capstone2LlvmIrTranslatorPowerpc_impl::*fn)(cs_insn*, cs_ppc*, llvm::IRBuilder<>&) = nullptr;
+	switch (i->id)
+	{
+		case PPC_INS_ADDO: sid = PPC_INS_ADD; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateAdd; break;
+		case PPC_INS_ADDCO: sid = PPC_INS_ADDC; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateAddc; break;
+		case PPC_INS_ADDEO: sid = PPC_INS_ADDE; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateAdde; break;
+		case PPC_INS_ADDMEO: sid = PPC_INS_ADDME; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateAddme; break;
+		case PPC_INS_ADDZEO: sid = PPC_INS_ADDZE; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateAddze; break;
+		case PPC_INS_NEGO: sid = PPC_INS_NEG; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateNeg; break;
+		case PPC_INS_MULLWO: sid = PPC_INS_MULLW; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateMullw; break;
+		case PPC_INS_MULLDO: sid = PPC_INS_MULLD; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateMullw; break;
+		case PPC_INS_DIVWO: sid = PPC_INS_DIVW; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateDivw; break;
+		case PPC_INS_DIVWUO: sid = PPC_INS_DIVWU; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateDivw; break;
+		case PPC_INS_DIVDO: sid = PPC_INS_DIVD; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateDivw; break;
+		case PPC_INS_DIVDUO: sid = PPC_INS_DIVDU; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateDivw; break;
+		case PPC_INS_DIVWEO: sid = PPC_INS_DIVWE; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translatePpcMisc; break;
+		case PPC_INS_DIVWEUO: sid = PPC_INS_DIVWEU; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translatePpcMisc; break;
+		default:
+			translatePseudoAsmGeneric(i, pi, irb);
+			return;
+	}
+	unsigned hid = i->id;
+	i->id = sid;
+	try
+	{
+		(this->*fn)(i, pi, irb);
+	}
+	catch (...)
+	{
+		i->id = hid;
+		throw;
+	}
+	i->id = hid;
+}
+
+/**
+ * Power ISA 2.06-3.1 integer additions: MODSW/MODUW/MODSD/MODUD,
+ * CNTTZW/CNTTZD, BRH/BRW/BRD, MADDLD/MADDHD/MADDHDU, DIVWE/DIVWEU and
+ * EXTSWSLI.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translatePpcMisc(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	auto* i32 = irb.getInt32Ty();
+	auto* i64 = irb.getInt64Ty();
+	auto ld = [&](unsigned k) { return loadOp(pi->operands[k], irb); };
+	llvm::Value* val = nullptr;
+	switch (i->id)
+	{
+		case PPC_INS_MODSW:
+		case PPC_INS_MODUW:
+		{
+			auto* a = irb.CreateTrunc(ld(1), i32);
+			auto* b = irb.CreateTrunc(ld(2), i32);
+			// Division by zero is undefined in the ISA; avoid UB in the IR.
+			auto* z = irb.CreateICmpEQ(b, llvm::ConstantInt::get(i32, 0));
+			b = irb.CreateSelect(z, llvm::ConstantInt::get(i32, 1), b);
+			val = i->id == PPC_INS_MODSW ? irb.CreateSRem(a, b) : irb.CreateURem(a, b);
+			val = i->id == PPC_INS_MODSW ? irb.CreateSExt(val, getDefaultType()) : irb.CreateZExt(val, getDefaultType());
+			break;
+		}
+		case PPC_INS_MODSD:
+		case PPC_INS_MODUD:
+		{
+			auto* a = irb.CreateZExtOrTrunc(ld(1), i64);
+			auto* b = irb.CreateZExtOrTrunc(ld(2), i64);
+			auto* z = irb.CreateICmpEQ(b, llvm::ConstantInt::get(i64, 0));
+			b = irb.CreateSelect(z, llvm::ConstantInt::get(i64, 1), b);
+			val = i->id == PPC_INS_MODSD ? irb.CreateSRem(a, b) : irb.CreateURem(a, b);
+			break;
+		}
+		case PPC_INS_CNTTZW:
+		case PPC_INS_CNTTZD:
+		{
+			llvm::Value* a = ld(1);
+			a = i->id == PPC_INS_CNTTZW ? irb.CreateTrunc(a, i32) : irb.CreateZExtOrTrunc(a, i64);
+			auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::cttz, a->getType());
+			val = irb.CreateCall(f, {a, irb.getFalse()});
+			break;
+		}
+		case PPC_INS_BRH:
+		case PPC_INS_BRW:
+		case PPC_INS_BRD:
+		{
+			unsigned lane = i->id == PPC_INS_BRH ? 2 : i->id == PPC_INS_BRW ? 4 : 8;
+			auto* a = irb.CreateZExtOrTrunc(ld(1), i64);
+			llvm::Value* r = llvm::ConstantInt::get(i64, 0);
+			for (unsigned b = 0; b < 8; ++b)
+			{
+				unsigned base = b / lane * lane;
+				unsigned dst = base + (lane - 1 - (b - base));
+				auto* byte = irb.CreateAnd(irb.CreateLShr(a, 8 * b), llvm::ConstantInt::get(i64, 0xff));
+				r = irb.CreateOr(r, irb.CreateShl(byte, 8 * dst));
+			}
+			val = r;
+			break;
+		}
+		case PPC_INS_MADDLD:
+		case PPC_INS_MADDHD:
+		case PPC_INS_MADDHDU:
+		{
+			auto* i128 = irb.getInt128Ty();
+			bool u = i->id == PPC_INS_MADDHDU;
+			auto ext = [&](llvm::Value* v) {
+				v = irb.CreateZExtOrTrunc(v, i64);
+				return u ? irb.CreateZExt(v, i128) : irb.CreateSExt(v, i128);
+			};
+			auto* p = irb.CreateAdd(irb.CreateMul(ext(ld(1)), ext(ld(2))), ext(ld(3)));
+			val = i->id == PPC_INS_MADDLD ? irb.CreateTrunc(p, i64)
+					: irb.CreateTrunc(irb.CreateLShr(p, 64), i64);
+			break;
+		}
+		case PPC_INS_DIVWE:
+		case PPC_INS_DIVWEU:
+		{
+			bool sg = i->id == PPC_INS_DIVWE;
+			auto* a = irb.CreateShl(irb.CreateZExt(irb.CreateTrunc(ld(1), i32), i64), 32);
+			auto* b32 = irb.CreateTrunc(ld(2), i32);
+			auto* b = sg ? irb.CreateSExt(b32, i64) : irb.CreateZExt(b32, i64);
+			auto* z = irb.CreateICmpEQ(b, llvm::ConstantInt::get(i64, 0));
+			b = irb.CreateSelect(z, llvm::ConstantInt::get(i64, 1), b);
+			auto* q = sg ? irb.CreateSDiv(a, b) : irb.CreateUDiv(a, b);
+			val = irb.CreateZExtOrTrunc(irb.CreateTrunc(q, i32), getDefaultType());
+			break;
+		}
+		case PPC_INS_EXTSWSLI:
+		{
+			auto* a = irb.CreateSExt(irb.CreateTrunc(ld(1), i32), i64);
+			val = irb.CreateShl(a, llvm::ConstantInt::get(i64, pi->operands[2].imm & 63));
+			break;
+		}
+		default:
+			translatePseudoAsmGeneric(i, pi, irb);
+			return;
+	}
+	storeOp(pi->operands[0], val, irb);
+	storeCr0(irb, pi, val);
+}
+
+
 } // namespace capstone2llvmir
 } // namespace retdec
