@@ -9208,8 +9208,8 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecLane(cs_insn* i, cs_ppc*
 			case PPC_INS_VSRAQ: res = irb.CreateAShr(a, sh); break;
 			case PPC_INS_VRLQ:
 			{
-				auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::fshl, i128);
-				res = irb.CreateCall(f, {a, a, sh});
+				auto* rsh = irb.CreateAnd(irb.CreateSub(c128(128), sh), c128(127));
+				res = irb.CreateOr(irb.CreateShl(a, sh), irb.CreateLShr(a, rsh));
 				break;
 			}
 			default: break;

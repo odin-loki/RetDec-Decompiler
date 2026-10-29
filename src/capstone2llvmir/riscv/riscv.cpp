@@ -416,7 +416,8 @@ bool Capstone2LlvmIrTranslatorRiscv_impl::isAllowedExtraMode(cs_mode m)
 			| static_cast<unsigned>(CS_MODE_RISCV_ZBC)
 			| static_cast<unsigned>(CS_MODE_RISCV_ZBS)
 			| static_cast<unsigned>(CS_MODE_RISCV_VENTANA)
-			| static_cast<unsigned>(CS_MODE_RISCV_ZCMP_ZCMT_ZCE);
+			| static_cast<unsigned>(CS_MODE_RISCV_ZCMP_ZCMT_ZCE)
+			| static_cast<unsigned>(CS_MODE_RISCV_THEAD);
 	auto stripped = static_cast<cs_mode>(static_cast<unsigned>(m) & ~ext);
 	return stripped == CS_MODE_LITTLE_ENDIAN
 			|| stripped == CS_MODE_BIG_ENDIAN;
@@ -6638,6 +6639,171 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateTwin(cs_insn* i, cs_riscv* ri
 		throw;
 	}
 	i->id = hid;
+}
+
+
+/**
+ * T-Head vendor integer extensions (XTheadBa/Bb/Bs/CondMov/Mac/MemIdx
+ * indexed register-offset forms), decoded from the raw little-endian word.
+ * Cache-maintenance and sync forms are no-ops.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateThead(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	uint32_t w = uint32_t(i->bytes[0]) | (uint32_t(i->bytes[1]) << 8)
+			| (uint32_t(i->bytes[2]) << 16) | (uint32_t(i->bytes[3]) << 24);
+	unsigned rd = (w >> 7) & 31, rs1 = (w >> 15) & 31, rs2 = (w >> 20) & 31;
+	auto* xt = getDefaultType();
+	unsigned xlen = xt->getIntegerBitWidth();
+	auto* i32 = irb.getInt32Ty();
+	auto cx = [&](uint64_t v) { return llvm::ConstantInt::get(xt, v); };
+	auto ldr = [&](unsigned n) -> llvm::Value* {
+		if (n == 0) return cx(0);
+		return irb.CreateZExtOrTrunc(loadRegister(RISCV_REG_X0 + n, irb), xt);
+	};
+	auto str = [&](unsigned n, llvm::Value* v) {
+		if (n != 0) storeRegister(RISCV_REG_X0 + n, irb.CreateZExtOrTrunc(v, xt), irb);
+	};
+	auto sext32 = [&](llvm::Value* v) { return irb.CreateSExt(irb.CreateTrunc(v, i32), xt); };
+	auto* a = ldr(rs1);
+	llvm::Value* r = nullptr;
+	switch (i->id)
+	{
+		case RISCV_INS_TH_ADDSL:
+			r = irb.CreateAdd(a, irb.CreateShl(ldr(rs2), (w >> 25) & 3));
+			break;
+		case RISCV_INS_TH_MVEQZ:
+		case RISCV_INS_TH_MVNEZ:
+		{
+			auto* z = irb.CreateICmpEQ(ldr(rs2), cx(0));
+			if (i->id == RISCV_INS_TH_MVNEZ) z = irb.CreateNot(z);
+			r = irb.CreateSelect(z, a, ldr(rd));
+			break;
+		}
+		case RISCV_INS_TH_TST:
+			r = irb.CreateAnd(irb.CreateLShr(a, (w >> 20) & (xlen - 1)), cx(1));
+			break;
+		case RISCV_INS_TH_TSTNBZ:
+		{
+			r = cx(0);
+			for (unsigned b = 0; b < xlen / 8; ++b)
+			{
+				auto* by = irb.CreateAnd(irb.CreateLShr(a, 8 * b), cx(0xff));
+				auto* m = irb.CreateSelect(irb.CreateICmpEQ(by, cx(0)), cx(0xff), cx(0));
+				r = irb.CreateOr(r, irb.CreateShl(m, 8 * b));
+			}
+			break;
+		}
+		case RISCV_INS_TH_REV:
+		case RISCV_INS_TH_REVW:
+		{
+			unsigned bytes = i->id == RISCV_INS_TH_REVW ? 4 : xlen / 8;
+			r = cx(0);
+			for (unsigned b = 0; b < bytes; ++b)
+			{
+				auto* by = irb.CreateAnd(irb.CreateLShr(a, 8 * b), cx(0xff));
+				r = irb.CreateOr(r, irb.CreateShl(by, 8 * (bytes - 1 - b)));
+			}
+			if (i->id == RISCV_INS_TH_REVW) r = sext32(r);
+			break;
+		}
+		case RISCV_INS_TH_FF0:
+		case RISCV_INS_TH_FF1:
+		{
+			auto* v = i->id == RISCV_INS_TH_FF0 ? irb.CreateNot(a) : a;
+			auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::ctlz, xt);
+			r = irb.CreateCall(f, {v, irb.getFalse()});
+			break;
+		}
+		case RISCV_INS_TH_EXT:
+		case RISCV_INS_TH_EXTU:
+		{
+			unsigned msb = (w >> 26) & 63, lsb = (w >> 20) & 63;
+			if (msb >= xlen || lsb > msb) { translatePseudoAsmGeneric(i, ri, irb); return; }
+			auto* t = irb.CreateShl(a, xlen - 1 - msb);
+			unsigned sh = xlen - 1 - msb + lsb;
+			r = i->id == RISCV_INS_TH_EXT ? irb.CreateAShr(t, sh) : irb.CreateLShr(t, sh);
+			break;
+		}
+		case RISCV_INS_TH_SRRI:
+		{
+			unsigned sh = (w >> 20) & (xlen - 1);
+			r = sh ? irb.CreateOr(irb.CreateLShr(a, sh), irb.CreateShl(a, xlen - sh)) : a;
+			break;
+		}
+		case RISCV_INS_TH_SRRIW:
+		{
+			unsigned sh = (w >> 20) & 31;
+			auto* a32 = irb.CreateTrunc(a, i32);
+			llvm::Value* rr = sh ? irb.CreateOr(irb.CreateLShr(a32, sh), irb.CreateShl(a32, 32 - sh)) : a32;
+			r = irb.CreateSExt(rr, xt);
+			break;
+		}
+		case RISCV_INS_TH_MULA:
+			r = irb.CreateAdd(ldr(rd), irb.CreateMul(a, ldr(rs2)));
+			break;
+		case RISCV_INS_TH_MULS:
+			r = irb.CreateSub(ldr(rd), irb.CreateMul(a, ldr(rs2)));
+			break;
+		case RISCV_INS_TH_MULAW:
+			r = sext32(irb.CreateAdd(ldr(rd), irb.CreateMul(a, ldr(rs2))));
+			break;
+		case RISCV_INS_TH_MULSW:
+			r = sext32(irb.CreateSub(ldr(rd), irb.CreateMul(a, ldr(rs2))));
+			break;
+		case RISCV_INS_TH_MULAH:
+		case RISCV_INS_TH_MULSH:
+		{
+			auto h = [&](llvm::Value* v) { return irb.CreateSExt(irb.CreateTrunc(v, irb.getInt16Ty()), xt); };
+			auto* p = irb.CreateMul(h(a), h(ldr(rs2)));
+			r = sext32(i->id == RISCV_INS_TH_MULAH ? irb.CreateAdd(ldr(rd), p) : irb.CreateSub(ldr(rd), p));
+			break;
+		}
+		case RISCV_INS_TH_LRB: case RISCV_INS_TH_LRBU: case RISCV_INS_TH_LRH: case RISCV_INS_TH_LRHU:
+		case RISCV_INS_TH_LRW: case RISCV_INS_TH_LRWU: case RISCV_INS_TH_LRD:
+		case RISCV_INS_TH_LURB: case RISCV_INS_TH_LURBU: case RISCV_INS_TH_LURH: case RISCV_INS_TH_LURHU:
+		case RISCV_INS_TH_LURW: case RISCV_INS_TH_LURWU: case RISCV_INS_TH_LURD:
+		case RISCV_INS_TH_SRB: case RISCV_INS_TH_SRH: case RISCV_INS_TH_SRW: case RISCV_INS_TH_SRD:
+		case RISCV_INS_TH_SURB: case RISCV_INS_TH_SURH: case RISCV_INS_TH_SURW: case RISCV_INS_TH_SURD:
+		{
+			unsigned id = i->id;
+			bool u = id == RISCV_INS_TH_LURB || id == RISCV_INS_TH_LURBU || id == RISCV_INS_TH_LURH
+					|| id == RISCV_INS_TH_LURHU || id == RISCV_INS_TH_LURW || id == RISCV_INS_TH_LURWU
+					|| id == RISCV_INS_TH_LURD || id == RISCV_INS_TH_SURB || id == RISCV_INS_TH_SURH
+					|| id == RISCV_INS_TH_SURW || id == RISCV_INS_TH_SURD;
+			llvm::Value* idx = ldr(rs2);
+			if (u) idx = irb.CreateZExt(irb.CreateTrunc(idx, i32), xt);
+			auto* ea = irb.CreateAdd(a, irb.CreateShl(idx, (w >> 25) & 3));
+			unsigned bits = 8;
+			bool zx = false, st = false;
+			switch (id)
+			{
+				case RISCV_INS_TH_LRB: case RISCV_INS_TH_LURB: break;
+				case RISCV_INS_TH_LRBU: case RISCV_INS_TH_LURBU: zx = true; break;
+				case RISCV_INS_TH_LRH: case RISCV_INS_TH_LURH: bits = 16; break;
+				case RISCV_INS_TH_LRHU: case RISCV_INS_TH_LURHU: bits = 16; zx = true; break;
+				case RISCV_INS_TH_LRW: case RISCV_INS_TH_LURW: bits = 32; break;
+				case RISCV_INS_TH_LRWU: case RISCV_INS_TH_LURWU: bits = 32; zx = true; break;
+				case RISCV_INS_TH_LRD: case RISCV_INS_TH_LURD: bits = 64; break;
+				case RISCV_INS_TH_SRB: case RISCV_INS_TH_SURB: st = true; break;
+				case RISCV_INS_TH_SRH: case RISCV_INS_TH_SURH: bits = 16; st = true; break;
+				case RISCV_INS_TH_SRW: case RISCV_INS_TH_SURW: bits = 32; st = true; break;
+				default: bits = 64; st = true; break;
+			}
+			auto* ty = irb.getIntNTy(bits);
+			if (st)
+			{
+				storeIntPtr(irb, irb.CreateTrunc(ldr(rd), ty), ea, ty);
+				return;
+			}
+			llvm::Value* l = loadIntPtr(irb, ea, ty);
+			r = zx ? irb.CreateZExtOrTrunc(l, xt) : irb.CreateSExtOrTrunc(l, xt);
+			break;
+		}
+		default:
+			// Cache maintenance / sync hints.
+			return;
+	}
+	str(rd, r);
 }
 
 
