@@ -10499,5 +10499,64 @@ void Capstone2LlvmIrTranslatorX86_impl::translateMiscIsa(cs_insn* i, cs_x86* xi,
 	}
 }
 
+/**
+ * VPSHUFBITQMB: for every byte j, k[j] = bit (b[j] & 63) of the qword of a
+ * that contains byte j, then ANDed with the writemask.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateVpshufbitqmb(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	auto isK = [&](const cs_x86_op& o) {
+		return o.type == X86_OP_REG && o.reg >= X86_REG_K0 && o.reg <= X86_REG_K7;
+	};
+	if (xi->op_count < 3 || !isK(xi->operands[0]))
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	int maskOp = -1;
+	std::vector<unsigned> vecOps;
+	for (unsigned k = 1; k < xi->op_count; ++k)
+	{
+		if (isK(xi->operands[k])) maskOp = int(k);
+		else vecOps.push_back(k);
+	}
+	if (vecOps.size() != 2)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned bits = xi->operands[vecOps[0]].size * 8;
+	if (bits != 128 && bits != 256 && bits != 512)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned bitsB = bits;
+	Value* a = loadVectorOp(xi->operands[vecOps[0]], irb, bits);
+	Value* b = loadVectorOp(xi->operands[vecOps[1]], irb, bitsB);
+	if (a == nullptr || b == nullptr)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned n = bits / 8;
+	auto* i64 = irb.getInt64Ty();
+	auto* intTy = irb.getIntNTy(bits);
+	Value* qa = irb.CreateBitCast(irb.CreateZExtOrTrunc(a, intTy), FixedVectorType::get(i64, n / 8));
+	Value* vb = irb.CreateBitCast(irb.CreateZExtOrTrunc(b, intTy), FixedVectorType::get(irb.getInt8Ty(), n));
+	std::vector<int> idx;
+	for (unsigned j = 0; j < n; ++j) idx.push_back(int(j / 8));
+	Value* wide = irb.CreateShuffleVector(qa, idx);
+	auto* v64 = FixedVectorType::get(i64, n);
+	Value* sh = irb.CreateAnd(irb.CreateZExt(vb, v64), ConstantInt::get(v64, 63));
+	Value* bitsV = irb.CreateTrunc(irb.CreateLShr(wide, sh), FixedVectorType::get(irb.getInt1Ty(), n));
+	Value* r = irb.CreateZExt(irb.CreateBitCast(bitsV, irb.getIntNTy(n)), i64);
+	if (maskOp >= 0)
+	{
+		r = irb.CreateAnd(r, irb.CreateZExtOrTrunc(loadRegister(xi->operands[maskOp].reg, irb), i64));
+	}
+	storeRegister(xi->operands[0].reg, r, irb);
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec

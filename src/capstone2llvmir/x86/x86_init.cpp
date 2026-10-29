@@ -1373,6 +1373,7 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorX86_impl::*)(cs_insn* i, cs
 		{X86_INS_RDTSC, &Capstone2LlvmIrTranslatorX86_impl::translateRdtsc},
 		{X86_INS_RDTSCP, &Capstone2LlvmIrTranslatorX86_impl::translateRdtscp},
 		{X86_INS_MOVDIRI, &Capstone2LlvmIrTranslatorX86_impl::translateMiscIsa},
+		{X86_INS_VPSHUFBITQMB, &Capstone2LlvmIrTranslatorX86_impl::translateVpshufbitqmb},
 		{X86_INS_MOVDIR64B, &Capstone2LlvmIrTranslatorX86_impl::translateMiscIsa},
 		{X86_INS_CLZERO, &Capstone2LlvmIrTranslatorX86_impl::translateMiscIsa},
 		{X86_INS_RDPID, &Capstone2LlvmIrTranslatorX86_impl::translateMiscIsa},

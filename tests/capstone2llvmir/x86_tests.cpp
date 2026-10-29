@@ -24039,6 +24039,16 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VPCOMPRESSD_masked_is_lifted)
 	EXPECT_FALSE(callsPseudoAsm(f)) << dumpFunction(f);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VPSHUFBITQMB_selects_bits)
+{
+	ONLY_MODE_64;
+	setXmm(X86_REG_XMM1, 0x0ULL, 0x5ULL);
+	setXmm(X86_REG_XMM3, 0x0ULL, 0x0201000000000000ULL);
+	emulate_bin("62 f2 75 08 8f d3");
+	EXPECT_EQ(0xbfULL, getRegisterValueUnsigned(X86_REG_K2));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
