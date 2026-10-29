@@ -20174,6 +20174,23 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSRQPXP)
 	EXPECT_FALSE(hasAsmCall(f)) << dumpFunction(f);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VNCIPHER)
+{
+	ALL_MODES;
+
+	auto* f = translate(utils::hexStringToBytes("10 43 25 48")); // vncipher v2, v3, v4
+	ASSERT_NE(nullptr, f);
+	auto* in = _module.getFunction("llvm.ppc.altivec.crypto.vncipher");
+	ASSERT_NE(nullptr, in);
+	bool hit = false;
+	for (auto& bb : *f)
+		for (auto& ins : bb)
+			if (auto* c = llvm::dyn_cast<llvm::CallInst>(&ins))
+				hit |= c->getCalledFunction() == in;
+	EXPECT_TRUE(hit);
+	EXPECT_FALSE(hasAsmCall(f)) << dumpFunction(f);
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
