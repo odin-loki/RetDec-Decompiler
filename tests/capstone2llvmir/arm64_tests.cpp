@@ -15387,6 +15387,20 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCADD_sve_merges_under_pre
 	EXPECT_EQ(0x40c0000040a00000ULL, zPart(ARM64_REG_Z0, true));
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SVE_LD1RO_and_Q_structures_are_lifted)
+{
+	// ld1rob {z0.b}, p0/z, [x0]; ld1row {z0.s}, p0/z, [x0, #32];
+	// ld2q {z0.q, z1.q}, p0/z, [x0]; st4q {z0.q, z1.q, z2.q, z3.q}, p0, [x0]
+	auto* f = translate(utils::hexStringToBytes("00 20 20 a4 00 20 21 a5 00 e0 90 a4 00 00 c0 e4"));
+	ASSERT_NE(nullptr, f);
+	std::string ir;
+	llvm::raw_string_ostream os(ir);
+	f->print(os);
+	os.flush();
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_NE(std::string::npos, ir.find("store i128")) << ir;
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_BC_is_a_conditional_branch)
 {
 	auto* f = translate(utils::hexStringToBytes("50 00 00 54")); // bc.eq #8

@@ -7932,6 +7932,7 @@ static unsigned sveMemElemBits(unsigned id)
 	case ARM64_INS_LD1B:
 	case ARM64_INS_ST1B:
 	case ARM64_INS_LD1RQB:
+	case ARM64_INS_LD1ROB:
 	case ARM64_INS_LDNT1B:
 	case ARM64_INS_STNT1B:
 	case ARM64_INS_LD1SB:
@@ -7944,6 +7945,7 @@ static unsigned sveMemElemBits(unsigned id)
 	case ARM64_INS_LD1H:
 	case ARM64_INS_ST1H:
 	case ARM64_INS_LD1RQH:
+	case ARM64_INS_LD1ROH:
 	case ARM64_INS_LDNT1H:
 	case ARM64_INS_STNT1H:
 	case ARM64_INS_LD1SH:
@@ -7956,6 +7958,7 @@ static unsigned sveMemElemBits(unsigned id)
 	case ARM64_INS_LD1D:
 	case ARM64_INS_ST1D:
 	case ARM64_INS_LD1RQD:
+	case ARM64_INS_LD1ROD:
 	case ARM64_INS_LDNT1D:
 	case ARM64_INS_STNT1D:
 	case ARM64_INS_LDFF1D:
@@ -7982,6 +7985,7 @@ static bool sveLdIsLoad(unsigned id)
 {
 	return id == ARM64_INS_LD1B || id == ARM64_INS_LD1H || id == ARM64_INS_LD1W || id == ARM64_INS_LD1D
 		   || id == ARM64_INS_LD1RQB || id == ARM64_INS_LD1RQH || id == ARM64_INS_LD1RQW
+		   || id == ARM64_INS_LD1ROB || id == ARM64_INS_LD1ROH || id == ARM64_INS_LD1ROW || id == ARM64_INS_LD1ROD
 		   || id == ARM64_INS_LD1RQD || id == ARM64_INS_LDNT1B || id == ARM64_INS_LDNT1H
 		   || id == ARM64_INS_LDNT1W || id == ARM64_INS_LDNT1D || id == ARM64_INS_LD1SB
 		   || id == ARM64_INS_LD1SH || id == ARM64_INS_LD1SW || id == ARM64_INS_LDNT1SB
@@ -8265,8 +8269,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateSveLdSt(cs_insn* i, cs_arm64*
  * Vector length is modelled as 128 bits, as for every other SVE form here.
  * Structure k occupies memory elements N*k .. N*k+N-1 and its member r goes
  * to lane k of Z(t+r). Inactive lanes of a load are zeroed; an inactive
- * store lane leaves memory as it was. The Q forms and LD1RO* keep the
- * opaque fallback.
+ * store lane leaves memory as it was. The Q forms (SVE2.1) move one
+ * 128-bit element per register at this vector length.
  */
 void Capstone2LlvmIrTranslatorArm64_impl::translateSveStructLdSt(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {
@@ -8301,6 +8305,12 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateSveStructLdSt(cs_insn* i, cs_
 	case ARM64_INS_ST4H: n = 4; memBits = 16; store = true; break;
 	case ARM64_INS_ST4W: n = 4; memBits = 32; store = true; break;
 	case ARM64_INS_ST4D: n = 4; memBits = 64; store = true; break;
+	case ARM64_INS_LD2Q: n = 2; memBits = 128; break;
+	case ARM64_INS_LD3Q: n = 3; memBits = 128; break;
+	case ARM64_INS_LD4Q: n = 4; memBits = 128; break;
+	case ARM64_INS_ST2Q: n = 2; memBits = 128; store = true; break;
+	case ARM64_INS_ST3Q: n = 3; memBits = 128; store = true; break;
+	case ARM64_INS_ST4Q: n = 4; memBits = 128; store = true; break;
 	case ARM64_INS_LD1RB: n = 1; memBits = 8; replicate = true; break;
 	case ARM64_INS_LD1RH: n = 1; memBits = 16; replicate = true; break;
 	case ARM64_INS_LD1RW: n = 1; memBits = 32; replicate = true; break;
