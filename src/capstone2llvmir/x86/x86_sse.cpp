@@ -9678,5 +9678,162 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvx512BitOps(cs_insn* i, cs_x86
 }
 
 
+void Capstone2LlvmIrTranslatorX86_impl::translateAvxChunks(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	// Whole-chunk moves: broadcasts of a 64/128/256-bit block, 128-bit lane
+	// shuffles, extracts of 128/256-bit halves, and XOP horizontal add/sub.
+	enum Kind { BCAST, SHUF, EXTRACT, HADD, HSUB };
+	Kind kind = BCAST;
+	unsigned sb = 0, db = 0;
+	bool sgn = true;
+	switch (i->id)
+	{
+	case X86_INS_VBROADCASTF32X2: case X86_INS_VBROADCASTI32X2: sb = 64; break;
+	case X86_INS_VBROADCASTF32X4: case X86_INS_VBROADCASTF64X2:
+	case X86_INS_VBROADCASTI64X2: case X86_INS_VBROADCASTI128: sb = 128; break;
+	case X86_INS_VBROADCASTF32X8: case X86_INS_VBROADCASTF64X4:
+	case X86_INS_VBROADCASTI32X8: sb = 256; break;
+	case X86_INS_VSHUFF32X4: case X86_INS_VSHUFF64X2:
+	case X86_INS_VSHUFI32X4: case X86_INS_VSHUFI64X2: kind = SHUF; break;
+	case X86_INS_VEXTRACTF32X8: case X86_INS_VEXTRACTI32X8:
+	case X86_INS_VEXTRACTF64X2: case X86_INS_VEXTRACTI64X2: kind = EXTRACT; break;
+	case X86_INS_VPHADDBW: kind = HADD; sb = 8; db = 16; break;
+	case X86_INS_VPHADDBD: kind = HADD; sb = 8; db = 32; break;
+	case X86_INS_VPHADDBQ: kind = HADD; sb = 8; db = 64; break;
+	case X86_INS_VPHADDWD: kind = HADD; sb = 16; db = 32; break;
+	case X86_INS_VPHADDWQ: kind = HADD; sb = 16; db = 64; break;
+	case X86_INS_VPHADDDQ: kind = HADD; sb = 32; db = 64; break;
+	case X86_INS_VPHADDUBW: kind = HADD; sb = 8; db = 16; sgn = false; break;
+	case X86_INS_VPHADDUBD: kind = HADD; sb = 8; db = 32; sgn = false; break;
+	case X86_INS_VPHADDUBQ: kind = HADD; sb = 8; db = 64; sgn = false; break;
+	case X86_INS_VPHADDUWD: kind = HADD; sb = 16; db = 32; sgn = false; break;
+	case X86_INS_VPHADDUWQ: kind = HADD; sb = 16; db = 64; sgn = false; break;
+	case X86_INS_VPHADDUDQ: kind = HADD; sb = 32; db = 64; sgn = false; break;
+	case X86_INS_VPHSUBBW: kind = HSUB; sb = 8; db = 16; break;
+	case X86_INS_VPHSUBWD: kind = HSUB; sb = 16; db = 32; break;
+	case X86_INS_VPHSUBDQ: kind = HSUB; sb = 32; db = 64; break;
+	default:
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned want = kind == SHUF ? 4 : (kind == EXTRACT ? 3 : 2);
+	bool bcast = false;
+	for (unsigned k = 0; k < xi->op_count; ++k)
+	{
+		bcast |= xi->operands[k].avx_bcast != X86_AVX_BCAST_INVALID;
+	}
+	if (xi->op_count != want || hasEvexModifier(xi) || bcast
+			|| (want > 2 && xi->operands[want - 1].type != X86_OP_IMM))
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned destBits = xi->operands[0].size * 8;
+	auto load = [&](unsigned k, unsigned bits) -> llvm::Value* {
+		unsigned b = bits;
+		auto* v = loadVectorOp(xi->operands[k], irb, b);
+		if (v == nullptr) return nullptr;
+		return irb.CreateZExtOrTrunc(v, irb.getIntNTy(bits));
+	};
+	auto chunk = [&](llvm::Value* v, unsigned idx, unsigned bits) {
+		auto* t = v->getType();
+		return irb.CreateTrunc(irb.CreateLShr(v, llvm::ConstantInt::get(t, idx * bits)), irb.getIntNTy(bits));
+	};
+	auto* dt = irb.getIntNTy(destBits ? destBits : 8);
+	llvm::Value* res = nullptr;
+	switch (kind)
+	{
+	case BCAST:
+	{
+		// The source register may be wider than the block; take its low bits.
+		unsigned srcBits = xi->operands[1].type == X86_OP_MEM ? xi->operands[1].size * 8 : 0;
+		if (srcBits == 0)
+		{
+			unsigned b = 0;
+			auto* v = loadVectorOp(xi->operands[1], irb, b);
+			if (v == nullptr || destBits <= sb) { translatePseudoAsmGeneric(i, xi, irb); return; }
+			res = irb.CreateTrunc(v, irb.getIntNTy(sb));
+		}
+		else
+		{
+			if (srcBits != sb || destBits <= sb) { translatePseudoAsmGeneric(i, xi, irb); return; }
+			res = load(1, sb);
+		}
+		if (res == nullptr) { translatePseudoAsmGeneric(i, xi, irb); return; }
+		auto* w = irb.CreateZExt(res, dt);
+		llvm::Value* acc = llvm::ConstantInt::get(dt, 0);
+		for (unsigned k = 0; k < destBits / sb; ++k)
+		{
+			acc = irb.CreateOr(acc, irb.CreateShl(w, llvm::ConstantInt::get(dt, k * sb)));
+		}
+		res = acc;
+		break;
+	}
+	case SHUF:
+	{
+		if (destBits != 256 && destBits != 512) { translatePseudoAsmGeneric(i, xi, irb); return; }
+		auto* a = load(1, destBits);
+		auto* b = load(2, destBits);
+		if (a == nullptr || b == nullptr) { translatePseudoAsmGeneric(i, xi, irb); return; }
+		unsigned imm = unsigned(xi->operands[3].imm);
+		unsigned n = destBits / 128, bitsPer = n == 4 ? 2 : 1;
+		res = llvm::ConstantInt::get(dt, 0);
+		for (unsigned k = 0; k < n; ++k)
+		{
+			unsigned sel = (imm >> (k * bitsPer)) & ((1u << bitsPer) - 1);
+			auto* c = chunk(k < n / 2 ? a : b, sel, 128);
+			res = irb.CreateOr(res, irb.CreateShl(irb.CreateZExt(c, dt), llvm::ConstantInt::get(dt, k * 128)));
+		}
+		break;
+	}
+	case EXTRACT:
+	{
+		unsigned srcBits = xi->operands[1].size * 8;
+		if (destBits == 0 || srcBits <= destBits) { translatePseudoAsmGeneric(i, xi, irb); return; }
+		auto* a = load(1, srcBits);
+		if (a == nullptr) { translatePseudoAsmGeneric(i, xi, irb); return; }
+		unsigned sel = unsigned(xi->operands[2].imm) & (srcBits / destBits - 1);
+		res = chunk(a, sel, destBits);
+		break;
+	}
+	case HADD:
+	case HSUB:
+	{
+		if (destBits != 128) { translatePseudoAsmGeneric(i, xi, irb); return; }
+		auto* a = load(1, 128);
+		if (a == nullptr) { translatePseudoAsmGeneric(i, xi, irb); return; }
+		auto* et = irb.getIntNTy(db);
+		res = llvm::ConstantInt::get(dt, 0);
+		unsigned per = db / sb;
+		for (unsigned k = 0; k < 128 / db; ++k)
+		{
+			llvm::Value* s = nullptr;
+			if (kind == HSUB)
+			{
+				s = irb.CreateSub(irb.CreateSExt(chunk(a, 2 * k, sb), et), irb.CreateSExt(chunk(a, 2 * k + 1, sb), et));
+			}
+			else
+			{
+				s = llvm::ConstantInt::get(et, 0);
+				for (unsigned j = 0; j < per; ++j)
+				{
+					auto* e = chunk(a, k * per + j, sb);
+					s = irb.CreateAdd(s, sgn ? irb.CreateSExt(e, et) : irb.CreateZExt(e, et));
+				}
+			}
+			res = irb.CreateOr(res, irb.CreateShl(irb.CreateZExt(s, dt), llvm::ConstantInt::get(dt, k * db)));
+		}
+		break;
+	}
+	}
+	if (xi->operands[0].type == X86_OP_MEM)
+	{
+		storeOp(xi->operands[0], res, irb);
+		return;
+	}
+	storeVectorOp(xi->operands[0], res, destBits, irb);
+}
+
+
 } // namespace capstone2llvmir
 } // namespace retdec
