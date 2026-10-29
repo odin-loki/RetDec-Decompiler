@@ -7495,5 +7495,69 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateTrapReturn(cs_insn* i, cs_ris
 	generateReturnFunctionCall(irb, target);
 }
 
+/**
+ * CORE-V cv.bitrev rd, rs1, radix, pts: rs1 shifted left by pts, then
+ * reversed in groups of radix+1 bits (radix-2, -4 or -8; the radix-8 form
+ * leaves bits 31:30 clear), as in the CV32E40P ALU.
+ * cv.elw rd, imm(rs1): the event-load word is a plain word load here; the
+ * core sleeping until the event unit answers is not modelled.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateCoreVBitrevElw(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	auto* xt = getDefaultType();
+	auto* i32 = irb.getInt32Ty();
+	auto c32 = [&](uint64_t v) { return llvm::ConstantInt::get(i32, v); };
+	if (i->id == RISCV_INS_CV_ELW)
+	{
+		if (ri->op_count != 2 || ri->operands[0].type != RISCV_OP_REG || ri->operands[1].type != RISCV_OP_MEM)
+		{
+			translatePseudoAsmGeneric(i, ri, irb);
+			return;
+		}
+		auto& m = ri->operands[1].mem;
+		llvm::Value* base = m.base == RISCV_REG_X0 || m.base == RISCV_REG_INVALID
+				? llvm::ConstantInt::get(xt, 0) : irb.CreateZExtOrTrunc(loadRegister(m.base, irb), xt);
+		auto* addr = irb.CreateAdd(base, llvm::ConstantInt::getSigned(xt, m.disp));
+		auto* v = loadIntPtr(irb, addr, i32);
+		if (ri->operands[0].reg != RISCV_REG_X0)
+		{
+			storeRegister(ri->operands[0].reg, irb.CreateSExtOrTrunc(v, xt), irb);
+		}
+		return;
+	}
+	if (ri->op_count != 4 || ri->operands[0].type != RISCV_OP_REG || ri->operands[1].type != RISCV_OP_REG
+			|| ri->operands[2].type != RISCV_OP_IMM || ri->operands[3].type != RISCV_OP_IMM
+			|| ri->operands[2].imm > 2)
+	{
+		translatePseudoAsmGeneric(i, ri, irb);
+		return;
+	}
+	llvm::Value* a = ri->operands[1].reg == RISCV_REG_X0 ? c32(0)
+			: irb.CreateZExtOrTrunc(loadRegister(ri->operands[1].reg, irb), i32);
+	a = irb.CreateShl(a, uint64_t(ri->operands[3].imm & 31));
+	auto* br = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::bitreverse, i32);
+	llvm::Value* r = irb.CreateCall(br, {a});
+	switch (ri->operands[2].imm)
+	{
+		case 1:
+			// Swap the bits of each pair back into their original order.
+			r = irb.CreateOr(irb.CreateShl(irb.CreateAnd(r, c32(0x55555555)), 1),
+					irb.CreateAnd(irb.CreateLShr(r, 1), c32(0x55555555)));
+			break;
+		case 2:
+			// Reverse each 3-bit group in bits 29:0 back; bits 31:30 drop out.
+			r = irb.CreateOr(irb.CreateAnd(r, c32(0x12492492)),
+					irb.CreateOr(irb.CreateShl(irb.CreateAnd(r, c32(0x09249249)), 2),
+							irb.CreateLShr(irb.CreateAnd(r, c32(0x24924924)), 2)));
+			break;
+		default:
+			break;
+	}
+	if (ri->operands[0].reg != RISCV_REG_X0)
+	{
+		storeRegister(ri->operands[0].reg, irb.CreateZExtOrTrunc(r, xt), irb);
+	}
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec

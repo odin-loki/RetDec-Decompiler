@@ -171,6 +171,7 @@ class Capstone2LlvmIrTranslatorRiscv_impl :
 		void translateEcall(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateNop(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateCoreVMem(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateCoreVBitrevElw(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateCoreV(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 	void translateCoreVDsp(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateThead(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);

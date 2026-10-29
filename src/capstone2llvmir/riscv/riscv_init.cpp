@@ -362,6 +362,8 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorRiscv_impl::*)(cs_insn* i, 
 		{RISCV_INS_INVALID, nullptr},
 
 		{RISCV_INS_ADD, &Capstone2LlvmIrTranslatorRiscv_impl::translateAdd},
+		{RISCV_INS_CV_BITREV, &Capstone2LlvmIrTranslatorRiscv_impl::translateCoreVBitrevElw},
+		{RISCV_INS_CV_ELW, &Capstone2LlvmIrTranslatorRiscv_impl::translateCoreVBitrevElw},
 		{RISCV_INS_CV_ADD_DIV2, &Capstone2LlvmIrTranslatorRiscv_impl::translateCoreVDsp},
 		{RISCV_INS_CV_ADD_DIV4, &Capstone2LlvmIrTranslatorRiscv_impl::translateCoreVDsp},
 		{RISCV_INS_CV_ADD_DIV8, &Capstone2LlvmIrTranslatorRiscv_impl::translateCoreVDsp},
