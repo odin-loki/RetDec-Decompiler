@@ -1860,7 +1860,8 @@ void maybeWriteBuildableSidecars(const std::string& outputCPath, const std::stri
 			libcHeaders.insert(hdr);
 			it = undeclared.erase(it);
 		}
-		else if (isCrtCallName(*it) || isPthreadName(*it) || isAsmIntrinsicName(*it))
+		else if (isCrtCallName(*it) || isPthreadName(*it) || isAsmIntrinsicName(*it)
+				|| it->rfind("__builtin_", 0) == 0)
 		{
 			it = undeclared.erase(it);
 		}

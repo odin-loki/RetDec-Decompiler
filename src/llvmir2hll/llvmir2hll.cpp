@@ -246,6 +246,11 @@ void expandIntegerIntrinsics(llvm::Module& m)
 					case llvm::Intrinsic::usub_sat:
 					case llvm::Intrinsic::sadd_sat:
 					case llvm::Intrinsic::ssub_sat:
+					case llvm::Intrinsic::fshl:
+					case llvm::Intrinsic::fshr:
+					case llvm::Intrinsic::ctlz:
+					case llvm::Intrinsic::cttz:
+					case llvm::Intrinsic::ctpop:
 						work.push_back(ii);
 						break;
 					default:
@@ -283,6 +288,49 @@ void expandIntegerIntrinsics(llvm::Module& m)
 			{
 				auto* sum = irb.CreateAdd(a, ii->getArgOperand(1));
 				r = irb.CreateSelect(irb.CreateICmpULT(sum, a), llvm::ConstantInt::get(ty, llvm::APInt::getMaxValue(w)), sum);
+				break;
+			}
+			case llvm::Intrinsic::fshl:
+			case llvm::Intrinsic::fshr:
+			{
+				// Funnel shift: a rotate when both inputs match.  Emit plain
+				// shifts; the zero-amount case picks the unshifted input so
+				// the full-width shift is never taken.
+				bool left = ii->getIntrinsicID() == llvm::Intrinsic::fshl;
+				auto* b = ii->getArgOperand(1);
+				auto* s = irb.CreateURem(ii->getArgOperand(2), llvm::ConstantInt::get(ty, w));
+				auto* t = irb.CreateSub(llvm::ConstantInt::get(ty, w), s);
+				auto* v = left ? irb.CreateOr(irb.CreateShl(a, s), irb.CreateLShr(b, t))
+						: irb.CreateOr(irb.CreateLShr(b, s), irb.CreateShl(a, t));
+				r = irb.CreateSelect(irb.CreateICmpEQ(s, llvm::ConstantInt::get(ty, 0)), left ? a : b, v);
+				break;
+			}
+			case llvm::Intrinsic::ctlz:
+			case llvm::Intrinsic::cttz:
+			case llvm::Intrinsic::ctpop:
+			{
+				// Call the one-argument GCC builtins at 32 or 64 bits; the
+				// LLVM forms take an extra flag and any width, and the
+				// builtins are undefined for zero.
+				auto id = ii->getIntrinsicID();
+				unsigned cw = w <= 32 ? 32 : 64;
+				if (w > 64)
+				{
+					continue;
+				}
+				auto* cty = irb.getIntNTy(cw);
+				auto* x = irb.CreateZExt(a, cty);
+				const char* nm = id == llvm::Intrinsic::ctlz ? (cw == 32 ? "__builtin_clz" : "__builtin_clzll")
+						: id == llvm::Intrinsic::cttz ? (cw == 32 ? "__builtin_ctz" : "__builtin_ctzll")
+						: (cw == 32 ? "__builtin_popcount" : "__builtin_popcountll");
+				auto callee = m.getOrInsertFunction(nm, llvm::FunctionType::get(irb.getInt32Ty(), {cty}, false));
+				llvm::Value* c = irb.CreateZExtOrTrunc(irb.CreateCall(callee, {x}), ty);
+				if (id == llvm::Intrinsic::ctlz && w < cw)
+				{
+					c = irb.CreateSub(c, llvm::ConstantInt::get(ty, cw - w));
+				}
+				r = id == llvm::Intrinsic::ctpop ? c
+						: irb.CreateSelect(irb.CreateICmpEQ(a, llvm::ConstantInt::get(ty, 0)), llvm::ConstantInt::get(ty, w), c);
 				break;
 			}
 			case llvm::Intrinsic::usub_sat:
