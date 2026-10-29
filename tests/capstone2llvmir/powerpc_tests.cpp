@@ -16538,8 +16538,19 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSCVDPSP)
 	ALL_MODES;
 
 	setRegisters({{PPC_REG_F2, 16777217.0}});
-	emulate_bin("f0 20 14 24");
-	EXPECT_EQ(16777216.0, getRegisterValueDouble(PPC_REG_F1));
+	emulate_bin("f0 20 14 24"); // xscvdpsp f1, f2
+
+	// 16777216.0f (0x4b800000) in words 0 and 1.
+	EXPECT_EQ(0x4b8000004b800000ULL, vHigh(PPC_REG_VSL1)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSCVDPSP_roundtrip)
+{
+	ALL_MODES;
+
+	setRegisters({{PPC_REG_F2, 16777217.0}});
+	emulate_bin("f0 20 14 24 f0 00 0d 24"); // xscvdpsp f1, f2; xscvspdp f0, f1
+	EXPECT_EQ(16777216.0, getRegisterValueDouble(PPC_REG_F0));
 }
 
 TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSCVSPDP)

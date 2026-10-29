@@ -2087,6 +2087,17 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateFpUnary(cs_insn* i, cs_ppc*
 	default: break;
 	}
 
+	if (i->id == PPC_INS_XSCVDPSP)
+	{
+		// Single-precision format in words 0 and 1 (as POWER hardware does;
+		// word 1 is architecturally undefined), doubleword 1 zeroed.
+		auto* d = loadOpDouble(pi->operands[1], irb);
+		auto* bits = irb.CreateZExt(
+				irb.CreateBitCast(irb.CreateFPTrunc(d, irb.getFloatTy()), irb.getInt32Ty()),
+				irb.getInt128Ty());
+		storeOpI128(pi->operands[0], irb.CreateOr(irb.CreateShl(bits, 96), irb.CreateShl(bits, 64)), irb);
+		return;
+	}
 	if (i->id == PPC_INS_XSCVDPSPN)
 	{
 		// Single-precision result in word 0 of the target.
