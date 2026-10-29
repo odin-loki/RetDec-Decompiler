@@ -11,7 +11,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - BEQ-01 (`scripts/ci/check_behaviour_equivalence.py`) compiles the
   decompiled C of each `tests/algorithm_recovery/beq/*.c` entry function
   (gcc -O0/-O2/-O3), links it against the original driver, and compares
-  stdout and exit status; 23/27 are equivalent and the baseline guards them.
+  stdout and exit status; all 30 are equivalent and the baseline guards them.
   It found three bugs, now fixed: stack typed views that split a store from
   its loads, sub-based branch folding comparing zero-extended 64-bit
   registers, and the if-else swap leaving the then-body unobserved (which
@@ -20,6 +20,17 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   frame-pointer arithmetic that lands inside it is rebased onto it.
 - The constants pass no longer replaces a load through a register (e.g.
   `movzbl (%rdx)` after `mov %rdi,%rdx`) with the register itself.
+- A `rep stos` that clears a known local array is emitted as `memset`.
+- `x & 0xff..` narrowed to a cast keeps the original width (fixes a swapped
+  pair at bubblesort -O2 printed as `v >> 32`).
+- Sign-bit idioms (`x < 0`, `x >= 0`, remainder) require the shift to be
+  width - 1, so an i64 `lshr 31` no longer becomes `x < 0`.
+- Reducing a nested while-true loop no longer strips the enclosing loop
+  header's successors, which dropped the outer loop body (bfs -O0).
+- A register read on some store-free path from the function entry is a
+  parameter even when a loop redefines it (self tail calls at -O3, dfs).
+- 65- to 128-bit integers are typedef'd as `__int128`, not `int64_t`, so
+  16-byte vector moves copy all their data (mergesort -O3).
 - `while (true) { BODY; if (c) break; STEP; }` is no longer rewritten as
   `for (; !c; STEP) { BODY }`, which moved the exit test before BODY.
 - AES-NI/VAES, SHA, CRC32, and PCLMULQDQ lift to `llvm.x86.*` (CRC32
