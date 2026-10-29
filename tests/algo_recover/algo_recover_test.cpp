@@ -2272,6 +2272,44 @@ TEST(IdiomDetectorTest, HalvingLoopThatWritesMemoryIsNotASearch)
 	EXPECT_FALSE(detects(*fn, IdiomKind::BinarySearch));
 }
 
+/// `h = h * 131 + *s++` in the loop, then `h % 64` after it and, if
+/// `setsBit`, `1 << (h % 64)`.
+std::unique_ptr<ssa::SSAFunction> makeStringHashThenIndex(bool setsBit)
+{
+	auto fn = makeLoop();
+	auto* exit = fn->addBlock("exit");
+	fn->block(1)->succs.push_back(exit->id);
+	opImm(*fn, ssa::IrInstr::Op::Mul, 131);
+	auto* l = fn->addInstr(1, ssa::IrInstr::Op::Load);
+	l->uses.push_back({reg(*fn, 64)->id, 0});
+	pad(*fn);
+	auto imm = [&](uint64_t v) {
+		auto* i = fn->allocValue(ssa::ValueKind::Immediate);
+		i->imm = v;
+		return i->id;
+	};
+	auto* rem = fn->addInstr(exit->id, ssa::IrInstr::Op::Rem);
+	rem->uses.push_back({reg(*fn)->id, 0});
+	rem->uses.push_back({imm(64), 1});
+	if (setsBit)
+	{
+		auto* shl = fn->addInstr(exit->id, ssa::IrInstr::Op::Shl);
+		shl->uses.push_back({imm(1), 0});
+		shl->uses.push_back({reg(*fn)->id, 1});
+	}
+	return fn;
+}
+
+TEST(IdiomDetectorTest, StringHashUsedAsABitPositionIsABloomFilter)
+{
+	EXPECT_TRUE(detects(*makeStringHashThenIndex(true), IdiomKind::BloomFilter));
+}
+
+TEST(IdiomDetectorTest, StringHashUsedAsABucketIndexIsNotABloomFilter)
+{
+	EXPECT_FALSE(detects(*makeStringHashThenIndex(false), IdiomKind::BloomFilter));
+}
+
 TEST(IdiomDetectorTest, LowBitAddedThenShiftedOutIsPopcount)
 {
 	auto fn = makeLoop();

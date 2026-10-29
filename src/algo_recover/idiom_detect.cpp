@@ -398,6 +398,53 @@ const ssa::IrInstr* storedValueDef(const ssa::SSAFunction& fn, const ssa::IrInst
 	return d;
 }
 
+bool isPow2(uint64_t v) { return v >= 2 && (v & (v - 1)) == 0; }
+
+/// Operand `idx` of `i` is the immediate `value`.
+bool immAt(const ssa::SSAFunction& fn, const ssa::IrInstr& i, uint32_t idx, uint64_t value)
+{
+	for (const auto& u: i.uses)
+		if (const auto* v = fn.value(u.valueId); u.operandIndex == idx && v && v->kind == ssa::ValueKind::Immediate && v->imm == value)
+			return true;
+	return false;
+}
+
+/// `h = h * K + c` over a string, then `bits |= 1 << (h % M)` or
+/// `(bits >> (h % M)) & 1`: a multiplicative string hash in a loop, reduced
+/// modulo a power of two outside it and used as a bit position.
+bool hasBloomFilterBit(const ssa::SSAFunction& fn)
+{
+	bool hashMul = false, byteLoad = false;
+	forEachLoopInstr(fn, [&](const ssa::IrInstr& i) {
+		if (i.op == ssa::IrInstr::Op::Mul)
+			for (const auto& u: i.uses)
+				if (const auto* v = fn.value(u.valueId); v && v->kind == ssa::ValueKind::Immediate && v->imm > 8 && (v->imm & 1))
+					hashMul = true;
+		if (i.op == ssa::IrInstr::Op::Load && !addrOnStack(fn, i)) byteLoad = true;
+	});
+	if (!hashMul || !byteLoad) return false;
+	bool bitIndex = false, bitOp = false;
+	for (const auto& blk: fn.blocks())
+	{
+		if (!blk || ssa::blockOnCycle(fn, blk->id)) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i) continue;
+			if (i->op == ssa::IrInstr::Op::Rem)
+				for (const auto& u: i->uses)
+					if (const auto* v = fn.value(u.valueId); v && v->kind == ssa::ValueKind::Immediate && isPow2(v->imm) && v->imm <= 4096)
+						bitIndex = true;
+			// `1 << n` sets one bit; `x >> n` followed by `& 1` / `% 2` tests one.
+			if (i->op == ssa::IrInstr::Op::Shl && immAt(fn, *i, 0, 1)) bitOp = true;
+			if ((i->op == ssa::IrInstr::Op::Rem && immOperand(fn, *i, 2)) || (i->op == ssa::IrInstr::Op::And && immOperand(fn, *i, 1)))
+				for (const auto& u: i->uses)
+					if (const auto* v = fn.value(u.valueId); v && v->defInstr && v->defInstr->op == ssa::IrInstr::Op::Shr)
+						bitOp = true;
+		}
+	}
+	return bitIndex && bitOp;
+}
+
 /// Whether `id` is the result of a load from memory other than the stack,
 /// looking through a few register copies.
 bool fromMemoryLoad(const ssa::SSAFunction& fn, ssa::ValueId id)
@@ -700,6 +747,7 @@ std::vector<IdiomResult> IdiomDetector::detect(const ssa::SSAFunction& fn) const
 		out.push_back(makeResult(IdiomKind::LowerBound, 0.75f, "halving_loop_one_element_compare"));
 	else if (cmps == 2)
 		out.push_back(makeResult(IdiomKind::BinarySearch, 0.75f, "halving_loop_equal_and_less_compares"));
+	if (hasBloomFilterBit(fn)) out.push_back(makeResult(IdiomKind::BloomFilter, 0.75f, "string_hash_mod_pow2_bit"));
 	if (hasFibonacciLoop(fn)) out.push_back(makeResult(IdiomKind::Fibonacci, 0.80f, "add_and_rotate_scalars"));
 	// A6: do not assign Knapsack or Lcs.
 
