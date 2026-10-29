@@ -6759,6 +6759,82 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateThead(cs_insn* i, cs_riscv* r
 			r = sext32(i->id == RISCV_INS_TH_MULAH ? irb.CreateAdd(ldr(rd), p) : irb.CreateSub(ldr(rd), p));
 			break;
 		}
+		case RISCV_INS_TH_LBIA: case RISCV_INS_TH_LBIB: case RISCV_INS_TH_LBUIA: case RISCV_INS_TH_LBUIB:
+		case RISCV_INS_TH_LHIA: case RISCV_INS_TH_LHIB: case RISCV_INS_TH_LHUIA: case RISCV_INS_TH_LHUIB:
+		case RISCV_INS_TH_LWIA: case RISCV_INS_TH_LWIB: case RISCV_INS_TH_LWUIA: case RISCV_INS_TH_LWUIB:
+		case RISCV_INS_TH_LDIA: case RISCV_INS_TH_LDIB:
+		case RISCV_INS_TH_SBIA: case RISCV_INS_TH_SBIB: case RISCV_INS_TH_SHIA: case RISCV_INS_TH_SHIB:
+		case RISCV_INS_TH_SWIA: case RISCV_INS_TH_SWIB: case RISCV_INS_TH_SDIA: case RISCV_INS_TH_SDIB:
+		{
+			// Base-update forms: rs1 += sext(imm5) << imm2, after (IA) or before (IB) the access.
+			unsigned bits = 8;
+			bool zx = false, st = false, after = false;
+			switch (i->id)
+			{
+			case RISCV_INS_TH_LBIA: bits = 8; zx = false; st = false; after = true; break;
+			case RISCV_INS_TH_LBIB: bits = 8; zx = false; st = false; after = false; break;
+			case RISCV_INS_TH_LBUIA: bits = 8; zx = true; st = false; after = true; break;
+			case RISCV_INS_TH_LBUIB: bits = 8; zx = true; st = false; after = false; break;
+			case RISCV_INS_TH_LHIA: bits = 16; zx = false; st = false; after = true; break;
+			case RISCV_INS_TH_LHIB: bits = 16; zx = false; st = false; after = false; break;
+			case RISCV_INS_TH_LHUIA: bits = 16; zx = true; st = false; after = true; break;
+			case RISCV_INS_TH_LHUIB: bits = 16; zx = true; st = false; after = false; break;
+			case RISCV_INS_TH_LWIA: bits = 32; zx = false; st = false; after = true; break;
+			case RISCV_INS_TH_LWIB: bits = 32; zx = false; st = false; after = false; break;
+			case RISCV_INS_TH_LWUIA: bits = 32; zx = true; st = false; after = true; break;
+			case RISCV_INS_TH_LWUIB: bits = 32; zx = true; st = false; after = false; break;
+			case RISCV_INS_TH_LDIA: bits = 64; zx = false; st = false; after = true; break;
+			case RISCV_INS_TH_LDIB: bits = 64; zx = false; st = false; after = false; break;
+			case RISCV_INS_TH_SBIA: bits = 8; zx = false; st = true; after = true; break;
+			case RISCV_INS_TH_SBIB: bits = 8; zx = false; st = true; after = false; break;
+			case RISCV_INS_TH_SHIA: bits = 16; zx = false; st = true; after = true; break;
+			case RISCV_INS_TH_SHIB: bits = 16; zx = false; st = true; after = false; break;
+			case RISCV_INS_TH_SWIA: bits = 32; zx = false; st = true; after = true; break;
+			case RISCV_INS_TH_SWIB: bits = 32; zx = false; st = true; after = false; break;
+			case RISCV_INS_TH_SDIA: bits = 64; zx = false; st = true; after = true; break;
+			case RISCV_INS_TH_SDIB: bits = 64; zx = false; st = true; after = false; break;
+			default: break;
+			}
+			int64_t imm5 = int64_t((w >> 20) & 31);
+			if (imm5 & 16) imm5 -= 32;
+			auto* inc = llvm::ConstantInt::getSigned(xt, imm5 * (int64_t(1) << ((w >> 25) & 3)));
+			auto* nb = irb.CreateAdd(a, inc);
+			auto* ea = after ? a : nb;
+			auto* ty = irb.getIntNTy(bits);
+			if (st)
+			{
+				storeIntPtr(irb, irb.CreateTrunc(ldr(rd), ty), ea, ty);
+				str(rs1, nb);
+				return;
+			}
+			llvm::Value* l = loadIntPtr(irb, ea, ty);
+			str(rs1, nb);
+			str(rd, zx ? irb.CreateZExtOrTrunc(l, xt) : irb.CreateSExtOrTrunc(l, xt));
+			return;
+		}
+		case RISCV_INS_TH_LWD: case RISCV_INS_TH_LWUD: case RISCV_INS_TH_LDD:
+		case RISCV_INS_TH_SWD: case RISCV_INS_TH_SDD:
+		{
+			// Pair access: rd1 = rd, rd2 = rs2 at rs1 + (imm2 << (3 or 4)).
+			bool dbl = i->id == RISCV_INS_TH_LDD || i->id == RISCV_INS_TH_SDD;
+			bool st = i->id == RISCV_INS_TH_SWD || i->id == RISCV_INS_TH_SDD;
+			unsigned bits = dbl ? 64 : 32;
+			auto* ty = irb.getIntNTy(bits);
+			auto* ea = irb.CreateAdd(a, cx(uint64_t((w >> 25) & 3) << (dbl ? 4 : 3)));
+			auto* ea2 = irb.CreateAdd(ea, cx(bits / 8));
+			if (st)
+			{
+				storeIntPtr(irb, irb.CreateTrunc(ldr(rd), ty), ea, ty);
+				storeIntPtr(irb, irb.CreateTrunc(ldr(rs2), ty), ea2, ty);
+				return;
+			}
+			auto* l1 = loadIntPtr(irb, ea, ty);
+			auto* l2 = loadIntPtr(irb, ea2, ty);
+			bool zx = i->id == RISCV_INS_TH_LWUD;
+			str(rd, zx ? irb.CreateZExtOrTrunc(l1, xt) : irb.CreateSExtOrTrunc(l1, xt));
+			str(rs2, zx ? irb.CreateZExtOrTrunc(l2, xt) : irb.CreateSExtOrTrunc(l2, xt));
+			return;
+		}
 		case RISCV_INS_TH_LRB: case RISCV_INS_TH_LRBU: case RISCV_INS_TH_LRH: case RISCV_INS_TH_LRHU:
 		case RISCV_INS_TH_LRW: case RISCV_INS_TH_LRWU: case RISCV_INS_TH_LRD:
 		case RISCV_INS_TH_LURB: case RISCV_INS_TH_LURBU: case RISCV_INS_TH_LURH: case RISCV_INS_TH_LURHU:

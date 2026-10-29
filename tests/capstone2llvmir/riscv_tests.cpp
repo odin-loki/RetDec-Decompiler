@@ -5560,6 +5560,70 @@ TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_SRA_SC_H)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_TH_LWIA)
+{
+	ONLY_MODE_RV64;
+	enableThead();
+
+	setRegisters({
+		{RISCV_REG_X11, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x80000000_dw},
+	});
+
+	emulate_bin("0b c5 25 5a"); // th.lwia a0, (a1), 2, 1
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0xffffffff80000000},
+		{RISCV_REG_X11, 0x1004},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_TH_SDIB)
+{
+	ONLY_MODE_RV64;
+	enableThead();
+
+	setRegisters({
+		{RISCV_REG_X10, 0x1122334455667788},
+		{RISCV_REG_X11, 0x1010},
+	});
+
+	emulate_bin("0b d5 f5 6f"); // th.sdib a0, (a1), -1, 3
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X11, 0x1008},
+	});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1008, 0x1122334455667788_qw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_TH_LDD)
+{
+	ONLY_MODE_RV64;
+	enableThead();
+
+	setRegisters({
+		{RISCV_REG_X11, 0x1000},
+	});
+	setMemory({
+		{0x1010, 0x1111_qw},
+		{0x1018, 0x2222_qw},
+	});
+
+	emulate_bin("0b c5 c5 fa"); // th.ldd a0, a2, (a1), 1, 4
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0x1111},
+		{RISCV_REG_X12, 0x2222},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
