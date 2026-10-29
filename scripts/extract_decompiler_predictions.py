@@ -141,6 +141,7 @@ ALLOWED_ALGO_MIN_CONF: dict[str, float] = {
     "memory": 0.70,
     "fibonacci": 0.70,
     "binarysearch": 0.70,
+    "linearsearch": 0.70,
     "lcs": 0.70,
     "knapsack": 0.70,
     "rle": 0.70,

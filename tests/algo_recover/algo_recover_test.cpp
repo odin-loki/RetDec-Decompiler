@@ -2310,6 +2310,34 @@ TEST(IdiomDetectorTest, StringHashUsedAsABucketIndexIsNotABloomFilter)
 	EXPECT_FALSE(detects(*makeStringHashThenIndex(false), IdiomKind::BloomFilter));
 }
 
+/// One element load per iteration, compared with `key`, plus the bound test.
+std::unique_ptr<ssa::SSAFunction> makeScan(uint64_t key)
+{
+	auto fn = makeLoop();
+	auto* l = fn->addInstr(1, ssa::IrInstr::Op::Load);
+	l->uses.push_back({reg(*fn, 64)->id, 0});
+	auto* e = reg(*fn);
+	l->defValue = e->id;
+	e->defInstr = l;
+	auto* k = fn->allocValue(ssa::ValueKind::Immediate);
+	k->imm = key;
+	auto* cmp = fn->addInstr(1, ssa::IrInstr::Op::Compare);
+	cmp->uses.push_back({e->id, 0});
+	cmp->uses.push_back({k->id, 1});
+	pad(*fn);
+	return fn;
+}
+
+TEST(IdiomDetectorTest, ElementComparedWithAKeyEachIterationIsLinearSearch)
+{
+	EXPECT_TRUE(detects(*makeScan(6), IdiomKind::LinearSearch));
+}
+
+TEST(IdiomDetectorTest, ScanForAZeroTerminatorIsNotLinearSearch)
+{
+	EXPECT_FALSE(detects(*makeScan(0), IdiomKind::LinearSearch));
+}
+
 TEST(IdiomDetectorTest, LowBitAddedThenShiftedOutIsPopcount)
 {
 	auto fn = makeLoop();

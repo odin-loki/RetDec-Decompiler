@@ -494,6 +494,45 @@ int halvingSearchCompares(const ssa::SSAFunction& fn)
 	return halving && !memStore && !call ? elementCompares : 0;
 }
 
+/// `for (i = 0; i < n; ++i) if (a[i] == x) return i;`: a loop that reads
+/// one element per iteration, writes no memory, calls nothing, and compares
+/// the element with something other than zero (zero is a terminator scan
+/// such as strlen) besides testing its own bound.
+bool hasLinearSearchLoop(const ssa::SSAFunction& fn)
+{
+	int memLoads = 0, compares = 0;
+	bool memStore = false, call = false, elementVsValue = false;
+	forEachLoopInstr(fn, [&](const ssa::IrInstr& i) {
+		switch (i.op)
+		{
+		case ssa::IrInstr::Op::Load:
+			if (!addrOnStack(fn, i)) ++memLoads;
+			break;
+		case ssa::IrInstr::Op::Store:
+			if (!addrOnStack(fn, i)) memStore = true;
+			break;
+		case ssa::IrInstr::Op::Call:
+			call = true;
+			break;
+		case ssa::IrInstr::Op::Compare:
+		{
+			++compares;
+			bool elem = false, zero = false;
+			for (const auto& u: i.uses)
+			{
+				if (fromMemoryLoad(fn, u.valueId)) elem = true;
+				if (const auto* v = fn.value(u.valueId); v && v->kind == ssa::ValueKind::Immediate && v->imm == 0) zero = true;
+			}
+			if (elem && !zero) elementVsValue = true;
+			break;
+		}
+		default:
+			break;
+		}
+	});
+	return memLoads == 1 && !memStore && !call && compares >= 2 && elementVsValue;
+}
+
 /// `t = a + b; a = b; b = t;`: a loop over scalars only whose body adds two
 /// variables and shifts one of them into the other unchanged. Nothing else
 /// is computed: no multiply, divide, shift or bitwise operation, no memory
@@ -748,6 +787,8 @@ std::vector<IdiomResult> IdiomDetector::detect(const ssa::SSAFunction& fn) const
 	else if (cmps == 2)
 		out.push_back(makeResult(IdiomKind::BinarySearch, 0.75f, "halving_loop_equal_and_less_compares"));
 	if (hasBloomFilterBit(fn)) out.push_back(makeResult(IdiomKind::BloomFilter, 0.75f, "string_hash_mod_pow2_bit"));
+	if (hasLinearSearchLoop(fn) && !halvingSearchCompares(fn))
+		out.push_back(makeResult(IdiomKind::LinearSearch, 0.75f, "one_element_compared_per_iteration"));
 	if (hasFibonacciLoop(fn)) out.push_back(makeResult(IdiomKind::Fibonacci, 0.80f, "add_and_rotate_scalars"));
 	// A6: do not assign Knapsack or Lcs.
 
