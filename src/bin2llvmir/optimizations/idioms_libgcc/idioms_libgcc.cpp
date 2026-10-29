@@ -44,6 +44,17 @@ class IdiomsLibgccImpl
 		llvm::GlobalVariable* res0Double = nullptr;
 		llvm::GlobalVariable* res1Single = nullptr;
 		llvm::GlobalVariable* res1Double = nullptr;
+		// Second word of each 64-bit register pair (r1, r3 / a1, a3, v1).
+		llvm::GlobalVariable* op0Hi = nullptr;
+		llvm::GlobalVariable* op1Hi = nullptr;
+		llvm::GlobalVariable* res0Hi = nullptr;
+		llvm::GlobalVariable* res1Hi = nullptr;
+		bool bigEndian = false;
+
+		llvm::Value* loadPair(llvm::GlobalVariable* a, llvm::GlobalVariable* b,
+				llvm::CallInst* call);
+		llvm::Value* storePair(llvm::Value* v, llvm::GlobalVariable* a,
+				llvm::GlobalVariable* b, llvm::CallInst* call);
 
 	public:
 		bool testArchAndInitialize(common::Architecture& arch, Abi* abi);
@@ -223,6 +234,11 @@ bool IdiomsLibgccImpl::testArchAndInitialize(
 		res0Double = abi->getRegister(ARM_REG_R0); // + r1
 		res1Single = abi->getRegister(ARM_REG_R1);
 		res1Double = abi->getRegister(ARM_REG_R2); // + r3
+		op0Hi = abi->getRegister(ARM_REG_R1);
+		op1Hi = abi->getRegister(ARM_REG_R3);
+		res0Hi = abi->getRegister(ARM_REG_R1);
+		res1Hi = abi->getRegister(ARM_REG_R3);
+		bigEndian = arch.isEndianBig();
 	}
 	else if (arch.isPic32())
 	{
@@ -240,6 +256,10 @@ bool IdiomsLibgccImpl::testArchAndInitialize(
 		res0Double = abi->getRegister(MIPS_REG_V0); // + a1
 		res1Single = abi->getRegister(MIPS_REG_V1);
 		res1Double = abi->getRegister(MIPS_REG_V1); // + a3
+		op0Hi = abi->getRegister(MIPS_REG_A1);
+		op1Hi = abi->getRegister(MIPS_REG_A3);
+		res0Hi = abi->getRegister(MIPS_REG_V1);
+		bigEndian = arch.isEndianBig();
 	}
 	else
 	{
@@ -277,6 +297,46 @@ llvm::Value* IdiomsLibgccImpl::storeReg(
 	return s;
 }
 
+/**
+ * A 64-bit value on a 32-bit target lives in a register pair (r0:r1,
+ * r2:r3, a0:a1, v0:v1); the first register is the low word on little-endian
+ * and the high word on big-endian.  Reading only the first register made
+ * every 64-bit libgcc idiom a 32-bit operation: `__aeabi_uldivmod` became
+ * `a1 / a3` and divided by zero whenever the divisor's low word was 0.
+ */
+llvm::Value* IdiomsLibgccImpl::loadPair(
+		llvm::GlobalVariable* a,
+		llvm::GlobalVariable* b,
+		llvm::CallInst* call)
+{
+	auto* first = loadReg(a, call);
+	if (b == nullptr) return first;
+	auto* second = loadReg(b, call);
+	auto* i64 = Type::getInt64Ty(call->getContext());
+	auto* lo = new ZExtInst(bigEndian ? second : first, i64, "", call);
+	auto* hi = new ZExtInst(bigEndian ? first : second, i64, "", call);
+	auto* sh = BinaryOperator::CreateShl(hi, ConstantInt::get(i64, 32), "", call);
+	return BinaryOperator::CreateOr(sh, lo, "", call);
+}
+
+llvm::Value* IdiomsLibgccImpl::storePair(
+		llvm::Value* v,
+		llvm::GlobalVariable* a,
+		llvm::GlobalVariable* b,
+		llvm::CallInst* call)
+{
+	auto* i64 = Type::getInt64Ty(call->getContext());
+	if (b == nullptr) return storeReg(
+			IrModifier::convertValueToType(v, llvm_utils::pointeeType(a), call),
+			a, call);
+	auto* w = IrModifier::convertValueToType(v, i64, call);
+	auto* hi = BinaryOperator::CreateLShr(w, ConstantInt::get(i64, 32), "", call);
+	auto* lo32 = IrModifier::convertValueToType(w, llvm_utils::pointeeType(a), call);
+	auto* hi32 = IrModifier::convertValueToType(hi, llvm_utils::pointeeType(b), call);
+	storeReg(bigEndian ? hi32 : lo32, a, call);
+	return storeReg(bigEndian ? lo32 : hi32, b, call);
+}
+
 template<>
 llvm::Value* IdiomsLibgccImpl::getOp0<std::int32_t>(llvm::CallInst* call)
 {
@@ -285,7 +345,7 @@ llvm::Value* IdiomsLibgccImpl::getOp0<std::int32_t>(llvm::CallInst* call)
 template<>
 llvm::Value* IdiomsLibgccImpl::getOp0<std::int64_t>(llvm::CallInst* call)
 {
-	return loadReg(op0Double, call);
+	return loadPair(op0Double, op0Hi, call);
 }
 template<>
 llvm::Value* IdiomsLibgccImpl::getOp0<float>(llvm::CallInst* call)
@@ -298,7 +358,7 @@ template<>
 llvm::Value* IdiomsLibgccImpl::getOp0<double>(llvm::CallInst* call)
 {
 	auto* t = Type::getDoubleTy(call->getContext());
-	auto* l = loadReg(op0Double, call);
+	auto* l = loadPair(op0Double, op0Hi, call);
 	return IrModifier::convertValueToType(l, t, call);
 }
 
@@ -310,7 +370,7 @@ llvm::Value* IdiomsLibgccImpl::getOp1<std::int32_t>(llvm::CallInst* call)
 template<>
 llvm::Value* IdiomsLibgccImpl::getOp1<std::int64_t>(llvm::CallInst* call)
 {
-	return loadReg(op1Double, call);
+	return loadPair(op1Double, op1Hi, call);
 }
 template<>
 llvm::Value* IdiomsLibgccImpl::getOp1<float>(llvm::CallInst* call)
@@ -323,7 +383,7 @@ template<>
 llvm::Value* IdiomsLibgccImpl::getOp1<double>(llvm::CallInst* call)
 {
 	auto* t = Type::getDoubleTy(call->getContext());
-	auto* l = loadReg(op1Double, call);
+	auto* l = loadPair(op1Double, op1Hi, call);
 	return IrModifier::convertValueToType(l, t, call);
 }
 
@@ -343,11 +403,7 @@ llvm::Value* IdiomsLibgccImpl::getRes0<std::int64_t>(
 		llvm::CallInst* call,
 		llvm::Value* res)
 {
-	auto* c = IrModifier::convertValueToType(
-			res,
-			llvm_utils::pointeeType(res0Double),
-			call);
-	return storeReg(c, res0Double, call);
+	return storePair(res, res0Double, res0Hi, call);
 }
 template<>
 llvm::Value* IdiomsLibgccImpl::getRes0<float>(
@@ -365,9 +421,7 @@ llvm::Value* IdiomsLibgccImpl::getRes0<double>(
 		llvm::CallInst* call,
 		llvm::Value* res)
 {
-	auto* resType = llvm_utils::pointeeType(res0Double);
-	auto* c = IrModifier::convertValueToType(res, resType, call);
-	return storeReg(c, res0Double, call);
+	return storePair(res, res0Double, res0Hi, call);
 }
 
 template<>
@@ -386,11 +440,7 @@ llvm::Value* IdiomsLibgccImpl::getRes1<std::int64_t>(
 		llvm::CallInst* call,
 		llvm::Value* res)
 {
-	auto* c = IrModifier::convertValueToType(
-			res,
-			llvm_utils::pointeeType(res1Double),
-			call);
-	return storeReg(c, res1Double, call);
+	return storePair(res, res1Double, res1Hi, call);
 }
 
 void IdiomsLibgccImpl::replaceResultUses(llvm::CallInst* c, llvm::Instruction* r)
@@ -536,7 +586,8 @@ template<typename N>
 void IdiomsLibgccImpl::ashldi3(llvm::CallInst* inst)
 {
 	auto* l0 = getOp0<N>(inst);
-	auto* l1 = getOp1<N>(inst);
+	auto* l1 = IrModifier::convertValueToType(
+			loadReg(op1Double, inst), l0->getType(), inst);
 	auto* r0 = BinaryOperator::CreateShl(l0, l1, "", inst);
 	auto* s0 = getRes0<N>(inst, r0);
 
@@ -552,7 +603,8 @@ template<typename N>
 void IdiomsLibgccImpl::ashrdi3(llvm::CallInst* inst)
 {
 	auto* l0 = getOp0<N>(inst);
-	auto* l1 = getOp1<N>(inst);
+	auto* l1 = IrModifier::convertValueToType(
+			loadReg(op1Double, inst), l0->getType(), inst);
 	auto* r0 = BinaryOperator::CreateAShr(l0, l1, "", inst);
 	auto* s0 = getRes0<N>(inst, r0);
 
@@ -568,7 +620,8 @@ template<typename N>
 void IdiomsLibgccImpl::lshrdi3(llvm::CallInst* inst)
 {
 	auto* l0 = getOp0<N>(inst);
-	auto* l1 = getOp1<N>(inst);
+	auto* l1 = IrModifier::convertValueToType(
+			loadReg(op1Double, inst), l0->getType(), inst);
 	auto* r0 = BinaryOperator::CreateLShr(l0, l1, "", inst);
 	auto* s0 = getRes0<N>(inst, r0);
 
@@ -1288,8 +1341,11 @@ IdiomsLibgcc::IdiomsLibgcc() :
 			ID_FNC_PAIR("aeabi_uidivmod", aeabi_idivmod<std::int32_t>),
 			ID_FNC_PAIR("aeabi_uidiv", udivi<std::int32_t>),
 			ID_FNC_PAIR("aeabi_idiv", divi<std::int32_t>),
-			ID_FNC_PAIR("udivmoddi4", aeabi_idivmod<std::int64_t>),
+			// __udivmoddi4(n, d, &rem) hands the remainder back through a
+			// pointer, not r2:r3, so it is left to its own body.
+			ID_FNC_PAIR("aeabi_uldivmod", aeabi_idivmod<std::int64_t>),
 			ID_FNC_PAIR("aeabiuldivmod", aeabi_idivmod<std::int64_t>),
+			ID_FNC_PAIR("aeabi_ldivmod", ldivmoddi<std::int64_t>),
 			ID_FNC_PAIR("umodsi3", umodi<std::int32_t>),
 			ID_FNC_PAIR("umoddi3", umodi<std::int64_t>),
 			ID_FNC_PAIR("modsi3", modi<std::int32_t>),
