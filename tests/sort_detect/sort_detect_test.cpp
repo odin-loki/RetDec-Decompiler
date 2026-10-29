@@ -1379,18 +1379,28 @@ TEST(InsertionSortDetectorTest, ADecrementWrittenAsAnAddIsStillFound)
 
 // ─── SelectionSortDetector tests ─────────────────────────────────────────────
 
-// entry 0 -> outer 1 -> inner header 2 <-> scan 4; 2 -> swap 3 -> 1.
+// Selection sort: entry 0 -> outer 1 -> inner header 2 <-> scan 4;
+// 2 -> swap 3 -> 1. Bubble sort swaps inside the compare loop instead:
+// 2 <-> scan 4 -> swap 3 -> 2, and 2 -> 1.
 static std::unique_ptr<ssa::SSAFunction> makeSelectionShape(bool swapAfterCompare)
 {
 	auto fn = makeFunc("select", {ssa::IrInstr::Op::Add}, 4);
-	fn->block(0)->succs.push_back(1);
-	fn->block(1)->succs.push_back(2);
-	fn->block(2)->succs.push_back(4);
-	fn->block(4)->succs.push_back(2);
-	fn->block(2)->succs.push_back(3);
-	fn->block(3)->succs.push_back(1);
-	// Bubble sort swaps right after its compare, inside the inner loop.
-	if (swapAfterCompare) fn->block(4)->succs.push_back(3);
+	auto edge = [&](uint32_t a, uint32_t b) {
+		fn->block(a)->succs.push_back(b);
+		fn->block(b)->preds.push_back(a);
+	};
+	edge(0, 1);
+	edge(1, 2);
+	edge(2, 4);
+	edge(4, 2);
+	if (swapAfterCompare) {
+		edge(4, 3);
+		edge(3, 2);
+		edge(2, 1);
+	} else {
+		edge(2, 3);
+		edge(3, 1);
+	}
 	fn->addInstr(4, ssa::IrInstr::Op::Load);
 	fn->addInstr(4, ssa::IrInstr::Op::Load);
 	fn->addInstr(4, ssa::IrInstr::Op::Compare);
@@ -1409,10 +1419,30 @@ TEST(SelectionSortDetectorTest, ReadOnlyScanThenSwapInTheOuterLoop)
 	EXPECT_EQ(r.algorithm, SortAlgorithm::SelectionSort);
 }
 
-TEST(SelectionSortDetectorTest, AScanThatWritesIsNotSelectionSort)
+TEST(SelectionSortDetectorTest, ASwapInsideTheCompareLoopIsBubbleSort)
 {
 	auto fn = makeSelectionShape(true);
 	EXPECT_LT(SelectionSortDetector{}.detect(*fn).confidence, 0.50f);
+}
+
+TEST(SelectionSortDetectorTest, AnO2ScanReadingOneElementPerPathIsFound)
+{
+	// The minimum stays in a register: two scan blocks read one element
+	// each and the swap only stores.
+	auto fn = makeFunc("select", {ssa::IrInstr::Op::Add}, 5);
+	auto edge = [&](uint32_t a, uint32_t b) {
+		fn->block(a)->succs.push_back(b);
+		fn->block(b)->preds.push_back(a);
+	};
+	edge(0, 1); edge(1, 2); edge(2, 4); edge(4, 2); edge(2, 5); edge(5, 2);
+	edge(2, 3); edge(3, 1);
+	fn->addInstr(4, ssa::IrInstr::Op::Load);
+	fn->addInstr(4, ssa::IrInstr::Op::Compare);
+	fn->addInstr(5, ssa::IrInstr::Op::Load);
+	fn->addInstr(5, ssa::IrInstr::Op::Compare);
+	fn->addInstr(3, ssa::IrInstr::Op::Store);
+	fn->addInstr(3, ssa::IrInstr::Op::Store);
+	EXPECT_GE(SelectionSortDetector{}.detect(*fn).confidence, 0.50f);
 }
 
 // ─── ElementTypeRecoverer tests ───────────────────────────────────────────────

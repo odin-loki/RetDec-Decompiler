@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstdlib>
+#include <map>
 #include <set>
 /**
  * @file src/sort_detect/sort_detector.cpp
@@ -242,6 +243,87 @@ MemOps memOps(const ssa::SSAFunction& fn, const ssa::BasicBlock& blk) {
     return m;
 }
 
+/// Whether @a value is only ever used as a load or store address, like the
+/// `a + i*4 - 4` of an element access, rather than as a counter.
+bool usedOnlyAsAddress(const ssa::SSAFunction& fn, ssa::ValueId value, int depth = 0) {
+    if (depth > 4) return false;
+    bool used = false;
+    for (const auto& blk : fn.blocks()) {
+        if (!blk) continue;
+        for (const auto* i : blk->instrs) {
+            if (!i) continue;
+            for (const auto& u : i->uses) {
+                if (u.valueId != value) continue;
+                // A copy or cast: follow it.
+                if (i->op == ssa::IrInstr::Op::Assign) {
+                    if (!usedOnlyAsAddress(fn, i->defValue, depth + 1)) return false;
+                    used = true;
+                    continue;
+                }
+                const uint32_t addr = i->op == ssa::IrInstr::Op::Store ? 1 : 0;
+                if ((i->op != ssa::IrInstr::Op::Load && i->op != ssa::IrInstr::Op::Store)
+                        || u.operandIndex != addr)
+                    return false;
+                used = true;
+            }
+        }
+    }
+    for (const auto& phi : fn.phis())
+        if (phi)
+            for (const auto& op : phi->operands)
+                if (op.second == value) return false;
+    return used;
+}
+
+/// The bodies of the natural loops found from block 0, one per header (the
+/// back edges to one header make one loop).
+std::vector<std::set<uint32_t>> loopBodies(const ssa::SSAFunction& fn) {
+    std::map<uint32_t, std::set<uint32_t>> byHeader;
+    std::vector<int> state(fn.blockCount(), 0); // 0 new, 1 on stack, 2 done
+    std::vector<std::pair<uint32_t, size_t>> stack;
+    if (!fn.block(0)) return {};
+    stack.push_back({0, 0});
+    state[0] = 1;
+    while (!stack.empty()) {
+        auto& [b, next] = stack.back();
+        const auto* blk = fn.block(b);
+        if (!blk || next >= blk->succs.size()) {
+            state[b] = 2;
+            stack.pop_back();
+            continue;
+        }
+        const uint32_t h = blk->succs[next++];
+        if (h >= state.size()) continue;
+        if (state[h] == 0) {
+            state[h] = 1;
+            stack.push_back({h, 0});
+        } else if (state[h] == 1) {
+            std::set<uint32_t> body{h};
+            std::vector<uint32_t> work{b};
+            while (!work.empty()) {
+                const uint32_t x = work.back();
+                work.pop_back();
+                if (!body.insert(x).second) continue;
+                if (const auto* xb = fn.block(x))
+                    work.insert(work.end(), xb->preds.begin(), xb->preds.end());
+            }
+            byHeader[h].insert(body.begin(), body.end());
+        }
+    }
+    std::vector<std::set<uint32_t>> loops;
+    for (auto& [h, body] : byHeader) loops.push_back(std::move(body));
+    return loops;
+}
+
+/// Whether @a a and @a b share a loop that is not the outermost one around
+/// @a a: the smallest loop holding @a a also holds @a b.
+bool inSameInnerLoop(const std::vector<std::set<uint32_t>>& loops, uint32_t a, uint32_t b) {
+    const std::set<uint32_t>* inner = nullptr;
+    for (const auto& l : loops)
+        if (l.count(a) && (!inner || l.size() < inner->size())) inner = &l;
+    return inner && inner->count(b);
+}
+
 bool decrementsInLoop(const ssa::SSAFunction& fn) {
     for (const auto& blk : fn.blocks()) {
         if (!blk || !ssa::blockOnCycle(fn, blk->id)) continue;
@@ -252,9 +334,11 @@ bool decrementsInLoop(const ssa::SSAFunction& fn) {
                 if (!v || v->kind != ssa::ValueKind::Immediate) continue;
                 const auto s = static_cast<int64_t>(v->imm);
                 const bool neg = (s < 0 && s > -16) || (v->imm >= 0xfffffff0ull && v->imm <= 0xffffffffull);
-                if ((i->op == ssa::IrInstr::Op::Add && neg) ||
+                if (((i->op == ssa::IrInstr::Op::Add && neg) ||
                         (i->op == ssa::IrInstr::Op::Sub && u.operandIndex == 1 && v->imm == 1))
+                        && !usedOnlyAsAddress(fn, i->defValue)) {
                     return true;
+                }
             }
         }
     }
@@ -270,23 +354,35 @@ SortResult SelectionSortDetector::detect(const ssa::SSAFunction& fn) const {
         std::fprintf(stderr, "SEL %s nested=%d dec=%d\n", fn.name().c_str(), ssa::hasNestedLoop(fn), decrementsInLoop(fn));
     if (!ssa::hasNestedLoop(fn) || decrementsInLoop(fn)) return result;
 
-    // The scan: compares two elements it read and writes nothing. Nothing
-    // it branches to swaps either -- that is bubble sort's inner loop.
-    bool scan = false, swap = false;
-    std::set<uint32_t> nextToScan;
+    // The scan: compares elements it read and writes nothing; at -O0 one
+    // block reads both, at -O2 the minimum stays in a register and each
+    // path through the scan reads one. Nothing it branches to swaps either
+    // -- that is bubble sort's inner loop.
+    int scanLoads = 0;
+    bool swap = false;
+    std::set<uint32_t> nextToScan, scanBlocks;
+    const auto loops = loopBodies(fn);
     for (const auto& blk : fn.blocks()) {
         if (!blk || !ssa::blockOnCycle(fn, blk->id)) continue;
         const auto m = memOps(fn, *blk);
-        if (m.loads >= 2 && m.compares >= 1 && m.stores == 0) {
-            scan = true;
+        if (m.loads >= 1 && m.compares >= 1 && m.stores == 0) {
+            scanLoads += m.loads;
+            scanBlocks.insert(blk->id);
             nextToScan.insert(blk->succs.begin(), blk->succs.end());
         }
     }
+    const bool scan = scanLoads >= 2;
     for (const auto& blk : fn.blocks()) {
         if (!blk || !ssa::blockOnCycle(fn, blk->id)) continue;
         const auto m = memOps(fn, *blk);
-        if (m.stores >= 2 && m.loads >= 2) { // a swap reads both first
-            if (nextToScan.count(blk->id)) return result;
+        // A swap reads both elements first (-O0), or stores exactly the two
+        // values the scan already holds in registers (-O2).
+        if (m.stores >= 2 && (m.loads >= 2 || (m.loads == 0 && m.stores == 2))) {
+            // Bubble sort swaps inside the compare loop; selection sort
+            // swaps once the scan loop is done.
+            for (const auto sb : scanBlocks)
+                if (inSameInnerLoop(loops, sb, blk->id)) return result;
+            if (loops.empty() && nextToScan.count(blk->id)) return result;
             swap = true;
         }
     }
