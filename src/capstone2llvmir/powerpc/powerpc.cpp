@@ -9906,5 +9906,199 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxScalarLoadStore(cs_insn*
 	}
 }
 
+
+namespace {
+
+/// Big-endian byte offset `off` (iW) of a `size`-byte field in a `bits`-wide value.
+llvm::Value* ppcBeFieldShift(llvm::Value* off, unsigned size, unsigned bits, llvm::IRBuilder<>& irb)
+{
+	auto* ty = irb.getIntNTy(bits);
+	off = irb.CreateZExtOrTrunc(off, ty);
+	auto* bytes = irb.CreateSub(llvm::ConstantInt::get(ty, bits / 8 - size), off);
+	return irb.CreateShl(bytes, llvm::ConstantInt::get(ty, 3));
+}
+
+llvm::Value* ppcBeExtract(llvm::Value* v, llvm::Value* off, unsigned size, llvm::IRBuilder<>& irb)
+{
+	unsigned bits = v->getType()->getIntegerBitWidth();
+	auto* sh = ppcBeFieldShift(off, size, bits, irb);
+	return irb.CreateTrunc(irb.CreateLShr(v, sh), irb.getIntNTy(size * 8));
+}
+
+llvm::Value* ppcBeInsert(llvm::Value* v, llvm::Value* off, unsigned size, llvm::Value* val, llvm::IRBuilder<>& irb)
+{
+	unsigned bits = v->getType()->getIntegerBitWidth();
+	auto* ty = v->getType();
+	auto* sh = ppcBeFieldShift(off, size, bits, irb);
+	auto* mask = irb.CreateShl(
+			llvm::ConstantInt::get(ty, llvm::APInt::getLowBitsSet(bits, size * 8)), sh);
+	auto* field = irb.CreateShl(
+			irb.CreateZExt(irb.CreateTrunc(val, irb.getIntNTy(size * 8)), ty), sh);
+	return irb.CreateOr(irb.CreateAnd(v, irb.CreateNot(mask)), field);
+}
+
+} // anonymous namespace
+
+/**
+ * PPC_INS_VEXTU[BHW][LR]X, PPC_INS_VEXTRACTU[BHW], PPC_INS_VEXTRACTD,
+ * PPC_INS_VEXTDU[BHW]V[LR]X, PPC_INS_VEXTDDV[LR]X, PPC_INS_VINSERT[BHWD],
+ * PPC_INS_VINS[WD], PPC_INS_VINS[BHWD][LR]X, PPC_INS_VINS[BHW]V[LR]X
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecInsertExtract(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	auto* i64 = irb.getInt64Ty();
+	auto* i128 = irb.getInt128Ty();
+	auto gpr = [&](unsigned n) {
+		return irb.CreateZExtOrTrunc(loadOp(pi->operands[n], irb), i64);
+	};
+	auto imm = [&](unsigned n) -> llvm::Value* {
+		return llvm::ConstantInt::get(i64, pi->operands[n].type == PPC_OP_IMM ? pi->operands[n].imm & 0x1f : 0);
+	};
+	auto rightOff = [&](llvm::Value* idx, unsigned size, unsigned total) {
+		return irb.CreateSub(llvm::ConstantInt::get(i64, total - size), idx);
+	};
+	auto mask = [&](llvm::Value* x, uint64_t m) {
+		return irb.CreateAnd(x, llvm::ConstantInt::get(i64, m));
+	};
+	// Element taken from dword 0 (low-order end) of a VR: byte 7, hword 3, word 1, dword 0.
+	auto dw0 = [&](unsigned n) {
+		return irb.CreateTrunc(irb.CreateLShr(loadOpI128(pi->operands[n], irb), 64), i64);
+	};
+
+	unsigned size = 0;
+	bool right = false;
+	switch (i->id)
+	{
+	// GPR <- VR element, variable index.
+	case PPC_INS_VEXTUBLX: size = 1; break;
+	case PPC_INS_VEXTUHLX: size = 2; break;
+	case PPC_INS_VEXTUWLX: size = 4; break;
+	case PPC_INS_VEXTUBRX: size = 1; right = true; break;
+	case PPC_INS_VEXTUHRX: size = 2; right = true; break;
+	case PPC_INS_VEXTUWRX: size = 4; right = true; break;
+	default: break;
+	}
+	if (size)
+	{
+		EXPECT_IS_TERNARY(i, pi, irb);
+		auto* idx = mask(gpr(1), 0xf);
+		auto* off = right ? rightOff(idx, size, 16) : idx;
+		auto* v = ppcBeExtract(loadOpI128(pi->operands[2], irb), off, size, irb);
+		storeOp(pi->operands[0], irb.CreateZExt(v, i64), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		return;
+	}
+
+	switch (i->id)
+	{
+	// VR dword0 <- VR element, immediate index.
+	case PPC_INS_VEXTRACTUB: size = 1; break;
+	case PPC_INS_VEXTRACTUH: size = 2; break;
+	case PPC_INS_VEXTRACTUW: size = 4; break;
+	case PPC_INS_VEXTRACTD: size = 8; break;
+	default: break;
+	}
+	if (size)
+	{
+		EXPECT_IS_TERNARY(i, pi, irb);
+		auto* v = ppcBeExtract(loadOpI128(pi->operands[1], irb), mask(imm(2), 0xf), size, irb);
+		storeOpI128(pi->operands[0], irb.CreateShl(irb.CreateZExt(v, i128), 64), irb);
+		return;
+	}
+
+	switch (i->id)
+	{
+	// VR dword0 <- element of VRA||VRB, GPR index.
+	case PPC_INS_VEXTDUBVLX: size = 1; break;
+	case PPC_INS_VEXTDUHVLX: size = 2; break;
+	case PPC_INS_VEXTDUWVLX: size = 4; break;
+	case PPC_INS_VEXTDDVLX: size = 8; break;
+	case PPC_INS_VEXTDUBVRX: size = 1; right = true; break;
+	case PPC_INS_VEXTDUHVRX: size = 2; right = true; break;
+	case PPC_INS_VEXTDUWVRX: size = 4; right = true; break;
+	case PPC_INS_VEXTDDVRX: size = 8; right = true; break;
+	default: break;
+	}
+	if (size)
+	{
+		if (pi->op_count != 4)
+		{
+			throw GenericError("unexpected operand count");
+		}
+		auto* i256 = irb.getIntNTy(256);
+		auto* cat = irb.CreateOr(
+				irb.CreateShl(irb.CreateZExt(loadOpI128(pi->operands[1], irb), i256), 128),
+				irb.CreateZExt(loadOpI128(pi->operands[2], irb), i256));
+		auto* idx = mask(gpr(3), 0x1f);
+		auto* off = right ? rightOff(idx, size, 32) : idx;
+		auto* v = ppcBeExtract(cat, off, size, irb);
+		storeOpI128(pi->operands[0], irb.CreateShl(irb.CreateZExt(v, i128), 64), irb);
+		return;
+	}
+
+	// Inserts: VRT is read-modify-write.
+	llvm::Value* off = nullptr;
+	llvm::Value* val = nullptr;
+	EXPECT_IS_TERNARY(i, pi, irb);
+	switch (i->id)
+	{
+	case PPC_INS_VINSERTB: size = 1; break;
+	case PPC_INS_VINSERTH: size = 2; break;
+	case PPC_INS_VINSERTW: size = 4; break;
+	case PPC_INS_VINSERTD: size = 8; break;
+	case PPC_INS_VINSW: size = 4; off = mask(imm(2), 0xf); val = gpr(1); break;
+	case PPC_INS_VINSD: size = 8; off = mask(imm(2), 0xf); val = gpr(1); break;
+	case PPC_INS_VINSBLX: size = 1; break;
+	case PPC_INS_VINSHLX: size = 2; break;
+	case PPC_INS_VINSWLX: size = 4; break;
+	case PPC_INS_VINSDLX: size = 8; break;
+	case PPC_INS_VINSBRX: size = 1; right = true; break;
+	case PPC_INS_VINSHRX: size = 2; right = true; break;
+	case PPC_INS_VINSWRX: size = 4; right = true; break;
+	case PPC_INS_VINSDRX: size = 8; right = true; break;
+	case PPC_INS_VINSBVLX: size = 1; break;
+	case PPC_INS_VINSHVLX: size = 2; break;
+	case PPC_INS_VINSWVLX: size = 4; break;
+	case PPC_INS_VINSBVRX: size = 1; right = true; break;
+	case PPC_INS_VINSHVRX: size = 2; right = true; break;
+	case PPC_INS_VINSWVRX: size = 4; right = true; break;
+	default:
+		throw GenericError("unhandled insert/extract");
+	}
+	switch (i->id)
+	{
+	case PPC_INS_VINSERTB:
+	case PPC_INS_VINSERTH:
+	case PPC_INS_VINSERTW:
+	case PPC_INS_VINSERTD:
+		off = mask(imm(2), 0xf);
+		val = dw0(1);
+		break;
+	case PPC_INS_VINSBVLX:
+	case PPC_INS_VINSHVLX:
+	case PPC_INS_VINSWVLX:
+	case PPC_INS_VINSBVRX:
+	case PPC_INS_VINSHVRX:
+	case PPC_INS_VINSWVRX:
+	{
+		auto* idx = mask(gpr(1), 0xf);
+		off = right ? rightOff(idx, size, 16) : idx;
+		val = dw0(2);
+		break;
+	}
+	case PPC_INS_VINSW:
+	case PPC_INS_VINSD:
+		break;
+	default:
+	{
+		auto* idx = mask(gpr(1), 0xf);
+		off = right ? rightOff(idx, size, 16) : idx;
+		val = gpr(2);
+		break;
+	}
+	}
+	auto* vt = loadOpI128(pi->operands[0], irb);
+	storeOpI128(pi->operands[0], ppcBeInsert(vt, off, size, val, irb), irb);
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec
