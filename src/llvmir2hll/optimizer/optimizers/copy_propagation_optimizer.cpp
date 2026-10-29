@@ -1206,13 +1206,38 @@ void CopyPropagationOptimizer::handleCaseInductionVariable(
 	}
 
 	// Other value is undefined before the other definition.
+	//
+	// Walking back to the bare declaration is not enough on its own: an
+	// assignment to the other value on the way means it is live at
+	// commonOtherDef, and redirecting commonOtherDef to it clobbers it. On
+	// x86-64 -O2 f_arr, `n4 = n & 0x7ffffffc; rdx = 0; if (n4 != 0) {loop
+	// while (n4 != i)...; rdx = n4;}` became `rdx = 0; if (rdx != 0)`, so the
+	// unrolled loop never ran. Any access on the walk (nested ones included)
+	// declines.
 	bool ok = false;
 	std::set<ShPtr<Statement>> visited;
+	auto otherValueUses = vuv->getUses(otherValue, ducs->func);
+	auto accessesOtherValue = [&](const ShPtr<Statement> &chainStmt) {
+		if (va->getValueData(chainStmt)->isDirAccessed(otherValue)) {
+			return true;
+		}
+		for (const auto &u : otherValueUses->dirUses) {
+			for (auto p = u; p; p = p->getParent()) {
+				if (p == chainStmt) {
+					return true;
+				}
+			}
+		}
+		return false;
+	};
 	for (auto prev = commonOtherDef->getUniquePredecessor(); prev && visited.insert(prev).second;
 			prev = prev->getUniquePredecessor()) {
 		auto vds = cast<VarDefStmt>(prev);
 		if (vds && vds->getVar() == otherValue && vds->getInitializer() == nullptr) {
 			ok = true;
+			break;
+		}
+		if (accessesOtherValue(prev)) {
 			break;
 		}
 	}
