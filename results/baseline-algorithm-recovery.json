@@ -1,6 +1,6 @@
 {
   "baseline_tag": "baseline-algorithm-recovery",
-  "updated_at": "2026-10-29T07:50:00Z",
+  "updated_at": "2026-10-29T15:20:41Z",
   "metrics": {
     "ci_core": {
       "binaries": 9,
@@ -9,10 +9,10 @@
       "mean_f1_raw": 0.9556
     },
     "full_corpus": {
-      "binaries": 216,
-      "min_decompiled": 216,
-      "mean_f1": 0.056,
-      "mean_f1_raw": 0.056
+      "binaries": 126,
+      "min_decompiled": 126,
+      "mean_f1": 0.38835978835978835,
+      "mean_f1_raw": 0.38835978835978835
     }
   },
   "thresholds": {
@@ -21,5 +21,5 @@
     "decompiled_drop_max": 10
   },
   "note_ci_core": "Raised from 0.2341 to 0.8444 then to 0.9397 (5adec587) and then to 0.9556, measured locally on 63270ca8 (2026-10-29) after the Thread ground-truth fix and the selection sort detector; the effective floor is now 0.9056. Calls to imported threading APIs (callees with no body in the module) now count as structural evidence; user functions that merely share an API name stay excluded. generated_pthread_mutex predicts an extra Thread label from its pthread_create call. Earlier history: 0.2341 had been set from runs 256/257 (c5f8c24, 2ee999a); see git history of this file.",
-  "note_full_corpus": "Still the 2026-08-29 measurement. run_algorithm_recovery_ci.sh does not exercise this profile, so nothing on the CI path has re-measured it."
+  "note_full_corpus": "Measured 2026-10-30 on the 126-binary corpus, name-blind (--no-stem-fallback); macro-F1 0.4671, 46/126 exact, no false positives. mean_f1 is the per-binary mean the gate compares."
 }

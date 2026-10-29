@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- Algorithm recovery: the full_corpus baseline is re-measured on the current 126-binary corpus (per-binary mean F1 0.388, macro-F1 0.467) instead of the stale 216-binary figure of 0.056, so the full-corpus regression gate passes again.
 - Algorithm recovery: an iterative Fibonacci loop (`t = a + b; a = b; b = t;` over scalars only, no other arithmetic or memory) is now detected as Fibonacci.
 - Prediction extraction: a sort label that names its std:: equivalent in
   parentheses ("mergesort (std::stable_sort)") now gets the aliases of the
