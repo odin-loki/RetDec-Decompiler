@@ -695,7 +695,7 @@ def test_a_plain_mutex_is_not_pthread() -> None:
 
 def test_pthread_mutex_is_not_a_thread() -> None:
     labels = labels_from_config(_one("concurrency", "pthread_mutex"), "x-gcc-O0")
-    assert {"Mutex", "Pthread", "Concurrency"} <= labels
+    assert {"Mutex", "Pthread", "Concurrency"} <= set(labels)
     assert "Thread" not in labels
 
 
