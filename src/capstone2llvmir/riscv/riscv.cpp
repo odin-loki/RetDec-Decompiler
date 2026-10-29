@@ -7131,5 +7131,94 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateCoreV(cs_insn* i, cs_riscv* r
 }
 
 
+void Capstone2LlvmIrTranslatorRiscv_impl::translateCoreVMem(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	// CORE-V XCVmem post-increment and register-offset loads/stores, decoded
+	// from the raw word because capstone drops the register-offset operands.
+	if (i->size != 4)
+	{
+		translatePseudoAsmGeneric(i, ri, irb);
+		return;
+	}
+	uint32_t w = uint32_t(i->bytes[0]) | (uint32_t(i->bytes[1]) << 8)
+			| (uint32_t(i->bytes[2]) << 16) | (uint32_t(i->bytes[3]) << 24);
+	unsigned rd = (w >> 7) & 31, rs1 = (w >> 15) & 31, rs2 = (w >> 20) & 31;
+	unsigned f3 = (w >> 12) & 7, f7 = w >> 25;
+	auto* xt = getDefaultType();
+	auto cx = [&](int64_t v) { return llvm::ConstantInt::getSigned(xt, v); };
+	auto ldr = [&](unsigned n) -> llvm::Value* {
+		if (n == 0) return cx(0);
+		return irb.CreateZExtOrTrunc(loadRegister(RISCV_REG_X0 + n, irb), xt);
+	};
+	auto str = [&](unsigned n, llvm::Value* v) {
+		if (n != 0) storeRegister(RISCV_REG_X0 + n, irb.CreateZExtOrTrunc(v, xt), irb);
+	};
+	bool load = false, postInc = true, uns = false;
+	unsigned size = 0, dataReg = 0;
+	llvm::Value* off = nullptr;
+	unsigned opc = w & 0x7f;
+	auto sizeOf = [](unsigned c) { return c == 0 ? 1u : c == 1 ? 2u : c == 2 ? 4u : 0u; };
+	if (opc == 0x0b)
+	{
+		load = true;
+		size = sizeOf(f3 & 3);
+		uns = f3 & 4;
+		off = cx(int32_t(w) >> 20);
+		dataReg = rd;
+	}
+	else if (opc == 0x2b && f3 < 3)
+	{
+		size = sizeOf(f3);
+		off = cx((int32_t(w & 0xfe000000) >> 20) | int32_t((w >> 7) & 31));
+		dataReg = rs2;
+	}
+	else if (opc == 0x2b && f3 == 3)
+	{
+		postInc = !(f7 & 4);
+		size = sizeOf(f7 & 3);
+		if (f7 & 0x10)
+		{
+			off = ldr(rd);
+			dataReg = rs2;
+		}
+		else
+		{
+			load = true;
+			uns = f7 & 8;
+			off = ldr(rs2);
+			dataReg = rd;
+		}
+		if (f7 & ~0x1fu) size = 0;
+	}
+	if (size == 0 || (uns && size == 4))
+	{
+		translatePseudoAsmGeneric(i, ri, irb);
+		return;
+	}
+	auto* base = ldr(rs1);
+	auto* addr = postInc ? base : irb.CreateAdd(base, off);
+	auto* ety = irb.getIntNTy(size * 8);
+	auto* ptr = irb.CreateIntToPtr(addr, ety->getPointerTo());
+	llvm::Value* val = nullptr;
+	if (load)
+	{
+		val = irb.CreateLoad(ety, ptr);
+		val = uns ? irb.CreateZExt(val, xt) : irb.CreateSExtOrTrunc(val, xt);
+	}
+	else
+	{
+		irb.CreateStore(irb.CreateTrunc(ldr(dataReg), ety), ptr);
+	}
+	if (postInc)
+	{
+		str(rs1, irb.CreateAdd(base, off));
+	}
+	if (load)
+	{
+		str(dataReg, val);
+	}
+}
+
+
 } // namespace capstone2llvmir
 } // namespace retdec

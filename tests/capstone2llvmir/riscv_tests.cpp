@@ -5910,6 +5910,137 @@ TEST_P(Capstone2LlvmIrTranslatorRiscvTests, CV_INSERT_scalar)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, CV_LW_postinc_imm)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_A1, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x12345678_dw},
+	});
+
+	emulate_bin("0b a5 45 00");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 0x12345678},
+		{RISCV_REG_A1, 0x1004},
+	});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, CV_LW_postinc_reg)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_A1, 0x1000},
+		{RISCV_REG_A2, 0x8},
+	});
+	setMemory({
+		{0x1000, 0x12345678_dw},
+	});
+
+	emulate_bin("2b b5 c5 04");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 0x12345678},
+		{RISCV_REG_A1, 0x1008},
+	});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, CV_LW_regreg)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_A1, 0x1000},
+		{RISCV_REG_A2, 0x8},
+	});
+	setMemory({
+		{0x1008, 0x12345678_dw},
+	});
+
+	emulate_bin("2b b5 c5 0c");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 0x12345678},
+	});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, CV_SW_postinc_imm)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_A0, 0xdeadbeef},
+		{RISCV_REG_A1, 0x1000},
+	});
+
+	emulate_bin("2b a2 a5 00");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A1, 0x1004},
+	});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0xdeadbeef_dw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, CV_SB_regreg)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_A0, 0x1234},
+		{RISCV_REG_A1, 0x1000},
+		{RISCV_REG_A2, 0x3},
+	});
+
+	emulate_bin("2b b6 a5 28");
+
+	EXPECT_JUST_REGISTERS_STORED({
+	});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1003, 0x34_b},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, CV_LBU_postinc_imm)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_A1, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x80_b},
+	});
+
+	emulate_bin("0b c5 f5 ff");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 0x80},
+		{RISCV_REG_A1, 0xfff},
+	});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
