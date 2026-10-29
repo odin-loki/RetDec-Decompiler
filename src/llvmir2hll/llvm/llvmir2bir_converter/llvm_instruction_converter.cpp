@@ -713,6 +713,50 @@ bool matchSignedLessThanFlags(llvm::Value *x, llvm::Value *&a,
 	return false;
 }
 
+/**
+* @brief Recognizes the flag idiom for `a <s C` with a constant `0 < C`.
+*
+* InstCombine folds `((d ^ a) & (a ^ C)) ^ d`, `d = a - C`, into
+* `((C - 1 - a) & a) ^ (a + -C)`. The fold is only valid for a positive
+* @c C, so nothing else is matched. On success, @a a and @a c are set.
+*/
+bool matchSignedLessThanConstFlags(llvm::Value *x, llvm::Value *&a,
+		llvm::ConstantInt *&c) {
+	llvm::Value *l, *r;
+	if (!binOperands(x, llvm::Instruction::Xor, l, r)) {
+		return false;
+	}
+	for (int i = 0; i < 2; ++i, std::swap(l, r)) {
+		// l = (K - a) & a, r = a + N, with N = -C and K = C - 1.
+		llvm::Value *ra, *rn;
+		if (!binOperands(r, llvm::Instruction::Add, ra, rn)) {
+			continue;
+		}
+		auto *n = llvm::dyn_cast<llvm::ConstantInt>(rn);
+		if (!n || !n->getValue().isNegative() || n->getValue().isMinSignedValue()) {
+			continue;
+		}
+		llvm::Value *p, *q;
+		if (!binOperands(l, llvm::Instruction::And, p, q)) {
+			continue;
+		}
+		for (int j = 0; j < 2; ++j, std::swap(p, q)) {
+			llvm::Value *pk, *pa;
+			if (q != ra || !binOperands(p, llvm::Instruction::Sub, pk, pa) ||
+					pa != ra) {
+				continue;
+			}
+			auto *k = llvm::dyn_cast<llvm::ConstantInt>(pk);
+			if (k && k->getValue() == -n->getValue() - 1) {
+				a = ra;
+				c = llvm::ConstantInt::get(n->getContext(), -n->getValue());
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 } // anonymous namespace
 
 /**
@@ -741,6 +785,16 @@ ShPtr<Expression> LLVMInstructionConverter::convertICmpInstToExpression(
 			return LtOpExpr::create(ea, eb, LtOpExpr::Variant::SCmp);
 		}
 		return GtEqOpExpr::create(ea, eb, GtEqOpExpr::Variant::SCmp);
+	}
+	llvm::ConstantInt *c = nullptr;
+	if (signTest && matchSignedLessThanConstFlags(inst.getOperand(0), a, c)) {
+		auto ea = getConverter()->convertValueToExpression(a);
+		auto ec = getConverter()->convertValueToExpression(c);
+		if (predicate == llvm::CmpInst::Predicate::ICMP_SLT ||
+				predicate == llvm::CmpInst::Predicate::ICMP_SLE) {
+			return LtOpExpr::create(ea, ec, LtOpExpr::Variant::SCmp);
+		}
+		return GtEqOpExpr::create(ea, ec, GtEqOpExpr::Variant::SCmp);
 	}
 
 	auto op1 = getConverter()->convertValueToExpression(inst.getOperand(0));

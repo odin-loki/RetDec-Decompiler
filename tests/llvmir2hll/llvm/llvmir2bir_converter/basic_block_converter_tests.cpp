@@ -89,6 +89,57 @@ SignedLessThanFlagIdiomIsConvertedToAPlainComparison) {
 	EXPECT_EQ("b", b->getName());
 }
 
+// InstCombine's form of the idiom for `a <s 7`.
+TEST_F(BasicBlockConverterTests,
+SignedLessThanConstantFlagIdiomIsConvertedToAPlainComparison) {
+	auto module = convertLLVMIR2BIR(R"(
+		define i1 @function(i32 %a) {
+			%d = add i32 %a, -7
+			%k = sub i32 6, %a
+			%m = and i32 %k, %a
+			%s = xor i32 %m, %d
+			%c = icmp slt i32 %s, 0
+			ret i1 %c
+		}
+	)");
+
+	auto f = module->getFuncByName("function");
+	ASSERT_TRUE(f);
+	LtCollector c;
+	f->getBody()->accept(&c);
+	ASSERT_EQ(1u, c.found.size());
+	auto lt = c.found[0];
+	EXPECT_EQ(LtOpExpr::Variant::SCmp, lt->getVariant());
+	auto k = cast<ConstInt>(lt->getSecondOperand());
+	ASSERT_TRUE(k);
+	EXPECT_EQ(7, k->getValue().getSExtValue());
+}
+
+// With a negative constant InstCombine does not produce this form, so the
+// same shape must be left alone.
+TEST_F(BasicBlockConverterTests,
+FlagIdiomShapeWithANegativeConstantIsNotConverted) {
+	auto module = convertLLVMIR2BIR(R"(
+		define i1 @function(i32 %a) {
+			%d = add i32 %a, 5
+			%k = sub i32 -6, %a
+			%m = and i32 %k, %a
+			%s = xor i32 %m, %d
+			%c = icmp slt i32 %s, 0
+			ret i1 %c
+		}
+	)");
+
+	auto f = module->getFuncByName("function");
+	ASSERT_TRUE(f);
+	LtCollector c;
+	f->getBody()->accept(&c);
+	ASSERT_EQ(1u, c.found.size());
+	auto k = cast<ConstInt>(c.found[0]->getSecondOperand());
+	ASSERT_TRUE(k);
+	EXPECT_TRUE(k->isZero()) << "expected the sign test `... < 0` to stay";
+}
+
 TEST_F(BasicBlockConverterTests,
 SignedLessThanFlagIdiomTestedAgainstMinusOneIsConverted) {
 	auto module = convertLLVMIR2BIR(R"(
