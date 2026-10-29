@@ -542,11 +542,7 @@ llvm::Constant* FileImage::getConstant(
 			}
 		}
 
-		if (refGvs.size() == 1)
-		{
-			c = refGvs.front();
-		}
-		else if (refGvs.size() > 1
+		if (refGvs.size() > 1
 				&& llvm_utils::isStringArrayType(llvm_utils::pointeeType(refGvs.front())))
 		{
 			auto* at = ArrayType::get(
@@ -560,6 +556,14 @@ llvm::Constant* FileImage::getConstant(
 						PointerType::get(Type::getInt8Ty(ctx), 0)) );
 
 			c = ConstantArray::get(at, ArrayRef<Constant*>(av2));
+		}
+		else if (!refGvs.empty())
+		{
+			// Consecutive pointers that are not a string table (a MIPS or
+			// ppc GOT): the word here is its own pointer.  Returning no
+			// constant left every GOT slot after the first unresolved, so
+			// `ld $5, %got(g_arr)($gp)` read through an unset $gp.
+			c = refGvs.front();
 		}
 	}
 	// for-simple.c -a x86 -f elf -c gcc -O0, 8049b7c -- in both .data & .bss

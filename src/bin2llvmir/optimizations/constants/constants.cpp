@@ -148,10 +148,31 @@ void ConstantsAnalysis::widenIndexedGlobals()
 		auto* et = gv->getValueType();
 		if (!et->isIntegerTy() || !gv->hasInitializer()) continue;
 		bool indexed = false;
+		// Values that carry the table's address: `ptrtoint @g` and, for a
+		// GOT-addressed image (MIPS, ppc), loads of a pointer slot whose
+		// initializer is @g.
+		std::vector<Value*> bases;
 		for (auto* u : gv->users())
 		{
 			auto* ce = dyn_cast<ConstantExpr>(u);
-			if (!ce || ce->getOpcode() != Instruction::PtrToInt) continue;
+			if (ce && ce->getOpcode() == Instruction::PtrToInt)
+			{
+				bases.push_back(ce);
+				continue;
+			}
+			auto* slot = dyn_cast<GlobalVariable>(ce && ce->isCast() && ce->hasOneUse()
+					? *ce->user_begin() : u);
+			if (slot && slot != gv && slot->hasInitializer()
+					&& slot->getInitializer()->stripPointerCasts() == gv)
+			{
+				for (auto* su : slot->users())
+					if (auto* sl = dyn_cast<LoadInst>(su))
+						if (sl->getPointerOperand() == slot)
+							bases.push_back(sl);
+			}
+		}
+		for (auto* ce : bases)
+		{
 			for (auto* uu : ce->users())
 			{
 				// The address escapes into arithmetic or a register (an x86
@@ -173,10 +194,8 @@ void ConstantsAnalysis::widenIndexedGlobals()
 			uint64_t minW = 0;
 			std::vector<std::pair<Value*, int>> q;
 			std::set<Value*> seen;
-			for (auto* u : gv->users())
-				if (auto* ce = dyn_cast<ConstantExpr>(u))
-					if (ce->getOpcode() == Instruction::PtrToInt)
-						for (auto* uu : ce->users()) q.emplace_back(uu, 0);
+			for (auto* b : bases)
+				for (auto* uu : b->users()) q.emplace_back(uu, 0);
 			while (!q.empty())
 			{
 				auto [v, d] = q.back();

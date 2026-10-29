@@ -4807,6 +4807,48 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_NEGU)
 }
 
 //
+// MIPS_INS_ALIAS_DNEGU / MIPS_INS_ALIAS_NEGU: Capstone 6 decodes `dsubu rd,
+// $zero, rt` as DSUBu with the two operands (rd, rt).  The generic two-operand
+// sub then computed rd - rt, so `dnegu $1, $4` read $1 uninitialised.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ALIAS_DNEGU)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_1, 0x1234},
+		{MIPS_REG_4, 0xf4240},
+	});
+
+	emulate("dsubu $1, $zero, $4");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_1, 0xfffffffffff0bdc0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ALIAS_NEGU_zero_form)
+{
+	setRegisters({
+		{MIPS_REG_1, 0x1234},
+		{MIPS_REG_4, 5},
+	});
+
+	emulate("subu $1, $zero, $4");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_1, sx32(0xfffffffb)},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
 // MIPS_INS_NEG
 //
 
