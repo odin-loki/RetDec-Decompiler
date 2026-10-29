@@ -129,7 +129,10 @@ void CastSimplifierOptimizer::trySimplify(ShPtr<CastExpr> castExpr) {
                 auto innerOp = innerCast->getOperand();
                 if (auto srcInt = cast<IntType>(innerOp->getType())) {
                     // If outer cast shrinks back to original size, cancel both.
-                    if (dstInt->getSize() == srcInt->getSize()) {
+                    // Only when the inner cast widened: ext(trunc(x)) clears
+                    // the high bits and is not x.
+                    if (dstInt->getSize() == srcInt->getSize()
+                            && innerInt->getSize() > srcInt->getSize()) {
                         Expression::replaceExpression(castExpr, innerOp);
                         return;
                     }

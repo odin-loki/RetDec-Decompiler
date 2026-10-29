@@ -28,6 +28,7 @@
 #include "retdec/llvmir2hll/ir/or_op_expr.h"
 #include "retdec/llvmir2hll/ir/sub_op_expr.h"
 #include "retdec/llvmir2hll/ir/trunc_cast_expr.h"
+#include "retdec/llvmir2hll/ir/ext_cast_expr.h"
 #include "retdec/llvmir2hll/ir/variable.h"
 #include "retdec/llvmir2hll/optimizer/optimizers/simplify_arithm_expr/three_operands_sub_optimizer.h"
 #include "retdec/llvmir2hll/support/debug.h"
@@ -103,6 +104,18 @@ std::string ThreeOperandsSubOptimizer::getId() const {
 // explicit truncating cast makes the decompiled output dramatically cleaner
 // and preserves the programmer's intent more faithfully.
 // ---------------------------------------------------------------------------
+/// A mask keeps the width of the expression it masks; the cast that replaces
+/// it narrows.  `(x & 0xffffffff) << 32` as `(uint32_t)x << 32` is 0, and a
+/// 32-bit sum wraps where the 64-bit one did not, so widen back.
+static ShPtr<Expression> keepWidth(ShPtr<Expression> narrowed, ShPtr<Expression> orig) {
+	auto origTy = cast<IntType>(orig->getType());
+	auto narrowTy = cast<IntType>(narrowed->getType());
+	if (!origTy || !narrowTy || origTy->getSize() <= narrowTy->getSize()) {
+		return narrowed;
+	}
+	return ExtCastExpr::create(narrowed, IntType::create(origTy->getSize(), false));
+}
+
 void ThreeOperandsSubOptimizer::visit(ShPtr<BitAndOpExpr> expr) {
 	OrderedAllVisitor::visit(expr);
 
@@ -161,8 +174,7 @@ void ThreeOperandsSubOptimizer::visit(ShPtr<BitAndOpExpr> expr) {
 				                                targetBits, /* isSigned */ true);
 				auto sub     = SubOpExpr::create(addVar, kConst);
 				auto dstType = IntType::create(targetBits, /* isSigned */ false);
-				auto newCast = TruncCastExpr::create(sub, dstType);
-				optimizeExpr(expr, newCast);
+				optimizeExpr(expr, keepWidth(TruncCastExpr::create(sub, dstType), expr));
 				return;
 			}
 		}
@@ -171,8 +183,7 @@ void ThreeOperandsSubOptimizer::visit(ShPtr<BitAndOpExpr> expr) {
 	// Replace  x & 0xff  with  (uintN_t)x  (a truncating cast to the
 	// narrower unsigned integer type).
 	auto dstType = IntType::create(targetBits, /* isSigned */ false);
-	auto cast    = TruncCastExpr::create(maskedExpr, dstType);
-	optimizeExpr(expr, cast);
+	optimizeExpr(expr, keepWidth(TruncCastExpr::create(maskedExpr, dstType), expr));
 }
 
 void ThreeOperandsSubOptimizer::visit(ShPtr<AddOpExpr> expr) {
