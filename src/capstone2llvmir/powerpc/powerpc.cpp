@@ -222,6 +222,7 @@ bool Capstone2LlvmIrTranslatorPowerpc_impl::isAllowedExtraMode(cs_mode m)
 			| CS_MODE_PPC_ISA_FUTURE;
 	unsigned bits = static_cast<unsigned>(m) & ~cpu;
 	bits &= ~static_cast<unsigned>(CS_MODE_SPE);
+	bits &= ~static_cast<unsigned>(CS_MODE_PS);
 	return bits == CS_MODE_LITTLE_ENDIAN || bits == CS_MODE_BIG_ENDIAN;
 }
 
@@ -250,7 +251,31 @@ uint32_t Capstone2LlvmIrTranslatorPowerpc_impl::getArchByteSize()
 
 void Capstone2LlvmIrTranslatorPowerpc_impl::generateEnvironmentArchSpecific()
 {
-	// Nothing.
+	// Paired-single (Gekko/Broadway) slot 1 of each FPR, created up front so
+	// every consumer sees it from the start.
+	if (static_cast<unsigned>(_extraMode) & CS_MODE_PS)
+	{
+		for (unsigned r = 0; r < 32; ++r)
+		{
+			getPs1(PPC_REG_F0 + r);
+		}
+	}
+}
+
+/**
+ * The second paired-single slot of FPR @a fr, kept as a double alongside
+ * the FPR itself (which holds ps0).
+ */
+llvm::GlobalVariable* Capstone2LlvmIrTranslatorPowerpc_impl::getPs1(uint32_t fr)
+{
+	std::string name = "ps1_f" + std::to_string(fr - PPC_REG_F0);
+	if (auto* gv = _module->getGlobalVariable(name))
+	{
+		return gv;
+	}
+	auto* d = llvm::Type::getDoubleTy(_module->getContext());
+	return new llvm::GlobalVariable(*_module, d, false, llvm::GlobalValue::ExternalLinkage,
+			llvm::ConstantFP::get(d, 0.0), name);
 }
 
 void Capstone2LlvmIrTranslatorPowerpc_impl::generateDataLayout()
@@ -2267,6 +2292,162 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateFcmp(cs_insn* i, cs_ppc* pi
 	storeRegister(gtR, irb.CreateFCmpOGT(a, b), irb);
 	storeRegister(eqR, irb.CreateFCmpOEQ(a, b), irb);
 	storeRegister(unR, irb.CreateFCmpUNO(a, b), irb);
+}
+
+/**
+ * Paired-single (Gekko/Broadway, CS_MODE_PS) arithmetic, moves, selects
+ * and compares. ps0 is the FPR itself; ps1 is the ps1_fN global. Every
+ * arithmetic result is rounded to single precision, as the hardware does.
+ * Operand order is the assembler's: ps_madd fD, fA, fC, fB.
+ *
+ *   ps_sum0  D = (A0 + B1, C1)        ps_sum1  D = (C0, A0 + B1)
+ *   ps_muls0 D = (A0*C0, A1*C0)       ps_muls1 D = (A0*C1, A1*C1)
+ *   ps_madds0/1 likewise, plus B      ps_mergeXY D = (A.X, B.Y)
+ *   ps_sel   D = A >= 0 ? C : B       ps_cmpXY crD, A, B compares slot X/Y
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translatePairedSingle(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	auto isF = [&](unsigned j) {
+		return j < pi->op_count && pi->operands[j].type == PPC_OP_REG
+				&& pi->operands[j].reg >= PPC_REG_F0 && pi->operands[j].reg <= PPC_REG_F31;
+	};
+	auto* d = irb.getDoubleTy();
+	auto ps0 = [&](unsigned j) { return loadOpDouble(pi->operands[j], irb); };
+	auto ps1 = [&](unsigned j) { return irb.CreateLoad(d, getPs1(pi->operands[j].reg)); };
+	auto single = [&](llvm::Value* v) { return irb.CreateFPExt(irb.CreateFPTrunc(v, irb.getFloatTy()), d); };
+	auto put = [&](llvm::Value* a, llvm::Value* b) {
+		storeRegister(pi->operands[0].reg, a, irb, eOpConv::FPCAST_OR_BITCAST);
+		irb.CreateStore(b, getPs1(pi->operands[0].reg));
+	};
+	auto putS = [&](llvm::Value* a, llvm::Value* b) { put(single(a), single(b)); };
+
+	switch (i->id)
+	{
+	case PPC_INS_PS_CMPU0:
+	case PPC_INS_PS_CMPO0:
+	case PPC_INS_PS_CMPU1:
+	case PPC_INS_PS_CMPO1:
+	{
+		if (pi->op_count != 3 || !isF(1) || !isF(2) || pi->operands[0].type != PPC_OP_REG
+				|| pi->operands[0].reg < PPC_REG_CR0 || pi->operands[0].reg > PPC_REG_CR7)
+		{
+			break;
+		}
+		bool one = i->id == PPC_INS_PS_CMPU1 || i->id == PPC_INS_PS_CMPO1;
+		llvm::Value* a = one ? ps1(1) : ps0(1);
+		llvm::Value* b = one ? ps1(2) : ps0(2);
+		uint32_t lt = PPC_REG_CR0LT, gt = PPC_REG_CR0GT, eq = PPC_REG_CR0EQ, un = PPC_REG_CR0UN;
+		crFieldRegisters(pi->operands[0].reg, lt, gt, eq, un);
+		storeRegister(lt, irb.CreateFCmpOLT(a, b), irb);
+		storeRegister(gt, irb.CreateFCmpOGT(a, b), irb);
+		storeRegister(eq, irb.CreateFCmpOEQ(a, b), irb);
+		storeRegister(un, irb.CreateFCmpUNO(a, b), irb);
+		return;
+	}
+	case PPC_INS_PS_MR:
+	case PPC_INS_PS_NEG:
+	case PPC_INS_PS_ABS:
+	case PPC_INS_PS_NABS:
+	case PPC_INS_PS_RES:
+	case PPC_INS_PS_RSQRTE:
+	{
+		if (pi->op_count != 2 || !isF(0) || !isF(1)) break;
+		auto f = [&](llvm::Value* v) -> llvm::Value* {
+			switch (i->id)
+			{
+			case PPC_INS_PS_NEG: return irb.CreateFNeg(v);
+			case PPC_INS_PS_ABS: return irb.CreateUnaryIntrinsic(llvm::Intrinsic::fabs, v);
+			case PPC_INS_PS_NABS: return irb.CreateFNeg(irb.CreateUnaryIntrinsic(llvm::Intrinsic::fabs, v));
+			case PPC_INS_PS_RES: return single(irb.CreateFDiv(llvm::ConstantFP::get(d, 1.0), v));
+			case PPC_INS_PS_RSQRTE:
+				return single(irb.CreateFDiv(llvm::ConstantFP::get(d, 1.0),
+						irb.CreateUnaryIntrinsic(llvm::Intrinsic::sqrt, v)));
+			default: return v;
+			}
+		};
+		llvm::Value* a = ps0(1);
+		llvm::Value* b = ps1(1);
+		put(f(a), f(b));
+		return;
+	}
+	case PPC_INS_PS_ADD:
+	case PPC_INS_PS_SUB:
+	case PPC_INS_PS_MUL:
+	case PPC_INS_PS_DIV:
+	case PPC_INS_PS_MERGE00:
+	case PPC_INS_PS_MERGE01:
+	case PPC_INS_PS_MERGE10:
+	case PPC_INS_PS_MERGE11:
+	case PPC_INS_PS_MULS0:
+	case PPC_INS_PS_MULS1:
+	{
+		if (pi->op_count != 3 || !isF(0) || !isF(1) || !isF(2)) break;
+		llvm::Value* a0 = ps0(1);
+		llvm::Value* a1 = ps1(1);
+		llvm::Value* b0 = ps0(2);
+		llvm::Value* b1 = ps1(2);
+		switch (i->id)
+		{
+		case PPC_INS_PS_ADD: putS(irb.CreateFAdd(a0, b0), irb.CreateFAdd(a1, b1)); break;
+		case PPC_INS_PS_SUB: putS(irb.CreateFSub(a0, b0), irb.CreateFSub(a1, b1)); break;
+		case PPC_INS_PS_MUL: putS(irb.CreateFMul(a0, b0), irb.CreateFMul(a1, b1)); break;
+		case PPC_INS_PS_DIV: putS(irb.CreateFDiv(a0, b0), irb.CreateFDiv(a1, b1)); break;
+		case PPC_INS_PS_MERGE00: put(single(a0), single(b0)); break;
+		case PPC_INS_PS_MERGE01: put(single(a0), single(b1)); break;
+		case PPC_INS_PS_MERGE10: put(single(a1), single(b0)); break;
+		case PPC_INS_PS_MERGE11: put(single(a1), single(b1)); break;
+		case PPC_INS_PS_MULS0: putS(irb.CreateFMul(a0, b0), irb.CreateFMul(a1, b0)); break;
+		case PPC_INS_PS_MULS1: putS(irb.CreateFMul(a0, b1), irb.CreateFMul(a1, b1)); break;
+		default: break;
+		}
+		return;
+	}
+	case PPC_INS_PS_MADD:
+	case PPC_INS_PS_MSUB:
+	case PPC_INS_PS_NMADD:
+	case PPC_INS_PS_NMSUB:
+	case PPC_INS_PS_MADDS0:
+	case PPC_INS_PS_MADDS1:
+	case PPC_INS_PS_SUM0:
+	case PPC_INS_PS_SUM1:
+	case PPC_INS_PS_SEL:
+	{
+		if (pi->op_count != 4 || !isF(0) || !isF(1) || !isF(2) || !isF(3)) break;
+		llvm::Value* a0 = ps0(1);
+		llvm::Value* a1 = ps1(1);
+		llvm::Value* c0 = ps0(2);
+		llvm::Value* c1 = ps1(2);
+		llvm::Value* b0 = ps0(3);
+		llvm::Value* b1 = ps1(3);
+		auto fma = [&](llvm::Value* x, llvm::Value* y, llvm::Value* z, bool sub, bool neg) {
+			llvm::Value* r = irb.CreateIntrinsic(llvm::Intrinsic::fma, {d}, {x, y, sub ? irb.CreateFNeg(z) : z});
+			return neg ? irb.CreateFNeg(r) : r;
+		};
+		switch (i->id)
+		{
+		case PPC_INS_PS_MADD: putS(fma(a0, c0, b0, false, false), fma(a1, c1, b1, false, false)); break;
+		case PPC_INS_PS_MSUB: putS(fma(a0, c0, b0, true, false), fma(a1, c1, b1, true, false)); break;
+		case PPC_INS_PS_NMADD: putS(fma(a0, c0, b0, false, true), fma(a1, c1, b1, false, true)); break;
+		case PPC_INS_PS_NMSUB: putS(fma(a0, c0, b0, true, true), fma(a1, c1, b1, true, true)); break;
+		case PPC_INS_PS_MADDS0: putS(fma(a0, c0, b0, false, false), fma(a1, c0, b1, false, false)); break;
+		case PPC_INS_PS_MADDS1: putS(fma(a0, c1, b0, false, false), fma(a1, c1, b1, false, false)); break;
+		case PPC_INS_PS_SUM0: put(single(irb.CreateFAdd(a0, b1)), single(c1)); break;
+		case PPC_INS_PS_SUM1: put(single(c0), single(irb.CreateFAdd(a0, b1))); break;
+		case PPC_INS_PS_SEL:
+		{
+			auto* z = llvm::ConstantFP::get(d, 0.0);
+			put(irb.CreateSelect(irb.CreateFCmpOGE(a0, z), c0, b0),
+					irb.CreateSelect(irb.CreateFCmpOGE(a1, z), c1, b1));
+			break;
+		}
+		default: break;
+		}
+		return;
+	}
+	default:
+		break;
+	}
+	translatePseudoAsmGeneric(i, pi, irb);
 }
 
 /**

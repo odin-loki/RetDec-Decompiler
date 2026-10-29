@@ -38,6 +38,7 @@ class Capstone2LlvmIrTranslatorPowerpcTests :
 				// (kstool: qvfadd 0,1,2 = 10 01 10 2a). Tests use emulate_bin.
 				case CS_MODE_QPX: mode = KS_MODE_PPC32; break;
 				case CS_MODE_SPE: mode = KS_MODE_PPC32; break;
+				case CS_MODE_PS: mode = KS_MODE_PPC32; break;
 				default: throw std::runtime_error("ERROR: unknown mode.\n");
 			}
 			if (ks_open(KS_ARCH_PPC, mode | KS_MODE_BIG_ENDIAN, &_assembler) != KS_ERR_OK)
@@ -69,6 +70,11 @@ class Capstone2LlvmIrTranslatorPowerpcTests :
 					_translator = Capstone2LlvmIrTranslator::createPpc32(
 							&_module,
 							static_cast<cs_mode>(CS_MODE_BIG_ENDIAN | CS_MODE_SPE));
+					break;
+				case CS_MODE_PS:
+					_translator = Capstone2LlvmIrTranslator::createPpc32(
+							&_module,
+							static_cast<cs_mode>(CS_MODE_BIG_ENDIAN | CS_MODE_PS));
 					break;
 				default:
 					throw std::runtime_error("ERROR: unknown mode.\n");
@@ -177,6 +183,7 @@ struct PrintCapstoneModeToString_Powerpc
 			case CS_MODE_64: return "CS_MODE_64";
 			case CS_MODE_QPX: return "CS_MODE_QPX";
 			case CS_MODE_SPE: return "CS_MODE_SPE";
+			case CS_MODE_PS: return "CS_MODE_PS";
 			default: return "UNHANDLED CS_MODE";
 		}
 	}
@@ -20420,6 +20427,83 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MFTB_MFMSR_and_XXSETACCZ_a
 	auto* f = translate(utils::hexStringToBytes("7c 6c 42 a6 7c 60 00 a6 7c 03 01 62"));
 	ASSERT_NE(nullptr, f);
 	EXPECT_NE(nullptr, _module.getFunction("__asm_mfmsr"));
+}
+
+//
+// Paired-single (Gekko/Broadway). Only decodes with CS_MODE_PS, so these
+// run on their own instantiation.
+//
+
+class Capstone2LlvmIrTranslatorPowerpcPsTests : public Capstone2LlvmIrTranslatorPowerpcTests
+{
+	protected:
+		void setPs1(unsigned n, double v)
+		{
+			llvm::GenericValue g;
+			g.DoubleVal = v;
+			_emulator->setGlobalVariableValue(
+					_module.getGlobalVariable("ps1_f" + std::to_string(n)), g);
+		}
+		double ps1(unsigned n)
+		{
+			return _emulator->getGlobalVariableValue(
+					_module.getGlobalVariable("ps1_f" + std::to_string(n))).DoubleVal;
+		}
+};
+
+INSTANTIATE_TEST_SUITE_P(
+		InstantiatePowerpcPairedSingle,
+		Capstone2LlvmIrTranslatorPowerpcPsTests,
+		::testing::Values(CS_MODE_PS),
+		PrintCapstoneModeToString_Powerpc());
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcPsTests, PPC_INS_PS_ADD_adds_both_slots)
+{
+	setRegisters({
+		{PPC_REG_F2, 1.5_f64},
+		{PPC_REG_F3, 2.0_f64},
+	});
+	setPs1(2, 10.0);
+	setPs1(3, 0.25);
+
+	emulate_bin("10 22 18 2a"); // ps_add f1, f2, f3
+
+	EXPECT_NEAR(3.5, getRegisterValueDouble(PPC_REG_F1), 1e-9);
+	EXPECT_NEAR(10.25, ps1(1), 1e-9);
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcPsTests, PPC_INS_PS_SUM0_crosses_slots)
+{
+	setRegisters({
+		{PPC_REG_F2, 1.0_f64},
+		{PPC_REG_F3, 0.0_f64},
+		{PPC_REG_F4, 0.0_f64},
+	});
+	setPs1(3, 7.0);
+	setPs1(4, 4.0);
+
+	emulate_bin("10 22 20 d4"); // ps_sum0 f1, f2, f3, f4
+
+	EXPECT_NEAR(5.0, getRegisterValueDouble(PPC_REG_F1), 1e-9);
+	EXPECT_NEAR(7.0, ps1(1), 1e-9);
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcPsTests, PPC_INS_PS_MERGE01_takes_a0_and_b1)
+{
+	setRegisters({
+		{PPC_REG_F2, 1.0_f64},
+		{PPC_REG_F3, 3.0_f64},
+	});
+	setPs1(2, 2.0);
+	setPs1(3, 4.0);
+
+	emulate_bin("10 22 1c 60"); // ps_merge01 f1, f2, f3
+
+	EXPECT_NEAR(1.0, getRegisterValueDouble(PPC_REG_F1), 1e-9);
+	EXPECT_NEAR(4.0, ps1(1), 1e-9);
+	EXPECT_NO_VALUE_CALLED();
 }
 
 } // namespace tests
