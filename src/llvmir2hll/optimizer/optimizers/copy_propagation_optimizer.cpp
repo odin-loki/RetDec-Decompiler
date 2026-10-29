@@ -218,7 +218,7 @@ int compareStmtsInDUChains(const ShPtr<Statement> &s1,
 *        Pre-populates a text-repr cache before sorting to avoid O(N²)
 *        string re-computation inside the comparator.
 */
-auto ordered(const DefUseChains::DefUseChain &du) {
+auto ordered(const DefUseChains::DefUseChain &du, const StmtOrderIndex& order) {
 	// Pre-populate the cache for every statement and use that appears in du.
 	// Additional entries (parents/successors/predecessors) are inserted lazily
 	// inside the comparator via cachedRepr().
@@ -233,11 +233,13 @@ auto ordered(const DefUseChains::DefUseChain &du) {
 	}
 
 	std::vector<std::pair<DefUseChains::StmtVarPair, StmtSet>> v(du.begin(), du.end());
-	std::sort(v.begin(), v.end(), [&cache](const auto &p1, const auto &p2) {
+	std::sort(v.begin(), v.end(), [&cache, &order](const auto &p1, const auto &p2) {
 		auto v1 = p1.first.second;
 		auto v2 = p2.first.second;
 		auto s1 = p1.first.first;
 		auto s2 = p2.first.first;
+		const auto def1 = s1;
+		const auto def2 = s2;
 
 		if (v1 == v2 && s1 == s2) {
 			return false;
@@ -294,11 +296,17 @@ auto ordered(const DefUseChains::DefUseChain &du) {
 				}
 				s1Seen.insert(s1);
 				s2Seen.insert(s2);
-				if (s1Seen.count(s1Pred)) {
-					return false;
-				}
-				if (s2Seen.count(s2Pred)) {
-					return false;
+				// A walk that closes a cycle ends there. Treat that as the end
+				// of its sequence -- the shorter sequence sorts first -- so the
+				// walk is a lexicographic comparison and hence an ordering.
+				// (It used to call both "equal", which is not transitive.)
+				const bool end1 = s1Seen.count(s1Pred) > 0;
+				const bool end2 = s2Seen.count(s2Pred) > 0;
+				if (end1 || end2) {
+					if (end1 != end2) {
+						return end1;
+					}
+					break;
 				}
 				s1 = s1Pred;
 				s2 = s2Pred;
@@ -306,7 +314,8 @@ auto ordered(const DefUseChains::DefUseChain &du) {
 				break;
 			}
 		}
-		return false;
+		// Everything textual tied: settle it by program position.
+		return stmtOrderOf(order, def1) < stmtOrderOf(order, def2);
 	});
 	return v;
 }
@@ -516,7 +525,7 @@ void CopyPropagationOptimizer::performOptimization() {
 	// For each def-use chain...
 	// We have to iterate over an ordered DU chain to make the optimization
 	// deterministic.
-	for (const auto &du : ordered(ducs->du)) {
+	for (const auto &du : ordered(ducs->du, stmtOrder)) {
 		const auto &uses = du.second;
 		const auto &stmt = du.first.first;
 

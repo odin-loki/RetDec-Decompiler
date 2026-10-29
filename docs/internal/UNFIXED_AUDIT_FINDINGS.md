@@ -17,7 +17,6 @@ Verified against the tree or left open in the last batches of this file:
 |------|---------------------|
 | Native arm64 Mach-O → empty `.c` | Decoding phases never run. `ctest-macos` attempts it every run. Corpus is ELF. |
 | `DerefOpExpr` / `UnaryOpExpr::getType()` | Returns the operand's type (the pointer), not the pointee. Consumers tuned against that |
-| Copy-propagation def-use comparator | Not a strict weak ordering; left because a fix changes emit order |
 | `ctest-linux` / `ctest-windows` suite subset | Named targets only. `ctest-macos` runs `ctest` with no `-L` |
 | Pipeline stages marked hook/partial | [PIPELINE_REDESIGN_TODO.md](PIPELINE_REDESIGN_TODO.md) — not done |
 | Neural differential gate | `RETDEC_NEURAL_DIFF_GATE` warns and skips |
@@ -1662,6 +1661,12 @@ contained type, F1 and DET-01 unchanged, and CC-01 no worse than the floor it
 had.
 
 ### The def-use chain comparator is not a strict weak ordering either
+
+**Closed.** The predecessor walk now treats a walk that closes a cycle as the
+end of its sequence (shorter first), so the walk is lexicographic, and a full
+tie falls back to program position (`stmtOrder`), as `ordered(StmtSet)` does.
+Only comparisons the old code called "equal" change outcome; every
+comparison it decided is decided the same way. The original entry follows.
 
 `src/llvmir2hll/optimizer/optimizers/copy_propagation_optimizer.cpp`,
 `ordered(const DefUseChains::DefUseChain &)`
