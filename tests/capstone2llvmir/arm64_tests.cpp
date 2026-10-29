@@ -15347,6 +15347,46 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SVE_LD3D_ST2W_LD1RB_are_li
 	EXPECT_NE(std::string::npos, ir.find("zext i8")) << ir;
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SVE_complex_and_rdm_forms_are_lifted)
+{
+	// fcadd z0.s, p0/m, z0.s, z1.s, #90; fcmla z0.s, p0/m, z1.s, z2.s, #90;
+	// fcmla z0.h, z1.h, z2.h[1], #0; sqrdmlah z0.s, z1.s, z2.s;
+	// sqrdmlah z0.h, z1.h, z2.h[3]; sqrdmlsh z0.d, z1.d, z2.d; bfdot z0.s, z1.h, z2.h
+	auto* f = translate(utils::hexStringToBytes(
+			"20 80 80 64 20 20 82 64 20 10 aa 64 20 70 82 44 20 10 3a 44 20 74 c2 44 20 80 62 64"));
+	ASSERT_NE(nullptr, f);
+	std::string ir;
+	llvm::raw_string_ostream os(ir);
+	f->print(os);
+	os.flush();
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SQRDMLAH_sve_rounds_and_saturates)
+{
+	setZ(ARM64_REG_Z0, 0, 0);
+	setZ(ARM64_REG_Z1, 0, 0x4000000080000000ULL);
+	setZ(ARM64_REG_Z2, 0, 0x4000000080000000ULL);
+
+	emulate_bin("20 70 82 44"); // sqrdmlah z0.s, z1.s, z2.s
+
+	EXPECT_EQ(0x200000007fffffffULL, zPart(ARM64_REG_Z0, false));
+	EXPECT_EQ(0x0ULL, zPart(ARM64_REG_Z0, true));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCADD_sve_merges_under_predicate)
+{
+	// z0 = (1, 2, 5, 6), z1 = (3, 4, 7, 8) as floats; only lanes 0-1 active.
+	setZ(ARM64_REG_Z0, 0x40c0000040a00000ULL, 0x400000003f800000ULL);
+	setZ(ARM64_REG_Z1, 0x4100000040e00000ULL, 0x4080000040400000ULL);
+	setP(ARM64_REG_P0, 0x0011);
+
+	emulate_bin("20 80 80 64"); // fcadd z0.s, p0/m, z0.s, z1.s, #90
+
+	EXPECT_EQ(0x40a00000c0400000ULL, zPart(ARM64_REG_Z0, false));
+	EXPECT_EQ(0x40c0000040a00000ULL, zPart(ARM64_REG_Z0, true));
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_BC_is_a_conditional_branch)
 {
 	auto* f = translate(utils::hexStringToBytes("50 00 00 54")); // bc.eq #8

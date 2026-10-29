@@ -1897,6 +1897,11 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::loadNeonVector(
 	{
 		raw = llvm::UndefValue::get(w);
 	}
+	else if (raw->getType()->isVectorTy())
+	{
+		// SVE Z registers are byte vectors.
+		raw = irb.CreateBitCast(raw, irb.getIntNTy(raw->getType()->getPrimitiveSizeInBits()));
+	}
 	else if (!raw->getType()->isIntOrIntVectorTy())
 	{
 		unsigned bits = raw->getType()->getPrimitiveSizeInBits();
@@ -1966,19 +1971,40 @@ static llvm::Type* neonFloatLane(unsigned bits, llvm::IRBuilder<>& irb)
  */
 void Capstone2LlvmIrTranslatorArm64_impl::translateNeonComplexDot(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {
+	// SVE (Zn) forms: drop the governing predicate from the operand list,
+	// compute as for NEON on the modelled 128-bit vector, and merge the
+	// result into Zd under the predicate.
+	cs_arm64* orig = ai;
+	cs_arm64 local;
+	uint32_t predReg = ARM64_REG_INVALID;
+	bool sve = ai->op_count > 0 && ai->operands[0].type == ARM64_OP_REG && isSveZReg(ai->operands[0].reg);
+	if (sve)
+	{
+		local = *ai;
+		local.op_count = 0;
+		for (unsigned j = 0; j < ai->op_count; ++j)
+		{
+			if (isSvePredOp(ai->operands[j])) predReg = ai->operands[j].reg;
+			else local.operands[local.op_count++] = ai->operands[j];
+		}
+		ai = &local;
+	}
+	auto isVec = [&](cs_arm64_op& op) {
+		return sve ? (op.type == ARM64_OP_REG && isSveZReg(op.reg)) : isVectorRegister(op);
+	};
 	bool hasRot = i->id == ARM64_INS_FCADD || i->id == ARM64_INS_FCMLA;
 	unsigned nOps = hasRot ? 4 : 3;
 	if (ai->op_count != nOps
 			|| (hasRot && ai->operands[3].type != ARM64_OP_IMM))
 	{
-		translateArm64Opaque(i, ai, irb);
+		translateArm64Opaque(i, orig, irb);
 		return;
 	}
 	for (unsigned j = 0; j < 3; ++j)
 	{
-		if (!isVectorRegister(ai->operands[j]))
+		if (!isVec(ai->operands[j]))
 		{
-			translateArm64Opaque(i, ai, irb);
+			translateArm64Opaque(i, orig, irb);
 			return;
 		}
 	}
@@ -1986,19 +2012,39 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonComplexDot(cs_insn* i, cs
 	auto& n = ai->operands[1];
 	auto& m = ai->operands[2];
 	auto [laneBits, lanes] = vasLanes(d.vas);
+	if (sve)
+	{
+		laneBits = vasElemBits(d.vas);
+		lanes = laneBits ? 128 / laneBits : 0;
+	}
 	if (laneBits == 0 || d.vector_index >= 0 || n.vector_index >= 0)
 	{
-		translateArm64Opaque(i, ai, irb);
+		translateArm64Opaque(i, orig, irb);
 		return;
 	}
 	unsigned totalBits = laneBits * lanes;
 	auto* w = irb.getIntNTy(totalBits);
+	auto putD = [&](llvm::Value* v) {
+		if (!sve)
+		{
+			storeRegister(d.reg, v, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+			return;
+		}
+		auto* vt = llvm::FixedVectorType::get(irb.getIntNTy(laneBits), lanes);
+		v = irb.CreateBitCast(v, vt);
+		if (predReg != ARM64_REG_INVALID)
+		{
+			llvm::Value* mask = svePredToLaneMask(loadRegister(predReg, irb), laneBits, irb);
+			v = irb.CreateSelect(mask, v, loadNeonVector(d.reg, laneBits, lanes, irb));
+		}
+		storeSveZ(d.reg, v, irb);
+	};
 
 	if (i->id == ARM64_INS_SQRDMLAH || i->id == ARM64_INS_SQRDMLSH)
 	{
-		if (laneBits != 16 && laneBits != 32)
+		if (laneBits != 8 && laneBits != 16 && laneBits != 32 && laneBits != 64)
 		{
-			translateArm64Opaque(i, ai, irb);
+			translateArm64Opaque(i, orig, irb);
 			return;
 		}
 		auto* wideVec = llvm::FixedVectorType::get(irb.getIntNTy(laneBits * 4), lanes);
@@ -2018,8 +2064,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonComplexDot(cs_insn* i, cs
 		sum = irb.CreateSelect(irb.CreateICmpSLT(sum, lo), lo, sum);
 		sum = irb.CreateSelect(irb.CreateICmpSGT(sum, hi), hi, sum);
 		auto* laneVec = llvm::FixedVectorType::get(irb.getIntNTy(laneBits), lanes);
-		storeRegister(d.reg, irb.CreateBitCast(irb.CreateTrunc(sum, laneVec), w), irb,
-				eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		putD(irb.CreateBitCast(irb.CreateTrunc(sum, laneVec), w));
 		return;
 	}
 
@@ -2027,7 +2072,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonComplexDot(cs_insn* i, cs
 	{
 		if (laneBits != 32)
 		{
-			translateArm64Opaque(i, ai, irb);
+			translateArm64Opaque(i, orig, irb);
 			return;
 		}
 		unsigned hl = lanes * 2;
@@ -2045,8 +2090,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonComplexDot(cs_insn* i, cs
 		llvm::Value* dv = irb.CreateBitCast(loadNeonVector(d.reg, 32, lanes, irb), f32v);
 		llvm::Value* s = irb.CreateFAdd(irb.CreateFMul(bf(nv, false), bf(mv, false)),
 				irb.CreateFMul(bf(nv, true), bf(mv, true)));
-		storeRegister(d.reg, irb.CreateBitCast(irb.CreateFAdd(dv, s), w), irb,
-				eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		putD(irb.CreateBitCast(irb.CreateFAdd(dv, s), w));
 		return;
 	}
 
@@ -2055,7 +2099,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonComplexDot(cs_insn* i, cs
 	int64_t rot = ai->operands[3].imm;
 	if (ft == nullptr || lanes < 2 || (i->id == ARM64_INS_FCADD && m.vector_index >= 0))
 	{
-		translateArm64Opaque(i, ai, irb);
+		translateArm64Opaque(i, orig, irb);
 		return;
 	}
 	auto* fv = llvm::FixedVectorType::get(ft, lanes);
@@ -2084,7 +2128,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonComplexDot(cs_insn* i, cs
 	{
 		if (rot != 90 && rot != 270)
 		{
-			translateArm64Opaque(i, ai, irb);
+			translateArm64Opaque(i, orig, irb);
 			return;
 		}
 		// d[k] = n[k] + sign[k] * m[k^1]: #90 subtracts m.im from the real
@@ -2096,7 +2140,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonComplexDot(cs_insn* i, cs
 	{
 		if (rot != 0 && rot != 90 && rot != 180 && rot != 270)
 		{
-			translateArm64Opaque(i, ai, irb);
+			translateArm64Opaque(i, orig, irb);
 			return;
 		}
 		llvm::Value* dv = irb.CreateBitCast(loadNeonVector(d.reg, laneBits, lanes, irb), fv);
@@ -2116,7 +2160,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonComplexDot(cs_insn* i, cs
 		}
 		res = irb.CreateFAdd(dv, term);
 	}
-	storeRegister(d.reg, irb.CreateBitCast(res, w), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	putD(irb.CreateBitCast(res, w));
 }
 
 /**
