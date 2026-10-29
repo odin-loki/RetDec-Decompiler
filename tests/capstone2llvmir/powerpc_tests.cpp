@@ -18116,6 +18116,36 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XXSPLTI32DX)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_DCBZ)
+{
+	setRegisters({
+		{PPC_REG_R3, 0x1000},
+		{PPC_REG_R4, 0xc8},
+	});
+
+	emulate_bin("7c 03 27 ec"); // dcbz r3, r4 -> block 0x1080..0x10ff
+
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1080, 0x0_qw},
+		{0x1088, 0x0_qw},
+		{0x1090, 0x0_qw},
+		{0x1098, 0x0_qw},
+		{0x10a0, 0x0_qw},
+		{0x10a8, 0x0_qw},
+		{0x10b0, 0x0_qw},
+		{0x10b8, 0x0_qw},
+		{0x10c0, 0x0_qw},
+		{0x10c8, 0x0_qw},
+		{0x10d0, 0x0_qw},
+		{0x10d8, 0x0_qw},
+		{0x10e0, 0x0_qw},
+		{0x10e8, 0x0_qw},
+		{0x10f0, 0x0_qw},
+		{0x10f8, 0x0_qw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

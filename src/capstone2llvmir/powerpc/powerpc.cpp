@@ -9720,5 +9720,25 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxPermMisc(cs_insn* i, cs_
 	}
 }
 
+
+/**
+ * DCBZ/DCBZL: zero the data cache block containing EA. The block size is
+ * implementation-defined; 128 bytes (POWER4 and later, PPC970) is assumed.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateDcbz(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	(void)i;
+	const uint64_t blockSize = 128;
+	auto* ea = loadIndexedEffectiveAddress(pi, irb);
+	auto* ty = ea->getType();
+	auto* base = irb.CreateAnd(ea, llvm::ConstantInt::get(ty, ~(blockSize - 1)));
+	auto* i64 = irb.getInt64Ty();
+	auto* zero = llvm::ConstantInt::get(i64, 0);
+	for (uint64_t off = 0; off < blockSize; off += 8)
+	{
+		storeIntPtr(irb, zero, irb.CreateAdd(base, llvm::ConstantInt::get(ty, off)), i64);
+	}
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec

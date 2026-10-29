@@ -820,8 +820,8 @@ Capstone2LlvmIrTranslatorPowerpc_impl::_i2fm =
 		// __asm_dcbt calls.
 		{PPC_INS_DCBT, &Capstone2LlvmIrTranslatorPowerpc_impl::translateNop},
 		{PPC_INS_DCBTST, &Capstone2LlvmIrTranslatorPowerpc_impl::translateNop},
-		{PPC_INS_DCBZ, nullptr},
-		{PPC_INS_DCBZL, nullptr},
+		{PPC_INS_DCBZ, &Capstone2LlvmIrTranslatorPowerpc_impl::translateDcbz},
+		{PPC_INS_DCBZL, &Capstone2LlvmIrTranslatorPowerpc_impl::translateDcbz},
 		{PPC_INS_DCCCI, &Capstone2LlvmIrTranslatorPowerpc_impl::translateNop},
 		{PPC_INS_DIVD, &Capstone2LlvmIrTranslatorPowerpc_impl::translateDivw},
 		{PPC_INS_DIVDU, &Capstone2LlvmIrTranslatorPowerpc_impl::translateDivw},
