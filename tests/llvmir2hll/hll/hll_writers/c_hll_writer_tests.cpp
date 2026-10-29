@@ -466,11 +466,10 @@ TEST_F(CHLLWriterTests, CallToAFixedArityFunctionWithTheRightCountIsNotCast)
 	ASSERT_FALSE(contains(code, "(*)()")) << code;
 }
 
-// A variadic function short of its named parameters is not cast either. The
-// declaration it would be checked against accepts any count above the named
-// ones, so there is nothing to disagree with -- and printf(void) is a call this
-// writer should leave exactly as it found it.
-TEST_F(CHLLWriterTests, CallToAVariadicFunctionWithTooFewArgumentsIsNotCast)
+// A variadic function short of its NAMED parameters is cast as well: the
+// declaration accepts any count above the named ones, but not fewer, so
+// `printf()` under <stdio.h> is "too few arguments to function 'printf'".
+TEST_F(CHLLWriterTests, CallToAVariadicFunctionWithTooFewArgumentsCastsTheCallee)
 {
 	ON_CALL(*semanticsMock, getArityOfFunc("printf")).WillByDefault(Return(FuncArity{1, true}));
 
@@ -480,6 +479,22 @@ TEST_F(CHLLWriterTests, CallToAVariadicFunctionWithTooFewArgumentsIsNotCast)
 
 	auto code = emitCodeForCurrentModule();
 
+	ASSERT_TRUE(contains(code, "((int32_t (*)())printf)()")) << code;
+}
+
+// A variadic call with at least its named arguments -- extra ones included --
+// is left exactly as it was.
+TEST_F(CHLLWriterTests, CallToAVariadicFunctionWithExtraArgumentsIsNotCast)
+{
+	ON_CALL(*semanticsMock, getArityOfFunc("printf")).WillByDefault(Return(FuncArity{1, true}));
+
+	auto printf = Variable::create("printf", IntType::create(32));
+	auto call = CallExpr::create(printf, ExprVector{ConstInt::create(1, 32), ConstInt::create(2, 32)});
+	testFunc->setBody(CallStmt::create(call));
+
+	auto code = emitCodeForCurrentModule();
+
+	ASSERT_TRUE(contains(code, "printf(1, 2)")) << code;
 	ASSERT_FALSE(contains(code, "(*)()")) << code;
 }
 
