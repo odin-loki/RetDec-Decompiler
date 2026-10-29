@@ -39,7 +39,6 @@ const char *AVAIL_FRUITS[] = {
 	"abaca",
 	"peach",
 	"papaya",
-	"grape",
 	"tampoi",
 	"lime",
 	"nut",
@@ -73,8 +72,8 @@ const char *AVAIL_FRUITS[] = {
 	// TODO
 };
 
-// Index of the last available fruit name.
-const std::size_t LAST_FRUIT_INDEX = arraySize(AVAIL_FRUITS) - 1;
+// Number of available fruit names.
+const std::size_t FRUIT_COUNT = arraySize(AVAIL_FRUITS);
 
 } // anonymous namespace
 
@@ -104,13 +103,11 @@ void FruitVarNameGen::restart() {
 }
 
 std::string FruitVarNameGen::getNextVarName() {
-	if (nextFruitIndex == LAST_FRUIT_INDEX) {
+	if (nextFruitIndex >= FRUIT_COUNT) {
 		// No more available fruit names, so start from the beginning.
 		restart();
-		return getNextVarName();
-	} else {
-		return prefix + AVAIL_FRUITS[nextFruitIndex++];
 	}
+	return prefix + AVAIL_FRUITS[nextFruitIndex++];
 }
 
 } // namespace llvmir2hll

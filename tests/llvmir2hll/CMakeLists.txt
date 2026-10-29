@@ -156,6 +156,7 @@ add_executable(tests-llvmir2hll
 	validator/validators/break_outside_loop_validator_tests.cpp
 	validator/validators/no_global_var_def_validator_tests.cpp
 	validator/validators/return_validator_tests.cpp
+	var_name_gen/var_name_gens/fruit_var_name_gen_tests.cpp
 	var_renamer/var_renamer_tests.cpp
 	var_renamer/var_renamers/address_var_renamer_tests.cpp
 	var_renamer/var_renamers/hungarian_var_renamer_tests.cpp
