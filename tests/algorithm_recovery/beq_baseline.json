@@ -11,6 +11,7 @@
   "bubble_sort-gcc-O3",
   "dfs_graph-gcc-O0",
   "dfs_graph-gcc-O2",
+  "dfs_graph-gcc-O3",
   "hash_table-gcc-O0",
   "hash_table-gcc-O2",
   "hash_table-gcc-O3",
