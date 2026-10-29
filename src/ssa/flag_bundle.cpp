@@ -437,14 +437,25 @@ std::vector<std::pair<BlockId, BlockId>> retreatingEdges(const SSAFunction& fn)
 	const auto& blocks = fn.blocks();
 	if (blocks.empty() || !blocks[fn.entryId()]) return out;
 
+
 	// 0 = unvisited, 1 = on stack, 2 = done. Iterative, so a long chain of
 	// blocks cannot overflow the native stack.
+	// Roots: the entry first, then any block it does not reach (a fragment
+	// whose predecessors recovery lost), so a loop there still counts.
 	std::vector<uint8_t> state(blocks.size(), 0);
 	std::vector<std::pair<BlockId, size_t>> stack;
+	BlockId nextRoot = 0;
 	stack.emplace_back(fn.entryId(), 0);
 	state[fn.entryId()] = 1;
-	while (!stack.empty())
+	for (;;)
 	{
+		if (stack.empty())
+		{
+			while (nextRoot < blocks.size() && (state[nextRoot] || !blocks[nextRoot])) ++nextRoot;
+			if (nextRoot >= blocks.size()) break;
+			state[nextRoot] = 1;
+			stack.emplace_back(nextRoot, 0);
+		}
 		auto& [b, next] = stack.back();
 		const BasicBlock* blk = blocks[b].get();
 		if (!blk || next >= blk->succs.size())

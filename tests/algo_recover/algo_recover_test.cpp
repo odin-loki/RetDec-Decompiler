@@ -1987,7 +1987,8 @@ std::unique_ptr<ssa::SSAFunction> makeByteWalk(bool compareAgainstZero, uint8_t 
 	auto fn = std::make_unique<ssa::SSAFunction>("walk");
 	auto* entry = fn->addBlock("entry");
 	auto* loop = fn->addBlock("loop");
-	loop->succs.push_back(entry->id); // back edge
+	entry->succs.push_back(loop->id);
+	loop->succs.push_back(loop->id); // back edge
 
 	ssa::IrValue* mem = fn->allocValue(ssa::ValueKind::MemRef);
 	mem->memWidth = loadBytes;
@@ -2031,6 +2032,26 @@ TEST(IdiomDetectorTest, AByteTestedAgainstZeroInALoopIsStrlen)
 	EXPECT_TRUE(detects(*fn, IdiomKind::Strlen));
 }
 
+// GCC's __do_global_dtors_aux tests a completed-flag byte against zero and
+// has no loop, but LLVM lays `common.ret` out above the block that branches
+// to it. An edge to a lower block id is not a back edge, so this is not a
+// string walk -- it was reported as Strlen in every corpus binary.
+TEST(IdiomDetectorTest, AByteTestedAgainstZeroWithoutALoopIsNotStrlen)
+{
+	auto fn = makeByteWalk(/*compareAgainstZero=*/true, /*loadBytes=*/1);
+	// Rewire to entry -> {ret, loop}, loop -> ret: acyclic, with ret (id 2)
+	// below loop (id 1) only by layout.
+	auto* ret = fn->addBlock("common.ret");
+	fn->block(1)->succs.clear();
+	fn->block(1)->succs.push_back(ret->id);
+	fn->block(0)->succs.push_back(ret->id);
+	// ...and put ret above the branch in id order, as LLVM does.
+	auto* tail = fn->addBlock("tail");
+	tail->succs.push_back(ret->id);
+	fn->block(1)->succs.push_back(tail->id);
+	EXPECT_FALSE(detects(*fn, IdiomKind::Strlen));
+}
+
 TEST(IdiomDetectorTest, AWordLoadTestedAgainstZeroIsNotStrlen)
 {
 	// Every counted loop tests something against zero. Only a byte walk is a
@@ -2052,7 +2073,8 @@ TEST(IdiomDetectorTest, AComparisonLoopThatNeverReadsTheLoadedByteIsNotStrlen)
 	auto fn = std::make_unique<ssa::SSAFunction>("bubble");
 	auto* entry = fn->addBlock("entry");
 	auto* loop = fn->addBlock("loop");
-	loop->succs.push_back(entry->id);
+	entry->succs.push_back(loop->id);
+	loop->succs.push_back(loop->id);
 
 	ssa::IrValue* mem = fn->allocValue(ssa::ValueKind::MemRef);
 	mem->memWidth = 1;

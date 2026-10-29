@@ -1243,3 +1243,17 @@ TEST(SSACycleTest, ASelfLoopIsACycle)
 
 	EXPECT_TRUE(hasCycle(fn));
 }
+
+// A block the entry does not reach can still loop -- recovery may have lost
+// its predecessors -- and that loop is still a cycle.
+TEST(SSACycleTest, ALoopInAFragmentTheEntryDoesNotReachIsACycle)
+{
+	SSAFunction fn("f");
+	fn.addBlock("entry");
+	BlockId a = fn.addBlock("a")->id;
+	BlockId b = fn.addBlock("b")->id;
+	connect(fn, a, b);
+	connect(fn, b, a);
+
+	EXPECT_TRUE(hasCycle(fn));
+}
