@@ -115,8 +115,32 @@ bool ConstantsAnalysis::run()
 	IrModifier::eraseUnusedInstructionsRecursive(_toRemove);
 
 	widenNarrowConstantLoads();
+	foldUnwrittenMxcsr();
 
 	return false;
+}
+
+/**
+ * The x86 lifter rounds MXCSR-controlled conversions by MXCSR.RC read from
+ * the @c mxcsr global. A program with no LDMXCSR never changes it, so its
+ * power-on value holds everywhere: fold the loads and the rounding selects
+ * collapse back to round-to-nearest-even.
+ */
+void ConstantsAnalysis::foldUnwrittenMxcsr()
+{
+	auto* gv = _module->getGlobalVariable("mxcsr");
+	if (gv == nullptr || !gv->hasInitializer()) return;
+	std::vector<LoadInst*> loads;
+	for (auto* u : gv->users())
+	{
+		if (auto* l = dyn_cast<LoadInst>(u)) loads.push_back(l);
+		else return; // a store or an escaped address: not provably unwritten
+	}
+	for (auto* l : loads)
+	{
+		l->replaceAllUsesWith(gv->getInitializer());
+		l->eraseFromParent();
+	}
 }
 
 /**

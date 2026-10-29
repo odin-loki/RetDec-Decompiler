@@ -22070,26 +22070,56 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VMPSADBW_emits_sse41_mpsadbw_i
 	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
 }
 
-TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_LDMXCSR_emits_sse_ldmxcsr_intrinsic)
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_LDMXCSR_writes_the_mxcsr_state)
 {
 	SKIP_MODE_16;
 
 	auto* f = translateTextOrBytes("ldmxcsr dword ptr [eax]", {0x0f, 0xae, 0x10});
 	ASSERT_NE(nullptr, f);
 	const std::string ir = dumpFunction(f);
-	EXPECT_NE(std::string::npos, ir.find("llvm.x86.sse.ldmxcsr")) << ir;
+	EXPECT_NE(std::string::npos, ir.find(", ptr @mxcsr")) << ir;
 	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
 	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
 }
 
-TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_STMXCSR_emits_sse_stmxcsr_intrinsic)
+// MXCSR.RC = 01 (round down): cvtsd2si and roundsd imm 4 follow it.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_CVTSD2SI_follows_mxcsr_rounding_mode)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0, dbits(2.5));
+	llvm::GenericValue v;
+	v.IntVal = llvm::APInt(32, 0x3F80);
+	_emulator->setGlobalVariableValue(_module.getGlobalVariable("mxcsr"), v);
+
+	emulate("cvtsd2si eax, xmm0");
+
+	EXPECT_EQ(2u, getRegisterValueUnsigned(X86_REG_EAX) & 0xffffffff);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_ROUNDSD_imm4_follows_mxcsr_round_up)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0, 0);
+	setXmm(X86_REG_XMM1, 0, dbits(2.25));
+	llvm::GenericValue v;
+	v.IntVal = llvm::APInt(32, 0x5F80);
+	_emulator->setGlobalVariableValue(_module.getGlobalVariable("mxcsr"), v);
+
+	emulate("roundsd xmm0, xmm1, 4");
+
+	EXPECT_EQ(dbits(3.0), xmmLow(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_STMXCSR_reads_the_mxcsr_state)
 {
 	SKIP_MODE_16;
 
 	auto* f = translateTextOrBytes("stmxcsr dword ptr [eax]", {0x0f, 0xae, 0x18});
 	ASSERT_NE(nullptr, f);
 	const std::string ir = dumpFunction(f);
-	EXPECT_NE(std::string::npos, ir.find("llvm.x86.sse.stmxcsr")) << ir;
+	EXPECT_NE(std::string::npos, ir.find("load i32, ptr @mxcsr")) << ir;
 	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
 	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
 }
@@ -22308,14 +22338,14 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, VSQRTPS_takes_sqrt_of_every_lane)
 	EXPECT_EQ((uint64_t(fbits(4.0f)) << 32) | fbits(3.0f), xmmHigh(X86_REG_XMM0));
 }
 
-TEST_P(Capstone2LlvmIrTranslatorX86Tests, VLDMXCSR_emits_sse_ldmxcsr_intrinsic)
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VLDMXCSR_writes_the_mxcsr_state)
 {
 	SKIP_MODE_16;
 
 	auto* f = translateTextOrBytes("vldmxcsr dword ptr [eax]", {0xc5, 0xf8, 0xae, 0x10});
 	ASSERT_NE(nullptr, f);
 	const std::string ir = dumpFunction(f);
-	EXPECT_NE(std::string::npos, ir.find("llvm.x86.sse.ldmxcsr")) << ir;
+	EXPECT_NE(std::string::npos, ir.find(", ptr @mxcsr")) << ir;
 	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
 	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
 }

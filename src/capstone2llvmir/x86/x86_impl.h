@@ -493,6 +493,8 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		void translateSseDp(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSseMpsadbw(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateMxcsr(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		llvm::GlobalVariable* getMxcsr();
+		llvm::Value* roundByMxcsr(llvm::Value* v, llvm::IRBuilder<>& irb);
 		void translateAesEncDec(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateAesImc(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateAesKeygenAssist(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);

@@ -169,6 +169,9 @@ uint32_t Capstone2LlvmIrTranslatorX86_impl::getParentRegister(uint32_t r) const
 void Capstone2LlvmIrTranslatorX86_impl::generateEnvironmentArchSpecific()
 {
 	generateX87RegLoadStoreFunctions();
+	// Up front, not on first use: anything holding a view of the module's
+	// globals (the tests' emulator) learns them at environment time.
+	getMxcsr();
 }
 
 void Capstone2LlvmIrTranslatorX86_impl::generateDataLayout()

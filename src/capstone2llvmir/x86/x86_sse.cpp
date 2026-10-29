@@ -1061,7 +1061,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateCvtSs2Si(
     auto* vec4f = vecType(irb.getFloatTy(), 4);
     Value* v = irb.CreateBitCast(toI128(src, irb), vec4f);
     Value* lane0 = irb.CreateExtractElement(v, (uint64_t)0);
-	lane0 = irb.CreateUnaryIntrinsic(Intrinsic::roundeven, lane0);
+	lane0 = roundByMxcsr(lane0, irb);
 	unsigned destBits = xi->operands[0].size ? xi->operands[0].size * 8 : 32;
 	Value* intVal = generateFpToSiDefined(lane0, irb.getIntNTy(destBits), irb);
 	// ZEXT_TRUNC_OR_BITCAST: the destination GPR alloca may be wider
@@ -1135,7 +1135,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateCvtSd2Si(
     auto* vec2d = vecType(irb.getDoubleTy(), 2);
     Value* v = irb.CreateBitCast(toI128(src, irb), vec2d);
     Value* lane0 = irb.CreateExtractElement(v, (uint64_t)0);
-	lane0 = irb.CreateUnaryIntrinsic(Intrinsic::roundeven, lane0);
+	lane0 = roundByMxcsr(lane0, irb);
 	unsigned destBits = xi->operands[0].size ? xi->operands[0].size * 8 : 32;
 	Value* intVal = generateFpToSiDefined(lane0, irb.getIntNTy(destBits), irb);
 	// ZEXT_TRUNC_OR_BITCAST: same fix as translateCvtSs2Si — GPR alloca
@@ -1215,7 +1215,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateCvtPs2Dq(
         Value* e = irb.CreateExtractElement(v, (uint64_t)lane);
         if (!trunc)
         {
-            e = irb.CreateUnaryIntrinsic(Intrinsic::roundeven, e);
+            e = roundByMxcsr(e, irb);
         }
         Value* conv = generateFpToSiDefined(e, irb.getInt32Ty(), irb);
         Value* w = irb.CreateZExt(conv, packedTy);
@@ -1590,8 +1590,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSseSqrt(cs_insn* i, cs_x86* xi,
  *   01 floor
  *   10 ceil
  *   11 trunc
- * bit 2 set means "use MXCSR" — approximated as nearbyint, the same
- * stand-in ARM64 FRINTN uses for current-mode rounding.
+ * bit 2 set means "use MXCSR.RC" — see roundByMxcsr.
  *
  * Scalar forms round the SOURCE's low lane and keep the upper lanes of
  * another operand (SQRTSS's shape). Packed forms round every lane of the
@@ -1624,8 +1623,9 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSseRound(cs_insn* i, cs_x86* xi
 	}
 
 	unsigned imm = static_cast<unsigned>(xi->operands[immOp].imm) & 0xff;
+	bool useMxcsr = (imm & 4) != 0;
 	Intrinsic::ID iid;
-	if (imm & 4)
+	if (useMxcsr)
 	{
 		iid = Intrinsic::nearbyint;
 	}
@@ -1654,7 +1654,9 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSseRound(cs_insn* i, cs_x86* xi
 	unsigned n = isDouble ? 2 : 4;
 	auto* vecTy = FixedVectorType::get(elemTy, n);
 	Value* vSrc = irb.CreateBitCast(src, vecTy);
-	auto roundOf = [&](Value* v) { return irb.CreateUnaryIntrinsic(iid, v); };
+	auto roundOf = [&](Value* v) -> Value* {
+		return useMxcsr ? roundByMxcsr(v, irb) : irb.CreateUnaryIntrinsic(iid, v);
+	};
 
 	Value* asInt = nullptr;
 	if (isScalar)
@@ -6917,7 +6919,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateCvtPd2Dq(
 		Value* e = irb.CreateExtractElement(v, (uint64_t)lane);
 		if (!trunc)
 		{
-			e = irb.CreateUnaryIntrinsic(Intrinsic::roundeven, e);
+			e = roundByMxcsr(e, irb);
 		}
 		Value* conv = generateFpToSiDefined(e, irb.getInt32Ty(), irb);
 		Value* w = irb.CreateZExt(conv, packedTy);
@@ -7223,7 +7225,44 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSseMpsadbw(
 }
 
 /**
- * LDMXCSR / STMXCSR — llvm.x86.sse.ldmxcsr / stmxcsr on the m32 address.
+ * The MXCSR register as a module global, created on first use with its
+ * power-on value 0x1F80 (all exceptions masked, round to nearest).
+ */
+llvm::GlobalVariable* Capstone2LlvmIrTranslatorX86_impl::getMxcsr()
+{
+	auto* i32 = Type::getInt32Ty(_module->getContext());
+	if (auto* gv = _module->getGlobalVariable("mxcsr"))
+	{
+		return gv;
+	}
+	return new GlobalVariable(*_module, i32, false, GlobalValue::ExternalLinkage,
+			ConstantInt::get(i32, 0x1F80), "mxcsr");
+}
+
+/**
+ * Round @a v (scalar or vector FP) the way MXCSR.RC (bits 13-14) says:
+ * 00 nearest-even, 01 down, 10 up, 11 toward zero. Where nothing in the
+ * program writes MXCSR, bin2llvmir folds the load to 0x1F80 and this is
+ * plain roundeven again.
+ */
+llvm::Value* Capstone2LlvmIrTranslatorX86_impl::roundByMxcsr(
+		llvm::Value* v, llvm::IRBuilder<>& irb)
+{
+	Value* mx = irb.CreateLoad(irb.getInt32Ty(), getMxcsr());
+	Value* rc = irb.CreateAnd(irb.CreateLShr(mx, 13), 3);
+	Value* r = irb.CreateUnaryIntrinsic(Intrinsic::roundeven, v);
+	r = irb.CreateSelect(irb.CreateICmpEQ(rc, irb.getInt32(1)),
+			irb.CreateUnaryIntrinsic(Intrinsic::floor, v), r);
+	r = irb.CreateSelect(irb.CreateICmpEQ(rc, irb.getInt32(2)),
+			irb.CreateUnaryIntrinsic(Intrinsic::ceil, v), r);
+	r = irb.CreateSelect(irb.CreateICmpEQ(rc, irb.getInt32(3)),
+			irb.CreateUnaryIntrinsic(Intrinsic::trunc, v), r);
+	return r;
+}
+
+/**
+ * LDMXCSR / STMXCSR: move the m32 operand into or out of the @c mxcsr
+ * state global, which the MXCSR-rounded conversions and ROUND* read.
  */
 void Capstone2LlvmIrTranslatorX86_impl::translateMxcsr(
 		cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
@@ -7235,20 +7274,17 @@ void Capstone2LlvmIrTranslatorX86_impl::translateMxcsr(
 		return;
 	}
 
-	Value* addr = loadOp(xi->operands[0], irb, nullptr, /*lea=*/true);
-	if (addr == nullptr)
+	auto* mx = getMxcsr();
+	if (i->id == X86_INS_LDMXCSR || i->id == X86_INS_VLDMXCSR)
 	{
-		translatePseudoAsmGeneric(i, xi, irb);
-		return;
+		Value* v = loadOp(xi->operands[0], irb, irb.getInt32Ty());
+		irb.CreateStore(irb.CreateZExtOrTrunc(v, irb.getInt32Ty()), mx);
 	}
-	Value* ptr = irb.CreateIntToPtr(
-			addr,
-			PointerType::get(irb.getInt8Ty(), getAddrSpace(xi->operands[0].mem.segment)));
-	Intrinsic::ID iid = (i->id == X86_INS_LDMXCSR || i->id == X86_INS_VLDMXCSR)
-			? Intrinsic::x86_sse_ldmxcsr
-			: Intrinsic::x86_sse_stmxcsr;
-	auto* fn = Intrinsic::getOrInsertDeclaration(_module, iid);
-	irb.CreateCall(fn, {ptr});
+	else
+	{
+		storeOp(xi->operands[0], irb.CreateLoad(irb.getInt32Ty(), mx), irb,
+				eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	}
 }
 
 static llvm::Value* permuteSelectLane(
@@ -8378,7 +8414,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvxCvtU(cs_insn* i, cs_x86* xi,
 		Value* lane = irb.CreateExtractElement(src, (uint64_t)0);
 		if (!trunc)
 		{
-			lane = irb.CreateUnaryIntrinsic(Intrinsic::roundeven, lane);
+			lane = roundByMxcsr(lane, irb);
 		}
 		unsigned destBits = xi->operands[0].size ? xi->operands[0].size * 8 : 32;
 		storeOp(xi->operands[0], fpToUiDefined(lane, irb.getIntNTy(destBits), irb), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
@@ -8419,7 +8455,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvxCvtU(cs_insn* i, cs_x86* xi,
 		Value* v = irb.CreateBitCast(irb.CreateZExtOrTrunc(raw, irb.getIntNTy(srcBits)), FixedVectorType::get(fpTy, n));
 		if (!trunc)
 		{
-			v = irb.CreateUnaryIntrinsic(Intrinsic::roundeven, v);
+			v = roundByMxcsr(v, irb);
 		}
 		auto* i32v = vecType(irb.getInt32Ty(), n);
 		Value* out = UndefValue::get(i32v);
@@ -9489,7 +9525,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateMmxCvt(
                 Value* e = irb.CreateExtractElement(v, (uint64_t)lane);
                 if (!trunc)
                 {
-                    e = irb.CreateUnaryIntrinsic(Intrinsic::roundeven, e);
+                    e = roundByMxcsr(e, irb);
                 }
                 Value* w = irb.CreateZExt(generateFpToSiDefined(e, i32, irb), i64);
                 if (lane)
