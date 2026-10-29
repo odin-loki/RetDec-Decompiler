@@ -5582,6 +5582,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFCMovCc(cs_insn* i, cs_x86* xi,
 		case X86_INS_FCMOVNE: 	cond = generateCcNE(irb); break;
 		case X86_INS_FCMOVNBE:  cond = generateCcA(irb); break;
 		case X86_INS_FCMOVNU: 	cond = generateCcNP(irb); break;
+		case X86_INS_FCMOVNP: 	cond = generateCcNP(irb); break;
 		default: throw GenericError("Unhandled insn ID in translateSetCc().");
 	}
 
@@ -5738,7 +5739,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFst(cs_insn* i, cs_x86* xi, llv
 		storeOp(xi->operands[0], src, irb, eOpConv::FPCAST_OR_BITCAST);
 	}
 
-	if (i->id == X86_INS_FSTP)
+	if (i->id == X86_INS_FSTP || i->id == X86_INS_FSTPNCE)
 	{
 		x87IncTop(irb, top);
 	}

@@ -505,6 +505,10 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		void translateSha(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 
 		// AVX-512 opmask registers (x86_avx512.cpp).
+		void translateSystemX86(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateX86Misc2(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateEr28(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateFourIter(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		unsigned maskWidth(cs_insn* i);
 		llvm::Value* loadMaskOp(cs_x86_op& op, unsigned bits, llvm::IRBuilder<>& irb);
 		void storeMaskOp(cs_x86_op& op, llvm::Value* val, unsigned bits, llvm::IRBuilder<>& irb);

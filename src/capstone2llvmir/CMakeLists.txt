@@ -23,6 +23,7 @@ add_library(capstone2llvmir STATIC
 	x86/x86.cpp
 	x86/x86_sse.cpp
 	x86/x86_avx512.cpp
+	x86/x86_sys.cpp
 	capstone2llvmir_impl.cpp
 	capstone2llvmir.cpp
 	exceptions.cpp

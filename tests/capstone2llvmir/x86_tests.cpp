@@ -24079,6 +24079,129 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VFIXUPIMMSD_zeroing_emits_fixu
 	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_EXTRQ_imm_extracts_field)
+{
+	ONLY_MODE_64;
+	setXmm(X86_REG_XMM0, 0x1234ULL, 0xab0ULL);
+	emulate_bin("66 0f 78 c0 08 04");
+	EXPECT_EQ(0xabULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x1234ULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_INSERTQ_imm_inserts_field)
+{
+	ONLY_MODE_64;
+	setXmm(X86_REG_XMM0, 0x0ULL, 0xffffULL);
+	setXmm(X86_REG_XMM1, 0x0ULL, 0x12ULL);
+	emulate_bin("f2 0f 78 c1 08 04");
+	EXPECT_EQ(0xf12fULL, xmmLow(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PFACC_adds_pairs)
+{
+	ONLY_MODE_64;
+	setRegisters({{X86_REG_MM0, 0x400000003f800000ULL}, {X86_REG_MM1, 0x4080000040400000ULL}});
+	emulate_bin("0f 0f c1 ae");
+	EXPECT_EQ(0x40e0000040400000ULL, getRegisterValueUnsigned(X86_REG_MM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PI2FW_converts_low_words)
+{
+	ONLY_MODE_64;
+	setRegisters({{X86_REG_MM1, 0x000000050001fffeULL}});
+	emulate_bin("0f 0f c1 0c");
+	EXPECT_EQ(0x40a00000c0000000ULL, getRegisterValueUnsigned(X86_REG_MM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VPMADCSWD_multiplies_adds_pairs)
+{
+	ONLY_MODE_64;
+	setXmm(X86_REG_XMM1, 0x0ULL, 0x0004000300020001ULL);
+	setXmm(X86_REG_XMM2, 0x0002000200020002ULL, 0x0002000200020002ULL);
+	setXmm(X86_REG_XMM3, 0x0ULL, 0x0000000a0000000aULL);
+	emulate_bin("8f e8 70 b6 c2 30");
+	EXPECT_EQ(0x0000001800000010ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0ULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VPERMIL2PS_selects_from_both_sources)
+{
+	ONLY_MODE_64;
+	setXmm(X86_REG_XMM1, 0x0000000400000003ULL, 0x0000000200000001ULL);
+	setXmm(X86_REG_XMM2, 0x0000000800000007ULL, 0x0000000600000005ULL);
+	setXmm(X86_REG_XMM3, 0x0000000100000007ULL, 0x0000000000000004ULL);
+	emulate_bin("c4 e3 71 48 c2 30");
+	EXPECT_EQ(0x0000000100000005ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x0000000200000008ULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_UMWAIT_sets_cf_and_clears_flags)
+{
+	SKIP_MODE_16;
+	auto* f = translateTextOrBytes("umwait ecx", {0xf2, 0x0f, 0xae, 0xf1});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("__asm_umwait")) << ir;
+	EXPECT_NE(std::string::npos, ir.find("store i1 false, ptr @zf")) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_XGETBV_writes_edx_eax)
+{
+	SKIP_MODE_16;
+	auto* f = translateTextOrBytes("xgetbv", {0x0f, 0x01, 0xd0});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("call i64 @__asm_xgetbv(i32")) << ir;
+	EXPECT_NE(std::string::npos, ir.find("lshr i64")) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_WRSSQ_is_store)
+{
+	ONLY_MODE_64;
+	auto* f = translateTextOrBytes("wrssq [rbx], rax", {0x48, 0x0f, 0x38, 0xf6, 0x03});
+	ASSERT_NE(nullptr, f);
+	EXPECT_FALSE(callsPseudoAsm(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_V4FMADDPS_masked_is_lifted)
+{
+	ONLY_MODE_64;
+	auto* f = translateTextOrBytes("v4fmaddps zmm0 {k1}, zmm4, xmmword ptr [rax]", {0x62, 0xf2, 0x5f, 0x49, 0x9a, 0x00});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("fmul")) << ir;
+	EXPECT_NE(std::string::npos, ir.find("zmm7")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VP4DPWSSDS_is_lifted)
+{
+	ONLY_MODE_64;
+	auto* f = translateTextOrBytes("vp4dpwssds zmm0, zmm4, xmmword ptr [rax]", {0x62, 0xf2, 0x5f, 0x48, 0x53, 0x00});
+	ASSERT_NE(nullptr, f);
+	EXPECT_FALSE(callsPseudoAsm(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VEXP2PS_is_exp2)
+{
+	ONLY_MODE_64;
+	auto* f = translateTextOrBytes("vexp2ps zmm0, zmm1", {0x62, 0xf2, 0x7d, 0x48, 0xc8, 0xc1});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.exp2")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VRSQRT28SS_is_lifted)
+{
+	ONLY_MODE_64;
+	auto* f = translateTextOrBytes("vrsqrt28ss xmm0, xmm1, xmm2", {0x62, 0xf2, 0x75, 0x08, 0xcd, 0xc2});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.sqrt")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

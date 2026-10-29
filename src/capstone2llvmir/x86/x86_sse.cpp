@@ -9030,6 +9030,50 @@ void Capstone2LlvmIrTranslatorX86_impl::translate3dnow(cs_insn* i, cs_x86* xi, I
 		storeI64(irb.CreateFDiv(one, irb.CreateUnaryIntrinsic(Intrinsic::sqrt, v)));
 		return;
 	}
+	case X86_INS_PFACC:
+	case X86_INS_PFNACC:
+	case X86_INS_PFPNACC:
+	{
+		// r0 combines the two lanes of the destination, r1 those of the source.
+		Value* a = irb.CreateBitCast(dst, v2f);
+		Value* b = irb.CreateBitCast(src, v2f);
+		Value* a0 = irb.CreateExtractElement(a, uint64_t(0));
+		Value* a1 = irb.CreateExtractElement(a, uint64_t(1));
+		Value* b0 = irb.CreateExtractElement(b, uint64_t(0));
+		Value* b1 = irb.CreateExtractElement(b, uint64_t(1));
+		Value* r0 = i->id == X86_INS_PFACC ? irb.CreateFAdd(a0, a1) : irb.CreateFSub(a0, a1);
+		Value* r1 = i->id == X86_INS_PFNACC ? irb.CreateFSub(b0, b1) : irb.CreateFAdd(b0, b1);
+		Value* r = irb.CreateInsertElement(UndefValue::get(v2f), r0, uint64_t(0));
+		storeI64(irb.CreateInsertElement(r, r1, uint64_t(1)));
+		return;
+	}
+	case X86_INS_PFRCPIT1:
+	case X86_INS_PFRCPIT2:
+		// PFRCP/PFRSQRT are lifted exact, so the Newton-Raphson refinement
+		// steps that follow them reduce to forwarding the estimate.
+		storeI64(irb.CreateBitCast(src, v2f));
+		return;
+	case X86_INS_PFRSQIT1:
+		// First rsqrt refinement step; its result only feeds PFRCPIT2, which
+		// returns the (already exact) estimate, so the destination is kept.
+		return;
+	case X86_INS_PF2IW:
+	{
+		Value* v = irb.CreateFPToSI(irb.CreateBitCast(src, v2f), v2i);
+		Value* hi = ConstantInt::get(v2i, 32767);
+		Value* lo = ConstantInt::get(v2i, uint64_t(int64_t(-32768)));
+		v = irb.CreateSelect(irb.CreateICmpSGT(v, hi), hi, v);
+		v = irb.CreateSelect(irb.CreateICmpSLT(v, lo), lo, v);
+		storeI64(v);
+		return;
+	}
+	case X86_INS_PI2FW:
+	{
+		auto* v2w = vecType(irb.getInt16Ty(), 2);
+		Value* w = irb.CreateTrunc(irb.CreateBitCast(src, v2i), v2w);
+		storeI64(irb.CreateSIToFP(w, v2f));
+		return;
+	}
 	case X86_INS_PI2FD:
 		storeI64(irb.CreateSIToFP(irb.CreateBitCast(src, v2i), v2f));
 		return;
