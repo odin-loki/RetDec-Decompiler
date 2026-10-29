@@ -1964,6 +1964,24 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_JR)
 	});
 }
 
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_JR_HB_is_a_jump)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{MIPS_REG_1, 0x4005dc},
+	});
+
+	emulate("jr.hb $1", 0x4006f8);
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_1});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getBranchFunction(), {0x4005dc}},
+	});
+}
+
 //
 // MIPS_INS_B
 //
