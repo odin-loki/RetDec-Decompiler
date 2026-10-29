@@ -33,7 +33,6 @@ files=(
     "support/types/linux.json"
     "support/yara_patterns/signsrch/signsrch.yara"
     "support/yara_patterns/tools/pe/x86/packers.yara"
-    "src/llvmir2hll/var_name_gen/var_name_gens/word_var_name_gen.cpp"
     "support/ordinals/x86/mfc100.ord"   "support/ordinals/x86/mfc100d.ord"
     "support/ordinals/x86/mfc100u.ord"  "support/ordinals/x86/mfc100ud.ord"
     "support/ordinals/x86/mfc110.ord"   "support/ordinals/x86/mfc110d.ord"

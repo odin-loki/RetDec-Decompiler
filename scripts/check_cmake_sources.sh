@@ -13,13 +13,10 @@
 # branch. This is a file-existence check over the source lists themselves: it
 # needs no compiler, no dependencies and no configure, and it runs in a second.
 #
-# One source list entry is legitimately absent from a fresh clone:
-# src/llvmir2hll/var_name_gen/var_name_gens/word_var_name_gen.cpp is a 50k-entry
-# generated word list, gitignored and downloaded by scripts/fetch-large-files.sh
-# like the rest of the large support data. So the manifest in that script is read
-# here and a file it provides is reported as un-fetched rather than as missing --
-# the source list is satisfiable, which is what this check is about. Delete such
-# an entry from the manifest and it becomes a hard failure like any other.
+# A source named in the scripts/fetch-large-files.sh manifest is reported as
+# un-fetched rather than as missing. No source is there any more:
+# word_var_name_gen.cpp was, and a fresh clone could not build llvmir2hll, so
+# it is committed now.
 #
 # The second pass is the same question the other way round: a test source on
 # disk that no CMakeLists.txt names is a file nobody runs -- unless something

@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CMAKE_MIN_MAJOR=3
 CMAKE_MIN_MINOR=26
-LARGE_FILE_MARKER="src/llvmir2hll/var_name_gen/var_name_gens/word_var_name_gen.cpp"
+LARGE_FILE_MARKER="support/types/linux.json"
 
 pass=0
 fail=0
