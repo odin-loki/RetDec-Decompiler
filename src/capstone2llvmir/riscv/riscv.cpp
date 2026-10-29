@@ -2587,14 +2587,55 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateAmocas(cs_insn* i, cs_riscv* 
 			elem = i->id == RISCV_INS_AMOCAS_W_AQRL ? irb.getInt32Ty() : irb.getInt64Ty();
 			success = failure = llvm::AtomicOrdering::SequentiallyConsistent;
 			break;
+		case RISCV_INS_AMOCAS_Q: elem = irb.getInt128Ty(); break;
+		case RISCV_INS_AMOCAS_Q_AQ:
+			elem = irb.getInt128Ty();
+			success = failure = llvm::AtomicOrdering::Acquire;
+			break;
+		case RISCV_INS_AMOCAS_Q_RL:
+			elem = irb.getInt128Ty();
+			success = llvm::AtomicOrdering::Release;
+			break;
+		case RISCV_INS_AMOCAS_Q_AQRL:
+			elem = irb.getInt128Ty();
+			success = failure = llvm::AtomicOrdering::SequentiallyConsistent;
+			break;
 		default:
 			translatePseudoAsmGeneric(i, ri, irb);
 			return;
 	}
-	if (elem->getIntegerBitWidth() == 64 && !isXlen64())
+	unsigned xlen = isXlen64() ? 64 : 32;
+	if (elem->getIntegerBitWidth() == 2 * xlen)
 	{
-		// RV32 AMOCAS.D takes register pairs, like AMOCAS.Q on RV64.
-		translatePseudoAsmGeneric(i, ri, irb);
+		// RV32 AMOCAS.D / RV64 AMOCAS.Q: even/odd register pairs; x0 reads
+		// as a zero pair and its write-back is discarded.
+		auto rd = ri->operands[0].reg;
+		auto rs2 = ri->operands[2].reg;
+		if (ri->operands[0].type != RISCV_OP_REG || ri->operands[2].type != RISCV_OP_REG
+				|| rd < RISCV_REG_X0 || rd > RISCV_REG_X30 || rs2 < RISCV_REG_X0 || rs2 > RISCV_REG_X30)
+		{
+			translatePseudoAsmGeneric(i, ri, irb);
+			return;
+		}
+		auto* xt = getDefaultType();
+		auto pair = [&](uint32_t r) -> llvm::Value* {
+			if (r == RISCV_REG_X0) return llvm::ConstantInt::get(elem, 0);
+			auto* lo = irb.CreateZExt(irb.CreateZExtOrTrunc(loadRegister(r, irb), xt), elem);
+			auto* hi = irb.CreateZExt(irb.CreateZExtOrTrunc(loadRegister(r + 1, irb), xt), elem);
+			return irb.CreateOr(lo, irb.CreateShl(hi, xlen));
+		};
+		auto* addr = amoAddress(ri->operands[1], irb);
+		auto* expected = pair(rd);
+		auto* desired = pair(rs2);
+		auto* ptr = intToPtr(irb, addr, elem);
+		auto* cx = irb.CreateAtomicCmpXchg(ptr, expected, desired, llvm::MaybeAlign(), success, failure);
+		attachPointeeType(cx, elem);
+		if (rd != RISCV_REG_X0)
+		{
+			auto* old = irb.CreateExtractValue(cx, 0);
+			storeRegister(rd, irb.CreateTrunc(old, xt), irb);
+			storeRegister(rd + 1, irb.CreateTrunc(irb.CreateLShr(old, xlen), xt), irb);
+		}
 		return;
 	}
 

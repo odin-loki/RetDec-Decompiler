@@ -6538,6 +6538,29 @@ TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_FCVT_S_BF16)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_AMOCAS_Q_pair)
+{
+	ONLY_MODE_RV64;
+
+	setRegisters({
+		{RISCV_REG_A0, 0},
+		{RISCV_REG_A1, 0},
+		{RISCV_REG_A2, 5},
+		{RISCV_REG_A3, 6},
+		{RISCV_REG_A4, 0x1000},
+	});
+
+	emulate_bin("2f 45 c7 28"); // amocas.q a0, a2, (a4)
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A0, RISCV_REG_A1, RISCV_REG_A2, RISCV_REG_A3, RISCV_REG_A4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 0},
+		{RISCV_REG_A1, 0},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
