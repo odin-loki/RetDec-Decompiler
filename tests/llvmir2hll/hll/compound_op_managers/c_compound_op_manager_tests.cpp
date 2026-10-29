@@ -18,6 +18,7 @@
 #include "retdec/llvmir2hll/ir/bit_shr_op_expr.h"
 #include "retdec/llvmir2hll/ir/bit_xor_op_expr.h"
 #include "retdec/llvmir2hll/ir/const_int.h"
+#include "retdec/llvmir2hll/ir/deref_op_expr.h"
 #include "retdec/llvmir2hll/ir/div_op_expr.h"
 #include "retdec/llvmir2hll/ir/eq_op_expr.h"
 #include "retdec/llvmir2hll/ir/int_type.h"
@@ -182,6 +183,37 @@ MulToCompoundOpVarOnRight) {
 			mulOpExpr
 	));
 	CompoundOpManager::CompoundOp expectedResult("*=", varB);
+	tryToOptimizeAndCheckResult(assignStmt, expectedResult);
+}
+
+TEST_F(CCompoundOpManagerTests,
+XorToCompoundOpDerefOfVariableOnLeft) {
+	// *p = *p ^ b;
+	//
+	// Expected output: *p ^= b;
+	//
+	ShPtr<Variable> varP(Variable::create("p", IntType::create(64)));
+	ShPtr<Variable> varB(Variable::create("b", IntType::create(8)));
+	ShPtr<DerefOpExpr> deref(DerefOpExpr::create(varP));
+	ShPtr<AssignStmt> assignStmt(AssignStmt::create(
+		deref, BitXorOpExpr::create(deref, varB)));
+	CompoundOpManager::CompoundOp expectedResult("^=", varB);
+	tryToOptimizeAndCheckResult(assignStmt, expectedResult);
+}
+
+TEST_F(CCompoundOpManagerTests,
+NoCompoundOpWhenDerefAddressIsComputed) {
+	// *(p + 1) = *(p + 1) ^ b;
+	//
+	// Expected output: unchanged (the address is not a plain variable).
+	//
+	ShPtr<Variable> varP(Variable::create("p", IntType::create(64)));
+	ShPtr<Variable> varB(Variable::create("b", IntType::create(8)));
+	ShPtr<DerefOpExpr> deref(DerefOpExpr::create(
+		AddOpExpr::create(varP, ConstInt::create(1, 64))));
+	ShPtr<AssignStmt> assignStmt(AssignStmt::create(
+		deref, BitXorOpExpr::create(deref, varB)));
+	CompoundOpManager::CompoundOp expectedResult("=", assignStmt->getRhs());
 	tryToOptimizeAndCheckResult(assignStmt, expectedResult);
 }
 

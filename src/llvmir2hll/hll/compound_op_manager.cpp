@@ -45,6 +45,11 @@ namespace {
 *         otherwise @c false.
 */
 bool isSupportedLhs(ShPtr<Expression> expr) {
+	if (auto deref = cast<DerefOpExpr>(expr)) {
+		// *p = *p ^ x becomes *p ^= x. Only a plain pointer variable, so the
+		// address has no side effects to evaluate once instead of twice.
+		return isa<Variable>(deref->getOperand());
+	}
 	return isa<Variable>(expr) || isa<ArrayIndexOpExpr>(expr) ||
 		isa<StructIndexOpExpr>(expr);
 }
