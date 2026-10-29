@@ -724,6 +724,9 @@ std::vector<std::pair<BlockId, BlockId>> retreatingEdges(const SSAFunction& fn);
 /// True when the CFG reachable from the entry has a cycle.
 bool hasCycle(const SSAFunction& fn);
 
+/// True when block `b` lies on a cycle: some path from it leads back to it.
+bool blockOnCycle(const SSAFunction& fn, BlockId b);
+
 } // namespace ssa
 } // namespace retdec
 

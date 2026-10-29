@@ -2097,3 +2097,40 @@ TEST(IdiomDetectorTest, AComparisonLoopThatNeverReadsTheLoadedByteIsNotStrlen)
 
 	EXPECT_FALSE(detects(*fn, IdiomKind::Strlen));
 }
+
+namespace {
+
+// entry -> loop -> {loop, exit}; the self-call sits in `callIn`.
+std::unique_ptr<ssa::SSAFunction> makeRecursive(bool callInLoop)
+{
+	auto fn = std::make_unique<ssa::SSAFunction>("visit");
+	auto* entry = fn->addBlock("entry");
+	auto* loop = fn->addBlock("loop");
+	auto* exit = fn->addBlock("exit");
+	entry->succs.push_back(loop->id);
+	loop->succs.push_back(loop->id);
+	loop->succs.push_back(exit->id);
+	fn->addInstr(loop->id, ssa::IrInstr::Op::Load);
+	fn->addInstr(loop->id, ssa::IrInstr::Op::Load);
+	fn->addInstr(entry->id, ssa::IrInstr::Op::Store);
+	auto* call = fn->addInstr(callInLoop ? loop->id : exit->id, ssa::IrInstr::Op::Call);
+	call->calleeName = "visit";
+	return fn;
+}
+
+} // namespace
+
+// A graph DFS recurses from inside the loop over a node's neighbours.
+TEST(IdiomDetectorTest, RecursionFromInsideALoopIsDfs)
+{
+	auto fn = makeRecursive(/*callInLoop=*/true);
+	EXPECT_TRUE(detects(*fn, IdiomKind::Dfs));
+}
+
+// Quicksort and heapify recurse too, but not from inside a loop; every
+// recursive function was DFS.
+TEST(IdiomDetectorTest, RecursionOutsideAnyLoopIsNotDfs)
+{
+	auto fn = makeRecursive(/*callInLoop=*/false);
+	EXPECT_FALSE(detects(*fn, IdiomKind::Dfs));
+}

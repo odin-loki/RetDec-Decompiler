@@ -127,9 +127,24 @@ bool hasNullTerminatedLoop(const ssa::SSAFunction& fn)
 	return hasBackEdge(fn) && hasByteTestedAgainstZero(fn) && countOp(fn, ssa::IrInstr::Op::Mul) == 0;
 }
 
+// A graph DFS recurses from inside the loop over a node's neighbours. Any
+// recursive function has a self-call, a store and loads -- quicksort recurses
+// twice in straight line and heapify once, and both were reported as DFS.
+bool hasSelfCallInLoop(const ssa::SSAFunction& fn)
+{
+	for (const auto& blk: fn.blocks())
+	{
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+			if (i && i->op == ssa::IrInstr::Op::Call && i->calleeName == fn.name() && ssa::blockOnCycle(fn, blk->id))
+				return true;
+	}
+	return false;
+}
+
 bool hasDfsStructure(const ssa::SSAFunction& fn)
 {
-	return hasSelfCall(fn) && countOp(fn, ssa::IrInstr::Op::Store) >= 1 && countOp(fn, ssa::IrInstr::Op::Load) >= 2;
+	return hasSelfCallInLoop(fn) && countOp(fn, ssa::IrInstr::Op::Store) >= 1 && countOp(fn, ssa::IrInstr::Op::Load) >= 2;
 }
 
 IdiomResult makeResult(IdiomKind kind, float confidence, const std::string& detail)

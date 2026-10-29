@@ -482,5 +482,24 @@ bool hasCycle(const SSAFunction& fn)
 	return !retreatingEdges(fn).empty();
 }
 
+bool blockOnCycle(const SSAFunction& fn, BlockId b)
+{
+	const BasicBlock* start = fn.block(b);
+	if (!start) return false;
+	std::vector<uint8_t> seen(fn.blocks().size(), 0);
+	std::vector<BlockId> work(start->succs.begin(), start->succs.end());
+	while (!work.empty())
+	{
+		const BlockId cur = work.back();
+		work.pop_back();
+		if (cur == b) return true;
+		if (cur >= seen.size() || seen[cur]) continue;
+		seen[cur] = 1;
+		if (const BasicBlock* cb = fn.block(cur))
+			work.insert(work.end(), cb->succs.begin(), cb->succs.end());
+	}
+	return false;
+}
+
 } // namespace ssa
 } // namespace retdec
