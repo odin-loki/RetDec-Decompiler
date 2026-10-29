@@ -15247,6 +15247,67 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_PACGA_and_LD64B_are_opaque
 	EXPECT_NE(nullptr, _module.getFunction("__asm_ld64b"));
 }
 
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FDIVR_sve_is_lifted)
+{
+	auto* f = translate(utils::hexStringToBytes("20 80 8c 65")); // fdivr z0.s, p0/m, z0.s, z1.s
+	ASSERT_NE(nullptr, f);
+	std::string ir;
+	llvm::raw_string_ostream os(ir);
+	f->print(os);
+	os.flush();
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_NE(std::string::npos, ir.find("fdiv")) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FMAD_sve_is_lifted)
+{
+	auto* f = translate(utils::hexStringToBytes("20 84 e2 65")); // fmad z0.d, p1/m, z1.d, z2.d
+	ASSERT_NE(nullptr, f);
+	std::string ir;
+	llvm::raw_string_ostream os(ir);
+	f->print(os);
+	os.flush();
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_NE(std::string::npos, ir.find("fmul")) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FNMLA_sve_is_lifted)
+{
+	auto* f = translate(utils::hexStringToBytes("20 40 a2 65")); // fnmla z0.s, p0/m, z1.s, z2.s
+	ASSERT_NE(nullptr, f);
+	std::string ir;
+	llvm::raw_string_ostream os(ir);
+	f->print(os);
+	os.flush();
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_NE(std::string::npos, ir.find("fneg")) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FADDV_sve_is_lifted)
+{
+	auto* f = translate(utils::hexStringToBytes("20 20 80 65")); // faddv s0, p0, z1.s
+	ASSERT_NE(nullptr, f);
+	std::string ir;
+	llvm::raw_string_ostream os(ir);
+	f->print(os);
+	os.flush();
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_NE(std::string::npos, ir.find("fadd")) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCLAMP_sve_is_lifted)
+{
+	auto* f = translate(utils::hexStringToBytes("20 24 a2 64")); // fclamp z0.s, z1.s, z2.s
+	ASSERT_NE(nullptr, f);
+	std::string ir;
+	llvm::raw_string_ostream os(ir);
+	f->print(os);
+	os.flush();
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_NE(std::string::npos, ir.find("minnum")) << ir;
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

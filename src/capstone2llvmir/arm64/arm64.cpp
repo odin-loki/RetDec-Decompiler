@@ -8355,8 +8355,9 @@ static llvm::Value* sveClearSignBits(llvm::Value* fpVec, unsigned elemBits, llvm
 bool Capstone2LlvmIrTranslatorArm64_impl::translateSveFp(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {
 	bool isFadda = i->id == ARM64_INS_FADDA;
+	bool isFaddv = i->id == ARM64_INS_FADDV;
 	bool destZ = ai->op_count >= 1 && ai->operands[0].type == ARM64_OP_REG && isSveZReg(ai->operands[0].reg);
-	if (!isFadda && !destZ)
+	if (!isFadda && !isFaddv && !destZ)
 	{
 		return false;
 	}
@@ -8446,8 +8447,53 @@ bool Capstone2LlvmIrTranslatorArm64_impl::translateSveFp(cs_insn* i, cs_arm64* a
 		return true;
 	}
 
+	if (isFaddv)
+	{
+		// Inactive lanes contribute +0.0; the pairwise order is not modelled.
+		llvm::Value* mask = pg ? svePredToLaneMask(loadRegister(pg->reg, irb), elemBits, irb) : nullptr;
+		llvm::Value* acc = llvm::ConstantFP::get(fpE, 0.0);
+		for (unsigned k = 0; k < lanes; ++k)
+		{
+			llvm::Value* lane = irb.CreateExtractElement(a, irb.getInt32(k));
+			if (mask)
+			{
+				lane = irb.CreateSelect(irb.CreateExtractElement(mask, irb.getInt32(k)), lane, llvm::Constant::getNullValue(fpE));
+			}
+			acc = irb.CreateFAdd(acc, lane);
+		}
+		storeRegister(ai->operands[0].reg, acc, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		return true;
+	}
+
+	auto dst = [&]() { return irb.CreateBitCast(loadSveZ(ai->operands[0], irb), fpTy); };
+	auto fabsV = [&](llvm::Value* v) { return sveClearSignBits(v, elemBits, irb); };
 	switch (i->id)
 	{
+	case ARM64_INS_FDIVR: if (!b) break; res = irb.CreateFDiv(b, a); break;
+	case ARM64_INS_FSUBR: if (!b) break; res = irb.CreateFSub(b, a); break;
+	// FMAD-style: Zdn is a multiplicand, operand 3 is the addend.
+	case ARM64_INS_FMAD: if (!b) break; res = irb.CreateFAdd(b, irb.CreateFMul(dst(), a)); break;
+	case ARM64_INS_FMSB: if (!b) break; res = irb.CreateFSub(b, irb.CreateFMul(dst(), a)); break;
+	case ARM64_INS_FNMAD: if (!b) break; res = irb.CreateFSub(irb.CreateFNeg(b), irb.CreateFMul(dst(), a)); break;
+	case ARM64_INS_FNMSB: if (!b) break; res = irb.CreateFAdd(irb.CreateFNeg(b), irb.CreateFMul(dst(), a)); break;
+	case ARM64_INS_FNMLA: if (!b) break; res = irb.CreateFSub(irb.CreateFNeg(dst()), irb.CreateFMul(a, b)); break;
+	case ARM64_INS_FNMLS: if (!b) break; res = irb.CreateFAdd(irb.CreateFNeg(dst()), irb.CreateFMul(a, b)); break;
+	case ARM64_INS_FAMAX: if (!b) break; res = irb.CreateBinaryIntrinsic(llvm::Intrinsic::maxnum, fabsV(a), fabsV(b)); break;
+	case ARM64_INS_FAMIN: if (!b) break; res = irb.CreateBinaryIntrinsic(llvm::Intrinsic::minnum, fabsV(a), fabsV(b)); break;
+	case ARM64_INS_FCLAMP:
+		if (!b || pg) break;
+		res = irb.CreateBinaryIntrinsic(llvm::Intrinsic::minnum,
+				irb.CreateBinaryIntrinsic(llvm::Intrinsic::maxnum, dst(), a), b);
+		break;
+	default: break;
+	}
+	if (res == nullptr) switch (i->id)
+	{
+	case ARM64_INS_FDIVR: case ARM64_INS_FSUBR: case ARM64_INS_FMAD: case ARM64_INS_FMSB:
+	case ARM64_INS_FNMAD: case ARM64_INS_FNMSB: case ARM64_INS_FNMLA: case ARM64_INS_FNMLS:
+	case ARM64_INS_FAMAX: case ARM64_INS_FAMIN: case ARM64_INS_FCLAMP:
+		translatePseudoAsmGeneric(i, ai, irb);
+		return true;
 	case ARM64_INS_FSUB: res = irb.CreateFSub(a, b); break;
 	case ARM64_INS_FMUL: res = irb.CreateFMul(a, b); break;
 	case ARM64_INS_FDIV: res = irb.CreateFDiv(a, b); break;

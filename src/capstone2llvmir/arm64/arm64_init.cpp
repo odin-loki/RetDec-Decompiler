@@ -3008,6 +3008,18 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorArm64_impl::*)(cs_insn* i, 
 		{ARM64_INS_WKDMD, &Capstone2LlvmIrTranslatorArm64_impl::translateArm64Opaque},
 		{ARM64_INS_MUL53HI, &Capstone2LlvmIrTranslatorArm64_impl::translateArm64Opaque},
 		{ARM64_INS_MUL53LO, &Capstone2LlvmIrTranslatorArm64_impl::translateArm64Opaque},
+		{ARM64_INS_FDIVR, &Capstone2LlvmIrTranslatorArm64_impl::translateSveFadda},
+		{ARM64_INS_FSUBR, &Capstone2LlvmIrTranslatorArm64_impl::translateSveFadda},
+		{ARM64_INS_FMAD, &Capstone2LlvmIrTranslatorArm64_impl::translateSveFadda},
+		{ARM64_INS_FMSB, &Capstone2LlvmIrTranslatorArm64_impl::translateSveFadda},
+		{ARM64_INS_FNMAD, &Capstone2LlvmIrTranslatorArm64_impl::translateSveFadda},
+		{ARM64_INS_FNMSB, &Capstone2LlvmIrTranslatorArm64_impl::translateSveFadda},
+		{ARM64_INS_FNMLA, &Capstone2LlvmIrTranslatorArm64_impl::translateSveFadda},
+		{ARM64_INS_FNMLS, &Capstone2LlvmIrTranslatorArm64_impl::translateSveFadda},
+		{ARM64_INS_FAMAX, &Capstone2LlvmIrTranslatorArm64_impl::translateSveFadda},
+		{ARM64_INS_FAMIN, &Capstone2LlvmIrTranslatorArm64_impl::translateSveFadda},
+		{ARM64_INS_FCLAMP, &Capstone2LlvmIrTranslatorArm64_impl::translateSveFadda},
+		{ARM64_INS_FADDV, &Capstone2LlvmIrTranslatorArm64_impl::translateSveFadda},
 		{ARM64_INS_ENDING, nullptr}};
 
 } // namespace capstone2llvmir
