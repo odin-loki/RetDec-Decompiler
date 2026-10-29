@@ -909,6 +909,13 @@ std::map<uint64_t, std::string> syscalls_ppc_linux_64 = {
 namespace retdec {
 namespace bin2llvmir {
 
+std::string SyscallFixer::powerPcSyscallName(uint64_t code, bool is64)
+{
+	const auto& m = is64 ? syscalls_ppc_linux_64 : syscalls_ppc_linux_32;
+	auto it = m.find(code);
+	return it == m.end() ? std::string() : it->second;
+}
+
 bool SyscallFixer::runPowerPC()
 {
 	const auto& codeMap = _config->getConfig().architecture.getBitSize() == 64

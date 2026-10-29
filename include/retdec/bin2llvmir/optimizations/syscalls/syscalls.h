@@ -43,6 +43,9 @@ public:
 	virtual bool runOnModule(llvm::Module& M) override;
 	bool runOnModuleCustom(llvm::Module& M, Config* c, FileImage* img, Lti* lti, Abi* abi);
 
+	/// Linux PowerPC syscall name for @a code (r0 at `sc`), or "" if unknown.
+	static std::string powerPcSyscallName(uint64_t code, bool is64);
+
 private:
 	bool run();
 	bool transform(AsmInstruction ai, uint64_t code, const std::map<uint64_t, std::string>& codeMap);
