@@ -183,6 +183,7 @@ StructureConverter::BodyMeasure StructureConverter::measureStructuredBody(
 */
 ShPtr<Statement> StructureConverter::structureFuncBody(llvm::Function &func,
 		bool repeatedSplitting) {
+	this->repeatedSplitting = repeatedSplitting;
 	initialiazeLLVMAnalyses(func);
 	auto cfg = createCFG(func.getEntryBlock());
 	detectBackEdges(cfg);
@@ -536,16 +537,16 @@ bool StructureConverter::reduceCFG(ShPtr<CFGNode> cfg) {
 *  - @a cfg is non-null
 */
 bool StructureConverter::tryControlledNodeSplitting(ShPtr<CFGNode> cfg,
-		bool relaxed, bool onlyOutsideLoops) {
+		bool relaxed, bool onlyOutsideLoops, llvm::Loop *within) {
 	PRECONDITION_NON_NULL(cfg);
 
 	// A node may be split when its body is small: at most
 	// MAX_SPLIT_WEIGHT statements, counted through nested ifs, with empty
 	// statements free. Most of an -O3 merge block is PHI copies, so the old
 	// "five flat statements" rule rejected every candidate. Loops, switches
-	// and jumps are never cloned here.
+	// and gotos are never cloned here.
 	std::function<bool(ShPtr<Statement>, unsigned &)> weigh =
-			[&weigh](ShPtr<Statement> stmt, unsigned &weight) -> bool {
+			[&weigh, within](ShPtr<Statement> stmt, unsigned &weight) -> bool {
 		for (; stmt; stmt = stmt->getSuccessor()) {
 			if (isa<EmptyStmt>(stmt)) {
 				continue;
@@ -559,8 +560,13 @@ bool StructureConverter::tryControlledNodeSplitting(ShPtr<CFGNode> cfg,
 				if (!weigh(ifStmt->getElseClause(), weight)) {
 					return false;
 				}
-			} else if (stmt->isCompound() || isa<GotoStmt>(stmt) ||
-					isa<BreakStmt>(stmt) || isa<ContinueStmt>(stmt)) {
+			} else if (stmt->isCompound() || isa<GotoStmt>(stmt)) {
+				return false;
+			} else if (!within && (isa<BreakStmt>(stmt) || isa<ContinueStmt>(stmt))) {
+				// A clone inside the loop being reduced stays in that loop,
+				// so its break or continue still means the same thing
+				// (insertClonedLoopTargets keeps them mapped); outside it
+				// would not.
 				return false;
 			}
 			if (++weight > MAX_SPLIT_WEIGHT) {
@@ -585,7 +591,16 @@ bool StructureConverter::tryControlledNodeSplitting(ShPtr<CFGNode> cfg,
 	// Inside a loop only the original tiny-body rule applies, and only for
 	// the first split (onlyOutsideLoops is false). Inside a loop, splitting a merge point tends to trade one goto for a cloned
 	// loop tail plus new gotos (mergesort-gcc-O3 went from 13 to 24).
-	auto bodyAllowsSplitClone = [this, &weigh, &bodyIsTiny, relaxed, onlyOutsideLoops](const ShPtr<CFGNode> &node) -> bool {
+	auto bodyAllowsSplitClone = [this, &weigh, &bodyIsTiny, relaxed, onlyOutsideLoops, within](const ShPtr<CFGNode> &node) -> bool {
+		if (within) {
+			// Splitting inside the loop being reduced: only its own blocks
+			// (not those of inner loops), by weight.
+			if (loopInfo->getLoopFor(node->getFirstBB()) != within) {
+				return false;
+			}
+			unsigned weight = 0;
+			return node->getBody() && weigh(node->getBody(), weight);
+		}
 		if (!relaxed) {
 			return bodyIsTiny(node);
 		}
@@ -1958,6 +1973,17 @@ void StructureConverter::completelyReduceLoop(ShPtr<CFGNode> loopNode) {
 
 	while (!hasItem(reducedLoops, loop) && BFSTraverse(loopNode, func)) {
 		// Keep looping until the loop is reduced.
+	}
+
+	// In the retry pass, split merge points inside the loop before falling
+	// back to gotos, e.g. a latch reached both from a shared tail and
+	// directly from one arm (lcs_dp -O3).
+	for (unsigned splits = 0; repeatedSplitting && splits < MAX_NODE_SPLITS &&
+			!hasItem(reducedLoops, loop) &&
+			tryControlledNodeSplitting(loopNode, true, false, loop); ++splits) {
+		while (!hasItem(reducedLoops, loop) && BFSTraverse(loopNode, func)) {
+			// Retry reduction after node splitting.
+		}
 	}
 
 	if (!hasItem(reducedLoops, loop)) {

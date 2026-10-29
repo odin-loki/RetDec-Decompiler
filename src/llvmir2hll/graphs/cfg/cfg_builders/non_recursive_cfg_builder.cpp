@@ -215,6 +215,23 @@ void NonRecursiveCFGBuilder::createOtherNodes() {
 
 	// Start of doing jobs and creating new jobs.
 	doJobs();
+
+	// A goto whose target lies inside a loop queues a job for the loop, not
+	// for the target. If the target follows a return/break/continue/goto in
+	// the loop body, that job stops before reaching it, so the target and
+	// the statements after it never got a node. Copy propagation then saw no
+	// uses there and dropped definitions they need (knapsack_01-gcc-O3).
+	// Build the missing parts from the targets themselves.
+	std::unordered_set<Statement*> tried;
+	for (std::size_t i = 0; i < edgesToAddFirst.size(); ++i) {
+		auto target = edgesToAddFirst[i].succStmt;
+		if (target && target->isGotoTarget()
+				&& !cfg->getNodeForStmt(target).first
+				&& tried.insert(target.get()).second) {
+			addJobToQueue(ShPtr<CFG::Node>(), ShPtr<Expression>(), target);
+			doJobs();
+		}
+	}
 }
 
 /**

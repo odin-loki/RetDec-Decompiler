@@ -15,6 +15,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   short loops into acyclic regions whose exit blocks are shared by many
   arms; duplicating those blocks replaces the jumps. bfs -O3 goes from 33
   gotos to 11 (751 to 802 lines); the corpus total from 84 to 62.
+- In that second pass, a loop that cannot be reduced is first retried with
+  small blocks inside the loop (which may end in break/continue) split,
+  before falling back to gotos. knapsack_01 -O3 goes from 10 gotos to 0 and
+  lcs_dp -O3 from 5 to 0; the corpus total from 62 to 47.
 - BEQ-01 (`scripts/ci/check_behaviour_equivalence.py`) compiles the
   decompiled C of each `tests/algorithm_recovery/beq/*.c` entry function
   (gcc -O0/-O2/-O3), links it against the original driver, and compares
@@ -91,6 +95,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- The CFG builder now gives a node to a goto target that follows a
+  return/break/continue/goto inside a loop. Such code was missing from the
+  CFG, so copy propagation dropped definitions it used.
 - Copy propagation no longer moves a memory read past a store that may
   change it. A swap `t = *p; *p = *q; *q = t;` used to come out as
   `*p = *q; *q = *p;`; selection sort -O0, heapsort -O0/-O2 and quicksort

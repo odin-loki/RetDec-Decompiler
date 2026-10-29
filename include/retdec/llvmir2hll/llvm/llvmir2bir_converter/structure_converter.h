@@ -100,7 +100,7 @@ private:
 		bool repeatedSplitting);
 	static BodyMeasure measureStructuredBody(ShPtr<Statement> body);
 	bool tryControlledNodeSplitting(ShPtr<CFGNode> cfg, bool relaxed,
-		bool onlyOutsideLoops);
+		bool onlyOutsideLoops, llvm::Loop *within = nullptr);
 	bool inspectCFGNode(ShPtr<CFGNode> node);
 	ShPtr<CFGNode> popFromQueue(CFGNodeQueue &queue) const;
 	void addUnvisitedSuccessorsToQueue(const ShPtr<CFGNode> &node,
@@ -329,6 +329,9 @@ private:
 
 	/// The resulting module in BIR.
 	ShPtr<Module> resModule;
+
+	/// Set during the retry pass of convertFuncBody (see there).
+	bool repeatedSplitting = false;
 };
 
 } // namespace llvmir2hll

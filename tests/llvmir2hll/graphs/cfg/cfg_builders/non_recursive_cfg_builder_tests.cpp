@@ -2807,6 +2807,46 @@ CFGCreatedForGotoJumpToWhile) {
 	#endif
 }
 
+TEST_F(NonRecursiveCFGBuilderTests,
+GotoTargetAfterReturnInsideLoopGetsNode) {
+	// void test() {
+	//     goto lab;
+	//     while (true) {
+	//         return;
+	//       lab:
+	//         a = b;
+	//     }
+	// }
+	//
+	// The goto job starts from the loop, whose body stops at the return, so
+	// `a = b` used to have no node at all.
+	ShPtr<Variable> varA(Variable::create("a", IntType::create(16)));
+	testFunc->addLocalVar(varA);
+	ShPtr<Variable> varB(Variable::create("b", IntType::create(16)));
+	testFunc->addLocalVar(varB);
+	ShPtr<AssignStmt> assignStmt(AssignStmt::create(varA, varB));
+	assignStmt->setLabel("lab");
+	ShPtr<ReturnStmt> returnStmt(ReturnStmt::create());
+	returnStmt->setSuccessor(assignStmt);
+	ShPtr<WhileLoopStmt> whileStmt(WhileLoopStmt::create(
+		ConstBool::create(true), returnStmt));
+	ShPtr<GotoStmt> gotoStmt(GotoStmt::create(assignStmt));
+	gotoStmt->setSuccessor(whileStmt);
+	testFunc->setBody(gotoStmt);
+
+	ShPtr<CFG> cfg(NonRecursiveCFGBuilder::create()->getCFG(testFunc));
+
+	auto gotoNode = cfg->getNodeForStmt(gotoStmt).first;
+	auto targetNode = cfg->getNodeForStmt(assignStmt).first;
+	ASSERT_TRUE(targetNode);
+	ASSERT_TRUE(gotoNode);
+	bool edge = false;
+	for (auto i = gotoNode->succ_begin(); i != gotoNode->succ_end(); ++i) {
+		edge |= (*i)->getDst() == targetNode;
+	}
+	EXPECT_TRUE(edge);
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec
