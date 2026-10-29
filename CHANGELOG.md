@@ -57,6 +57,20 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   SHL/SHR/LOP3 encodings (reconfirmed 2026-09-20; CUDA Binary Utilities
   13.3/13.3.1 still mnemonic-only, no 16-byte words).
 
+### Fixed
+
+- Copy propagation no longer moves a memory read past a store that may
+  change it. A swap `t = *p; *p = *q; *q = t;` used to come out as
+  `*p = *q; *q = *p;`; selection sort -O0, heapsort -O0/-O2 and quicksort
+  -O2 in the corpus all had it.
+
+### Added
+
+- Selection sort is detected at -O0 and -O2: a read-only minimum scan
+  loop and a swap outside it. Under `-O3` the corpus program is folded to
+  constants.
+- `goto`s that leave two loops at once become a flag and two `break`s.
+
 ## [2.0.26] — 2026-09-19
 
 ### Changed
