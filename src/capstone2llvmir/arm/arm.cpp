@@ -531,6 +531,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateInstruction(cs_insn* i, llvm::I
 				|| armIsId(i, ARM_INS_BXNS) || armIsId(i, ARM_INS_BLXNS)
 				|| armIsId(i, ARM_INS_CBZ) || armIsId(i, ARM_INS_CBNZ)
 				|| armIsId(i, ARM_INS_TBB) || armIsId(i, ARM_INS_TBH)
+				|| armIsId(i, ARM_INS_BXAUT)
 				// v8.1-M conditional selects use cc as their own operand.
 				|| i->id == ARM_INS_CSEL || i->id == ARM_INS_CSINC
 				|| i->id == ARM_INS_CSINV || i->id == ARM_INS_CSNEG;
@@ -7653,6 +7654,34 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLongShift(cs_insn* i, cs_arm* a
 
 	storeRegister(ai->operands[0].reg, irb.CreateTrunc(res, i32), irb);
 	storeRegister(ai->operands[1].reg, irb.CreateTrunc(irb.CreateLShr(res, 32), i32), irb);
+}
+
+/**
+ * ARM_INS_BXAUT Ra, Rn, Rm (v8.1-M PACBTI)
+ *
+ * Authenticate the PAC in Ra, then BX Rn. The authentication only faults
+ * on a forged return address, so it is not modelled.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateBxaut(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, ai, irb);
+
+	auto* target = loadOp(ai->operands[1], irb);
+	bool isReturn = ai->operands[1].type == ARM_OP_REG
+			&& ai->operands[1].reg == ARM_REG_LR;
+	if (armCcUncond(ai))
+	{
+		isReturn
+			? generateReturnFunctionCall(irb, target)
+			: generateBranchFunctionCall(irb, target);
+	}
+	else
+	{
+		auto* cond = generateInsnConditionCode(irb, ai);
+		isReturn
+			? generateCondReturnFunctionCall(irb, cond, target)
+			: generateCondBranchFunctionCall(irb, cond, target);
+	}
 }
 
 } // namespace capstone2llvmir

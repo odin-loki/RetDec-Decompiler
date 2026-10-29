@@ -8140,6 +8140,78 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSLL_negative_reg_shifts_right
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_PAC_is_nothing)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	// pac r12, lr, sp
+	emulate_bin("af f3 1d 80");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_PACBTI_is_nothing)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	// pacbti r12, lr, sp
+	emulate_bin("af f3 0d 80");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_AUT_is_nothing)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	// aut r12, lr, sp
+	emulate_bin("af f3 2d 80");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_BTI_is_nothing)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	// bti
+	emulate_bin("af f3 0f 80");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_BXAUT_returns)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_LR, 0x4000},
+		{ARM_REG_R12, 0x1234},
+	});
+
+	// bxaut r12, lr, sp
+	emulate_bin("5e fb 1d cf");
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getReturnFunction(), {0x4000}},
+	});
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_TBB)
 {
 	ONLY_MODE_THUMB;

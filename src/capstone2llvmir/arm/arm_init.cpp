@@ -313,6 +313,7 @@ void Capstone2LlvmIrTranslatorArm_impl::initializePseudoCallInstructionIDs()
 			ARM_INS_B,
 			ARM_INS_BX,
 			ARM_INS_BXNS,
+			ARM_INS_BXAUT,
 			ARM_INS_CBNZ,
 			ARM_INS_CBZ,
 			ARM_INS_TBB,
@@ -472,6 +473,14 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorArm_impl::*)(cs_insn* i, cs
 		{ARM_INS_SBFX, &Capstone2LlvmIrTranslatorArm_impl::translateBitfield},
 		{ARM_INS_SDIV, &Capstone2LlvmIrTranslatorArm_impl::translateDiv},
 		{ARM_INS_SEL, &Capstone2LlvmIrTranslatorArm_impl::translateSel},
+		// PACBTI-M: like ARM64 PACIASP/AUTIASP, signing and authenticating the
+		// return address has no data effect worth showing; PAC's r12 result is
+		// only spilled and reloaded for AUT. PACG and AUTG stay pseudo calls.
+		{ARM_INS_PAC, &Capstone2LlvmIrTranslatorArm_impl::translateNop},
+		{ARM_INS_PACBTI, &Capstone2LlvmIrTranslatorArm_impl::translateNop},
+		{ARM_INS_AUT, &Capstone2LlvmIrTranslatorArm_impl::translateNop},
+		{ARM_INS_BTI, &Capstone2LlvmIrTranslatorArm_impl::translateNop},
+		{ARM_INS_BXAUT, &Capstone2LlvmIrTranslatorArm_impl::translateBxaut},
 		{ARM_INS_CSEL, &Capstone2LlvmIrTranslatorArm_impl::translateCsel},
 		{ARM_INS_CSINC, &Capstone2LlvmIrTranslatorArm_impl::translateCsel},
 		{ARM_INS_CSINV, &Capstone2LlvmIrTranslatorArm_impl::translateCsel},
