@@ -10003,7 +10003,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvx512FpMisc(cs_insn* i, cs_x86
 {
 	// AVX-512 exponent/mantissa/class/range/scale helpers, done on the raw lane bits.
 	// Denormal inputs are treated like normals and MXCSR exceptions are not modelled.
-	enum Kind { GetExp, GetMant, ScaleF, Range, FpClass } kind;
+	enum Kind { GetExp, GetMant, ScaleF, Range, FpClass, Reduce } kind;
 	bool dbl = false, scalar = false;
 	switch (i->id)
 	{
@@ -10023,13 +10023,17 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvx512FpMisc(cs_insn* i, cs_x86
 	case X86_INS_VRANGEPD: kind = Range; dbl = true; break;
 	case X86_INS_VRANGESS: kind = Range; scalar = true; break;
 	case X86_INS_VRANGESD: kind = Range; dbl = true; scalar = true; break;
+	case X86_INS_VREDUCEPS: kind = Reduce; break;
+	case X86_INS_VREDUCEPD: kind = Reduce; dbl = true; break;
+	case X86_INS_VREDUCESS: kind = Reduce; scalar = true; break;
+	case X86_INS_VREDUCESD: kind = Reduce; dbl = true; scalar = true; break;
 	case X86_INS_VFPCLASSPS: kind = FpClass; break;
 	case X86_INS_VFPCLASSPD: kind = FpClass; dbl = true; break;
 	case X86_INS_VFPCLASSSS: kind = FpClass; scalar = true; break;
 	case X86_INS_VFPCLASSSD: kind = FpClass; dbl = true; scalar = true; break;
 	default: translatePseudoAsmGeneric(i, xi, irb); return;
 	}
-	bool hasImm = kind == GetMant || kind == Range || kind == FpClass;
+	bool hasImm = kind == GetMant || kind == Range || kind == FpClass || kind == Reduce;
 	bool binary = kind == ScaleF || kind == Range;
 	unsigned want = 1 + (scalar && kind != FpClass ? 2 : (binary ? 2 : 1)) + (hasImm ? 1 : 0);
 	bool bcast = false;
@@ -10157,6 +10161,37 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvx512FpMisc(cs_insn* i, cs_x86
 			llvm::Value* h2 = irb.CreateSub(t, h1);
 			llvm::Value* v = irb.CreateFMul(irb.CreateFMul(fa, pow2(h1)), pow2(h2));
 			r = irb.CreateBitCast(v, it);
+		}
+		else if (kind == Reduce)
+		{
+			// x - round(x * 2^M) / 2^M with M = imm[7:4]; NaN/Inf inputs are not special-cased.
+			unsigned M = imm >> 4;
+			auto* fx = irb.CreateBitCast(x, ft);
+			auto* scale = llvm::ConstantFP::get(ft, double(1u << M));
+			llvm::Value* y = irb.CreateFMul(fx, scale);
+			auto* big = llvm::ConstantFP::get(ft, dbl ? 4503599627370496.0 : 8388608.0);
+			auto* neg = irb.CreateFCmpOLT(y, llvm::ConstantFP::get(ft, 0.0));
+			auto* ay = irb.CreateSelect(neg, irb.CreateFNeg(y), y);
+			auto* isInt = irb.CreateFCmpOGE(ay, big);
+			auto* safe = irb.CreateSelect(isInt, llvm::ConstantFP::get(ft, 0.0), y);
+			llvm::Value* t = irb.CreateSIToFP(irb.CreateFPToSI(safe, irb.getInt64Ty()), ft);
+			auto* oneF = llvm::ConstantFP::get(ft, 1.0);
+			unsigned rm = (imm & 4) ? 0 : (imm & 3);
+			if (rm == 0)
+			{
+				auto* r0 = irb.CreateFSub(irb.CreateFAdd(ay, big), big);
+				t = irb.CreateSelect(neg, irb.CreateFNeg(r0), r0);
+			}
+			else if (rm == 1)
+			{
+				t = irb.CreateSelect(irb.CreateFCmpOGT(t, safe), irb.CreateFSub(t, oneF), t);
+			}
+			else if (rm == 2)
+			{
+				t = irb.CreateSelect(irb.CreateFCmpOLT(t, safe), irb.CreateFAdd(t, oneF), t);
+			}
+			t = irb.CreateSelect(isInt, y, t);
+			r = irb.CreateBitCast(irb.CreateFSub(fx, irb.CreateFDiv(t, scale)), it);
 		}
 		else if (kind == Range)
 		{

@@ -23893,6 +23893,33 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, VGETEXPSS_xmm)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VREDUCEPD_xmm)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0xbff4000000000000, 0x4006000000000000);
+
+	emulate_bin("62 f3 fd 08 56 c1 11");
+
+	EXPECT_EQ(0x3fd0000000000000ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x3fd0000000000000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VREDUCESS_xmm)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x77, 0x1111111100000000);
+	setXmm(X86_REG_XMM2, 0x0, 0x40200000);
+
+	emulate_bin("62 f3 75 08 57 c2 00");
+
+	EXPECT_EQ(0x111111113f000000ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x77ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
