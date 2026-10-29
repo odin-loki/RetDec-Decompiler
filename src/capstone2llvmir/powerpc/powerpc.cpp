@@ -8767,6 +8767,56 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateFpscr(
 		return;
 	}
 
+	// ISA 3.0 light-weight FPSCR moves. Only the low word of the FPSCR is
+	// modelled, so DRN reads as zero.
+	if (ppcIsId(i, PPC_INS_MFFSL) || ppcIsId(i, PPC_INS_MFFSCE) || ppcIsId(i, PPC_INS_MFFSCRN)
+			|| ppcIsId(i, PPC_INS_MFFSCRNI))
+	{
+		if (pi->op_count < 1)
+		{
+			throwUnexpectedOperands(i);
+			translatePseudoAsmGeneric(i, pi, irb);
+			return;
+		}
+		auto* old = loadRegister(kFpscrReg, irb);
+		uint32_t mask = 0xffffffffu;
+		if (ppcIsId(i, PPC_INS_MFFSL))
+		{
+			mask = 0x0001f0ffu; // FPRF, enables, NI, RN
+		}
+		else if (!ppcIsId(i, PPC_INS_MFFSCE))
+		{
+			mask = 0x000000ffu; // enables, NI, RN
+		}
+		storeOp(pi->operands[0], irb.CreateZExt(irb.CreateAnd(old, llvm::ConstantInt::get(i32, mask)), i64), irb,
+				eOpConv::FPCAST_OR_BITCAST);
+		if (ppcIsId(i, PPC_INS_MFFSCE))
+		{
+			// Clear VE, OE, UE, ZE and XE.
+			storeRegister(kFpscrReg, irb.CreateAnd(old, llvm::ConstantInt::get(i32, ~0xf8u)), irb);
+		}
+		else if (ppcIsId(i, PPC_INS_MFFSCRN) || ppcIsId(i, PPC_INS_MFFSCRNI))
+		{
+			if (pi->op_count < 2)
+			{
+				return;
+			}
+			llvm::Value* rn = nullptr;
+			if (pi->operands[1].type == PPC_OP_IMM)
+			{
+				rn = llvm::ConstantInt::get(i32, uint64_t(pi->operands[1].imm) & 3u);
+			}
+			else
+			{
+				auto* b = loadOp(pi->operands[1], irb);
+				b = b->getType()->isIntegerTy() ? irb.CreateZExtOrTrunc(b, i64) : irb.CreateBitCast(b, i64);
+				rn = irb.CreateAnd(irb.CreateTrunc(b, i32), llvm::ConstantInt::get(i32, 3));
+			}
+			storeRegister(kFpscrReg, irb.CreateOr(irb.CreateAnd(old, llvm::ConstantInt::get(i32, ~3u)), rn), irb);
+		}
+		return;
+	}
+
 	if (ppcIsId(i, PPC_INS_MTFSB0) || ppcIsId(i, PPC_INS_MTFSB1))
 	{
 		if (pi->op_count < 1 || pi->operands[0].type != PPC_OP_IMM)

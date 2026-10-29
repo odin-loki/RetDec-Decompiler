@@ -20011,6 +20011,47 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FCTIWU_saturates_negative)
 	EXPECT_EQ(0ULL, ppcDoubleRegBits(getRegisterValueDouble(PPC_REG_F1))) << dumpFunction(_function);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MFFSL)
+{
+	ALL_MODES;
+
+	setNamedI32("fpscr", 0x1234abfdu);
+	emulate_bin("fc 38 04 8e"); // mffsl f1
+	EXPECT_EQ(0x0000a0fdULL, ppcDoubleRegBits(getRegisterValueDouble(PPC_REG_F1)));
+	EXPECT_EQ(0x1234abfdu, getNamedI32("fpscr"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MFFSCE)
+{
+	ALL_MODES;
+
+	setNamedI32("fpscr", 0x1234abfdu);
+	emulate_bin("fc 21 04 8e"); // mffsce f1
+	EXPECT_EQ(0x1234abfdULL, ppcDoubleRegBits(getRegisterValueDouble(PPC_REG_F1)));
+	EXPECT_EQ(0x1234ab05u, getNamedI32("fpscr"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MFFSCRN)
+{
+	ALL_MODES;
+
+	setNamedI32("fpscr", 0x1234abfdu);
+	setRegisters({{PPC_REG_F2, 1.0000000000000004}}); // bits 0x3ff0000000000002
+	emulate_bin("fc 36 14 8e"); // mffscrn f1, f2
+	EXPECT_EQ(0x000000fdULL, ppcDoubleRegBits(getRegisterValueDouble(PPC_REG_F1)));
+	EXPECT_EQ(0x1234abfeu, getNamedI32("fpscr"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MFFSCRNI)
+{
+	ALL_MODES;
+
+	setNamedI32("fpscr", 0x1234abfdu);
+	emulate_bin("fc 37 14 8e"); // mffscrni f1, 2
+	EXPECT_EQ(0x000000fdULL, ppcDoubleRegBits(getRegisterValueDouble(PPC_REG_F1)));
+	EXPECT_EQ(0x1234abfeu, getNamedI32("fpscr"));
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
