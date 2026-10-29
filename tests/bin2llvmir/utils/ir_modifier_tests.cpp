@@ -609,6 +609,55 @@ TEST_F(IrModifierTests, modifyFunctionVariadic)
 	checkModuleAgainstExpectedIr(exp);
 }
 
+//
+// eraseUnusedInstructionRecursive()
+//
+
+// `lock add [m], 1`: the old value only feeds a dead flag computation.
+// Erasing that computation must not take the atomic store with it.
+TEST_F(IrModifierTests, eraseUnusedInstructionRecursiveKeepsAtomicRmw)
+{
+	parseInput(R"(
+		@g = global i32 0
+		define void @fnc() {
+			%old = atomicrmw add ptr @g, i32 1 seq_cst
+			%res = add i32 %old, 1
+			ret void
+		}
+	)");
+	IrModifier::eraseUnusedInstructionRecursive(getValueByName("res"));
+
+	std::string exp = R"(
+		@g = global i32 0
+		define void @fnc() {
+			%old = atomicrmw add ptr @g, i32 1 seq_cst
+			ret void
+		}
+	)";
+	checkModuleAgainstExpectedIr(exp);
+}
+
+TEST_F(IrModifierTests, eraseUnusedInstructionRecursiveStillErasesPlainOperands)
+{
+	parseInput(R"(
+		@g = global i32 0
+		define void @fnc() {
+			%old = load i32, ptr @g
+			%res = add i32 %old, 1
+			ret void
+		}
+	)");
+	IrModifier::eraseUnusedInstructionRecursive(getValueByName("res"));
+
+	std::string exp = R"(
+		@g = global i32 0
+		define void @fnc() {
+			ret void
+		}
+	)";
+	checkModuleAgainstExpectedIr(exp);
+}
+
 } // namespace tests
 } // namespace bin2llvmir
 } // namespace retdec

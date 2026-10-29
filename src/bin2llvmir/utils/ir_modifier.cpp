@@ -1750,6 +1750,15 @@ void _eraseUnusedInstructionRecursive(
 				}
 			}
 
+			// An atomic read-modify-write is a store even when nothing reads
+			// the old value: `lock add [m], 1` lifts to an atomicrmw whose
+			// result only feeds flag computations that die later.
+			if (llvm::isa<llvm::AtomicRMWInst>(i) || llvm::isa<llvm::AtomicCmpXchgInst>(i)
+					|| llvm::isa<llvm::FenceInst>(i) || i->isAtomic())
+			{
+				continue;
+			}
+
 			bool erase = i->user_empty();
 			if (!erase)
 			{

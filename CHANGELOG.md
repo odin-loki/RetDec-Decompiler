@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- Fixed a miscompile: bin2llvmir's dead-instruction cleanup erased atomic read-modify-writes (e.g. `lock add [m], 1`) once their unused flag computations were removed, so atomic counters vanished from the output.
 - DFS detection now requires the function to read non-stack memory, so recursive Fibonacci (e.g. in the cross-arch audit binaries) is no longer labelled DFS.
 - Algorithm recovery recognises floating-point numeric kernels: dot product, matrix multiply, mean/variance statistics and Newton-Raphson iteration. The SSA now marks floating-point instructions, sees through value bitcasts and carries float constants as immediates (analysis cache version 6).
 - Algorithm recovery: run-length encoding is detected from a loop that compares a byte it read with another, writes at least two bytes out, and adds '0' to a count; a divide, remainder or multiply by ten (decimal digit conversion) rules it out.
