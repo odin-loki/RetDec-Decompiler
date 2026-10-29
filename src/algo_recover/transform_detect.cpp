@@ -176,6 +176,7 @@ static bool addrIsStack(const ssa::SSAFunction& fn, const ssa::IrInstr& i)
 static Flow hasElementMove(const ssa::SSAFunction& fn)
 {
 	bool wired = false;
+	bool moved = false;
 	for (uint32_t b = 0; b < fn.blockCount(); ++b)
 	{
 		const auto* blk = fn.block(b);
@@ -192,9 +193,13 @@ static Flow hasElementMove(const ssa::SSAFunction& fn)
 				const auto* src = fn.value(d->uses[0].valueId);
 				d = src ? src->defInstr : nullptr;
 			}
-			if (d && d->op == ssa::IrInstr::Op::Load && !addrIsStack(fn, *d)) return Flow::Yes;
+			// A copy writes only what it read. A loop that also writes a
+			// value it computed (a run length, a checksum) is an encoder.
+			if (d && d->op == ssa::IrInstr::Op::Load && !addrIsStack(fn, *d)) moved = true;
+			else return Flow::No;
 		}
 	}
+	if (moved) return Flow::Yes;
 	return wired ? Flow::No : Flow::Unknown;
 }
 

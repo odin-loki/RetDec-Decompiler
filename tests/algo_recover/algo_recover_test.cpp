@@ -1497,6 +1497,23 @@ TEST(GccO0MemcpyLoopShape, StoringALocalSpillIsNotACopy)
 	EXPECT_LT(r.confidence, 0.45f);
 }
 
+// rle: the loop also writes a run length it counted, not an element it read.
+TEST(GccO0MemcpyLoopShape, AlsoWritingAComputedValueIsNotACopy)
+{
+	auto fn = makeGccO0MemcpyLoopShape();
+	auto* count = fn->allocValue(ssa::ValueKind::VirtualReg);
+	auto* add = fn->addInstr(2, ssa::IrInstr::Op::Add);
+	add->defValue = count->id;
+	count->defInstr = add;
+	auto* out = fn->allocValue(ssa::ValueKind::VirtualReg);
+	auto* st = fn->addInstr(2, ssa::IrInstr::Op::Store);
+	st->uses.push_back({count->id, 0});
+	st->uses.push_back({out->id, 1});
+	TransformDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_NE(r.kind, AlgorithmKind::Copy);
+}
+
 TEST(GccO0MemcpyLoopShape, IndexedCopyIsNotBinarySearch)
 {
 	auto fn = makeGccO0MemcpyLoopShape();
