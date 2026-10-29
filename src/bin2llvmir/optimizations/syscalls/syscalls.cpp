@@ -69,6 +69,11 @@ bool SyscallFixer::run()
 	{
 		return runArm64();
 	}
+	else if (_config->getConfig().architecture.isPpc()
+			|| _config->getConfig().architecture.isPpc64())
+	{
+		return runPowerPC();
+	}
 	else if (_config->getConfig().architecture.isX86_32())
 	{
 		return runX86();

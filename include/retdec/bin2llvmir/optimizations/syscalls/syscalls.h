@@ -52,6 +52,7 @@ private:
 	bool runArm_linux_32(AsmInstruction ai);
 
 	bool runArm64();
+	bool runPowerPC();
 	bool runArm64_linux_64();
 	bool runArm64_linux_64(AsmInstruction ai);
 

@@ -78,6 +78,7 @@ add_library(bin2llvmir STATIC
 	optimizations/syscalls/arm.cpp
 	optimizations/syscalls/arm64.cpp
 	optimizations/syscalls/mips.cpp
+	optimizations/syscalls/powerpc.cpp
 	optimizations/syscalls/syscalls.cpp
 	optimizations/syscalls/x86.cpp
 	optimizations/unreachable_funcs/unreachable_funcs.cpp
