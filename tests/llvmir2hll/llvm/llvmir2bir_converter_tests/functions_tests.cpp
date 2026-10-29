@@ -219,6 +219,49 @@ PairedIntegerLoadLanesAreLoweredToShiftsOfTheScalar) {
 	EXPECT_EQ(1u, shl32);
 }
 
+TEST_F(LLVMIR2BIRConverterFunctionsTests,
+LoopCarriedScalarSseLaneIsReadFromItsOwnSlot) {
+	// gcc -O2 float_mean_variance: addsd accumulates into lane 0 of an xmm
+	// register that reg2mem keeps in a <2 x double> slot. The next iteration
+	// must read the sum just stored, not the slot's stale base vector.
+	auto m = parseLLVMIR(R"(
+		define double @f(ptr %p, i1 %c) {
+		entry:
+			%slot = alloca <2 x double>
+			store <2 x double> zeroinitializer, ptr %slot
+			br label %loop
+		loop:
+			%v = load <2 x double>, ptr %slot
+			%a = extractelement <2 x double> %v, i64 0
+			%x = load double, ptr %p
+			%s = fadd double %a, %x
+			%n = insertelement <2 x double> %v, double %s, i64 0
+			store <2 x double> %n, ptr %slot
+			br i1 %c, label %loop, label %exit
+		exit:
+			%w = load <2 x double>, ptr %slot
+			%r = extractelement <2 x double> %w, i64 0
+			ret double %r
+		}
+	)");
+	LLVMIR2BIRConverter::lowerIntegerVectorLanes(*m);
+	bool storesSum = false;
+	llvm::Value *sum = nullptr;
+	for (auto &i : llvm::instructions(*m->getFunction("f"))) {
+		ASSERT_FALSE(llvm::isa<llvm::ExtractElementInst>(i)) << i.getName().str();
+		if (i.getOpcode() == llvm::Instruction::FAdd) {
+			sum = &i;
+			// The addend is a scalar lane load, not a lane of a vector.
+			ASSERT_TRUE(llvm::isa<llvm::LoadInst>(i.getOperand(0)));
+		}
+		if (auto *st = llvm::dyn_cast<llvm::StoreInst>(&i)) {
+			ASSERT_FALSE(st->getValueOperand()->getType()->isVectorTy());
+			storesSum |= sum && st->getValueOperand() == sum;
+		}
+	}
+	EXPECT_TRUE(storesSum);
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec

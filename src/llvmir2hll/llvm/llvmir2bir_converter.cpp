@@ -85,12 +85,18 @@ namespace {
 llvm::Value *integerVectorLane(llvm::Value *vec, unsigned idx,
 		llvm::IRBuilder<> &irb, unsigned depth = 0) {
 	auto *vt = llvm::dyn_cast<llvm::FixedVectorType>(vec->getType());
-	if (!vt || !vt->getElementType()->isIntegerTy() || depth > 8
-			|| idx >= vt->getNumElements()) {
+	if (!vt || depth > 8 || idx >= vt->getNumElements()) {
 		return nullptr;
 	}
 	auto *et = vt->getElementType();
-	unsigned eb = et->getIntegerBitWidth();
+	// SSE scalar code keeps doubles/floats in i128 registers and updates
+	// lane 0 through insertelement; lanes of FP vectors are traced the same
+	// way and reinterpreted as the element type.
+	if (!et->isIntegerTy() && !et->isFloatingPointTy()) {
+		return nullptr;
+	}
+	unsigned eb = et->getPrimitiveSizeInBits().getFixedValue();
+	auto *it = llvm::IntegerType::get(vec->getContext(), eb);
 	if (auto *c = llvm::dyn_cast<llvm::Constant>(vec)) {
 		return c->getAggregateElement(idx);
 	}
@@ -103,7 +109,7 @@ llvm::Value *integerVectorLane(llvm::Value *vec, unsigned idx,
 		if (auto *z = llvm::dyn_cast<llvm::ZExtInst>(x)) {
 			unsigned w = z->getOperand(0)->getType()->getIntegerBitWidth();
 			if (lo >= w) {
-				return llvm::ConstantInt::get(et, 0);
+				return llvm::Constant::getNullValue(et);
 			}
 			if (lo + eb <= w) {
 				x = z->getOperand(0);
@@ -112,7 +118,8 @@ llvm::Value *integerVectorLane(llvm::Value *vec, unsigned idx,
 		if (lo) {
 			x = irb.CreateLShr(x, lo);
 		}
-		return irb.CreateTrunc(x, et);
+		x = irb.CreateTrunc(x, it);
+		return et->isIntegerTy() ? x : irb.CreateBitCast(x, et);
 	}
 	if (auto *sv = llvm::dyn_cast<llvm::ShuffleVectorInst>(vec)) {
 		int m = sv->getMaskValue(idx);
@@ -136,6 +143,87 @@ llvm::Value *integerVectorLane(llvm::Value *vec, unsigned idx,
 	return nullptr;
 }
 
+/**
+ * Splits a stack slot of a fixed vector type that is only loaded and stored
+ * whole (reg2mem's copy of an SSE register kept across a loop) into one slot
+ * per lane. A store writes each lane it can trace; a load rebuilds the
+ * vector from the lane slots, so a later lane read sees the scalar stored
+ * by the previous iteration instead of the stale base vector the BIR's
+ * insertelement approximation would keep.
+ */
+void scalarizeVectorSlots(llvm::Function &f) {
+	if (f.isDeclaration()) {
+		return;
+	}
+	std::vector<llvm::AllocaInst *> slots;
+	for (auto &i : f.getEntryBlock()) {
+		auto *a = llvm::dyn_cast<llvm::AllocaInst>(&i);
+		if (!a || a->isArrayAllocation()) {
+			continue;
+		}
+		auto *vt = llvm::dyn_cast<llvm::FixedVectorType>(a->getAllocatedType());
+		if (!vt || vt->getNumElements() > 16
+				|| !(vt->getElementType()->isIntegerTy()
+					|| vt->getElementType()->isFloatingPointTy())) {
+			continue;
+		}
+		bool simple = true;
+		for (auto *u : a->users()) {
+			if (auto *l = llvm::dyn_cast<llvm::LoadInst>(u)) {
+				simple &= l->getType() == vt && !l->isVolatile();
+			} else if (auto *st = llvm::dyn_cast<llvm::StoreInst>(u)) {
+				simple &= st->getPointerOperand() == a
+					&& st->getValueOperand()->getType() == vt
+					&& !st->isVolatile();
+			} else {
+				simple = false;
+			}
+		}
+		if (simple) {
+			slots.push_back(a);
+		}
+	}
+	for (auto *a : slots) {
+		auto *vt = llvm::cast<llvm::FixedVectorType>(a->getAllocatedType());
+		auto *et = vt->getElementType();
+		unsigned n = vt->getNumElements();
+		std::vector<llvm::AllocaInst *> lanes;
+		llvm::IRBuilder<> eb(a);
+		for (unsigned l = 0; l < n; ++l) {
+			lanes.push_back(eb.CreateAlloca(et, nullptr,
+				a->getName() + ".lane" + llvm::Twine(l)));
+		}
+		std::vector<llvm::Instruction *> users;
+		for (auto *u : a->users()) {
+			users.push_back(llvm::cast<llvm::Instruction>(u));
+		}
+		for (auto *u : users) {
+			llvm::IRBuilder<> irb(u);
+			if (auto *st = llvm::dyn_cast<llvm::StoreInst>(u)) {
+				auto *v = st->getValueOperand();
+				for (unsigned l = 0; l < n; ++l) {
+					llvm::Value *x = integerVectorLane(v, l, irb);
+					if (!x || x->getType() != et) {
+						x = irb.CreateExtractElement(v, irb.getInt64(l));
+					}
+					irb.CreateStore(x, lanes[l]);
+				}
+			} else {
+				llvm::Value *v = llvm::PoisonValue::get(vt);
+				for (unsigned l = 0; l < n; ++l) {
+					v = irb.CreateInsertElement(v,
+						irb.CreateLoad(et, lanes[l]), irb.getInt64(l));
+				}
+				u->replaceAllUsesWith(v);
+			}
+		}
+		for (auto *u : users) {
+			u->eraseFromParent();
+		}
+		a->eraseFromParent();
+	}
+}
+
 } // anonymous namespace
 
 /**
@@ -147,6 +235,7 @@ llvm::Value *integerVectorLane(llvm::Value *vec, unsigned idx,
  */
 void LLVMIR2BIRConverter::lowerIntegerVectorLanes(llvm::Module &m) {
 	for (auto &f : m) {
+		scalarizeVectorSlots(f);
 		std::vector<llvm::Instruction *> work;
 		for (auto &bb : f) {
 			for (auto &i : bb) {
@@ -168,15 +257,20 @@ void LLVMIR2BIRConverter::lowerIntegerVectorLanes(llvm::Module &m) {
 				}
 			} else {
 				auto *vt = llvm::dyn_cast<llvm::FixedVectorType>(i->getOperand(0)->getType());
-				if (vt && vt->getElementType()->isIntegerTy()
+				auto *vet = vt ? vt->getElementType() : nullptr;
+				if (vt && (vet->isIntegerTy() || vet->isFloatingPointTy())
 						&& !llvm::isa<llvm::BitCastInst>(i->getOperand(0))) {
-					unsigned eb = vt->getElementType()->getIntegerBitWidth();
+					unsigned eb = vet->getPrimitiveSizeInBits().getFixedValue();
 					auto *it = i->getType();
 					for (unsigned l = 0; l < vt->getNumElements(); ++l) {
 						auto *lane = integerVectorLane(i->getOperand(0), l, irb);
 						if (!lane) {
 							r = nullptr;
 							break;
+						}
+						if (lane->getType()->isFloatingPointTy()) {
+							lane = irb.CreateBitCast(lane,
+								llvm::IntegerType::get(i->getContext(), eb));
 						}
 						llvm::Value *part = irb.CreateZExt(lane, it);
 						if (l) {
