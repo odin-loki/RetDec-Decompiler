@@ -7,7 +7,9 @@
 #include <memory>
 #include <sstream>
 
+#include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instructions.h>
+#include <llvm/IR/IntrinsicInst.h>
 
 #include "retdec/llvmir2hll/llvmir2hll.h"
 #include "retdec/llvmir2hll/target_hll.h"
@@ -211,6 +213,106 @@ void printErrorUnsupportedObject(
 	}
 }
 
+namespace {
+
+/**
+ * C has no counterpart of the integer min/max, abs and saturating-arithmetic
+ * intrinsics that LLVM's InstCombine forms from compares and selects, so they
+ * used to reach the output as calls to undefined llvm_umax_i64() and friends.
+ * Expand them back into compares and selects before conversion.
+ */
+void expandIntegerIntrinsics(llvm::Module& m)
+{
+	std::vector<llvm::IntrinsicInst*> work;
+	for (auto& f : m)
+	{
+		for (auto& bb : f)
+		{
+			for (auto& inst : bb)
+			{
+				auto* ii = llvm::dyn_cast<llvm::IntrinsicInst>(&inst);
+				if (!ii || !ii->getType()->isIntegerTy())
+				{
+					continue;
+				}
+				switch (ii->getIntrinsicID())
+				{
+					case llvm::Intrinsic::umax:
+					case llvm::Intrinsic::umin:
+					case llvm::Intrinsic::smax:
+					case llvm::Intrinsic::smin:
+					case llvm::Intrinsic::abs:
+					case llvm::Intrinsic::uadd_sat:
+					case llvm::Intrinsic::usub_sat:
+					case llvm::Intrinsic::sadd_sat:
+					case llvm::Intrinsic::ssub_sat:
+						work.push_back(ii);
+						break;
+					default:
+						break;
+				}
+			}
+		}
+	}
+
+	for (auto* ii : work)
+	{
+		llvm::IRBuilder<> irb(ii);
+		auto* a = ii->getArgOperand(0);
+		auto* ty = llvm::cast<llvm::IntegerType>(ii->getType());
+		unsigned w = ty->getBitWidth();
+		llvm::Value* r = nullptr;
+		switch (ii->getIntrinsicID())
+		{
+			case llvm::Intrinsic::umax:
+				r = irb.CreateSelect(irb.CreateICmpUGT(a, ii->getArgOperand(1)), a, ii->getArgOperand(1));
+				break;
+			case llvm::Intrinsic::umin:
+				r = irb.CreateSelect(irb.CreateICmpULT(a, ii->getArgOperand(1)), a, ii->getArgOperand(1));
+				break;
+			case llvm::Intrinsic::smax:
+				r = irb.CreateSelect(irb.CreateICmpSGT(a, ii->getArgOperand(1)), a, ii->getArgOperand(1));
+				break;
+			case llvm::Intrinsic::smin:
+				r = irb.CreateSelect(irb.CreateICmpSLT(a, ii->getArgOperand(1)), a, ii->getArgOperand(1));
+				break;
+			case llvm::Intrinsic::abs:
+				r = irb.CreateSelect(irb.CreateICmpSLT(a, llvm::ConstantInt::get(ty, 0)), irb.CreateNeg(a), a);
+				break;
+			case llvm::Intrinsic::uadd_sat:
+			{
+				auto* sum = irb.CreateAdd(a, ii->getArgOperand(1));
+				r = irb.CreateSelect(irb.CreateICmpULT(sum, a), llvm::ConstantInt::get(ty, llvm::APInt::getMaxValue(w)), sum);
+				break;
+			}
+			case llvm::Intrinsic::usub_sat:
+			{
+				auto* b = ii->getArgOperand(1);
+				r = irb.CreateSelect(irb.CreateICmpUGT(a, b), irb.CreateSub(a, b), llvm::ConstantInt::get(ty, 0));
+				break;
+			}
+			default:
+			{
+				// Signed saturation: compute in twice the width and clamp.
+				auto* wide = irb.getIntNTy(2 * w);
+				auto* wa = irb.CreateSExt(a, wide);
+				auto* wb = irb.CreateSExt(ii->getArgOperand(1), wide);
+				auto* v = ii->getIntrinsicID() == llvm::Intrinsic::sadd_sat ? irb.CreateAdd(wa, wb) : irb.CreateSub(wa, wb);
+				auto* hi = llvm::ConstantInt::get(wide, llvm::APInt::getSignedMaxValue(w).sext(2 * w));
+				auto* lo = llvm::ConstantInt::get(wide, llvm::APInt::getSignedMinValue(w).sext(2 * w));
+				v = irb.CreateSelect(irb.CreateICmpSGT(v, hi), hi, v);
+				v = irb.CreateSelect(irb.CreateICmpSLT(v, lo), lo, v);
+				r = irb.CreateTrunc(v, ty);
+				break;
+			}
+		}
+		ii->replaceAllUsesWith(r);
+		ii->eraseFromParent();
+	}
+}
+
+} // anonymous namespace
+
 namespace retdec {
 namespace llvmir2hll {
 
@@ -265,6 +367,7 @@ void LlvmIr2Hll::getAnalysisUsage(llvm::AnalysisUsage &au) const
 
 bool LlvmIr2Hll::runOnModule(llvm::Module &m)
 {
+	expandIntegerIntrinsics(m);
 	logLlvmInputIrShapeDiag(m);
 
 	LlvmIr2HllPhaseTimer diagTimer(llvmIr2HllDiagEnabled());
