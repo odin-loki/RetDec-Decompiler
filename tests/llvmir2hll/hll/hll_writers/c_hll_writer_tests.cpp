@@ -21,6 +21,7 @@
 #include "retdec/llvmir2hll/ir/const_int.h"
 #include "retdec/llvmir2hll/ir/const_string.h"
 #include "retdec/llvmir2hll/ir/empty_stmt.h"
+#include "retdec/llvmir2hll/ir/if_stmt.h"
 #include "retdec/llvmir2hll/ir/float_type.h"
 #include "retdec/llvmir2hll/ir/function.h"
 #include "retdec/llvmir2hll/ir/int_type.h"
@@ -383,6 +384,22 @@ std::vector<std::string> undefinedGotoTargets(const std::string& code)
 }
 
 } // namespace
+
+TEST_F(CHLLWriterTests, ElseClauseHoldingOnlyEmptyStatementsIsLeftOut)
+{
+	auto x = Variable::create("x", IntType::create(32, true));
+	testFunc->addLocalVar(x);
+	auto ifStmt = IfStmt::create(
+		LtOpExpr::create(x, ConstInt::create(0, 32), LtOpExpr::Variant::SCmp),
+		ReturnStmt::create());
+	ifStmt->setElseClause(EmptyStmt::create());
+	testFunc->setBody(ifStmt);
+
+	auto code = emitCodeForCurrentModule();
+
+	EXPECT_TRUE(contains(code, "if (x < 0)")) << code;
+	EXPECT_FALSE(contains(code, "else")) << code;
+}
 
 TEST_F(CHLLWriterTests, LabelledUnreachableStatementIsFollowedByAStatement)
 {

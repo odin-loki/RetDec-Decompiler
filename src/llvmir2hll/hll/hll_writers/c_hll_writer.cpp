@@ -1461,8 +1461,19 @@ void CHLLWriter::visit(ShPtr<IfStmt> stmt)
 		emitBlock(i->second);
 	}
 
-	// Emit the else clause (if any).
-	if (stmt->hasElseClause())
+	// Emit the else clause (if any). An else clause holding nothing but
+	// empty statements would print as `else { }`, so it is left out.
+	auto elseIsEmpty = [](ShPtr<Statement> s) {
+		for (; s; s = s->getSuccessor())
+		{
+			if (!isa<EmptyStmt>(s) || !s->getMetadata().empty())
+			{
+				return false;
+			}
+		}
+		return true;
+	};
+	if (stmt->hasElseClause() && !elseIsEmpty(stmt->getElseClause()))
 	{
 		out->space();
 		out->keyword("else");
