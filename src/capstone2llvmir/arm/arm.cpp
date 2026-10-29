@@ -2150,6 +2150,23 @@ void Capstone2LlvmIrTranslatorArm_impl::translateVfpCvt(cs_insn* i, cs_arm* ai, 
  */
 void Capstone2LlvmIrTranslatorArm_impl::translateVfpMov(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
 {
+	// `vmov.i32 d16, #0`: splat an integer immediate over a NEON register.
+	if (ai->op_count == 2 && ai->operands[0].type == ARM_OP_REG
+			&& ai->operands[1].type == ARM_OP_IMM
+			&& isNeonRegister(ai->operands[0].reg)
+			&& operandLane(ai->operands[0]) < 0)
+	{
+		bool isFp = false, isSigned = false;
+		unsigned lb = vectorDataLaneBits(ai->vector_data, isFp, isSigned);
+		if (!isFp && (lb == 8 || lb == 16 || lb == 32))
+		{
+			unsigned w = neonBitWidth(ai->operands[0].reg);
+			llvm::APInt lane(lb, static_cast<uint64_t>(ai->operands[1].imm));
+			llvm::APInt all = llvm::APInt::getSplat(w, lane);
+			storeNeonBits(ai->operands[0].reg, irb.getInt(all), irb);
+			return;
+		}
+	}
 	if (ai->op_count == 2 && ai->operands[0].type == ARM_OP_REG && ai->operands[1].type == ARM_OP_REG)
 	{
 		int dstLane = operandLane(ai->operands[0]);
