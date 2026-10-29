@@ -64,7 +64,7 @@ void StringType::accept(Visitor *v) {
 }
 
 // Static variables and constants definitions.
-std::map<std::size_t, ShPtr<StringType>> StringType::createdTypes;
+thread_local std::map<std::size_t, ShPtr<StringType>> StringType::createdTypes;
 
 } // namespace llvmir2hll
 } // namespace retdec

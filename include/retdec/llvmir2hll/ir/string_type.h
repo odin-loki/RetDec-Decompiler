@@ -49,7 +49,7 @@ private:
 	std::size_t charSize;
 
 	/// Set of already created string types with characters of the given size.
-	static SizeToStringTypeMap createdTypes;
+	static thread_local SizeToStringTypeMap createdTypes;
 
 private:
 	// Since instances are created by calling the static function create(), the

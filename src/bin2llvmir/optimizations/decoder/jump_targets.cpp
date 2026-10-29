@@ -28,7 +28,7 @@ namespace bin2llvmir {
 //==============================================================================
 //
 
-Config* JumpTarget::config = nullptr;
+thread_local Config* JumpTarget::config = nullptr;
 
 JumpTarget::JumpTarget() {}
 
@@ -148,7 +148,7 @@ std::ostream& operator<<(std::ostream& out, const JumpTarget& jt)
 //==============================================================================
 //
 
-Config* JumpTargets::config = nullptr;
+thread_local Config* JumpTargets::config = nullptr;
 
 const JumpTarget* JumpTargets::push(
 	retdec::common::Address a, JumpTarget::eType t, cs_mode m, retdec::common::Address f, std::optional<std::size_t> sz)

@@ -5,6 +5,7 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <mutex>
 #include <yara.h>
 #include <yara/compiler.h>
 #include <yara/types.h>
@@ -87,6 +88,21 @@ bool scan(
 	);
 }
 
+/// Serialises yr_initialize()/yr_finalize(), whose refcount is not atomic,
+/// across detectors built by concurrent decompilations.
+std::mutex& yaraLibraryLock()
+{
+	static std::mutex m;
+	return m;
+}
+
+/// Detectors constructed and not yet destroyed; guarded by yaraLibraryLock().
+unsigned& liveDetectors()
+{
+	static unsigned n = 0;
+	return n;
+}
+
 } // anonymous namespace
 
 /**
@@ -94,10 +110,21 @@ bool scan(
  */
 YaraDetector::YaraDetector()
 {
-	stateIsValid = ((yr_initialize() == ERROR_SUCCESS)
-			&& (yr_compiler_create(&compiler) == ERROR_SUCCESS));
-	std::uint32_t max_match_data = 65536;
-	yr_set_configuration(YR_CONFIG_MAX_MATCH_DATA, &max_match_data);
+	{
+		// libyara's init refcount and configuration are plain globals.
+		std::lock_guard<std::mutex> lock(yaraLibraryLock());
+		stateIsValid = (yr_initialize() == ERROR_SUCCESS);
+		// The configuration is process-wide and every live detector's scans
+		// read it; yr_initialize() restores the defaults when it is the first,
+		// so set it then -- when no scan can be in flight -- and only then.
+		if (liveDetectors()++ == 0)
+		{
+			std::uint32_t max_match_data = 65536;
+			yr_set_configuration(YR_CONFIG_MAX_MATCH_DATA, &max_match_data);
+		}
+	}
+	stateIsValid = stateIsValid
+			&& (yr_compiler_create(&compiler) == ERROR_SUCCESS);
 }
 
 /**
@@ -129,6 +156,8 @@ YaraDetector::~YaraDetector()
 			yr_rules_destroy(rules);
 	}
 
+	std::lock_guard<std::mutex> lock(yaraLibraryLock());
+	--liveDetectors();
 	yr_finalize();
 }
 

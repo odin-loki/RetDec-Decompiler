@@ -107,8 +107,8 @@ void IntType::accept(Visitor *v) {
 }
 
 // Static variables and constants definitions.
-std::map<unsigned, ShPtr<IntType>> IntType::createdSignedTypes;
-std::map<unsigned, ShPtr<IntType>> IntType::createdUnsignedTypes;
+thread_local std::map<unsigned, ShPtr<IntType>> IntType::createdSignedTypes;
+thread_local std::map<unsigned, ShPtr<IntType>> IntType::createdUnsignedTypes;
 
 } // namespace llvmir2hll
 } // namespace retdec

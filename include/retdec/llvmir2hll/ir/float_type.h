@@ -52,7 +52,7 @@ private:
 	unsigned size;
 
 	/// Set of already created float point types of the given size.
-	static SizeToFloatTypeMap createdTypes;
+	static thread_local SizeToFloatTypeMap createdTypes;
 
 private:
 	// Since instances are created by calling the static function create(), the

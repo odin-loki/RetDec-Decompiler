@@ -53,10 +53,10 @@ private:
 	bool signedInt;
 
 	/// Set of already created signed integer types of the given size.
-	static SizeToIntTypeMap createdSignedTypes;
+	static thread_local SizeToIntTypeMap createdSignedTypes;
 
 	/// Set of already created unsigned integer types of the given size.
-	static SizeToIntTypeMap createdUnsignedTypes;
+	static thread_local SizeToIntTypeMap createdUnsignedTypes;
 
 private:
 	// Since instances are created by calling the static function create(), the

@@ -88,7 +88,7 @@ private:
 	mutable cs_mode _mode = CS_MODE_BIG_ENDIAN;
 
 public:
-	static Config* config;
+	static thread_local Config* config;
 };
 
 /**
@@ -118,7 +118,7 @@ public:
 	std::set<JumpTarget> _data;
 
 public:
-	static Config* config;
+	static thread_local Config* config;
 };
 
 } // namespace bin2llvmir

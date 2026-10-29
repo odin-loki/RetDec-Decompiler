@@ -48,8 +48,30 @@ std::shared_ptr<Logger> Log::getShared(const Log::Type& logType)
 {
 	assert(static_cast<int>(logType) <= static_cast<int>(Log::Type::Undefined));
 
+	if (auto& own = threadWriters[static_cast<int>(logType)]) return own;
+
 	std::lock_guard<std::mutex> lock(writerLock());
 	return writers[static_cast<int>(logType)];
+}
+
+thread_local std::shared_ptr<Logger> Log::threadWriters[static_cast<int>(Log::Type::Undefined) + 1];
+
+static_assert(static_cast<int>(Log::Type::Undefined) + 1 == 4, "ThreadScope::saved size");
+
+Log::ThreadScope::ThreadScope()
+{
+	for (int i = 0; i < 4; ++i) saved[i] = threadWriters[i];
+}
+
+Log::ThreadScope::~ThreadScope()
+{
+	for (int i = 0; i < 4; ++i) threadWriters[i] = std::move(saved[i]);
+}
+
+void Log::ThreadScope::set(const Log::Type& lt, Logger::Ptr&& logger)
+{
+	assert(static_cast<int>(lt) <= static_cast<int>(Log::Type::Undefined));
+	threadWriters[static_cast<int>(lt)] = std::shared_ptr<Logger>(std::move(logger));
 }
 
 Logger Log::defaultLogger(std::cout, true);

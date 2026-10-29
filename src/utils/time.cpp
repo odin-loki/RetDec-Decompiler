@@ -56,8 +56,15 @@ std::string getTime(const std::tm *cTime) {
 * @brief Returns the current timestamp.
 */
 std::tm *getCurrentTimestamp() {
+	// std::localtime hands back one buffer shared by every thread; a buffer per
+	// thread keeps the returned pointer's contract without the data race.
+	thread_local std::tm buf;
 	auto now = std::time(nullptr);
-	return std::localtime(&now);
+#ifdef _WIN32
+	return localtime_s(&buf, &now) == 0 ? &buf : nullptr;
+#else
+	return localtime_r(&now, &buf);
+#endif
 }
 
 /**

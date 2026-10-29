@@ -76,7 +76,7 @@ private:
 private:
 	/// Set of basic blocks used in endsWithRetOrUnreach().
 	/// It is used to prevent endless recursion.
-	static BasicBlockSet endsWithRetOrUnreachBBSet;
+	static thread_local BasicBlockSet endsWithRetOrUnreachBBSet;
 };
 
 } // namespace llvmir2hll

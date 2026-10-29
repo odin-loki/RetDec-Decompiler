@@ -54,6 +54,24 @@ public:
 	static void set(const Type& logType, Logger::Ptr&& logger);
 
 	/**
+	 * Installs writers for the calling thread only, taking precedence over the
+	 * process-wide ones from set() until the scope ends, when the thread's
+	 * previous writers come back. decompile() uses this so concurrent
+	 * decompilations each log to their own files.
+	 */
+	class ThreadScope
+	{
+		public:
+			ThreadScope();
+			~ThreadScope();
+			ThreadScope(const ThreadScope&) = delete;
+			ThreadScope& operator=(const ThreadScope&) = delete;
+			void set(const Type& logType, Logger::Ptr&& logger);
+		private:
+			std::shared_ptr<Logger> saved[4];
+	};
+
+	/**
 	 * Shortcut for Logger(Log::get(Log::Type::Info)).
 	 *
 	 * Creates temporary copy of Info logger. This is particularly
@@ -147,6 +165,10 @@ private:
 	/// A counted reference to one writer, or nullptr when that slot is empty.
 	/// Taken under the table's lock.
 	static std::shared_ptr<Logger> getShared(const Type& logType);
+
+	/// Per-thread overrides installed by ThreadScope; empty slots fall through
+	/// to writers.
+	static thread_local std::shared_ptr<Logger> threadWriters[static_cast<int>(Type::Undefined) + 1];
 
 	/**
 	 * Fallback logger. In case of bad initialization of the writers

@@ -40,7 +40,7 @@ namespace bin2llvmir {
 
 namespace {
 
-bool simpleTypesNextRunIsFullAnalysis = true;
+thread_local bool simpleTypesNextRunIsFullAnalysis = true;
 
 /// Returns true for values that must never enter the EqSet graph.
 /// This covers:

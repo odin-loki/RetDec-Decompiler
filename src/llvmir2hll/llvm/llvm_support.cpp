@@ -31,7 +31,7 @@ namespace retdec {
 namespace llvmir2hll {
 
 // Definition and initialization of static data members.
-LLVMSupport::BasicBlockSet LLVMSupport::endsWithRetOrUnreachBBSet;
+thread_local LLVMSupport::BasicBlockSet LLVMSupport::endsWithRetOrUnreachBBSet;
 
 /**
 * @brief Returns the number of unique predecessors of the given basic block.

@@ -89,7 +89,7 @@ void FloatType::accept(Visitor *v) {
 }
 
 // Static variables and constants definitions.
-std::map<unsigned, ShPtr<FloatType>> FloatType::createdTypes;
+thread_local std::map<unsigned, ShPtr<FloatType>> FloatType::createdTypes;
 
 } // namespace llvmir2hll
 } // namespace retdec

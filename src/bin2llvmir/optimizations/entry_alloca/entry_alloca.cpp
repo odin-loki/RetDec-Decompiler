@@ -91,7 +91,15 @@ EntryAlloca::EntryAlloca() : ModulePass(ID) {}
 // heavy optimization passes) only does alloca/type fixes.  The second
 // invocation (just before retdec-llvmir2hll) additionally lowers vector
 // ops to scalar arithmetic so the HLL writer never sees vector types.
-static int sEntryAllocaInvocation = 0;
+/// How many times this pass has run on @p M, counting this run. Kept on the
+/// module rather than in a static so concurrent and successive decompilations
+/// each count from one.
+static int countInvocation(Module& M)
+{
+	auto* md = M.getOrInsertNamedMetadata("retdec.entry_alloca.runs");
+	md->addOperand(llvm::MDNode::get(M.getContext(), {}));
+	return static_cast<int>(md->getNumOperands());
+}
 
 static bool traceEnabled()
 {
@@ -109,7 +117,7 @@ static void eaTrace(const std::string& msg)
 bool EntryAlloca::runOnModule(Module& M)
 {
 	bool changed = false;
-	int myInvocation = ++sEntryAllocaInvocation;
+	int myInvocation = countInvocation(M);
 	// Only lower vector ops in the second (or later) invocation.
 	// The first invocation runs before heavy optimization passes; expanding
 	// vectors to i128 arithmetic here would make instcombine very slow on
