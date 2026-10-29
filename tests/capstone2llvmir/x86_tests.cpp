@@ -23934,6 +23934,42 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, VDBPSADBW_xmm)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_GF2P8MULB_emits_gfni_intrinsic)
+{
+	SKIP_MODE_16;
+
+	auto* f = translateTextOrBytes("gf2p8mulb xmm0, xmm1", {0x66, 0x0f, 0x38, 0xcf, 0xc1});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.vgf2p8mulb.128")) << ir;
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_GF2P8AFFINEQB_emits_gfni_intrinsic)
+{
+	SKIP_MODE_16;
+
+	auto* f = translateTextOrBytes("gf2p8affineqb xmm0, xmm1, 5", {0x66, 0x0f, 0x3a, 0xce, 0xc1, 0x05});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.vgf2p8affineqb.128")) << ir;
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VGF2P8AFFINEINVQB_ymm_emits_gfni_intrinsic)
+{
+	SKIP_MODE_16;
+
+	auto* f = translateTextOrBytes("vgf2p8affineinvqb ymm0, ymm1, ymm2, 1", {0xc4, 0xe3, 0xf5, 0xcf, 0xc2, 0x01});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.x86.vgf2p8affineinvqb.256")) << ir;
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

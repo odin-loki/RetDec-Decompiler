@@ -10342,5 +10342,87 @@ void Capstone2LlvmIrTranslatorX86_impl::translateVdbpsadbw(cs_insn* i, cs_x86* x
 }
 
 
+/**
+ * GF2P8MULB, GF2P8AFFINEQB, GF2P8AFFINEINVQB and their VEX/EVEX forms as the
+ * LLVM GFNI intrinsics. SSE is dest/src1, src2[, imm]; VEX is dest, src1,
+ * src2[, imm].
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateGfni(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	const bool vex = i->id == X86_INS_VGF2P8MULB || i->id == X86_INS_VGF2P8AFFINEQB
+			|| i->id == X86_INS_VGF2P8AFFINEINVQB;
+	const bool mul = i->id == X86_INS_GF2P8MULB || i->id == X86_INS_VGF2P8MULB;
+	const unsigned nSrc = vex ? 3 : 2;
+	const unsigned expect = nSrc + (mul ? 0 : 1);
+	if (xi->op_count != expect || (!mul && xi->operands[expect - 1].type != X86_OP_IMM))
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned src1Idx = vex ? 1 : 0;
+	unsigned src2Idx = vex ? 2 : 1;
+	unsigned bits = vex ? avxWidth(xi) : 128;
+	if (bits != 128 && bits != 256 && bits != 512)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	Value* a = nullptr;
+	Value* b = nullptr;
+	if (vex)
+	{
+		unsigned b1 = bits;
+		unsigned b2 = bits;
+		a = loadVectorOp(xi->operands[src1Idx], irb, b1);
+		b = loadVectorOp(xi->operands[src2Idx], irb, b2);
+	}
+	else
+	{
+		a = loadOp(xi->operands[src1Idx], irb);
+		b = loadOp(xi->operands[src2Idx], irb);
+	}
+	if (a == nullptr || b == nullptr)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	auto* vty = FixedVectorType::get(irb.getInt8Ty(), bits / 8);
+	auto toVec = [&](Value* v, Type* ty) {
+		v = irb.CreateZExtOrTrunc(irb.CreateBitCast(v, irb.getIntNTy(v->getType()->getPrimitiveSizeInBits())),
+				irb.getIntNTy(bits));
+		return irb.CreateBitCast(v, ty);
+	};
+	unsigned w = bits == 128 ? 0 : (bits == 256 ? 1 : 2);
+	Value* res = nullptr;
+	if (mul)
+	{
+		static const Intrinsic::ID ids[] = {
+				Intrinsic::x86_vgf2p8mulb_128, Intrinsic::x86_vgf2p8mulb_256, Intrinsic::x86_vgf2p8mulb_512};
+		auto* fn = Intrinsic::getOrInsertDeclaration(_module, ids[w]);
+		res = irb.CreateCall(fn, {toVec(a, vty), toVec(b, vty)});
+	}
+	else
+	{
+		bool inv = i->id == X86_INS_GF2P8AFFINEINVQB || i->id == X86_INS_VGF2P8AFFINEINVQB;
+		static const Intrinsic::ID affine[] = {Intrinsic::x86_vgf2p8affineqb_128,
+				Intrinsic::x86_vgf2p8affineqb_256, Intrinsic::x86_vgf2p8affineqb_512};
+		static const Intrinsic::ID affineInv[] = {Intrinsic::x86_vgf2p8affineinvqb_128,
+				Intrinsic::x86_vgf2p8affineinvqb_256, Intrinsic::x86_vgf2p8affineinvqb_512};
+		auto* fn = Intrinsic::getOrInsertDeclaration(_module, inv ? affineInv[w] : affine[w]);
+		// The intrinsics take x and the matrix as byte vectors.
+		Value* imm = ConstantInt::get(irb.getInt8Ty(), static_cast<uint8_t>(xi->operands[expect - 1].imm));
+		res = irb.CreateCall(fn, {toVec(a, vty), toVec(b, vty), imm});
+	}
+	Value* out = irb.CreateBitCast(res, irb.getIntNTy(bits));
+	if (vex)
+	{
+		storeVectorOp(xi->operands[0], out, bits, irb);
+	}
+	else
+	{
+		storeOp(xi->operands[0], out, irb, eOpConv::NOTHING);
+	}
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec
