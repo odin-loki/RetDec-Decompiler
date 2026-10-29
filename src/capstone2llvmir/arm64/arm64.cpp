@@ -1910,6 +1910,216 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::loadNeonVector(
 }
 
 /**
+ * The \p m operand of a NEON by-element form, as a \p lanes-lane vector of
+ * \p laneBits bits. A plain vector operand is read as is; an indexed one
+ * (`v2.s[1]`) repeats a group of \p group consecutive elements starting at
+ * element group*index -- 1 for SQRDMLAH's lane, 2 for FCMLA's complex pair
+ * and BFDOT's bf16 pair -- across every group of the result.
+ */
+llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::loadNeonByElement(
+	cs_arm64_op& op, unsigned laneBits, unsigned lanes, unsigned group, llvm::IRBuilder<>& irb)
+{
+	if (op.vector_index < 0)
+	{
+		return loadNeonVector(op.reg, laneBits, lanes, irb);
+	}
+	unsigned all = 128 / laneBits;
+	llvm::Value* full = loadNeonVector(op.reg, laneBits, all, irb);
+	llvm::SmallVector<int, 16> mask;
+	for (unsigned k = 0; k < lanes; ++k)
+	{
+		mask.push_back(int(group * op.vector_index + k % group));
+	}
+	return irb.CreateShuffleVector(full, full, mask);
+}
+
+static llvm::Type* neonFloatLane(unsigned bits, llvm::IRBuilder<>& irb)
+{
+	switch (bits)
+	{
+	case 16: return irb.getHalfTy();
+	case 32: return irb.getFloatTy();
+	case 64: return irb.getDoubleTy();
+	default: return nullptr;
+	}
+}
+
+/**
+ * ARM64_INS_FCADD, ARM64_INS_FCMLA, ARM64_INS_BFDOT,
+ * ARM64_INS_SQRDMLAH, ARM64_INS_SQRDMLSH -- the NEON (Vn) forms.
+ *
+ * Complex lanes are (even = real, odd = imaginary) pairs.
+ *
+ *   FCADD #90   d.re = n.re - m.im   d.im = n.im + m.re
+ *   FCADD #270  d.re = n.re + m.im   d.im = n.im - m.re
+ *   FCMLA #0    d.re += n.re*m.re    d.im += n.re*m.im
+ *   FCMLA #90   d.re -= n.im*m.im    d.im += n.im*m.re
+ *   FCMLA #180  d.re -= n.re*m.re    d.im -= n.re*m.im
+ *   FCMLA #270  d.re += n.im*m.im    d.im -= n.im*m.re
+ *   BFDOT       d.s[k] += n.h[2k]*m.h[2k] + n.h[2k+1]*m.h[2k+1]  (bf16 -> f32)
+ *   SQRDMLAH    d = sat((d << esize) + 2*n*m + (1 << (esize-1))) >> esize)
+ *   SQRDMLSH    the same with 2*n*m subtracted
+ *
+ * BFDOT's architected rounding (round-to-odd, flush-to-zero intermediates)
+ * is approximated by IEEE single arithmetic. SVE (Zn) forms keep the opaque
+ * fallback.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateNeonComplexDot(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	bool hasRot = i->id == ARM64_INS_FCADD || i->id == ARM64_INS_FCMLA;
+	unsigned nOps = hasRot ? 4 : 3;
+	if (ai->op_count != nOps
+			|| (hasRot && ai->operands[3].type != ARM64_OP_IMM))
+	{
+		translateArm64Opaque(i, ai, irb);
+		return;
+	}
+	for (unsigned j = 0; j < 3; ++j)
+	{
+		if (!isVectorRegister(ai->operands[j]))
+		{
+			translateArm64Opaque(i, ai, irb);
+			return;
+		}
+	}
+	auto& d = ai->operands[0];
+	auto& n = ai->operands[1];
+	auto& m = ai->operands[2];
+	auto [laneBits, lanes] = vasLanes(d.vas);
+	if (laneBits == 0 || d.vector_index >= 0 || n.vector_index >= 0)
+	{
+		translateArm64Opaque(i, ai, irb);
+		return;
+	}
+	unsigned totalBits = laneBits * lanes;
+	auto* w = irb.getIntNTy(totalBits);
+
+	if (i->id == ARM64_INS_SQRDMLAH || i->id == ARM64_INS_SQRDMLSH)
+	{
+		if (laneBits != 16 && laneBits != 32)
+		{
+			translateArm64Opaque(i, ai, irb);
+			return;
+		}
+		auto* wideVec = llvm::FixedVectorType::get(irb.getIntNTy(laneBits * 4), lanes);
+		llvm::Value* dv = irb.CreateSExt(loadNeonVector(d.reg, laneBits, lanes, irb), wideVec);
+		llvm::Value* nv = irb.CreateSExt(loadNeonVector(n.reg, laneBits, lanes, irb), wideVec);
+		llvm::Value* mv = irb.CreateSExt(loadNeonByElement(m, laneBits, lanes, 1, irb), wideVec);
+		auto splat = [&](int64_t c) {
+			return llvm::ConstantInt::get(wideVec, c, true);
+		};
+		llvm::Value* prod = irb.CreateShl(irb.CreateMul(nv, mv), splat(1));
+		llvm::Value* acc = irb.CreateShl(dv, splat(laneBits));
+		llvm::Value* sum = i->id == ARM64_INS_SQRDMLAH ? irb.CreateAdd(acc, prod) : irb.CreateSub(acc, prod);
+		sum = irb.CreateAdd(sum, splat(int64_t(1) << (laneBits - 1)));
+		sum = irb.CreateAShr(sum, splat(laneBits));
+		auto lo = splat(-(int64_t(1) << (laneBits - 1)));
+		auto hi = splat((int64_t(1) << (laneBits - 1)) - 1);
+		sum = irb.CreateSelect(irb.CreateICmpSLT(sum, lo), lo, sum);
+		sum = irb.CreateSelect(irb.CreateICmpSGT(sum, hi), hi, sum);
+		auto* laneVec = llvm::FixedVectorType::get(irb.getIntNTy(laneBits), lanes);
+		storeRegister(d.reg, irb.CreateBitCast(irb.CreateTrunc(sum, laneVec), w), irb,
+				eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		return;
+	}
+
+	if (i->id == ARM64_INS_BFDOT)
+	{
+		if (laneBits != 32)
+		{
+			translateArm64Opaque(i, ai, irb);
+			return;
+		}
+		unsigned hl = lanes * 2;
+		auto* f32v = llvm::FixedVectorType::get(irb.getFloatTy(), lanes);
+		auto* i32v = llvm::FixedVectorType::get(irb.getInt32Ty(), lanes);
+		auto bf = [&](llvm::Value* hv, bool odd) {
+			llvm::SmallVector<int, 8> mask;
+			for (unsigned k = 0; k < lanes; ++k) mask.push_back(int(2 * k + (odd ? 1 : 0)));
+			llvm::Value* h = irb.CreateShuffleVector(hv, hv, mask);
+			llvm::Value* bits = irb.CreateShl(irb.CreateZExt(h, i32v), llvm::ConstantInt::get(i32v, 16));
+			return irb.CreateBitCast(bits, f32v);
+		};
+		llvm::Value* nv = loadNeonVector(n.reg, 16, hl, irb);
+		llvm::Value* mv = loadNeonByElement(m, 16, hl, 2, irb);
+		llvm::Value* dv = irb.CreateBitCast(loadNeonVector(d.reg, 32, lanes, irb), f32v);
+		llvm::Value* s = irb.CreateFAdd(irb.CreateFMul(bf(nv, false), bf(mv, false)),
+				irb.CreateFMul(bf(nv, true), bf(mv, true)));
+		storeRegister(d.reg, irb.CreateBitCast(irb.CreateFAdd(dv, s), w), irb,
+				eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		return;
+	}
+
+	// FCADD / FCMLA
+	llvm::Type* ft = neonFloatLane(laneBits, irb);
+	int64_t rot = ai->operands[3].imm;
+	if (ft == nullptr || lanes < 2 || (i->id == ARM64_INS_FCADD && m.vector_index >= 0))
+	{
+		translateArm64Opaque(i, ai, irb);
+		return;
+	}
+	auto* fv = llvm::FixedVectorType::get(ft, lanes);
+	llvm::Value* nv = irb.CreateBitCast(loadNeonVector(n.reg, laneBits, lanes, irb), fv);
+	llvm::Value* mv = irb.CreateBitCast(loadNeonByElement(m, laneBits, lanes, 2, irb), fv);
+	// Per-lane views: re(x)[k] = x[k & ~1], im(x)[k] = x[k | 1], and
+	// swap(x)[k] = x[k ^ 1].
+	llvm::SmallVector<int, 16> reM, imM, swM;
+	for (unsigned k = 0; k < lanes; ++k)
+	{
+		reM.push_back(int(k & ~1u));
+		imM.push_back(int(k | 1u));
+		swM.push_back(int(k ^ 1u));
+	}
+	// +1 on even (real) lanes, -1 on odd ones, and the reverse.
+	llvm::SmallVector<llvm::Constant*, 16> pe, po;
+	for (unsigned k = 0; k < lanes; ++k)
+	{
+		pe.push_back(llvm::ConstantFP::get(ft, (k & 1) ? -1.0 : 1.0));
+		po.push_back(llvm::ConstantFP::get(ft, (k & 1) ? 1.0 : -1.0));
+	}
+	llvm::Value* evenPlus = llvm::ConstantVector::get(pe);
+	llvm::Value* oddPlus = llvm::ConstantVector::get(po);
+	llvm::Value* res = nullptr;
+	if (i->id == ARM64_INS_FCADD)
+	{
+		if (rot != 90 && rot != 270)
+		{
+			translateArm64Opaque(i, ai, irb);
+			return;
+		}
+		// d[k] = n[k] + sign[k] * m[k^1]: #90 subtracts m.im from the real
+		// lane and adds m.re to the imaginary one; #270 the reverse.
+		llvm::Value* msw = irb.CreateShuffleVector(mv, mv, swM);
+		res = irb.CreateFAdd(nv, irb.CreateFMul(rot == 90 ? oddPlus : evenPlus, msw));
+	}
+	else
+	{
+		if (rot != 0 && rot != 90 && rot != 180 && rot != 270)
+		{
+			translateArm64Opaque(i, ai, irb);
+			return;
+		}
+		llvm::Value* dv = irb.CreateBitCast(loadNeonVector(d.reg, laneBits, lanes, irb), fv);
+		llvm::Value* term = nullptr;
+		if (rot == 0 || rot == 180)
+		{
+			// n.re * m[k]
+			term = irb.CreateFMul(irb.CreateShuffleVector(nv, nv, reM), mv);
+			if (rot == 180) term = irb.CreateFNeg(term);
+		}
+		else
+		{
+			// n.im * m[k^1], real lane negated for #90, imaginary for #270
+			term = irb.CreateFMul(irb.CreateShuffleVector(nv, nv, imM),
+					irb.CreateShuffleVector(mv, mv, swM));
+			term = irb.CreateFMul(rot == 90 ? oddPlus : evenPlus, term);
+		}
+		res = irb.CreateFAdd(dv, term);
+	}
+	storeRegister(d.reg, irb.CreateBitCast(res, w), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
  * ARM64_INS_ADD, ARM64_INS_SUB, ARM64_INS_MUL,
  * ARM64_INS_UMAX, ARM64_INS_UMIN, ARM64_INS_SMAX, ARM64_INS_SMIN,
  * ARM64_INS_ADDP, ARM64_INS_UMAXP, ARM64_INS_UMINP,
