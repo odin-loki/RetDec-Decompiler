@@ -488,12 +488,17 @@ def labels_from_config(cfg: dict, binary_name: str = "", *, stem_fallback: bool 
                     found.add("Vector")
                 elif "list" in label_l:
                     found.add("List")
-                elif "deque" in label_l or "ring" in label_l:
+                # "ring" as a word: a substring test read every
+                # std::string detection as a ring buffer.
+                elif "deque" in label_l or "ring" in _norm(label_l).split():
                     found.update(["RingBuffer", "CircularBuffer"])
             elif kind == "concurrency":
                 if "mutex" in label_l:
-                    found.update(["Mutex", "Pthread", "Concurrency"])
-                if "thread" in label_l:
+                    found.update(["Mutex", "Concurrency"])
+                if "pthread" in label_l:
+                    found.update(["Pthread", "Concurrency"])
+                # A thread label, not the "pthread" in "pthread_mutex".
+                if "thread" in label_l.replace("pthread_mutex", ""):
                     found.add("Thread")
                 if "atomic" in label_l:
                     found.update(["Atomic", "Concurrency"])

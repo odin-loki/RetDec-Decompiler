@@ -103,7 +103,7 @@ def test_mutex_adds_pthread_labels() -> None:
         "functions": [
             {
                 "semanticDetections": [
-                    {"kind": "concurrency", "label": "mutex", "confidence": 0.75},
+                    {"kind": "concurrency", "label": "pthread_mutex", "confidence": 0.75},
                 ]
             }
         ]
@@ -681,3 +681,25 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def _one(kind: str, label: str) -> dict:
+    return {"functions": [{"semanticDetections": [{"kind": kind, "label": label, "confidence": 1.0}]}]}
+
+
+def test_a_plain_mutex_is_not_pthread() -> None:
+    labels = labels_from_config(_one("concurrency", "mutex"), "x-gcc-O0")
+    assert "Mutex" in labels
+    assert "Pthread" not in labels
+
+
+def test_pthread_mutex_is_not_a_thread() -> None:
+    labels = labels_from_config(_one("concurrency", "pthread_mutex"), "x-gcc-O0")
+    assert {"Mutex", "Pthread", "Concurrency"} <= labels
+    assert "Thread" not in labels
+
+
+def test_std_string_is_not_a_ring_buffer() -> None:
+    labels = labels_from_config(_one("container", "std::string"), "x-gcc-O0")
+    assert "RingBuffer" not in labels
+    assert "CircularBuffer" not in labels
