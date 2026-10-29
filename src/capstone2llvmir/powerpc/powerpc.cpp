@@ -1420,11 +1420,15 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateLoadIndexed(cs_insn* i, cs_
 	switch (i->id)
 	{
 		case PPC_INS_LBZX:
+		case PPC_INS_LBZCIX:
+		case PPC_INS_LBEPX:
 		case PPC_INS_LBZUX:
 		case PPC_INS_LBARX:
 			ty = irb.getInt8Ty();
 			break;
 		case PPC_INS_LHZX:
+		case PPC_INS_LHZCIX:
+		case PPC_INS_LHEPX:
 		case PPC_INS_LHZUX:
 		case PPC_INS_LHARX:
 		case PPC_INS_LHAX:
@@ -1432,12 +1436,15 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateLoadIndexed(cs_insn* i, cs_
 			ty = irb.getInt16Ty();
 			break;
 		case PPC_INS_LWZX:
+		case PPC_INS_LWZCIX:
+		case PPC_INS_LWEPX:
 		case PPC_INS_LWZUX:
 		case PPC_INS_LWARX:
 		case PPC_INS_LWAX:
 		case PPC_INS_LWAUX: ty = irb.getInt32Ty(); break;
 		case PPC_INS_LDARX:
 		case PPC_INS_LDX:
+		case PPC_INS_LDCIX:
 		case PPC_INS_LDUX: ty = irb.getInt64Ty(); break;
 		default:
 			return;
@@ -1556,22 +1563,29 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateStoreIndexed(cs_insn* i, cs
 	switch (i->id)
 	{
 		case PPC_INS_STBX:
+		case PPC_INS_STBCIX:
+		case PPC_INS_STBEPX:
 		case PPC_INS_STBUX:
 		case PPC_INS_STBCX:
 			ty = irb.getInt8Ty();
 			break;
 		case PPC_INS_STHX:
+		case PPC_INS_STHCIX:
+		case PPC_INS_STHEPX:
 		case PPC_INS_STHUX:
 		case PPC_INS_STHCX:
 			ty = irb.getInt16Ty();
 			break;
 		case PPC_INS_STWX:
+		case PPC_INS_STWCIX:
+		case PPC_INS_STWEPX:
 		case PPC_INS_STWUX:
 		case PPC_INS_STWCX:
 			ty = irb.getInt32Ty();
 			break;
 		case PPC_INS_STDCX:
 		case PPC_INS_STDX:
+		case PPC_INS_STDCIX:
 		case PPC_INS_STDUX: ty = irb.getInt64Ty(); break;
 		default:
 			return;
