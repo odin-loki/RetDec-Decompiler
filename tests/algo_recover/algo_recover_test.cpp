@@ -2057,6 +2057,28 @@ TEST(IdiomDetectorTest, AByteLoopThatHandsEachByteToACallIsNotStrlen)
 	EXPECT_FALSE(detects(*fn, IdiomKind::Strlen));
 }
 
+// while (*a && *a == *b) compares each byte with the other string's too.
+TEST(IdiomDetectorTest, TwoBytesComparedWithEachOtherIsStrcmpNotStrlen)
+{
+	auto fn = makeByteWalk(/*compareAgainstZero=*/true, /*loadBytes=*/1);
+	ssa::IrValue* mem = fn->allocValue(ssa::ValueKind::MemRef);
+	mem->memWidth = 1;
+	ssa::IrValue* other = fn->allocValue(ssa::ValueKind::VirtualReg);
+	other->width = 8;
+	ssa::IrInstr* ld = fn->addInstr(1, ssa::IrInstr::Op::Load);
+	ld->uses.push_back({mem->id, 0});
+	ld->defValue = other->id;
+	other->defInstr = ld;
+	ssa::ValueId first = ssa::kInvalidValue;
+	for (auto* i: fn->block(1)->instrs)
+		if (i->op == ssa::IrInstr::Op::Load && i != ld) first = i->defValue;
+	ssa::IrInstr* cmp = fn->addInstr(1, ssa::IrInstr::Op::Compare);
+	cmp->uses.push_back({first, 0});
+	cmp->uses.push_back({other->id, 1});
+	EXPECT_TRUE(detects(*fn, IdiomKind::Strcmp));
+	EXPECT_FALSE(detects(*fn, IdiomKind::Strlen));
+}
+
 TEST(IdiomDetectorTest, AByteTestedAgainstZeroWithoutALoopIsNotStrlen)
 {
 	auto fn = makeByteWalk(/*compareAgainstZero=*/true, /*loadBytes=*/1);

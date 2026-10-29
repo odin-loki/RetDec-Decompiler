@@ -122,6 +122,42 @@ bool hasByteTestedAgainstZero(const ssa::SSAFunction& fn)
 	return false;
 }
 
+// The byte Load a value comes from, through at most two width casts.
+const ssa::IrInstr* byteLoadOf(const ssa::SSAFunction& fn, ssa::ValueId id)
+{
+	const ssa::IrValue* v = fn.value(id);
+	const ssa::IrInstr* d = v ? v->defInstr : nullptr;
+	for (int hops = 0; d && d->op == ssa::IrInstr::Op::Assign && !d->uses.empty() && hops < 2; ++hops)
+	{
+		v = fn.value(d->uses[0].valueId);
+		d = v ? v->defInstr : nullptr;
+	}
+	if (!d || d->op != ssa::IrInstr::Op::Load) return nullptr;
+	bool byte = false;
+	for (const auto& u: d->uses)
+		if (const auto* m = fn.value(u.valueId); m && m->kind == ssa::ValueKind::MemRef && m->memWidth == 1) byte = true;
+	if (const auto* r = fn.value(d->defValue); r && r->width == 8) byte = true;
+	return byte ? d : nullptr;
+}
+
+// Two different bytes compared with each other: `*a == *b`.  A strlen tests
+// one byte against zero; a strcmp also tests it against the other string's.
+bool hasBytePairCompare(const ssa::SSAFunction& fn)
+{
+	for (const auto& blk: fn.blocks())
+	{
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i || i->op != ssa::IrInstr::Op::Compare || i->uses.size() < 2) continue;
+			const auto* a = byteLoadOf(fn, i->uses[0].valueId);
+			const auto* b = byteLoadOf(fn, i->uses[1].valueId);
+			if (a && b && a != b) return true;
+		}
+	}
+	return false;
+}
+
 // Blocks reachable from `from` without entering `stop`.
 std::vector<uint8_t> reachWithout(const ssa::SSAFunction& fn, ssa::BlockId from, ssa::BlockId stop)
 {
@@ -304,7 +340,10 @@ std::vector<IdiomResult> IdiomDetector::detect(const ssa::SSAFunction& fn) const
 
 	if (hasNullTerminatedLoop(fn))
 	{
-		out.push_back(makeResult(IdiomKind::Strlen, 0.82f, "null_term_loop"));
+		if (hasBytePairCompare(fn))
+			out.push_back(makeResult(IdiomKind::Strcmp, 0.82f, "null_term_byte_pair_compare"));
+		else
+			out.push_back(makeResult(IdiomKind::Strlen, 0.82f, "null_term_loop"));
 	}
 
 	if (hasDfsStructure(fn))
