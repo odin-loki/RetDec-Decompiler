@@ -2229,6 +2229,49 @@ TEST(IdiomDetectorTest, AddAndRotateWithAMultiplyIsNotFibonacci)
 	EXPECT_FALSE(detects(*makeFibonacciLoop(ssa::IrInstr::Op::Mul), IdiomKind::Fibonacci));
 }
 
+/// A halving loop that loads one array element and compares it `compares`
+/// times; `storeBack` also writes to memory in the loop.
+std::unique_ptr<ssa::SSAFunction> makeHalvingSearch(int compares, bool storeBack = false)
+{
+	auto fn = makeLoop();
+	opImm(*fn, ssa::IrInstr::Op::Shr, 1);
+	auto* l = fn->addInstr(1, ssa::IrInstr::Op::Load);
+	l->uses.push_back({reg(*fn, 64)->id, 0});
+	auto* e = reg(*fn);
+	l->defValue = e->id;
+	e->defInstr = l;
+	for (int c = 0; c < compares; ++c)
+	{
+		auto* cmp = fn->addInstr(1, ssa::IrInstr::Op::Compare);
+		cmp->uses.push_back({e->id, 0});
+		cmp->uses.push_back({reg(*fn)->id, 1});
+	}
+	if (storeBack) storeToMemory(*fn, e->id);
+	pad(*fn);
+	return fn;
+}
+
+TEST(IdiomDetectorTest, HalvingLoopWithOneElementCompareIsLowerBound)
+{
+	auto fn = makeHalvingSearch(1);
+	EXPECT_TRUE(detects(*fn, IdiomKind::LowerBound));
+	EXPECT_FALSE(detects(*fn, IdiomKind::BinarySearch));
+}
+
+TEST(IdiomDetectorTest, HalvingLoopWithEqualAndLessComparesIsBinarySearch)
+{
+	auto fn = makeHalvingSearch(2);
+	EXPECT_TRUE(detects(*fn, IdiomKind::BinarySearch));
+	EXPECT_FALSE(detects(*fn, IdiomKind::LowerBound));
+}
+
+TEST(IdiomDetectorTest, HalvingLoopThatWritesMemoryIsNotASearch)
+{
+	auto fn = makeHalvingSearch(1, true);
+	EXPECT_FALSE(detects(*fn, IdiomKind::LowerBound));
+	EXPECT_FALSE(detects(*fn, IdiomKind::BinarySearch));
+}
+
 TEST(IdiomDetectorTest, LowBitAddedThenShiftedOutIsPopcount)
 {
 	auto fn = makeLoop();

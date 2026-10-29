@@ -140,6 +140,7 @@ ALLOWED_ALGO_MIN_CONF: dict[str, float] = {
     "compression": 0.70,
     "memory": 0.70,
     "fibonacci": 0.70,
+    "binarysearch": 0.70,
     "lcs": 0.70,
     "knapsack": 0.70,
     "rle": 0.70,
@@ -302,6 +303,13 @@ def _apply_stem_sort_allowlist(
 
 
 def _apply_label_implications(labels: set[str]) -> None:
+    # A lower bound is a binary search. The corpus labels every forward copy
+    # loop as both memcpy and memmove (the two agree on the non-overlapping
+    # buffers these loops copy).
+    if "LowerBound" in labels:
+        labels.add("BinarySearch")
+    if "Memcpy" in labels:
+        labels.update(["Memmove", "Copy"])
     if "BinarySearch" in labels or "LinearSearch" in labels:
         labels.add("Search")
     if "Atomic" in labels or "Mutex" in labels or "Pthread" in labels:

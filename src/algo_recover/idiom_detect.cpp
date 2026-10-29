@@ -398,6 +398,55 @@ const ssa::IrInstr* storedValueDef(const ssa::SSAFunction& fn, const ssa::IrInst
 	return d;
 }
 
+/// Whether `id` is the result of a load from memory other than the stack,
+/// looking through a few register copies.
+bool fromMemoryLoad(const ssa::SSAFunction& fn, ssa::ValueId id)
+{
+	const auto* v = fn.value(id);
+	const ssa::IrInstr* d = v ? v->defInstr : nullptr;
+	for (int hops = 0; d && d->op == ssa::IrInstr::Op::Assign && !d->uses.empty() && hops < 3; ++hops)
+	{
+		v = fn.value(d->uses[0].valueId);
+		d = v ? v->defInstr : nullptr;
+	}
+	return d && d->op == ssa::IrInstr::Op::Load && !addrOnStack(fn, *d);
+}
+
+/// `while (lo < hi) { mid = lo + (hi - lo) / 2; if (a[mid] < x) lo = mid + 1; else hi = mid; }`:
+/// a halving loop that reads memory, writes none, and compares the element it
+/// reads exactly once. A plain binary search also tests the element for
+/// equality, which is a second compare. Returns the number of element
+/// compares in such a loop, 0 if the loop is not a halving search.
+int halvingSearchCompares(const ssa::SSAFunction& fn)
+{
+	bool halving = false, memStore = false, call = false;
+	int elementCompares = 0;
+	forEachLoopInstr(fn, [&](const ssa::IrInstr& i) {
+		switch (i.op)
+		{
+		case ssa::IrInstr::Op::Shr: case ssa::IrInstr::Op::Sar:
+			if (immOperand(fn, i, 1)) halving = true;
+			break;
+		case ssa::IrInstr::Op::Div:
+			if (immOperand(fn, i, 2)) halving = true;
+			break;
+		case ssa::IrInstr::Op::Store:
+			if (!addrOnStack(fn, i)) memStore = true;
+			break;
+		case ssa::IrInstr::Op::Call:
+			call = true;
+			break;
+		case ssa::IrInstr::Op::Compare:
+			for (const auto& u: i.uses)
+				if (fromMemoryLoad(fn, u.valueId)) { ++elementCompares; break; }
+			break;
+		default:
+			break;
+		}
+	});
+	return halving && !memStore && !call ? elementCompares : 0;
+}
+
 /// `t = a + b; a = b; b = t;`: a loop over scalars only whose body adds two
 /// variables and shifts one of them into the other unchanged. Nothing else
 /// is computed: no multiply, divide, shift or bitwise operation, no memory
@@ -647,6 +696,10 @@ std::vector<IdiomResult> IdiomDetector::detect(const ssa::SSAFunction& fn) const
 		out.push_back(makeResult(IdiomKind::Varint, 0.92f, "shift7_mask7f"));
 	}
 
+	if (const int cmps = halvingSearchCompares(fn); cmps == 1)
+		out.push_back(makeResult(IdiomKind::LowerBound, 0.75f, "halving_loop_one_element_compare"));
+	else if (cmps == 2)
+		out.push_back(makeResult(IdiomKind::BinarySearch, 0.75f, "halving_loop_equal_and_less_compares"));
 	if (hasFibonacciLoop(fn)) out.push_back(makeResult(IdiomKind::Fibonacci, 0.80f, "add_and_rotate_scalars"));
 	// A6: do not assign Knapsack or Lcs.
 

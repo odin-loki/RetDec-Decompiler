@@ -717,3 +717,12 @@ def test_sort_label_with_std_equivalent_gets_its_aliases() -> None:
     }
     labels = labels_from_config(cfg)
     assert {"Mergesort", "Sort", "DivideAndConquer"} <= set(labels)
+
+
+def test_lower_bound_and_memcpy_carry_their_implied_labels():
+    cfg = {"functions": [{"semanticDetections": [
+        {"kind": "algorithm", "label": "LowerBound", "confidence": 0.75, "detail": ""},
+        {"kind": "algorithm", "label": "std::copy", "confidence": 0.9, "detail": ""},
+    ]}]}
+    got = set(labels_from_config(cfg, "x"))
+    assert {"LowerBound", "BinarySearch", "Search", "Memcpy", "Memmove", "Copy"} <= got
