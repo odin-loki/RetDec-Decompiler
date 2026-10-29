@@ -565,6 +565,27 @@ bool Decoder::getJumpTargetsFromInstruction(
 		auto t = getJumpTarget(addr, pCall, pCall->getArgOperand(0));
 		// TOOD: sometimes we want to enable calls (and other branches) to zero.
 
+		// ppc64 ELFv2: a local call enters 8 bytes past the global entry,
+		// skipping its `addis r2,r12,hi; addi r2,r2,lo` TOC setup.  Treat it
+		// as a call of the function itself; otherwise a recursive call lands
+		// inside the caller and is dropped.
+		if (t && t >= 8 && _config->getConfig().architecture.isPpc()
+				&& _config->getConfig().architecture.getBitSize() == 64)
+		{
+			std::vector<std::uint8_t> b;
+			if (_image->getImage()->getXBytes(t - 8, 8, b) && b.size() == 8)
+			{
+				bool le = _image->getImage()->getEndianness() == utils::Endianness::LITTLE;
+				auto hi16 = [&](unsigned o) {
+					return le ? unsigned(b[o + 3]) << 8 | b[o + 2] : unsigned(b[o]) << 8 | b[o + 1];
+				};
+				if (hi16(0) == 0x3c4c && hi16(4) == 0x3842)
+				{
+					t = t - 8;
+				}
+			}
+		}
+
 		if (t || (t == 0 && AsmInstruction(_module, 0)))
 		{
 			// TODO: found in x86 macho:
