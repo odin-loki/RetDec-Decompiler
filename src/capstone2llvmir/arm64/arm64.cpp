@@ -9753,12 +9753,12 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLse128(cs_insn* i, cs_arm64* 
 	llvm::Value* nLo = lo;
 	llvm::Value* nHi = hi;
 	std::string name = i->mnemonic;
-	if (name.rfind("ldclrp", 0) == 0)
+	if (name.rfind("ldclrp", 0) == 0 || name.rfind("rcwclrp", 0) == 0 || name.rfind("rcwsclrp", 0) == 0)
 	{
 		nLo = irb.CreateAnd(oldLo, irb.CreateNot(lo));
 		nHi = irb.CreateAnd(oldHi, irb.CreateNot(hi));
 	}
-	else if (name.rfind("ldsetp", 0) == 0)
+	else if (name.rfind("ldsetp", 0) == 0 || name.rfind("rcwsetp", 0) == 0 || name.rfind("rcwssetp", 0) == 0)
 	{
 		nLo = irb.CreateOr(oldLo, lo);
 		nHi = irb.CreateOr(oldHi, hi);
@@ -9817,6 +9817,38 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateArm64Twin(cs_insn* i, cs_arm6
 		case ARM64_INS_RCWSCASA: sid = ARM64_INS_CASA; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateCas; break;
 		case ARM64_INS_RCWSCASL: sid = ARM64_INS_CASL; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateCas; break;
 		case ARM64_INS_RCWSCASAL: sid = ARM64_INS_CASAL; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateCas; break;
+		case ARM64_INS_RCWSETP: sid = ARM64_INS_LDSETP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWSETPA: sid = ARM64_INS_LDSETP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWSETPL: sid = ARM64_INS_LDSETP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWSETPAL: sid = ARM64_INS_LDSETP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWSSETP: sid = ARM64_INS_LDSETP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWSSETPA: sid = ARM64_INS_LDSETP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWSSETPL: sid = ARM64_INS_LDSETP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWSSETPAL: sid = ARM64_INS_LDSETP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWCLRP: sid = ARM64_INS_LDCLRP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWCLRPA: sid = ARM64_INS_LDCLRP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWCLRPL: sid = ARM64_INS_LDCLRP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWCLRPAL: sid = ARM64_INS_LDCLRP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWSCLRP: sid = ARM64_INS_LDCLRP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWSCLRPA: sid = ARM64_INS_LDCLRP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWSCLRPL: sid = ARM64_INS_LDCLRP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWSCLRPAL: sid = ARM64_INS_LDCLRP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWSWPP: sid = ARM64_INS_SWPP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWSWPPA: sid = ARM64_INS_SWPP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWSWPPL: sid = ARM64_INS_SWPP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWSWPPAL: sid = ARM64_INS_SWPP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWSSWPP: sid = ARM64_INS_SWPP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWSSWPPA: sid = ARM64_INS_SWPP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWSSWPPL: sid = ARM64_INS_SWPP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWSSWPPAL: sid = ARM64_INS_SWPP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse128; break;
+		case ARM64_INS_RCWCASP: sid = ARM64_INS_CASP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateCasp; break;
+		case ARM64_INS_RCWCASPA: sid = ARM64_INS_CASP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateCasp; break;
+		case ARM64_INS_RCWCASPL: sid = ARM64_INS_CASP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateCasp; break;
+		case ARM64_INS_RCWCASPAL: sid = ARM64_INS_CASP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateCasp; break;
+		case ARM64_INS_RCWSCASP: sid = ARM64_INS_CASP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateCasp; break;
+		case ARM64_INS_RCWSCASPA: sid = ARM64_INS_CASP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateCasp; break;
+		case ARM64_INS_RCWSCASPL: sid = ARM64_INS_CASP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateCasp; break;
+		case ARM64_INS_RCWSCASPAL: sid = ARM64_INS_CASP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateCasp; break;
 		case ARM64_INS_LDAP1: sid = ARM64_INS_LD1; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateNeonLoadStore; break;
 		case ARM64_INS_STL1: sid = ARM64_INS_ST1; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateNeonLoadStore; break;
 		default:

@@ -14662,6 +14662,54 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_STILP)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_RCWSETP)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0x00ff},
+		{ARM64_REG_X1, 0xf000},
+		{ARM64_REG_X2, 0x3000},
+	});
+	setMemory({
+		{0x3000, 0x0f0f_qw},
+		{0x3008, 0x1111_qw},
+	});
+
+	emulate_bin("40 b0 21 19"); // rcwsetp x0, x1, [x2]
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0x0f0f},
+		{ARM64_REG_X1, 0x1111},
+	});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x3000, 0x0fff_qw},
+		{0x3008, 0xf111_qw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_RCWCASP_swaps_when_the_pair_matches)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0x1111111111111111ULL},
+		{ARM64_REG_X1, 0x2222222222222222ULL},
+		{ARM64_REG_X4, 0xaaaaaaaaaaaaaaaaULL},
+		{ARM64_REG_X5, 0xbbbbbbbbbbbbbbbbULL},
+		{ARM64_REG_X2, 0x1000},
+	});
+	setMemoryValue128(0x1000, 0x2222222222222222ULL, 0x1111111111111111ULL);
+
+	emulate_bin("44 0c 20 19"); // rcwcasp x0, x1, x4, x5, [x2]
+
+	llvm::APInt bits = _emulator->getMemoryValue(0x1000).IntVal;
+	if (bits.getBitWidth() < 128)
+	{
+		bits = bits.zext(128);
+	}
+	EXPECT_EQ(0xaaaaaaaaaaaaaaaaULL, bits.trunc(64).getZExtValue());
+	EXPECT_EQ(0xbbbbbbbbbbbbbbbbULL, bits.lshr(64).trunc(64).getZExtValue());
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
