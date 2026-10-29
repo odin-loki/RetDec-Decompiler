@@ -8592,6 +8592,41 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMveMisc(cs_insn* i, cs_arm* ai,
 		return;
 	}
 
+	if (op == "viwdup" || op == "vdwdup")
+	{
+		if (ai->op_count != 4 || ai->operands[1].type != ARM_OP_REG || ai->operands[2].type != ARM_OP_REG
+				|| ai->operands[3].type != ARM_OP_IMM || lb > 32)
+		{
+			fallback();
+			return;
+		}
+		bool up = op == "viwdup";
+		auto* step = llvm::ConstantInt::get(ty, static_cast<uint64_t>(ai->operands[3].imm));
+		auto rn = ai->operands[1].reg;
+		llvm::Value* off = loadRegister(rn, irb);
+		auto* wrap = loadRegister(ai->operands[2].reg, irb);
+		auto* zero = llvm::ConstantInt::get(ty, 0);
+		auto* laneTy = irb.getIntNTy(lb);
+		llvm::Value* v = llvm::UndefValue::get(llvm::FixedVectorType::get(laneTy, n));
+		for (unsigned k = 0; k < n; ++k)
+		{
+			v = irb.CreateInsertElement(v, irb.CreateTrunc(off, laneTy), uint64_t(k));
+			if (up)
+			{
+				off = irb.CreateAdd(off, step);
+				off = irb.CreateSelect(irb.CreateICmpEQ(off, wrap), zero, off);
+			}
+			else
+			{
+				off = irb.CreateSelect(irb.CreateICmpEQ(off, zero), wrap, off);
+				off = irb.CreateSub(off, step);
+			}
+		}
+		storeNeonVector(ai->operands[0].reg, v, irb);
+		storeRegister(rn, off, irb);
+		return;
+	}
+
 	if (op == "vcadd" || op == "vhcadd" || op == "vcmla")
 	{
 		if (ai->op_count != 4 || ai->operands[3].type != ARM_OP_IMM || lb == 8 || lb == 64)

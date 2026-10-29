@@ -931,6 +931,8 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorArm_impl::*)(cs_insn* i, cs
 		{ARM_INS_VCTP, &Capstone2LlvmIrTranslatorArm_impl::translateMvePred},
 		{ARM_INS_VFMAL, &Capstone2LlvmIrTranslatorArm_impl::translateNeonFml},
 		{ARM_INS_VFMSL, &Capstone2LlvmIrTranslatorArm_impl::translateNeonFml},
+		{ARM_INS_VIWDUP, &Capstone2LlvmIrTranslatorArm_impl::translateMveMisc},
+		{ARM_INS_VDWDUP, &Capstone2LlvmIrTranslatorArm_impl::translateMveMisc},
 		{ARM_INS_VADDV, &Capstone2LlvmIrTranslatorArm_impl::translateMveReduce},
 		{ARM_INS_VADDVA, &Capstone2LlvmIrTranslatorArm_impl::translateMveReduce},
 		{ARM_INS_VADDLV, &Capstone2LlvmIrTranslatorArm_impl::translateMveReduce},
