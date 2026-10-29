@@ -24011,6 +24011,34 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_RDPKRU_clears_edx)
 	EXPECT_JUST_VALUES_CALLED({{_module.getFunction("__asm_rdpkru"), {}}});
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VPCOMPRESSB_is_lifted)
+{
+	SKIP_MODE_16;
+	auto* f = translateTextOrBytes("vpcompressb zmm1 {k1}, zmm2", {0x62, 0xf2, 0x7d, 0x49, 0x63, 0xd1});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("i8")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VPEXPANDW_is_lifted)
+{
+	SKIP_MODE_16;
+	auto* f = translateTextOrBytes("vpexpandw zmm1 {k1}, zmm2", {0x62, 0xf2, 0xfd, 0x49, 0x62, 0xca});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("i16")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VPCOMPRESSD_masked_is_lifted)
+{
+	SKIP_MODE_16;
+	auto* f = translateTextOrBytes("vpcompressd zmm1 {k1}, zmm2", {0x62, 0xf2, 0x7d, 0x49, 0x8b, 0xd1});
+	ASSERT_NE(nullptr, f);
+	EXPECT_FALSE(callsPseudoAsm(f)) << dumpFunction(f);
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

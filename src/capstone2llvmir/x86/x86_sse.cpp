@@ -8698,6 +8698,10 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvxCompressExpand(cs_insn* i, c
 	case X86_INS_VPEXPANDQ: elemBits = 64; break;
 	case X86_INS_VEXPANDPS:
 	case X86_INS_VPEXPANDD: elemBits = 32; break;
+	case X86_INS_VPCOMPRESSW: compress = true; elemBits = 16; break;
+	case X86_INS_VPCOMPRESSB: compress = true; elemBits = 8; break;
+	case X86_INS_VPEXPANDW: elemBits = 16; break;
+	case X86_INS_VPEXPANDB: elemBits = 8; break;
 	default: translatePseudoAsmGeneric(i, xi, irb); return;
 	}
 	if (xi->op_count < 2)
@@ -8721,7 +8725,8 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvxCompressExpand(cs_insn* i, c
 			kOp = static_cast<int>(k);
 		}
 	}
-	unsigned srcI = (xi->operands[0].type == X86_OP_MEM) ? 1u : 1u;
+	unsigned srcI = xi->op_count - 1;
+	if (kOp == static_cast<int>(srcI)) srcI = 1;
 	unsigned bits = destBits;
 	Value* src = loadVectorOp(xi->operands[srcI], irb, bits);
 	if (src == nullptr)
