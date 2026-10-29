@@ -9,6 +9,7 @@
 // and conform to the coding standards of the RetDec project.
 // !!!
 
+#include <cstring>
 #include "retdec/utils/crc32.h"
 
 namespace retdec {
@@ -336,6 +337,19 @@ namespace
 #endif
 }
 
+namespace {
+
+/// Callers hand in arbitrary byte buffers, so the word loads cannot assume
+/// 4-byte alignment; memcpy is one load on targets that allow it.
+inline uint32_t loadWord(const uint32_t* p)
+{
+	uint32_t v;
+	std::memcpy(&v, p, sizeof(v));
+	return v;
+}
+
+} // anonymous namespace
+
 /// add arbitrary number of bytes
 void CRC32::add(const void* data, size_t numBytes)
 {
@@ -346,8 +360,8 @@ void CRC32::add(const void* data, size_t numBytes)
 	while (numBytes >= 8)
 	{
 #if defined(__BYTE_ORDER) && (__BYTE_ORDER != 0) && (__BYTE_ORDER == __BIG_ENDIAN)
-	uint32_t one = *current++ ^ swap(crc);
-	uint32_t two = *current++;
+	uint32_t one = loadWord(current++) ^ swap(crc);
+	uint32_t two = loadWord(current++);
 	crc  = crc32Lookup[7][ one>>24        ] ^
 			crc32Lookup[6][(one>>16) & 0xFF] ^
 			crc32Lookup[5][(one>> 8) & 0xFF] ^
@@ -357,8 +371,8 @@ void CRC32::add(const void* data, size_t numBytes)
 			crc32Lookup[1][(two>> 8) & 0xFF] ^
 			crc32Lookup[0][ two      & 0xFF];
 #else
-	uint32_t one = *current++ ^ crc;
-	uint32_t two = *current++;
+	uint32_t one = loadWord(current++) ^ crc;
+	uint32_t two = loadWord(current++);
 	crc  = crc32Lookup[7][ one      & 0xFF] ^
 			crc32Lookup[6][(one>> 8) & 0xFF] ^
 			crc32Lookup[5][(one>>16) & 0xFF] ^
