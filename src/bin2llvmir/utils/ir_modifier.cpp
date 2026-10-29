@@ -874,6 +874,20 @@ GlobalVariable* IrModifier::getGlobalVariable(
 		c = detectGlobalVariableInitializerCycle(_module, gv, c, objf, addr);
 		if (c == nullptr)
 		{
+			// A load narrower than the default word from the tail of .bss
+			// (e.g. a lone 4-byte int) has no word-sized constant: type the
+			// global by the access and zero-initialise it, so this load and
+			// later stores share one variable instead of the load staying
+			// a raw address.
+			auto* seg = objf->getImage()->getSegmentFromAddress(addr);
+			if (seg && seg->getSecSeg() && seg->getSecSeg()->isBss()
+					&& t->isIntegerTy())
+			{
+				gv->setInitializer(Constant::getNullValue(t));
+				_config->insertGlobalVariable(
+						gv, addr, isFromDebug, realName, cryptoDesc);
+				return gv;
+			}
 			_config->insertGlobalVariable(
 					gv,
 					addr,
