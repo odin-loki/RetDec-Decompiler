@@ -15010,6 +15010,208 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_URSHLR_sve2_reversed_round
 	EXPECT_EQ(nullptr, _module.getFunction("__asm_urshlr"));
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ADDVL_adds_vector_lengths)
+{
+	setRegisters({{ARM64_REG_X1, 0x1000ULL}});
+
+	emulate_bin("60 50 21 04"); // addvl x0, x1, #3
+
+	EXPECT_EQ(0x1030ULL, getRegisterValueUnsigned(ARM64_REG_X0));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_addvl"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CPY_sve_merges_scalar)
+{
+	setZ(ARM64_REG_Z0, 0x1111111111111111ULL, 0x1111111111111111ULL);
+	setP(ARM64_REG_P1, 0x0101);
+	setRegisters({{ARM64_REG_X2, 0xdeadbeefULL}});
+
+	emulate_bin("40 a4 a8 05"); // mov z0.s, p1/m, w2
+
+	EXPECT_EQ(0x11111111deadbeefULL, zPart(ARM64_REG_Z0, false));
+	EXPECT_EQ(0x11111111deadbeefULL, zPart(ARM64_REG_Z0, true));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_mov"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_INCP_counts_active_lanes)
+{
+	setP(ARM64_REG_P1, 0x1011);
+	setRegisters({{ARM64_REG_X0, 5ULL}});
+
+	emulate_bin("20 88 ac 25"); // incp x0, p1.s
+
+	EXPECT_EQ(8ULL, getRegisterValueUnsigned(ARM64_REG_X0));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_incp"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LASTB_takes_last_active)
+{
+	setZ(ARM64_REG_Z2, 0x0000000400000003ULL, 0x0000000200000001ULL);
+	setP(ARM64_REG_P1, 0x0011);
+
+	emulate_bin("40 a4 a1 05"); // lastb w0, p1, z2.s
+
+	EXPECT_EQ(2ULL, getRegisterValueUnsigned(ARM64_REG_X0));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_lastb"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_PUNPKLO_widens_predicate)
+{
+	setP(ARM64_REG_P1, 0x00a5);
+
+	emulate_bin("20 40 30 05"); // punpklo p0.h, p1.b
+
+	EXPECT_EQ(0x4411U, getP(ARM64_REG_P0));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_punpklo"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_BRKA_breaks_after_first_true)
+{
+	setP(ARM64_REG_P1, 0x00ff);
+	setP(ARM64_REG_P2, 0x0010);
+
+	emulate_bin("40 44 10 25"); // brka p0.b, p1/z, p2.b
+
+	EXPECT_EQ(0x001fU, getP(ARM64_REG_P0));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_brka"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ADCLB_adds_with_carry_long)
+{
+	setZ(ARM64_REG_Z0, 0x0000000900000005ULL, 0x00000001ffffffffULL);
+	setZ(ARM64_REG_Z1, 0x000000000000000aULL, 0x0000000000000001ULL);
+	setZ(ARM64_REG_Z2, 0ULL, 0x0000000100000000ULL);
+
+	emulate_bin("20 d0 02 45"); // adclb z0.s, z1.s, z2.s
+
+	EXPECT_EQ(0x0000000100000001ULL, zPart(ARM64_REG_Z0, false));
+	EXPECT_EQ(0x000000000000000fULL, zPart(ARM64_REG_Z0, true));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_adclb"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SDOT_neon_indexed)
+{
+	setV(ARM64_REG_Q0, 0ULL, 0ULL);
+	setV(ARM64_REG_Q1, 0x0101010101010101ULL, 0x0101010104030201ULL);
+	setV(ARM64_REG_Q2, 0ULL, 0x0302ff0100000000ULL);
+
+	emulate_bin("20 e0 a2 4f"); // sdot v0.4s, v1.16b, v2.4b[1]
+
+	EXPECT_EQ(0x0000000500000011ULL, vLow(ARM64_REG_Q0));
+	EXPECT_EQ(0x0000000500000005ULL, vHigh(ARM64_REG_Q0));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_sdot"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SMMLA_neon_matrix_multiply)
+{
+	setV(ARM64_REG_Q0, 0ULL, 0ULL);
+	setV(ARM64_REG_Q1, 0x0202020202020202ULL, 0x0101010101010101ULL);
+	setV(ARM64_REG_Q2, 0xffffffffffffffffULL, 0x0303030303030303ULL);
+
+	emulate_bin("20 a4 82 4e"); // smmla v0.4s, v1.16b, v2.16b
+
+	EXPECT_EQ(0xfffffff800000018ULL, vLow(ARM64_REG_Q0));
+	EXPECT_EQ(0xfffffff000000030ULL, vHigh(ARM64_REG_Q0));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_smmla"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SCLAMP_clamps_lanes)
+{
+	setZ(ARM64_REG_Z0, 0x0000000000000064ULL, 0x00000003fffffffbULL);
+	setZ(ARM64_REG_Z1, 0ULL, 0ULL);
+	setZ(ARM64_REG_Z2, 0x0000000a0000000aULL, 0x0000000a0000000aULL);
+
+	emulate_bin("20 c0 82 44"); // sclamp z0.s, z1.s, z2.s
+
+	EXPECT_EQ(0x0000000300000000ULL, zPart(ARM64_REG_Z0, false));
+	EXPECT_EQ(0x000000000000000aULL, zPart(ARM64_REG_Z0, true));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_sclamp"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_MAD_sve_multiply_add)
+{
+	setZ(ARM64_REG_Z0, 0ULL, 0x0000000300000002ULL);
+	setZ(ARM64_REG_Z2, 0x0000000500000005ULL, 0x0000000500000005ULL);
+	setZ(ARM64_REG_Z3, 0x0000000100000001ULL, 0x0000000100000001ULL);
+	setP(ARM64_REG_P1, 0x0001);
+
+	emulate_bin("60 c4 82 04"); // mad z0.s, p1/m, z2.s, z3.s
+
+	EXPECT_EQ(0x000000030000000bULL, zPart(ARM64_REG_Z0, false));
+	EXPECT_EQ(0ULL, zPart(ARM64_REG_Z0, true));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_mad"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_BDEP_deposits_bits)
+{
+	setZ(ARM64_REG_Z1, 0ULL, 0xffffffff00000005ULL);
+	setZ(ARM64_REG_Z2, 0ULL, 0x80000001000000f0ULL);
+
+	emulate_bin("20 b4 82 45"); // bdep z0.s, z1.s, z2.s
+
+	EXPECT_EQ(0x8000000100000050ULL, zPart(ARM64_REG_Z0, false));
+	EXPECT_EQ(0ULL, zPart(ARM64_REG_Z0, true));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_bdep"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_HISTCNT_counts_prefix_matches)
+{
+	setZ(ARM64_REG_Z2, 0x0000000700000009ULL, 0x0000000700000007ULL);
+	setZ(ARM64_REG_Z3, 0x0000000700000007ULL, 0x0000000900000007ULL);
+	setP(ARM64_REG_P1, 0x1111);
+
+	emulate_bin("40 c4 a3 45"); // histcnt z0.s, p1/z, z2.s, z3.s
+
+	EXPECT_EQ(0x0000000100000001ULL, zPart(ARM64_REG_Z0, false));
+	EXPECT_EQ(0x0000000300000001ULL, zPart(ARM64_REG_Z0, true));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_histcnt"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_MATCH_finds_any_equal)
+{
+	setZ(ARM64_REG_Z2, 0ULL, 0x0000000000424341ULL);
+	setZ(ARM64_REG_Z3, 0x4141414141414141ULL, 0x4141424141414141ULL);
+	setP(ARM64_REG_P1, 0x0007);
+
+	emulate_bin("40 84 23 45"); // match p0.b, p1/z, z2.b, z3.b
+
+	EXPECT_EQ(0x0005U, getP(ARM64_REG_P0));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_match"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CMPHI_sve_unsigned_compare)
+{
+	setZ(ARM64_REG_Z2, 0x0000000500000005ULL, 0x00000001ffffffffULL);
+	setZ(ARM64_REG_Z3, 0x0000000400000005ULL, 0x0000000200000001ULL);
+	setP(ARM64_REG_P1, 0x1111);
+
+	emulate_bin("50 04 83 24"); // cmphi p0.s, p1/z, z2.s, z3.s
+
+	EXPECT_EQ(0x1001U, getP(ARM64_REG_P0));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_cmphi"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SQDECW_saturates_32bit_and_sign_extends)
+{
+	setRegisters({{ARM64_REG_X0, 0x80000002ULL}});
+
+	emulate_bin("e0 fb a0 04"); // sqdecw x0, w0
+
+	EXPECT_EQ(0xffffffff80000000ULL, getRegisterValueUnsigned(ARM64_REG_X0));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_sqdecw"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_WHILEWR_limits_to_distance)
+{
+	setRegisters({{ARM64_REG_X1, 0x1000ULL}});
+	setRegisters({{ARM64_REG_X2, 0x1008ULL}});
+
+	emulate_bin("20 30 a2 25"); // whilewr p0.s, x1, x2
+
+	EXPECT_EQ(0x0011U, getP(ARM64_REG_P0));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_whilewr"));
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

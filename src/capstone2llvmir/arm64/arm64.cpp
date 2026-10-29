@@ -390,7 +390,11 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateInstruction(
 	if (i->is_alias)
 	{
 		auto aIt = _i2fm.find(static_cast<std::size_t>(i->alias_id));
-		if (aIt != _i2fm.end() && aIt->second != nullptr)
+		auto rIt = _i2fm.find(i->id);
+		bool realIsSve = rIt != _i2fm.end()
+				&& (rIt->second == &Capstone2LlvmIrTranslatorArm64_impl::translateSve2
+					|| rIt->second == &Capstone2LlvmIrTranslatorArm64_impl::translateSve2b);
+		if (aIt != _i2fm.end() && aIt->second != nullptr && !realIsSve)
 		{
 			id = static_cast<std::size_t>(i->alias_id);
 		}
@@ -8799,7 +8803,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateSveCmp(cs_insn* i, cs_arm64* 
 	llvm::Value* a = loadSveZ(*zn, irb);
 	llvm::Value* b = nullptr;
 	bool isFp = i->id == ARM64_INS_FCMEQ || i->id == ARM64_INS_FCMGE || i->id == ARM64_INS_FCMGT
-				|| i->id == ARM64_INS_FCMLE || i->id == ARM64_INS_FCMLT;
+				|| i->id == ARM64_INS_FCMLE || i->id == ARM64_INS_FCMLT
+				|| i->id == ARM64_INS_FCMNE || i->id == ARM64_INS_FCMUO;
 	if (isFp)
 	{
 		if (elemBits != 16 && elemBits != 32 && elemBits != 64)
@@ -8845,6 +8850,12 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateSveCmp(cs_insn* i, cs_arm64* 
 	case ARM64_INS_CMPLE: cmp = irb.CreateICmpSLE(a, b); break;
 	case ARM64_INS_CMPLT: cmp = irb.CreateICmpSLT(a, b); break;
 	case ARM64_INS_CMPNE: cmp = irb.CreateICmpNE(a, b); break;
+	case ARM64_INS_CMPHI: cmp = irb.CreateICmpUGT(a, b); break;
+	case ARM64_INS_CMPHS: cmp = irb.CreateICmpUGE(a, b); break;
+	case ARM64_INS_CMPLO: cmp = irb.CreateICmpULT(a, b); break;
+	case ARM64_INS_CMPLS: cmp = irb.CreateICmpULE(a, b); break;
+	case ARM64_INS_FCMNE: cmp = irb.CreateFCmpUNE(a, b); break;
+	case ARM64_INS_FCMUO: cmp = irb.CreateFCmpUNO(a, b); break;
 	case ARM64_INS_FCMEQ: cmp = irb.CreateFCmpOEQ(a, b); break;
 	case ARM64_INS_FCMGE: cmp = irb.CreateFCmpOGE(a, b); break;
 	case ARM64_INS_FCMGT: cmp = irb.CreateFCmpOGT(a, b); break;
