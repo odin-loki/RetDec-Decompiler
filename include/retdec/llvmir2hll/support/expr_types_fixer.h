@@ -58,6 +58,7 @@ class ExprTypesFixer final: private OrderedAllVisitor,
 		private retdec::utils::NonCopyable {
 public:
 	static void fixTypes(ShPtr<Module> module);
+	static void fixDivModOperands(ShPtr<Module> module);
 
 private:
 	ExprTypesFixer();

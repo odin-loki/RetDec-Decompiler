@@ -555,6 +555,7 @@ bool LlvmIr2Hll::runOnModule(llvm::Module &m)
 
 		reportProgress("optimizations");
 		runOptimizations();
+		llvmir2hll::ExprTypesFixer::fixDivModOperands(resModule);
 	}
 	diagTimer.mark("alias_analysis_and_opts");
 

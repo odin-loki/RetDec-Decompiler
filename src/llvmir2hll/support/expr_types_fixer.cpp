@@ -32,6 +32,7 @@
 #include "retdec/llvmir2hll/ir/variable.h"
 #include "retdec/llvmir2hll/support/debug.h"
 #include "retdec/llvmir2hll/support/expr_types_fixer.h"
+#include "retdec/llvmir2hll/ir/ternary_op_expr.h"
 
 namespace retdec {
 namespace llvmir2hll {
@@ -147,7 +148,21 @@ void ExprTypesFixer::setProbablyTypes(ShPtr<Module> module) {
 */
 ShPtr<Expression> ExprTypesFixer::exprCheckAndChange(bool isSigned,
 		ShPtr<Expression> expr) {
-	if (ShPtr<IntType> type = cast<IntType>(expr->getType())) {
+	ShPtr<IntType> type = cast<IntType>(expr->getType());
+	if (!type) {
+		// `c ? 1 : v` with an unsigned v has no single BIR type, but C
+		// gives it v's unsigned type: `x / (c ? 1 : v)` would then divide
+		// unsigned.  Judge such a select by its integer arms.
+		if (auto t = cast<TernaryOpExpr>(expr)) {
+			auto a = cast<IntType>(t->getTrueValue()->getType());
+			auto b = cast<IntType>(t->getFalseValue()->getType());
+			if (a && b) {
+				type = a->isUnsigned() ? a : b;
+				if (b->getSize() > type->getSize()) type = b;
+			}
+		}
+	}
+	if (type) {
 		// If it is an integer-type variable.
 		if (!isSigned && type->isSigned()) {
 			// Add cast to unsigned.
@@ -160,6 +175,56 @@ ShPtr<Expression> ExprTypesFixer::exprCheckAndChange(bool isSigned,
 		}
 	}
 	return expr;
+}
+
+namespace {
+
+/// Re-signs the operands of signed/unsigned division and remainder after the
+/// optimizers ran: copy propagation can inline `c ? 1 : v` (unsigned v) into
+/// a divisor that the first fixing pass saw as a signed variable.
+class DivModOperandFixer final: public OrderedAllVisitor {
+public:
+	ShPtr<Expression> fix(bool isSigned, ShPtr<Expression> e) {
+		auto t = cast<TernaryOpExpr>(e);
+		if (!t) return e;
+		auto a = cast<IntType>(t->getTrueValue()->getType());
+		auto b = cast<IntType>(t->getFalseValue()->getType());
+		if (!a || !b) return e;
+		auto type = a->isUnsigned() ? a : b;
+		if (b->getSize() > type->getSize()) type = b;
+		if (type->isSigned() == isSigned
+				&& a->isSigned() == isSigned && b->isSigned() == isSigned) {
+			return e;
+		}
+		return BitCastExpr::create(e, IntType::create(type->getSize(), isSigned));
+	}
+	using OrderedAllVisitor::visit;
+	void visit(ShPtr<DivOpExpr> expr) override {
+		if (expr->getVariant() != DivOpExpr::Variant::FDiv) {
+			bool s = expr->getVariant() == DivOpExpr::Variant::SDiv;
+			expr->setFirstOperand(fix(s, expr->getFirstOperand()));
+			expr->setSecondOperand(fix(s, expr->getSecondOperand()));
+		}
+		OrderedAllVisitor::visit(expr);
+	}
+	void visit(ShPtr<ModOpExpr> expr) override {
+		if (expr->getVariant() != ModOpExpr::Variant::FMod) {
+			bool s = expr->getVariant() == ModOpExpr::Variant::SMod;
+			expr->setFirstOperand(fix(s, expr->getFirstOperand()));
+			expr->setSecondOperand(fix(s, expr->getSecondOperand()));
+		}
+		OrderedAllVisitor::visit(expr);
+	}
+};
+
+} // anonymous namespace
+
+void ExprTypesFixer::fixDivModOperands(ShPtr<Module> module) {
+	for (auto i = module->func_definition_begin(),
+			e = module->func_definition_end(); i != e; ++i) {
+		DivModOperandFixer v;
+		(*i)->accept(&v);
+	}
 }
 
 /**
