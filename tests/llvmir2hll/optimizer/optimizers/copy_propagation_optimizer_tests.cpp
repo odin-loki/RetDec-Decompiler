@@ -1359,6 +1359,48 @@ TEST_F(CopyPropagationOptimizerTests, CallIsPropagatedAcrossAWriteToAnUnrelatedL
 	EXPECT_TRUE(isa<CallExpr>(callG->getArg(1))) << "a write to an unrelated local stopped the propagation";
 }
 
+TEST_F(CopyPropagationOptimizerTests,
+LoadIsNotMovedPastAStoreInASwap) {
+	// Set-up the module.
+	//
+	// void test(int *p, int *q) {
+	//     int t = *p;
+	//     *p = *q;
+	//     *q = t;
+	// }
+	//
+	// Propagating `*p` into the last line would read the new value.
+	//
+	ShPtr<Variable> varP(Variable::create("p", PointerType::create(IntType::create(32))));
+	ShPtr<Variable> varQ(Variable::create("q", PointerType::create(IntType::create(32))));
+	ShPtr<Variable> varT(Variable::create("t", IntType::create(32)));
+	testFunc->addParam(varP);
+	testFunc->addParam(varQ);
+	testFunc->addLocalVar(varT);
+	ShPtr<AssignStmt> storeQ(AssignStmt::create(DerefOpExpr::create(varQ), varT));
+	ShPtr<AssignStmt> storeP(AssignStmt::create(DerefOpExpr::create(varP),
+		DerefOpExpr::create(varQ), storeQ));
+	ShPtr<VarDefStmt> varDefT(VarDefStmt::create(varT,
+		DerefOpExpr::create(varP), storeP));
+	testFunc->setBody(varDefT);
+
+	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
+
+	// Optimize the module.
+	Optimizer::optimize<CopyPropagationOptimizer>(module, va,
+		OptimCallInfoObtainer::create());
+
+	// Check that the temporary survives.
+	auto last = testFunc->getBody();
+	while (last->hasSuccessor()) {
+		last = last->getSuccessor();
+	}
+	ShPtr<AssignStmt> lastAssign(cast<AssignStmt>(last));
+	ASSERT_TRUE(lastAssign) << "expected an assignment, got `" << last << "`";
+	EXPECT_TRUE(isa<Variable>(lastAssign->getRhs())) <<
+		"expected `*q = t`, got `" << lastAssign << "`";
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec

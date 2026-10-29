@@ -33,6 +33,9 @@
 #include "retdec/llvmir2hll/ir/const_struct.h"
 #include "retdec/llvmir2hll/ir/deref_op_expr.h"
 #include "retdec/llvmir2hll/ir/function.h"
+#include "retdec/llvmir2hll/ir/goto_stmt.h"
+#include "retdec/llvmir2hll/ir/continue_stmt.h"
+#include "retdec/llvmir2hll/ir/empty_stmt.h"
 #include "retdec/llvmir2hll/ir/if_stmt.h"
 #include "retdec/llvmir2hll/ir/module.h"
 #include "retdec/llvmir2hll/ir/statement.h"
@@ -56,6 +59,91 @@ const bool debug_enabled = false;
 	else std::cout << std::showbase
 
 namespace {
+
+/// Whether @a stmt, or anything nested in it, may write memory: a store
+/// through a pointer, array or struct, or a call. Statements this does not
+/// know count as writing.
+bool mayWriteMemory(ShPtr<Statement> stmt, ShPtr<ValueAnalysis> va,
+		bool followSuccessors = true) {
+	for (; stmt; stmt = followSuccessors ? stmt->getSuccessor() : nullptr) {
+		if (auto a = cast<AssignStmt>(stmt)) {
+			const auto &lhs = va->getValueData(a->getLhs());
+			if (lhs->hasDerefs() || lhs->hasArrayAccesses() ||
+					lhs->hasStructAccesses() || va->getValueData(a)->hasCalls()) {
+				return true;
+			}
+		} else if (auto ifStmt = cast<IfStmt>(stmt)) {
+			for (auto i = ifStmt->clause_begin(); i != ifStmt->clause_end(); ++i) {
+				if (va->getValueData(i->first)->hasCalls() ||
+						mayWriteMemory(i->second, va)) {
+					return true;
+				}
+			}
+			if (ifStmt->hasElseClause() &&
+					mayWriteMemory(ifStmt->getElseClause(), va)) {
+				return true;
+			}
+		} else if (auto w = cast<WhileLoopStmt>(stmt)) {
+			if (va->getValueData(w->getCondition())->hasCalls() ||
+					mayWriteMemory(w->getBody(), va)) {
+				return true;
+			}
+		} else if (isa<VarDefStmt>(stmt) || isa<BreakStmt>(stmt) ||
+				isa<EmptyStmt>(stmt) || isa<ContinueStmt>(stmt) ||
+				isa<GotoStmt>(stmt)) {
+			if (va->getValueData(stmt)->hasCalls()) {
+				return true;
+			}
+		} else {
+			return true;
+		}
+	}
+	return false;
+}
+
+/// Whether @a stmt contains @a inner (or is it).
+bool containsStmt(ShPtr<Statement> stmt, ShPtr<Statement> inner) {
+	if (stmt == inner) {
+		return true;
+	}
+	if (auto ifStmt = cast<IfStmt>(stmt)) {
+		for (auto i = ifStmt->clause_begin(); i != ifStmt->clause_end(); ++i) {
+			if (Statement::isStatementInStatements(inner, i->second)) {
+				return true;
+			}
+		}
+		return ifStmt->hasElseClause() &&
+			Statement::isStatementInStatements(inner, ifStmt->getElseClause());
+	}
+	if (auto w = cast<WhileLoopStmt>(stmt)) {
+		return Statement::isStatementInStatements(inner, w->getBody());
+	}
+	return false;
+}
+
+/// Moving a right-hand side that reads memory from @a def to @a use is only
+/// safe if nothing may write memory in between:
+///
+///     t = *p; *p = *q; *q = t;   is not   *p = *q; *q = *p;
+///
+/// Only the straight run of statements after @a def is followed; a use found
+/// anywhere else is refused.
+bool memoryUnchangedBetween(ShPtr<Statement> def, ShPtr<Statement> use,
+		ShPtr<ValueAnalysis> va) {
+	for (auto s = def->getSuccessor(); s; s = s->getSuccessor()) {
+		if (s == use) {
+			return true;
+		}
+		if (containsStmt(s, use)) {
+			// Inside a compound statement: anything in it may run first.
+			return !mayWriteMemory(s, va, false);
+		}
+		if (mayWriteMemory(s, va, false)) {
+			return false;
+		}
+	}
+	return false;
+}
 
 /// Maximal length of a statement that can appear after a copy propagation is
 /// done. If the resulting statement is greater that this number, we won't
@@ -999,6 +1087,15 @@ void CopyPropagationOptimizer::handleCaseSingleUse(ShPtr<Statement> stmt,
 			LOG << "\t" << "end 18" << std::endl;
 			return;
 		}
+	}
+
+	// A right-hand side that reads memory may not move past a write to it.
+	const auto &rhsData = va->getValueData(stmtRhs);
+	if ((rhsData->hasDerefs() || rhsData->hasArrayAccesses() ||
+			rhsData->hasStructAccesses()) &&
+			!memoryUnchangedBetween(stmt, use, va)) {
+		LOG << "\t" << "end 19" << std::endl;
+		return;
 	}
 
 	// Perform the replacement.
