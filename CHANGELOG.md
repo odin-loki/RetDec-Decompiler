@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- Integer matrix multiplication additionally exports LinearAlgebra (the float kernel keeps MatrixMultiply alone); analysis cache version 8.
 - Algorithm recovery recognises BFS's visit step (a zero-tested flag set to 1 alongside an indexed enqueue in one loop block); indexed-slot matching accepts sign-extended (shifted) indices.
 - Algorithm recovery recognises insertion at the head of a hashed bucket chain (malloc'd node linked to table[i], then stored there) as separate-chaining HashTable; Chaining/OpenAddressing imply HashTable in extraction.
 - Algorithm recovery labels straight-line int/float round-trip code as Conversion; the SSA records int<->float conversion direction (analysis cache version 7).

@@ -2930,3 +2930,27 @@ TEST(IdiomDetectorTest, AppendingWithoutTestingTheFlagIsNotBfs)
 	// `a[i] = 1; out[n] = x;` writes the same shapes but checks nothing.
 	EXPECT_FALSE(detects(*makeVisitStep(false, true), IdiomKind::Bfs));
 }
+
+TEST(IdiomDetectorTest, IntegerMatrixMultiplyAlsoExportsLinearAlgebra)
+{
+	for (bool isFloat: {false, true})
+	{
+		auto fn = makeLoop();
+		auto* p = floatOp(*fn, ssa::IrInstr::Op::Mul, loadElement(*fn), loadElement(*fn));
+		p->isFloat = isFloat;
+		storeToMemory(*fn, p->defValue);
+		pad(*fn);
+		fn->addInstr(1, ssa::IrInstr::Op::CondBranch);
+		fn->addInstr(1, ssa::IrInstr::Op::CondBranch);
+		bool found = false;
+		for (const auto& r: IdiomDetector().detect(*fn))
+		{
+			if (r.kind != IdiomKind::MatrixMultiply) continue;
+			found = true;
+			const auto labels = r.exportLabels();
+			const bool la = std::find(labels.begin(), labels.end(), "LinearAlgebra") != labels.end();
+			EXPECT_EQ(la, !isFloat);
+		}
+		EXPECT_TRUE(found);
+	}
+}

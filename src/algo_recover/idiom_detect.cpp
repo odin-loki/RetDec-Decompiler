@@ -577,6 +577,7 @@ bool hasRleLoop(const ssa::SSAFunction& fn)
 struct NumericLoopShape
 {
 	bool elementProduct = false; ///< `a[i] * b[j]`: a multiply of two loaded elements
+	bool floatProduct = false;   ///< ... and it is a floating-point multiply
 	bool elementAccumulate = false; ///< `s += v[i]`: an add of a loaded element
 	bool squareOfDifference = false; ///< `(v[i] - m) * (v[i] - m)`
 	bool memStore = false;
@@ -596,7 +597,10 @@ NumericLoopShape numericLoopShape(const ssa::SSAFunction& fn)
 		case ssa::IrInstr::Op::Mul:
 			if (i.uses.size() >= 2 && fromMemoryLoad(fn, i.uses[0].valueId) && fromMemoryLoad(fn, i.uses[1].valueId)
 				&& i.uses[0].valueId != i.uses[1].valueId)
+			{
 				sh.elementProduct = true;
+				if (i.isFloat) sh.floatProduct = true;
+			}
 			if (i.uses.size() >= 2 && i.uses[0].valueId == i.uses[1].valueId)
 				if (const auto* v = fn.value(i.uses[0].valueId); v && v->defInstr && v->defInstr->op == ssa::IrInstr::Op::Sub)
 					for (const auto& u: v->defInstr->uses)
@@ -981,7 +985,10 @@ std::vector<std::string> IdiomResult::exportLabels() const
 	case IdiomKind::BloomFilter: return {"BloomFilter", "Probabilistic"};
 	// Not "LinearAlgebra": the corpus gives that to the integer kernel only,
 	// and nothing in the loop says which of the two it is looking at.
-	case IdiomKind::MatrixMultiply: return {"MatrixMultiply"};
+	// The corpus files the integer kernel under linear algebra as well.
+	case IdiomKind::MatrixMultiply:
+		if (detail.rfind("integer_", 0) == 0) return {"MatrixMultiply", "LinearAlgebra"};
+		return {"MatrixMultiply"};
 	case IdiomKind::LinkedList: return {"LinkedList"};
 	case IdiomKind::XorCipher: return {"XOR", "Cipher"};
 	case IdiomKind::LowerBound: return {"LowerBound", "BinarySearch", "Search"};
@@ -1075,7 +1082,8 @@ std::vector<IdiomResult> IdiomDetector::detect(const ssa::SSAFunction& fn) const
 			out.push_back(makeResult(IdiomKind::DotProduct, 0.75f, "sum_of_element_products"));
 		// The same product inside three nested loops, written to the result.
 		else if (sh.elementProduct && sh.memStore && !sh.call && sh.condBranches >= 3)
-			out.push_back(makeResult(IdiomKind::MatrixMultiply, 0.75f, "element_products_in_three_loops"));
+			out.push_back(makeResult(IdiomKind::MatrixMultiply, 0.75f,
+									 sh.floatProduct ? "element_products_in_three_loops" : "integer_element_products_in_three_loops"));
 		// `sum(v[i]) / n` or `sum((v[i] - m)^2) / n`.
 		else if ((sh.elementAccumulate || sh.squareOfDifference) && !sh.elementProduct && !sh.memStore && !sh.call
 				 && sh.condBranches <= 3 && floatDivOutsideLoops(fn))

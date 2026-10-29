@@ -89,7 +89,7 @@ public:
 	// 5: entries carry FunctionDetections::idioms, which the serialiser had
 	//    never touched -- so a warm run dropped every idiom detection the cold
 	//    run made, "[RetDec] DFS detected" among them.
-	static constexpr std::uint32_t kVersion = 7;
+	static constexpr std::uint32_t kVersion = 8;
 
 	struct Entry
 	{
