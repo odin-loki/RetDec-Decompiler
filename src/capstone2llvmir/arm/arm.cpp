@@ -7684,5 +7684,54 @@ void Capstone2LlvmIrTranslatorArm_impl::translateBxaut(cs_insn* i, cs_arm* ai, l
 	}
 }
 
+/**
+ * ARM_INS_DLS, ARM_INS_WLS, ARM_INS_LE, ARM_INS_LCTP (v8.1-M low-overhead
+ * loops). DLS/WLS load the iteration count into LR, WLS skips the loop when
+ * it is zero, and LE counts LR down and branches back while it is above 1.
+ * Capstone gives the branch targets as absolute addresses.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateLowOverheadLoop(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	auto* i32 = irb.getInt32Ty();
+	switch (i->id)
+	{
+		case ARM_INS_LCTP:
+			return;
+		case ARM_INS_DLS:
+		{
+			EXPECT_IS_BINARY(i, ai, irb);
+			storeRegister(ARM_REG_LR, loadOp(ai->operands[1], irb), irb);
+			return;
+		}
+		case ARM_INS_WLS:
+		{
+			EXPECT_IS_TERNARY(i, ai, irb);
+			auto* n = loadOp(ai->operands[1], irb);
+			storeRegister(ARM_REG_LR, n, irb);
+			auto* zero = irb.CreateICmpEQ(n, llvm::ConstantInt::get(n->getType(), 0));
+			generateCondBranchFunctionCall(irb, zero, loadOp(ai->operands[2], irb));
+			return;
+		}
+		case ARM_INS_LE:
+		{
+			if (ai->op_count == 1)
+			{
+				// LE without LR loops forever.
+				generateBranchFunctionCall(irb, loadOp(ai->operands[0], irb));
+				return;
+			}
+			EXPECT_IS_BINARY(i, ai, irb);
+			auto* lr = loadRegister(ARM_REG_LR, irb);
+			auto* again = irb.CreateICmpNE(lr, llvm::ConstantInt::get(i32, 1));
+			auto* dec = irb.CreateSub(lr, llvm::ConstantInt::get(i32, 1));
+			storeRegister(ARM_REG_LR, irb.CreateSelect(again, dec, lr), irb);
+			generateCondBranchFunctionCall(irb, again, loadOp(ai->operands[1], irb));
+			return;
+		}
+		default:
+			throw GenericError("Unhandled insn ID in translateLowOverheadLoop().");
+	}
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec

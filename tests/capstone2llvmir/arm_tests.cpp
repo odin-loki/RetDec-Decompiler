@@ -8212,6 +8212,84 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_BXAUT_returns)
 	});
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_DLS_sets_lr)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R1, 7},
+	});
+
+	// dls lr, r1
+	emulate_bin("41 f0 01 e0");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_LR, 7},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_WLS_skips_empty_loop)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0},
+	});
+
+	// wls lr, r0, 0x1008
+	emulate_bin("40 f0 03 c0", 0x1000);
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_LR, 0},
+	});
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCondBranchFunction(), {true, 0x1008}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LE_counts_down)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_LR, 5},
+	});
+
+	// le lr, 0xff0
+	emulate_bin("0f f0 0b c0", 0x1000);
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_LR, 4},
+	});
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCondBranchFunction(), {true, 0xff0}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LE_last_iteration_falls_through)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_LR, 1},
+	});
+
+	// le lr, 0xff0
+	emulate_bin("0f f0 0b c0", 0x1000);
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_LR, 1},
+	});
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCondBranchFunction(), {false, 0xff0}},
+	});
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_TBB)
 {
 	ONLY_MODE_THUMB;
