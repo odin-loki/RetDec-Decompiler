@@ -17,6 +17,7 @@
 
 #include "retdec/algo_recover/algo_recover.h"
 #include "retdec/ssa/ssa.h"
+#include <optional>
 #include <algorithm>
 #include <memory>
 
@@ -2177,6 +2178,55 @@ TEST(IdiomDetectorTest, ContinuationBitWithoutTheShiftIsNotVarint)
 	opImm(*fn, ssa::IrInstr::Op::Add, 1u);
 	pad(*fn);
 	EXPECT_FALSE(detects(*fn, IdiomKind::Varint));
+}
+
+/// `t = a + b; a = b; b = t;` over three stack slots; `extra` adds one more
+/// instruction to the loop body.
+std::unique_ptr<ssa::SSAFunction> makeFibonacciLoop(std::optional<ssa::IrInstr::Op> extra = std::nullopt)
+{
+	auto fn = makeLoop();
+	auto slot = [&]() {
+		auto* s = fn->allocValue(ssa::ValueKind::VirtualReg);
+		s->isStackSlot = true;
+		return s->id;
+	};
+	const auto sa = slot(), sb = slot(), st = slot();
+	auto load = [&](ssa::ValueId addr) {
+		auto* l = fn->addInstr(1, ssa::IrInstr::Op::Load);
+		l->uses.push_back({addr, 0});
+		auto* d = reg(*fn);
+		l->defValue = d->id;
+		d->defInstr = l;
+		return d->id;
+	};
+	auto store = [&](ssa::ValueId v, ssa::ValueId addr) {
+		auto* s = fn->addInstr(1, ssa::IrInstr::Op::Store);
+		s->uses.push_back({v, 0});
+		s->uses.push_back({addr, 1});
+	};
+	const auto a = load(sa), b = load(sb);
+	auto* add = fn->addInstr(1, ssa::IrInstr::Op::Add);
+	add->uses.push_back({a, 0});
+	add->uses.push_back({b, 1});
+	auto* t = reg(*fn);
+	add->defValue = t->id;
+	t->defInstr = add;
+	store(t->id, st);
+	store(b, sa);
+	store(t->id, sb);
+	if (extra) opImm(*fn, *extra, 3);
+	pad(*fn);
+	return fn;
+}
+
+TEST(IdiomDetectorTest, AddAndRotateTwoScalarsIsFibonacci)
+{
+	EXPECT_TRUE(detects(*makeFibonacciLoop(), IdiomKind::Fibonacci));
+}
+
+TEST(IdiomDetectorTest, AddAndRotateWithAMultiplyIsNotFibonacci)
+{
+	EXPECT_FALSE(detects(*makeFibonacciLoop(ssa::IrInstr::Op::Mul), IdiomKind::Fibonacci));
 }
 
 TEST(IdiomDetectorTest, LowBitAddedThenShiftedOutIsPopcount)

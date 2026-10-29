@@ -383,6 +383,62 @@ bool writesMemoryInLoop(const ssa::SSAFunction& fn)
 	return writes;
 }
 
+/// The value stored by a Store, followed through a few register copies to
+/// the instruction that computed it.
+const ssa::IrInstr* storedValueDef(const ssa::SSAFunction& fn, const ssa::IrInstr& st)
+{
+	if (st.uses.empty()) return nullptr;
+	const auto* v = fn.value(st.uses[0].valueId);
+	const ssa::IrInstr* d = v ? v->defInstr : nullptr;
+	for (int hops = 0; d && d->op == ssa::IrInstr::Op::Assign && !d->uses.empty() && hops < 3; ++hops)
+	{
+		v = fn.value(d->uses[0].valueId);
+		d = v ? v->defInstr : nullptr;
+	}
+	return d;
+}
+
+/// `t = a + b; a = b; b = t;`: a loop over scalars only whose body adds two
+/// variables and shifts one of them into the other unchanged. Nothing else
+/// is computed: no multiply, divide, shift or bitwise operation, no memory
+/// beyond the function's own stack slots and no calls.
+bool hasFibonacciLoop(const ssa::SSAFunction& fn)
+{
+	bool other = false, addVars = false, rotate = false;
+	int slotStores = 0;
+	forEachLoopInstr(fn, [&](const ssa::IrInstr& i) {
+		switch (i.op)
+		{
+		case ssa::IrInstr::Op::Rem:
+			// `% 2^32` is how a 32-bit wrap shows up after lifting; anything
+			// else is real arithmetic.
+			if (!immOperand(fn, i, 0x100000000ULL)) other = true;
+			break;
+		case ssa::IrInstr::Op::Mul: case ssa::IrInstr::Op::Div:
+		case ssa::IrInstr::Op::Shl: case ssa::IrInstr::Op::Shr: case ssa::IrInstr::Op::Sar:
+		case ssa::IrInstr::Op::And: case ssa::IrInstr::Op::Or: case ssa::IrInstr::Op::Xor:
+		case ssa::IrInstr::Op::Call: case ssa::IrInstr::Op::Lock:
+			other = true;
+			break;
+		case ssa::IrInstr::Op::Load:
+			if (!addrOnStack(fn, i)) other = true;
+			break;
+		case ssa::IrInstr::Op::Add:
+			if (i.uses.size() >= 2 && !anyImmOperand(fn, i)) addVars = true;
+			break;
+		case ssa::IrInstr::Op::Store:
+			if (!addrOnStack(fn, i)) { other = true; break; }
+			++slotStores;
+			if (const auto* d = storedValueDef(fn, i); d && d->op == ssa::IrInstr::Op::Load && addrOnStack(fn, *d))
+				rotate = true;
+			break;
+		default:
+			break;
+		}
+	});
+	return !other && addVars && rotate && slotStores >= 3;
+}
+
 // Blocks reachable from `from` without entering `stop`.
 std::vector<uint8_t> reachWithout(const ssa::SSAFunction& fn, ssa::BlockId from, ssa::BlockId stop)
 {
@@ -591,7 +647,8 @@ std::vector<IdiomResult> IdiomDetector::detect(const ssa::SSAFunction& fn) const
 		out.push_back(makeResult(IdiomKind::Varint, 0.92f, "shift7_mask7f"));
 	}
 
-	// A6: do not assign Knapsack, Fibonacci, or Lcs.
+	if (hasFibonacciLoop(fn)) out.push_back(makeResult(IdiomKind::Fibonacci, 0.80f, "add_and_rotate_scalars"));
+	// A6: do not assign Knapsack or Lcs.
 
 	out.erase(
 		std::remove_if(

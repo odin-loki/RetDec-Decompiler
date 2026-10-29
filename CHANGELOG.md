@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- Algorithm recovery: an iterative Fibonacci loop (`t = a + b; a = b; b = t;` over scalars only, no other arithmetic or memory) is now detected as Fibonacci.
 - Prediction extraction: a sort label that names its std:: equivalent in
   parentheses ("mergesort (std::stable_sort)") now gets the aliases of the
   sort itself, so mergesort reports DivideAndConquer. mergesort -O0/-O2/-O3
