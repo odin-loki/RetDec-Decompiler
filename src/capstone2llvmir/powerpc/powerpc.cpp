@@ -2885,6 +2885,36 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateMflr(cs_insn* i, cs_ppc* pi
 }
 
 /**
+ * PPC_INS_MFXER
+ *
+ * XER itself is not modelled; its carry bit is, as PPC_REG_CARRY, which is
+ * what every ADDC/ADDE/SUBF chain reads and writes. CA is XER bit 34 in
+ * 64-bit numbering, value 0x20000000. SO and OV are not tracked and read as
+ * zero. As the generic MFSPR the value came from an opaque call, so a
+ * save/restore of XER around a carry chain cut the chain.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateMfxer(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_UNARY(i, pi, irb);
+
+	auto* ca = irb.CreateZExt(loadRegister(PPC_REG_CARRY, irb), getDefaultType());
+	auto* xer = irb.CreateShl(ca, llvm::ConstantInt::get(getDefaultType(), 29));
+	storeOp(pi->operands[0], xer, irb);
+}
+
+/**
+ * PPC_INS_MTXER -- the inverse of MFXER: only CA is kept.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateMtxer(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_UNARY(i, pi, irb);
+
+	auto* v = loadOp(pi->operands[0], irb);
+	auto* bit = irb.CreateLShr(v, llvm::ConstantInt::get(v->getType(), 29));
+	storeRegister(PPC_REG_CARRY, irb.CreateTrunc(bit, irb.getInt1Ty()), irb);
+}
+
+/**
  * PPC_INS_MULHW, PPC_INS_MULHWU, PPC_INS_MULHD, PPC_INS_MULHDU
  */
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateMulhw(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)

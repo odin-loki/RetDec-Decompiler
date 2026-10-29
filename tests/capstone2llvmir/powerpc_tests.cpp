@@ -4665,6 +4665,46 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MFSPR)
 }
 
 //
+// PPC_INS_MFXER, PPC_INS_MTXER
+//
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MFXER_reads_the_carry)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_CARRY, true},
+	});
+
+	emulate("mfxer 3");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_CARRY});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 0x20000000},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MTXER_writes_the_carry)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R3, 0xa0000000},
+	});
+
+	emulate("mtxer 3");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_CARRY, true},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
 // PPC_INS_MFCR
 //
 

@@ -192,6 +192,8 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		void translateMcrf(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateMfctr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateMflr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateMfxer(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateMtxer(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateMr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateMtcrf(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateMtctr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
