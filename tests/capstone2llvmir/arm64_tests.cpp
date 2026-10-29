@@ -15328,8 +15328,8 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SVE_structured_loads_and_b
 	ASSERT_NE(nullptr, f);
 	EXPECT_NE(nullptr, _module.getFunction("__asm_ld2b"));
 	EXPECT_NE(nullptr, _module.getFunction("__asm_ld1rb"));
-	EXPECT_NE(nullptr, _module.getFunction("__asm_fcmla"));
-	EXPECT_NE(nullptr, _module.getFunction("__asm_bfdot"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_fcmla"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_bfdot"));
 }
 
 TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_BC_is_a_conditional_branch)
