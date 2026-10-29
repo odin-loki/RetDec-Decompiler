@@ -1200,3 +1200,46 @@ TEST(SSARename, AFlagOnlyInstructionStillDefinesOnlyTheFlags)
 	ASSERT_FALSE(i3->uses.empty());
 	EXPECT_EQ(i1->defValue, i3->uses[0].valueId) << "a compare does not redefine the register it reads";
 }
+
+// LLVM puts `common.ret` above the blocks that branch to it, so a forward
+// edge can go to a lower block id. That is layout, not a loop.
+TEST(SSACycleTest, AnEdgeToALowerIdThatIsNotACycleIsNotRetreating)
+{
+	SSAFunction fn("f");
+	BlockId entry = fn.addBlock("entry")->id;
+	BlockId ret = fn.addBlock("common.ret")->id;
+	BlockId tail = fn.addBlock("tail")->id;
+	connect(fn, entry, ret);
+	connect(fn, entry, tail);
+	connect(fn, tail, ret);
+
+	EXPECT_TRUE(retreatingEdges(fn).empty());
+	EXPECT_FALSE(hasCycle(fn));
+}
+
+TEST(SSACycleTest, ALoopLatchIsRetreating)
+{
+	SSAFunction fn("f");
+	BlockId entry = fn.addBlock("entry")->id;
+	BlockId header = fn.addBlock("header")->id;
+	BlockId body = fn.addBlock("body")->id;
+	BlockId exit = fn.addBlock("exit")->id;
+	connect(fn, entry, header);
+	connect(fn, header, body);
+	connect(fn, header, exit);
+	connect(fn, body, header);
+
+	auto edges = retreatingEdges(fn);
+	ASSERT_EQ(edges.size(), 1u);
+	EXPECT_EQ(edges[0], std::make_pair(body, header));
+	EXPECT_TRUE(hasCycle(fn));
+}
+
+TEST(SSACycleTest, ASelfLoopIsACycle)
+{
+	SSAFunction fn("f");
+	BlockId entry = fn.addBlock("entry")->id;
+	connect(fn, entry, entry);
+
+	EXPECT_TRUE(hasCycle(fn));
+}

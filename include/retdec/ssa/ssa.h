@@ -711,6 +711,15 @@ private:
 	std::vector<SSAVerifier::Error> errors_;
 };
 
+/// Edges that close a cycle in the CFG: an edge from a block to one still on
+/// the depth-first search stack from the entry. Block ids follow layout
+/// order, not control flow, so `succ <= id` is not a back edge -- LLVM's
+/// `common.ret` block sits above the blocks that branch to it.
+std::vector<std::pair<BlockId, BlockId>> retreatingEdges(const SSAFunction& fn);
+
+/// True when the CFG reachable from the entry has a cycle.
+bool hasCycle(const SSAFunction& fn);
+
 } // namespace ssa
 } // namespace retdec
 

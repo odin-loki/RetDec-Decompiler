@@ -431,5 +431,45 @@ void SSAPass::run(SSAFunction& fn)
 	errors_ = verifier.verify(fn, domtree);
 }
 
+std::vector<std::pair<BlockId, BlockId>> retreatingEdges(const SSAFunction& fn)
+{
+	std::vector<std::pair<BlockId, BlockId>> out;
+	const auto& blocks = fn.blocks();
+	if (blocks.empty() || !blocks[fn.entryId()]) return out;
+
+	// 0 = unvisited, 1 = on stack, 2 = done. Iterative, so a long chain of
+	// blocks cannot overflow the native stack.
+	std::vector<uint8_t> state(blocks.size(), 0);
+	std::vector<std::pair<BlockId, size_t>> stack;
+	stack.emplace_back(fn.entryId(), 0);
+	state[fn.entryId()] = 1;
+	while (!stack.empty())
+	{
+		auto& [b, next] = stack.back();
+		const BasicBlock* blk = blocks[b].get();
+		if (!blk || next >= blk->succs.size())
+		{
+			state[b] = 2;
+			stack.pop_back();
+			continue;
+		}
+		BlockId s = blk->succs[next++];
+		if (s >= blocks.size() || !blocks[s]) continue;
+		if (state[s] == 1)
+			out.emplace_back(b, s);
+		else if (state[s] == 0)
+		{
+			state[s] = 1;
+			stack.emplace_back(s, 0);
+		}
+	}
+	return out;
+}
+
+bool hasCycle(const SSAFunction& fn)
+{
+	return !retreatingEdges(fn).empty();
+}
+
 } // namespace ssa
 } // namespace retdec

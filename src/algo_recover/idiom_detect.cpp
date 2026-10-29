@@ -23,13 +23,7 @@ bool hasConstant(const ssa::SSAFunction& fn, uint64_t value)
 
 bool hasBackEdge(const ssa::SSAFunction& fn)
 {
-	for (const auto& blk: fn.blocks())
-	{
-		if (!blk) continue;
-		for (ssa::BlockId s: blk->succs)
-			if (s <= blk->id) return true;
-	}
-	return false;
+	return ssa::hasCycle(fn);
 }
 
 int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)

@@ -84,13 +84,7 @@ static UseDef buildUseDef(const SSAFunction& fn)
 
 static bool hasBackEdge(const SSAFunction& fn)
 {
-	for (const auto& blk: fn.blocks())
-	{
-		if (!blk) continue;
-		for (BlockId s: blk->succs)
-			if (s <= blk->id) return true;
-	}
-	return false;
+	return hasCycle(fn);
 }
 
 /// Natural-loop blocks from back-edges (succ id <= src id). Preds are
