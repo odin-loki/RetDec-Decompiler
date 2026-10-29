@@ -1,12 +1,12 @@
 {
   "baseline_tag": "baseline-algorithm-recovery",
-  "updated_at": "2026-10-29T07:40:00Z",
+  "updated_at": "2026-10-29T07:50:00Z",
   "metrics": {
     "ci_core": {
       "binaries": 9,
       "min_decompiled": 9,
-      "mean_f1": 0.8444,
-      "mean_f1_raw": 0.8444
+      "mean_f1": 0.9397,
+      "mean_f1_raw": 0.9397
     },
     "full_corpus": {
       "binaries": 216,
@@ -20,6 +20,6 @@
     "mean_f1_raw_drop_max": 0.05,
     "decompiled_drop_max": 10
   },
-  "note_ci_core": "Raised from 0.2341 to 0.8444, measured locally on 5adec587 (2026-10-29) after the sort, ring-buffer, Strlen and open-addressing fixes; the effective floor is now 0.7944. 8 of 9 core binaries predict exactly. The remaining miss is generated_pthread_mutex, which is detected only by symbol name and so is excluded from the headline score by policy (586dddff). Earlier history: 0.2341 had been set from runs 256/257 (c5f8c24, 2ee999a); see git history of this file.",
+  "note_ci_core": "Raised from 0.2341 to 0.8444 and then to 0.9397, measured locally on 5adec587 (2026-10-29) after the sort, ring-buffer, Strlen and open-addressing fixes; the effective floor is now 0.8897. Calls to imported threading APIs (callees with no body in the module) now count as structural evidence; user functions that merely share an API name stay excluded. generated_pthread_mutex predicts an extra Thread label from its pthread_create call. Earlier history: 0.2341 had been set from runs 256/257 (c5f8c24, 2ee999a); see git history of this file.",
   "note_full_corpus": "Still the 2026-08-29 measurement. run_algorithm_recovery_ci.sh does not exercise this profile, so nothing on the CI path has re-measured it."
 }
