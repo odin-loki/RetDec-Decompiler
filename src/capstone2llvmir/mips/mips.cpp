@@ -7947,8 +7947,34 @@ void Capstone2LlvmIrTranslatorMips_impl::translateMtc1(cs_insn* i, cs_mips* mi, 
 		return;
 	}
 	op0 = irb.CreateZExtOrTrunc(op0, irb.getInt32Ty()); // even on 64-bit it takes only 0..31
+	auto* word = op0;
 	op0 = irb.CreateBitCast(op0, irb.getFloatTy());
 	storeOp(mi->operands[1], op0, irb);
+
+	// The single $fN (even N) is also the low word of the double register
+	// that mthc1/ldc1/add.d use. `mtc1 $zero,$f0; mthc1 $zero,$f0` zeroes a
+	// double; without this the low word stayed whatever $fd0 held before.
+	auto& fop = mi->operands[1];
+	if (fop.type == MIPS_OP_REG)
+	{
+		uint32_t f = canonicalizeMipsReg(fop.reg);
+		auto* fr = getRegister(f);
+		if (MIPS_REG_F0 <= f && f <= MIPS_REG_F31 && (f - MIPS_REG_F0) % 2 == 0
+				&& fr && fr->getValueType()->isFloatTy())
+		{
+			uint32_t fd = singlePrecisionToDoublePrecisionFpRegister(f);
+			auto* fdr = getRegister(fd);
+			if (fdr && fdr->getValueType()->isDoubleTy())
+			{
+				auto* i64 = irb.getInt64Ty();
+				auto* bits = irb.CreateBitCast(createLoad(irb, fdr), i64);
+				auto* hi = irb.CreateAnd(bits, llvm::ConstantInt::get(i64, 0xffffffff00000000ULL));
+				auto* v = irb.CreateOr(hi, irb.CreateZExt(word, i64));
+				auto* st = irb.CreateStore(irb.CreateBitCast(v, irb.getDoubleTy()), fdr);
+				attachPointeeType(st, fdr->getValueType());
+			}
+		}
+	}
 }
 
 /**

@@ -5450,15 +5450,27 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MTC1_32)
 {
 	SKIP_MODE_64;
 
+	// $f0 is also the low word of the double in $fd0: mtc1 replaces that
+	// word and keeps the high one (mtc1 $zero,$f0; mthc1 $zero,$f0 zeroes a
+	// double).
+	double start;
+	std::uint64_t startBits = 0x3ff0000012345678ULL;
+	std::memcpy(&start, &startBits, sizeof(start));
+	double expected;
+	std::uint64_t expectedBits = 0x3ff000004048f5c3ULL;
+	std::memcpy(&expected, &expectedBits, sizeof(expected));
+
 	setRegisters({
 		{MIPS_REG_2, 0x4048f5c3},
+		{MIPS_REG_FD0, start},
 	});
 
 	emulate("mtc1 $2, $f0");
 
-	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2});
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_FD0});
 	EXPECT_JUST_REGISTERS_STORED({
 		{MIPS_REG_F0, 3.14_f32}, // hex to float
+		{MIPS_REG_FD0, expected},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();
