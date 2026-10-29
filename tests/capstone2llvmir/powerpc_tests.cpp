@@ -1188,6 +1188,46 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_NOP)
 }
 
 //
+// PPC_INS_DCBT, PPC_INS_DCBTST, PPC_INS_ICBT, PPC_INS_DST, PPC_INS_DSSALL
+//
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_DCBT_is_nothing)
+{
+	ALL_MODES;
+
+	emulate("dcbt 3, 4");
+
+	EXPECT_NO_REGISTERS_LOADED();
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_DCBTST_is_nothing)
+{
+	ALL_MODES;
+
+	emulate("dcbtst 3, 4");
+
+	EXPECT_NO_REGISTERS_LOADED();
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_DSSALL_is_nothing)
+{
+	ALL_MODES;
+
+	emulate("dssall");
+
+	EXPECT_NO_REGISTERS_LOADED();
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
 // PPC_INS_NEG
 //
 

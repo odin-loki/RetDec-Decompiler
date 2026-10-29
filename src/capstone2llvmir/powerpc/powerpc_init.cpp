@@ -644,8 +644,12 @@ Capstone2LlvmIrTranslatorPowerpc_impl::_i2fm =
 		{PPC_INS_DCBF, nullptr},
 		{PPC_INS_DCBI, nullptr},
 		{PPC_INS_DCBST, nullptr},
-		{PPC_INS_DCBT, nullptr},
-		{PPC_INS_DCBTST, nullptr},
+		// Cache-touch hints: no register, no memory and no fault, so nothing
+		// to translate, as ARM's PLD, ARM64's PRFM and MIPS's PREF already
+		// get. As nullptr entries every unrolled memcpy loop carried
+		// __asm_dcbt calls.
+		{PPC_INS_DCBT, &Capstone2LlvmIrTranslatorPowerpc_impl::translateNop},
+		{PPC_INS_DCBTST, &Capstone2LlvmIrTranslatorPowerpc_impl::translateNop},
 		{PPC_INS_DCBZ, nullptr},
 		{PPC_INS_DCBZL, nullptr},
 		{PPC_INS_DCCCI, nullptr},
@@ -655,12 +659,13 @@ Capstone2LlvmIrTranslatorPowerpc_impl::_i2fm =
 		{PPC_INS_DIVDEU, &Capstone2LlvmIrTranslatorPowerpc_impl::translateDivde},
 		{PPC_INS_DIVW, &Capstone2LlvmIrTranslatorPowerpc_impl::translateDivw},
 		{PPC_INS_DIVWU, &Capstone2LlvmIrTranslatorPowerpc_impl::translateDivw},
-		{PPC_INS_DSS, nullptr},
-		{PPC_INS_DSSALL, nullptr},
-		{PPC_INS_DST, nullptr},
-		{PPC_INS_DSTST, nullptr},
-		{PPC_INS_DSTSTT, nullptr},
-		{PPC_INS_DSTT, nullptr},
+		// AltiVec data-stream prefetch hints, nothing as DCBT is.
+		{PPC_INS_DSS, &Capstone2LlvmIrTranslatorPowerpc_impl::translateNop},
+		{PPC_INS_DSSALL, &Capstone2LlvmIrTranslatorPowerpc_impl::translateNop},
+		{PPC_INS_DST, &Capstone2LlvmIrTranslatorPowerpc_impl::translateNop},
+		{PPC_INS_DSTST, &Capstone2LlvmIrTranslatorPowerpc_impl::translateNop},
+		{PPC_INS_DSTSTT, &Capstone2LlvmIrTranslatorPowerpc_impl::translateNop},
+		{PPC_INS_DSTT, &Capstone2LlvmIrTranslatorPowerpc_impl::translateNop},
 		{PPC_INS_EQV, &Capstone2LlvmIrTranslatorPowerpc_impl::translateEqv},
 		{PPC_INS_EVABS, &Capstone2LlvmIrTranslatorPowerpc_impl::translateSpeUnary},
 		{PPC_INS_EVADDIW, &Capstone2LlvmIrTranslatorPowerpc_impl::translateSpeArith},
@@ -883,7 +888,8 @@ Capstone2LlvmIrTranslatorPowerpc_impl::_i2fm =
 		{PPC_INS_FSUB, &Capstone2LlvmIrTranslatorPowerpc_impl::translateFpArithm},
 		{PPC_INS_FSUBS, &Capstone2LlvmIrTranslatorPowerpc_impl::translateFpArithm},
 		{PPC_INS_ICBI, nullptr},
-		{PPC_INS_ICBT, nullptr},
+		// An instruction-cache touch hint, nothing as DCBT is.
+		{PPC_INS_ICBT, &Capstone2LlvmIrTranslatorPowerpc_impl::translateNop},
 		{PPC_INS_ICCCI, nullptr},
 		{PPC_INS_ISEL, &Capstone2LlvmIrTranslatorPowerpc_impl::translateIsel},
 		{PPC_INS_ALIAS_ISELLT, &Capstone2LlvmIrTranslatorPowerpc_impl::translateIsel},
