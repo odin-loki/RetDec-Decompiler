@@ -75,6 +75,19 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   loop and a swap outside it. Under `-O3` the corpus program is folded to
   constants.
 - `goto`s that leave two loops at once become a flag and two `break`s.
+- More `goto`s are structured away (corpus total 95 -> 88, with the bfs,
+  heapsort and mergesort -O2/-O3 builds gaining most): a clause ending in a
+  forward `goto` takes the statements it skips as its `else`; a backward
+  `goto` to an earlier sibling becomes `while (true)`; a `goto` to the head
+  of a `while (true)` becomes `continue`; and a tail after a break-free
+  `while (true)` that jumps back to its head moves into the loop. Loop
+  rewrites are refused when a `goto` would enter the new loop mid-body.
+  Fixed a cycle in the goto-to-`break` rewrite when the goto had a
+  successor.
+- The flag idiom against a positive constant comes out as `a < C`; constant
+  comparisons merged by `||` respect the operands' signedness; the
+  `cdq`-style sign-extension of a 32-bit value to 64 bits comes out as a
+  cast.
 - The x86 `SF != OF` idiom `((a - b) ^ a) & (a ^ b) ^ (a - b)) < 0` comes
   out as `a < b`; `a == b || a < b` comes out as `a <= b`; an `else {}`
   with nothing in it is no longer printed.
