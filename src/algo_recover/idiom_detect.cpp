@@ -754,8 +754,15 @@ bool hasDfsStructure(const ssa::SSAFunction& fn)
 	// A traversal marks nodes; it does not move elements.  Quicksort at -O2
 	// turns its second recursion into a loop around the first, putting a
 	// self-call inside a loop that swaps.
-	return hasSelfCallInLoop(fn) && countOp(fn, ssa::IrInstr::Op::Store) >= 1 && countOp(fn, ssa::IrInstr::Op::Load) >= 2
-		&& ssa::countElementMoves(fn) == 0;
+	// It also reads a graph: recursive Fibonacci at -O2 becomes a self-call
+	// in a loop too, but only ever touches its own stack slots.
+	bool readsMemory = false;
+	for (uint32_t b = 0; b < fn.blockCount() && !readsMemory; ++b)
+		if (const auto* blk = fn.block(b))
+			for (const auto* i: blk->instrs)
+				if (i && i->op == ssa::IrInstr::Op::Load && !addrOnStack(fn, *i)) readsMemory = true;
+	return readsMemory && hasSelfCallInLoop(fn) && countOp(fn, ssa::IrInstr::Op::Store) >= 1
+		&& countOp(fn, ssa::IrInstr::Op::Load) >= 2 && ssa::countElementMoves(fn) == 0;
 }
 
 IdiomResult makeResult(IdiomKind kind, float confidence, const std::string& detail)
@@ -781,8 +788,7 @@ std::string IdiomResult::primaryLabel() const noexcept
 	case IdiomKind::Varint: return "Varint";
 	case IdiomKind::Gcd: return "GCD";
 	case IdiomKind::Crc: return "CRC";
-	// A6: Knapsack / Fibonacci / LCS are enum labels only — detect() never
-	// assigns them (no generalisable structural signature).
+	// A6: Knapsack / LCS are enum labels only — detect() never assigns them.
 	case IdiomKind::Knapsack: return "Knapsack";
 	case IdiomKind::Rle: return "RLE";
 	case IdiomKind::Fibonacci: return "Fibonacci";

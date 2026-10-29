@@ -2752,3 +2752,15 @@ TEST(IdiomDetectorTest, RecursionInALoopThatSwapsElementsIsNotDfs)
 	}
 	EXPECT_FALSE(detects(*fn, IdiomKind::Dfs));
 }
+
+// Recursive Fibonacci at -O2 also recurses from inside a loop, but it only
+// reads its own stack slots; a DFS reads the graph.
+TEST(IdiomDetectorTest, RecursionInALoopThatOnlyReadsTheStackIsNotDfs)
+{
+	auto fn = makeRecursive(/*callInLoop=*/true);
+	auto* slot = fn->allocValue(ssa::ValueKind::VirtualReg);
+	slot->isStackSlot = true;
+	for (const auto* i: fn->block(1)->instrs)
+		if (i->op == ssa::IrInstr::Op::Load) const_cast<ssa::IrInstr*>(i)->uses.push_back({slot->id, 0});
+	EXPECT_FALSE(detects(*fn, IdiomKind::Dfs));
+}
