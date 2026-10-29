@@ -1719,6 +1719,7 @@ uint32_t Capstone2LlvmIrTranslatorRiscv_impl::csrOperandReg(uint16_t encoding) c
 		case RISCV_SYSREG_MVENDORID:
 		case RISCV_SYSREG_MARCHID:
 		case RISCV_SYSREG_MIMPID:
+		case RISCV_SYSREG_JVT:
 			return csrLlvmRegId(encoding);
 		default:
 			return RISCV_REG_INVALID;
@@ -6273,6 +6274,12 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateScalarCrypto(cs_insn* i, cs_r
 	case RISCV_INS_AES64IM: iid = zid(llvm::Intrinsic::riscv_aes64im); break;
 	case RISCV_INS_AES64KS1I: iid = zid(llvm::Intrinsic::riscv_aes64ks1i); break;
 	case RISCV_INS_AES64KS2: iid = zid(llvm::Intrinsic::riscv_aes64ks2); break;
+	case RISCV_INS_SHA512SIG0H: iid = zid(llvm::Intrinsic::riscv_sha512sig0h); bs32 = true; break;
+	case RISCV_INS_SHA512SIG0L: iid = zid(llvm::Intrinsic::riscv_sha512sig0l); bs32 = true; break;
+	case RISCV_INS_SHA512SIG1H: iid = zid(llvm::Intrinsic::riscv_sha512sig1h); bs32 = true; break;
+	case RISCV_INS_SHA512SIG1L: iid = zid(llvm::Intrinsic::riscv_sha512sig1l); bs32 = true; break;
+	case RISCV_INS_SHA512SUM0R: iid = zid(llvm::Intrinsic::riscv_sha512sum0r); bs32 = true; break;
+	case RISCV_INS_SHA512SUM1R: iid = zid(llvm::Intrinsic::riscv_sha512sum1r); bs32 = true; break;
 	default: throw GenericError("Unhandled insn ID in translateScalarCrypto().");
 	}
 	if (!bs32 && !isXlen64())
@@ -6401,6 +6408,71 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateZcmp(cs_insn* i, cs_riscv* ri
 		generateReturnFunctionCall(irb, loadRegister(RISCV_REG_X1, irb));
 	}
 }
+
+/**
+ * Zcmt table jumps: the target is entry `index` of the table at jvt & ~63,
+ * each entry XLEN bits wide. cm.jalt (index >= 32) also links through ra.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateZcmt(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	if (ri->op_count != 1 || ri->operands[0].type != RISCV_OP_IMM)
+	{
+		throwUnexpectedOperands(i);
+	}
+	auto* ty = getDefaultType();
+	unsigned bytes = isXlen64() ? 8 : 4;
+	auto* jvt = loadCsr(RISCV_SYSREG_JVT, irb);
+	jvt = irb.CreateAnd(irb.CreateZExtOrTrunc(jvt, ty), llvm::ConstantInt::get(ty, ~uint64_t(63)));
+	auto* addr = irb.CreateAdd(jvt,
+			llvm::ConstantInt::get(ty, uint64_t(ri->operands[0].imm) * bytes));
+	auto* pty = llvm::PointerType::get(irb.getContext(), 0);
+	auto* ld = irb.CreateLoad(ty, irb.CreateIntToPtr(addr, pty));
+	attachPointeeType(ld, ty);
+	llvm::Value* target = irb.CreateAnd(ld, irb.CreateNot(llvm::ConstantInt::get(ty, 1)));
+	if (i->id == RISCV_INS_CM_JALT)
+	{
+		storeRegister(RISCV_REG_X1, getNextInsnAddress(i), irb);
+		generateCallFunctionCall(irb, target);
+	}
+	else
+	{
+		generateBranchFunctionCall(irb, target);
+	}
+}
+
+/**
+ * Zimop mop.r.N / mop.rr.N write zero to rd when no extension redefines them.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateMop(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	if (ri->op_count < 1 || ri->operands[0].type != RISCV_OP_REG)
+	{
+		throwUnexpectedOperands(i);
+	}
+	storeOp(ri->operands[0], llvm::ConstantInt::get(getDefaultType(), 0), irb);
+}
+
+/**
+ * Zfa fli.s / fli.d: Capstone hands over the constant as a double.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateFli(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	if (ri->op_count != 2 || ri->operands[0].type != RISCV_OP_REG)
+	{
+		throwUnexpectedOperands(i);
+	}
+	llvm::Value* v = nullptr;
+	if (i->id == RISCV_INS_FLI_S)
+	{
+		v = llvm::ConstantFP::get(irb.getFloatTy(), static_cast<float>(ri->operands[1].dimm));
+	}
+	else
+	{
+		v = llvm::ConstantFP::get(irb.getDoubleTy(), ri->operands[1].dimm);
+	}
+	storeOp(ri->operands[0], v, irb, eOpConv::FPCAST_OR_BITCAST);
+}
+
 
 } // namespace capstone2llvmir
 } // namespace retdec

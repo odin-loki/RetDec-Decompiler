@@ -4934,6 +4934,129 @@ TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_VT_MASKCN)
 	EXPECT_TRUE(hasExtractOrSelect(f)) << dumpFunction(f);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CM_JALT_calls_table_entry)
+{
+	ALL_MODES;
+	enableZcmp();
+
+	bool rv32 = GetParam() == CS_MODE_RISCV32;
+	setRegisters({
+		{RISCV_REG_A0, 0x3005},
+	});
+	if (rv32)
+	{
+		setMemory({{0x3084, 0x5001_dw}});
+	}
+	else
+	{
+		setMemory({{0x3108, 0x5001_qw}});
+	}
+
+	// csrw jvt, a0 ; cm.jalt 33
+	emulate_bin("73 10 75 01 86 a0", 0x1000);
+
+	EXPECT_EQ(0x1006u, getRegisterValueUnsigned(RISCV_REG_RA));
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCallFunction(), {0x5000}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CM_JT_branches_to_table_entry)
+{
+	ALL_MODES;
+	enableZcmp();
+
+	bool rv32 = GetParam() == CS_MODE_RISCV32;
+	setRegisters({
+		{RISCV_REG_A0, 0x3000},
+	});
+	if (rv32)
+	{
+		setMemory({{0x3008, 0x6000_dw}});
+	}
+	else
+	{
+		setMemory({{0x3010, 0x6000_qw}});
+	}
+
+	// csrw jvt, a0 ; cm.jt 2
+	emulate_bin("73 10 75 01 0a a0", 0x1000);
+
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getBranchFunction(), {0x6000}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_MOP_R_0_writes_zero)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_A0, 0x1234},
+		{RISCV_REG_A1, 0x5678},
+	});
+
+	emulate_bin("73 c5 c5 81");
+
+	EXPECT_JUST_REGISTERS_STORED({{RISCV_REG_A0, 0}});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_MOP_RR_0_writes_zero)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_A0, 0x1234},
+	});
+
+	emulate_bin("73 c5 b5 83");
+
+	EXPECT_JUST_REGISTERS_STORED({{RISCV_REG_A0, 0}});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_WFI_is_nothing)
+{
+	ALL_MODES;
+
+	emulate_bin("73 00 50 10");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_FLI_S_one)
+{
+	ALL_MODES;
+
+	emulate_bin("53 00 18 f0");
+
+	EXPECT_JUST_REGISTERS_STORED({{RISCV_REG_F0_32, 1.0_f32}});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_FLI_D_two)
+{
+	ALL_MODES;
+
+	emulate_bin("d3 00 1a f2");
+
+	EXPECT_JUST_REGISTERS_STORED({{RISCV_REG_F1_64, 2.0_f64}});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_SHA512SUM0R_uses_intrinsic)
+{
+	ONLY_MODE_RV32;
+
+	auto* f = translate({0x33, 0x05, 0xb5, 0x50});
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasNamedCall(f, "llvm.riscv.sha512sum0r")) << dumpFunction(f);
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
