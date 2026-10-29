@@ -207,9 +207,19 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/src/retdec-decompiler/profiles"
         "${_DEC_SHARE_DIR}/profiles"
+    # Type and ordinal data, so build-tree gates see the libc signatures an
+    # install would (without them printf() loses its arguments).
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${_DEC_SHARE_DIR}/support/generic"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/support/types"
+        "${_DEC_SHARE_DIR}/support/generic/types"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/support/ordinals"
+        "${_DEC_SHARE_DIR}/support/ordinals"
     COMMAND ${CMAKE_COMMAND} -E touch "${_DEC_SHARE_STAMP}"
     DEPENDS retdec-decompiler
         "${CMAKE_SOURCE_DIR}/src/retdec-decompiler/decompiler-config.json"
+        "${CMAKE_SOURCE_DIR}/support/types/cstdlib.json"
     COMMENT "Stage share/retdec next to the build-tree decompiler"
     VERBATIM
 )
