@@ -703,3 +703,17 @@ def test_std_string_is_not_a_ring_buffer() -> None:
     labels = labels_from_config(_one("container", "std::string"), "x-gcc-O0")
     assert "RingBuffer" not in labels
     assert "CircularBuffer" not in labels
+
+
+def test_sort_label_with_std_equivalent_gets_its_aliases() -> None:
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {"kind": "sort", "label": "mergesort (std::stable_sort)", "confidence": 0.9},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg)
+    assert {"Mergesort", "Sort", "DivideAndConquer"} <= set(labels)

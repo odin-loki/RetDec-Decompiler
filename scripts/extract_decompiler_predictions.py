@@ -267,6 +267,11 @@ def _add_aliases(found: set[str], text: str) -> None:
     norm = _norm(text)
     if norm in SORT_ALIASES:
         found.update(SORT_ALIASES[norm])
+    # Sort labels carry the std:: equivalent in parentheses, e.g.
+    # "mergesort (std::stable_sort)"; the alias is keyed by the name alone.
+    base = _norm(text.split("(", 1)[0])
+    if base != norm and base in SORT_ALIASES:
+        found.update(SORT_ALIASES[base])
     compact = norm.replace(" ", "")
     if compact in TOKEN_MAP:
         found.add(TOKEN_MAP[compact])

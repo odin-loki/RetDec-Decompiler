@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- Prediction extraction: a sort label that names its std:: equivalent in
+  parentheses ("mergesort (std::stable_sort)") now gets the aliases of the
+  sort itself, so mergesort reports DivideAndConquer. mergesort -O0/-O2/-O3
+  are exact; macro-F1 0.4338 to 0.4492 (44/126).
 - Varint: also recognised when the byte store drops the `& 0x7F` mask and
   `v >>= 7` is lifted as an unsigned divide by 128 (continuation bit ORed
   in and the value divided by 128 inside the loop). varint_encode -O0 is now
