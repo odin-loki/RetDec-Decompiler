@@ -20506,6 +20506,68 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcPsTests, PPC_INS_PS_MERGE01_takes_a0_and_
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcPsTests, PPC_INS_LFS_also_writes_ps1)
+{
+	setRegisters({{PPC_REG_R3, 0x1000}});
+	setMemoryValueFloat(0x1000, 2.5f);
+
+	emulate_bin("c0 23 00 00"); // lfs f1, 0(r3)
+
+	EXPECT_NEAR(2.5, getRegisterValueDouble(PPC_REG_F1), 1e-9);
+	EXPECT_NEAR(2.5, ps1(1), 1e-9);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcPsTests, PPC_INS_MTSPR_gqr_is_state)
+{
+	setRegisters({{PPC_REG_R3, 0x01040000}});
+
+	emulate_bin("7c 72 e3 a6"); // mtspr 914, r3
+
+	EXPECT_EQ(0x01040000u, _emulator->getGlobalVariableValue(
+			_module.getGlobalVariable("gqr2")).IntVal.getZExtValue());
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcPsTests, PPC_INS_PSQ_L_float_pair)
+{
+	setRegisters({{PPC_REG_R3, 0x1000}});
+	setMemoryValueFloat(0x1008, 1.5f);
+	setMemoryValueFloat(0x100c, -2.0f);
+
+	emulate_bin("e0 23 20 08"); // psq_l f1, 8(r3), 0, 2
+
+	EXPECT_NEAR(1.5, getRegisterValueDouble(PPC_REG_F1), 1e-9);
+	EXPECT_NEAR(-2.0, ps1(1), 1e-9);
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcPsTests, PPC_INS_PSQ_L_dequantizes_u8_with_scale)
+{
+	setRegisters({{PPC_REG_R3, 0x1000}});
+	llvm::GenericValue g;
+	g.IntVal = llvm::APInt(32, 0x01040000); // load type u8, scale 1
+	_emulator->setGlobalVariableValue(_module.getGlobalVariable("gqr2"), g);
+	setMemoryValueUnsigned(0x1008, 0x10, 8);
+	setMemoryValueUnsigned(0x1009, 0x20, 8);
+
+	emulate_bin("e0 23 20 08"); // psq_l f1, 8(r3), 0, 2
+
+	EXPECT_NEAR(8.0, getRegisterValueDouble(PPC_REG_F1), 1e-9);
+	EXPECT_NEAR(16.0, ps1(1), 1e-9);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcPsTests, PPC_INS_PSQ_ST_w1_stores_ps0_only)
+{
+	setRegisters({
+		{PPC_REG_R3, 0x1000},
+		{PPC_REG_F1, 3.0_f64},
+	});
+
+	emulate_bin("f0 23 a0 08"); // psq_st f1, 8(r3), 1, 2
+
+	EXPECT_JUST_MEMORY_STORED({{0x1008, 3.0_f32}});
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

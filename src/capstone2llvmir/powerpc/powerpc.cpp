@@ -259,7 +259,27 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::generateEnvironmentArchSpecific()
 		{
 			getPs1(PPC_REG_F0 + r);
 		}
+		for (unsigned q = 0; q < 8; ++q)
+		{
+			getGqr(q);
+		}
 	}
+}
+
+/**
+ * Graphics quantization register GQR@a n (SPR 912 + n), 0 at reset: both
+ * directions plain single-precision floats, no scaling.
+ */
+llvm::GlobalVariable* Capstone2LlvmIrTranslatorPowerpc_impl::getGqr(unsigned n)
+{
+	std::string name = "gqr" + std::to_string(n);
+	if (auto* gv = _module->getGlobalVariable(name))
+	{
+		return gv;
+	}
+	auto* i32 = llvm::Type::getInt32Ty(_module->getContext());
+	return new llvm::GlobalVariable(*_module, i32, false, llvm::GlobalValue::ExternalLinkage,
+			llvm::ConstantInt::get(i32, 0), name);
 }
 
 /**
@@ -335,6 +355,10 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateInstruction(
 	{
 		auto f = fIt->second;
 		(this->*f)(i, pi, irb);
+		if (static_cast<unsigned>(_extraMode) & CS_MODE_PS)
+		{
+			copySingleResultToPs1(i, pi, irb);
+		}
 	}
 	else
 	{
@@ -2292,6 +2316,208 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateFcmp(cs_insn* i, cs_ppc* pi
 	storeRegister(gtR, irb.CreateFCmpOGT(a, b), irb);
 	storeRegister(eqR, irb.CreateFCmpOEQ(a, b), irb);
 	storeRegister(unR, irb.CreateFCmpUNO(a, b), irb);
+}
+
+/**
+ * On Gekko/Broadway every single-precision result -- arithmetic, frsp and
+ * the lfs family -- is written to both paired-single slots.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::copySingleResultToPs1(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	switch (i->id)
+	{
+	case PPC_INS_FADDS: case PPC_INS_FSUBS: case PPC_INS_FMULS: case PPC_INS_FDIVS:
+	case PPC_INS_FMADDS: case PPC_INS_FMSUBS: case PPC_INS_FNMADDS: case PPC_INS_FNMSUBS:
+	case PPC_INS_FRES: case PPC_INS_FRSP: case PPC_INS_FSQRTS:
+	case PPC_INS_LFS: case PPC_INS_LFSU: case PPC_INS_LFSX: case PPC_INS_LFSUX:
+		break;
+	default:
+		return;
+	}
+	if (pi->op_count == 0 || pi->operands[0].type != PPC_OP_REG
+			|| pi->operands[0].reg < PPC_REG_F0 || pi->operands[0].reg > PPC_REG_F31)
+	{
+		return;
+	}
+	auto* v = loadRegister(pi->operands[0].reg, irb);
+	irb.CreateStore(irb.CreateFPCast(v, irb.getDoubleTy()), getPs1(pi->operands[0].reg));
+}
+
+/**
+ * PPC_INS_MTSPR / PPC_INS_MFSPR. In paired-single mode SPRs 912-919 are the
+ * GQRs that PSQ_L/PSQ_ST read, so they are state rather than opaque calls.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateMtspr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	if ((static_cast<unsigned>(_extraMode) & CS_MODE_PS) && pi->op_count == 2
+			&& pi->operands[0].type == PPC_OP_IMM && pi->operands[0].imm >= 912 && pi->operands[0].imm <= 919
+			&& pi->operands[1].type == PPC_OP_REG)
+	{
+		auto* v = irb.CreateZExtOrTrunc(loadRegister(pi->operands[1].reg, irb), irb.getInt32Ty());
+		irb.CreateStore(v, getGqr(unsigned(pi->operands[0].imm - 912)));
+		return;
+	}
+	translatePseudoAsmFncOp0Op1(i, pi, irb);
+}
+
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateMfspr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	if ((static_cast<unsigned>(_extraMode) & CS_MODE_PS) && pi->op_count == 2
+			&& pi->operands[1].type == PPC_OP_IMM && pi->operands[1].imm >= 912 && pi->operands[1].imm <= 919
+			&& pi->operands[0].type == PPC_OP_REG)
+	{
+		auto* v = irb.CreateLoad(irb.getInt32Ty(), getGqr(unsigned(pi->operands[1].imm - 912)));
+		storeRegister(pi->operands[0].reg, v, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		return;
+	}
+	translatePseudoAsmOp0FncOp1(i, pi, irb);
+}
+
+/**
+ * PPC_INS_PSQ_L(U)(X), PPC_INS_PSQ_ST(U)(X) -- quantized paired-single
+ * load/store: psq_l fD, d(rA), W, I  /  psq_lx fD, rA, rB, W, I.
+ *
+ * GQR[I] gives, per direction, a type (0 float, 4 u8, 5 u16, 6 s8, 7 s16)
+ * and a signed 6-bit scale: loads compute int * 2^-scale, stores
+ * clamp(round(v * 2^scale)). W=1 transfers ps0 only and a load sets ps1
+ * to 1.0. The type is read at run time, so each element is a select over
+ * the three widths.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translatePsq(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	bool store = i->id == PPC_INS_PSQ_ST || i->id == PPC_INS_PSQ_STU
+			|| i->id == PPC_INS_PSQ_STX || i->id == PPC_INS_PSQ_STUX;
+	bool update = i->id == PPC_INS_PSQ_LU || i->id == PPC_INS_PSQ_STU
+			|| i->id == PPC_INS_PSQ_LUX || i->id == PPC_INS_PSQ_STUX;
+	unsigned n = pi->op_count;
+	if (n < 4 || pi->operands[0].type != PPC_OP_REG
+			|| pi->operands[0].reg < PPC_REG_F0 || pi->operands[0].reg > PPC_REG_F31
+			|| pi->operands[n - 1].type != PPC_OP_IMM || pi->operands[n - 2].type != PPC_OP_IMM)
+	{
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+	bool w = pi->operands[n - 2].imm != 0;
+	unsigned gq = unsigned(pi->operands[n - 1].imm) & 7;
+	auto* at = getDefaultType();
+	llvm::Value* ea = nullptr;
+	uint32_t updReg = PPC_REG_INVALID;
+	if (pi->operands[1].type == PPC_OP_MEM)
+	{
+		ea = irb.CreateZExtOrTrunc(loadOp(pi->operands[1], irb, nullptr, true), at);
+		updReg = pi->operands[1].mem.base;
+	}
+	else if (n == 5 && pi->operands[1].type == PPC_OP_REG && pi->operands[2].type == PPC_OP_REG)
+	{
+		auto* b = irb.CreateZExtOrTrunc(loadRegister(pi->operands[2].reg, irb), at);
+		uint32_t a = pi->operands[1].reg;
+		ea = (a == PPC_REG_R0 || a == PPC_REG_ZERO || a == PPC_REG_INVALID)
+				? b : irb.CreateAdd(irb.CreateZExtOrTrunc(loadRegister(a, irb), at), b);
+		updReg = a;
+	}
+	else if (n == 4 && pi->operands[1].type == PPC_OP_REG)
+	{
+		ea = irb.CreateZExtOrTrunc(loadRegister(pi->operands[1].reg, irb), at);
+	}
+	if (ea == nullptr)
+	{
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+
+	auto* i32 = irb.getInt32Ty();
+	auto* f32 = irb.getFloatTy();
+	auto* d = irb.getDoubleTy();
+	llvm::Value* gqr = irb.CreateLoad(i32, getGqr(gq));
+	llvm::Value* type = irb.CreateAnd(irb.CreateLShr(gqr, store ? 0 : 16), 7);
+	llvm::Value* scale = irb.CreateAnd(irb.CreateLShr(gqr, store ? 8 : 24), 0x3f);
+	scale = irb.CreateAShr(irb.CreateShl(scale, 26), 26); // sign-extend 6 bits
+	if (!store) scale = irb.CreateNeg(scale);
+	// 2^scale as a double, built from the exponent field.
+	llvm::Value* pow2 = irb.CreateBitCast(
+			irb.CreateShl(irb.CreateZExt(irb.CreateAdd(scale, irb.getInt32(1023)), irb.getInt64Ty()), 52), d);
+	auto isT = [&](llvm::IRBuilder<>& b, unsigned t) { return b.CreateICmpEQ(type, b.getInt32(t)); };
+	llvm::Value* isFloat = irb.CreateICmpULT(type, irb.getInt32(4));
+	llvm::Value* isByte = irb.CreateOr(isT(irb, 4), isT(irb, 6));
+	unsigned elems = w ? 1 : 2;
+	uint32_t fr = pi->operands[0].reg;
+	llvm::Value* src[2] = {nullptr, nullptr};
+	if (store)
+	{
+		src[0] = irb.CreateFPCast(loadRegister(fr, irb), d);
+		src[1] = irb.CreateLoad(d, getPs1(fr));
+	}
+
+	// One path per memory width (float / byte / halfword), each with
+	// exactly the accesses the hardware makes -- psq_st is how Gekko code
+	// feeds the write-gather pipe, so no extra reads or writes.
+	// Returns the loaded (ps0, ps1) for loads.
+	auto path = [&](llvm::IRBuilder<>& b, unsigned bytes) -> std::pair<llvm::Value*, llvm::Value*> {
+		llvm::Value* out[2] = {llvm::ConstantFP::get(d, 1.0), llvm::ConstantFP::get(d, 1.0)};
+		llvm::Type* it = b.getIntNTy(bytes * 8);
+		for (unsigned k = 0; k < elems; ++k)
+		{
+			llvm::Value* a = k == 0 ? ea : b.CreateAdd(ea, llvm::ConstantInt::get(at, bytes));
+			if (bytes == 4)
+			{
+				if (store) storeIntPtr(b, b.CreateFPTrunc(src[k], f32), a, f32);
+				else out[k] = b.CreateFPExt(loadIntPtr(b, a, f32), d);
+				continue;
+			}
+			llvm::Value* sgn = isT(b, bytes == 1 ? 6 : 7);
+			if (store)
+			{
+				llvm::Value* q = b.CreateUnaryIntrinsic(llvm::Intrinsic::roundeven, b.CreateFMul(src[k], pow2));
+				double ulo = 0, uhi = bytes == 1 ? 255 : 65535;
+				double slo = bytes == 1 ? -128 : -32768, shi = bytes == 1 ? 127 : 32767;
+				auto clamp = [&](double lo, double hi) {
+					llvm::Value* c = b.CreateIntrinsic(llvm::Intrinsic::maxnum, {d}, {q, llvm::ConstantFP::get(d, lo)});
+					return b.CreateIntrinsic(llvm::Intrinsic::minnum, {d}, {c, llvm::ConstantFP::get(d, hi)});
+				};
+				llvm::Value* sv = b.CreateFPToSI(clamp(slo, shi), it);
+				llvm::Value* uv = b.CreateFPToUI(clamp(ulo, uhi), it);
+				storeIntPtr(b, b.CreateSelect(sgn, sv, uv), a, it);
+			}
+			else
+			{
+				llvm::Value* v = loadIntPtr(b, a, it);
+				llvm::Value* f = b.CreateSelect(sgn, b.CreateSIToFP(v, d), b.CreateUIToFP(v, d));
+				out[k] = b.CreateFMul(f, pow2);
+			}
+		}
+		return {out[0], out[1]};
+	};
+
+	auto [fBody, iBody] = generateIfThenElse(isFloat, irb);
+	llvm::IRBuilder<> fb(fBody);
+	auto fv = path(fb, 4);
+	llvm::IRBuilder<> ib(iBody);
+	auto [bBody, hBody] = generateIfThenElse(isByte, ib);
+	llvm::IRBuilder<> bb(bBody);
+	auto bv = path(bb, 1);
+	llvm::IRBuilder<> hb(hBody);
+	auto hv = path(hb, 2);
+	if (!store)
+	{
+		auto phi2 = [&](llvm::IRBuilder<>& at2, llvm::Value* x, llvm::BasicBlock* xb, llvm::Value* y, llvm::BasicBlock* yb) {
+			auto* p = at2.CreatePHI(d, 2);
+			p->addIncoming(x, xb);
+			p->addIncoming(y, yb);
+			return p;
+		};
+		// ib now sits after the inner if/else, irb after the outer one.
+		llvm::Value* i0 = phi2(ib, bv.first, bBody->getParent(), hv.first, hBody->getParent());
+		llvm::Value* i1 = phi2(ib, bv.second, bBody->getParent(), hv.second, hBody->getParent());
+		llvm::BasicBlock* intEnd = ib.GetInsertBlock();
+		llvm::Value* v0 = phi2(irb, fv.first, fBody->getParent(), i0, intEnd);
+		llvm::Value* v1 = phi2(irb, fv.second, fBody->getParent(), i1, intEnd);
+		storeRegister(fr, v0, irb, eOpConv::FPCAST_OR_BITCAST);
+		irb.CreateStore(w ? llvm::ConstantFP::get(d, 1.0) : v1, getPs1(fr));
+	}
+	if (update && updReg != PPC_REG_INVALID && updReg != PPC_REG_R0 && updReg != PPC_REG_ZERO)
+	{
+		storeRegister(updReg, ea, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	}
 }
 
 /**

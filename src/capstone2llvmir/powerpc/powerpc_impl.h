@@ -101,6 +101,11 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		llvm::Value* roundToSingle(llvm::IRBuilder<>& irb, llvm::Value* val);
 		llvm::Value* loadOpDouble(cs_ppc_op& op, llvm::IRBuilder<>& irb);
 		llvm::GlobalVariable* getPs1(uint32_t fr);
+		llvm::GlobalVariable* getGqr(unsigned n);
+		void copySingleResultToPs1(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateMtspr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateMfspr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translatePsq(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		llvm::Value* loadOpI128(cs_ppc_op& op, llvm::IRBuilder<>& irb);
 		void storeOpI128(cs_ppc_op& op, llvm::Value* val, llvm::IRBuilder<>& irb);
 		llvm::Value* loadOpI256(cs_ppc_op& op, llvm::IRBuilder<>& irb);
