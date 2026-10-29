@@ -26,6 +26,7 @@
 #include "retdec/llvmir2hll/ir/return_stmt.h"
 #include "retdec/llvmir2hll/optimizer/optimizers/goto_stmt_optimizer.h"
 #include "retdec/llvmir2hll/support/debug.h"
+#include "retdec/llvmir2hll/support/expression_negater.h"
 
 namespace retdec {
 namespace llvmir2hll {
@@ -45,6 +46,16 @@ ShPtr<Statement> innermostBreakScope(ShPtr<Statement> stmt) {
 		}
 	}
 	return nullptr;
+}
+
+/// A body of only empty statements that nothing jumps to.
+bool isEmptyBody(ShPtr<Statement> stmt) {
+	for (; stmt; stmt = stmt->getSuccessor()) {
+		if (!isa<EmptyStmt>(stmt) || stmt->hasLabel() || stmt->isGotoTarget()) {
+			return false;
+		}
+	}
+	return true;
 }
 
 /// A statement that can move into a loop without changing what any break,
@@ -325,6 +336,18 @@ void GotoStmtOptimizer::runOnFunction(ShPtr<Function> func) {
 	std::set<ShPtr<Statement>> targeted;
 	for (const auto &g : live) {
 		targeted.insert(g->getTarget());
+	}
+	for (const auto &stmt : all) {
+		auto ifStmt = cast<IfStmt>(stmt);
+		if (ifStmt && !ifStmt->hasElseIfClauses() && ifStmt->hasElseClause() &&
+				isEmptyBody(ifStmt->getFirstIfBody())) {
+			// `if (c) {} else { S }` ==> `if (!c) { S }`; a dropped goto can
+			// leave the first.
+			ifStmt->setFirstIfCond(
+				ExpressionNegater::negate(ifStmt->getFirstIfCond()));
+			ifStmt->setFirstIfBody(ifStmt->getElseClause());
+			ifStmt->removeElseClause();
+		}
 	}
 	for (const auto &stmt : all) {
 		if (!targeted.count(stmt) && (stmt->isGotoTarget() || stmt->hasLabel())) {

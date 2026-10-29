@@ -352,6 +352,21 @@ GotoAtTheEndOfAnIfPastTheNextStatementIsKept) {
 	EXPECT_EQ(gotoL, body->getSuccessor());
 }
 
+TEST_F(GotoStmtOptimizerTests,
+IfWithAnEmptyThenAndAnElseIsFlippedOnTheLastRun) {
+	ShPtr<Variable> varA(Variable::create("a", IntType::create(32)));
+	testFunc->addLocalVar(varA);
+	auto elseBody = AssignStmt::create(varA, ConstInt::create(2, 32));
+	auto ifStmt = IfStmt::create(varA, EmptyStmt::create());
+	ifStmt->setElseClause(elseBody);
+	testFunc->setBody(ifStmt);
+
+	Optimizer::optimize<GotoStmtOptimizer>(module, true);
+	EXPECT_FALSE(ifStmt->hasElseClause());
+	EXPECT_EQ(elseBody, ifStmt->getFirstIfBody());
+	EXPECT_TRUE(isa<NotOpExpr>(ifStmt->getFirstIfCond()));
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec
