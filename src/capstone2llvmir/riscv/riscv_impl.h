@@ -234,6 +234,8 @@ class Capstone2LlvmIrTranslatorRiscv_impl :
 		void translateVcmp(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateVslide(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateVwiden(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateVendorDot(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateOpaque(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateVnarrow(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateVrgather(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateVmask(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);

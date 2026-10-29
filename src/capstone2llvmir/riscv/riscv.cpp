@@ -419,6 +419,7 @@ bool Capstone2LlvmIrTranslatorRiscv_impl::isAllowedExtraMode(cs_mode m)
 			| static_cast<unsigned>(CS_MODE_RISCV_VENTANA)
 			| static_cast<unsigned>(CS_MODE_RISCV_ZCMP_ZCMT_ZCE)
 			| static_cast<unsigned>(CS_MODE_RISCV_THEAD)
+			| static_cast<unsigned>(CS_MODE_RISCV_SIFIVE)
 			| static_cast<unsigned>(CS_MODE_RISCV_COREV);
 	auto stripped = static_cast<cs_mode>(static_cast<unsigned>(m) & ~ext);
 	return stripped == CS_MODE_LITTLE_ENDIAN
@@ -7663,6 +7664,80 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateCoreVBitrevElw(cs_insn* i, cs
 	{
 		storeRegister(ri->operands[0].reg, irb.CreateZExtOrTrunc(r, xt), irb);
 	}
+}
+
+
+/**
+ * T-Head TH_VMAQA* (four-way byte dot product into each 32-bit lane) and
+ * SiFive SF_VQMACC*_2X8X2 (2x8 by 8x2 byte matrix product into a 2x2 int32
+ * tile), on the 128-bit register model.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateVendorDot(
+		cs_insn* i,
+		cs_riscv* ri,
+		llvm::IRBuilder<>& irb)
+{
+	if (ri->op_count != 3)
+	{
+		translatePseudoAsmGeneric(i, ri, irb);
+		return;
+	}
+	auto* i8v = llvm::ScalableVectorType::get(irb.getInt8Ty(), 16);
+	auto* i32 = irb.getInt32Ty();
+	auto bytesOf = [&](cs_riscv_op& o) -> llvm::Value* {
+		llvm::Value* v = loadOp(o, irb);
+		if (v->getType()->isVectorTy())
+			return irb.CreateBitCast(splatToRvv(v, irb), i8v);
+		// A scalar rs1 supplies the same four bytes to every lane.
+		v = irb.CreateTrunc(v, i32);
+		return irb.CreateBitCast(irb.CreateVectorSplat(llvm::ElementCount::getScalable(4), v), i8v);
+	};
+	auto ext = [&](llvm::Value* b, bool u) {
+		return u ? irb.CreateZExt(b, i32) : irb.CreateSExt(b, i32);
+	};
+	llvm::Value* acc = splatToRvv(loadOp(ri->operands[0], irb), irb);
+	llvm::Value* a = bytesOf(ri->operands[1]);
+	llvm::Value* b = bytesOf(ri->operands[2]);
+	bool au = false, bu = false, tile = false;
+	switch (i->id)
+	{
+		case RISCV_INS_TH_VMAQAU_VV: case RISCV_INS_TH_VMAQAU_VX: au = bu = true; break;
+		case RISCV_INS_TH_VMAQASU_VV: case RISCV_INS_TH_VMAQASU_VX: bu = true; break;
+		case RISCV_INS_TH_VMAQAUS_VX: au = true; break;
+		case RISCV_INS_SF_VQMACCU_2X8X2: au = bu = tile = true; break;
+		case RISCV_INS_SF_VQMACCSU_2X8X2: bu = tile = true; break;
+		case RISCV_INS_SF_VQMACCUS_2X8X2: au = tile = true; break;
+		case RISCV_INS_SF_VQMACC_2X8X2: tile = true; break;
+		default: break;
+	}
+	for (unsigned l = 0; l < 4; ++l)
+	{
+		llvm::Value* sum = irb.CreateExtractElement(acc, irb.getInt32(l));
+		unsigned n = tile ? 8 : 4;
+		unsigned ra = tile ? 8 * (l / 2) : 4 * l;
+		unsigned rb = tile ? 8 * (l % 2) : 4 * l;
+		for (unsigned k = 0; k < n; ++k)
+		{
+			llvm::Value* x = ext(irb.CreateExtractElement(a, irb.getInt32(ra + k)), au);
+			llvm::Value* y = ext(irb.CreateExtractElement(b, irb.getInt32(rb + k)), bu);
+			sum = irb.CreateAdd(sum, irb.CreateMul(x, y));
+		}
+		acc = irb.CreateInsertElement(acc, sum, irb.getInt32(l));
+	}
+	storeOp(ri->operands[0], acc, irb, eOpConv::NOTHING);
+}
+
+/**
+ * Custom-coprocessor (SiFive VCIX) and shadow-stack-pointer reads: the
+ * effect is implementation-defined, so they lift as opaque calls that read
+ * and write the named operands.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateOpaque(
+		cs_insn* i,
+		cs_riscv* ri,
+		llvm::IRBuilder<>& irb)
+{
+	translatePseudoAsmGeneric(i, ri, irb);
 }
 
 } // namespace capstone2llvmir

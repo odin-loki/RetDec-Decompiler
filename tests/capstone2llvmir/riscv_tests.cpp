@@ -6749,6 +6749,39 @@ TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_LR_W_AQRL)
 	EXPECT_EQ(0x12345678ULL, getRegisterValueUnsigned(RISCV_REG_A0) & 0xffffffffULL);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_TH_VMAQA_VV_lifted)
+{
+	ALL_MODES;
+	enableThead();
+	auto* f = translate({0x0b, 0x64, 0x88, 0x83});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_NE(std::string::npos, ir.find("mul i32")) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_SF_VQMACC_2X8X2_lifted)
+{
+	ALL_MODES;
+	_translator->modifyExtraMode(static_cast<cs_mode>(_translator->getExtraMode() | CS_MODE_RISCV_SIFIVE));
+	auto* f = translate({0x5b, 0x24, 0x88, 0xb7});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_EQ(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_NE(std::string::npos, ir.find("mul i32")) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_SF_VC_V_VV_lifted)
+{
+	ALL_MODES;
+	_translator->modifyExtraMode(static_cast<cs_mode>(_translator->getExtraMode() | CS_MODE_RISCV_SIFIVE));
+	auto* f = translate({0xdb, 0x80, 0x21, 0x2c});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_NE(std::string::npos, ir.find("call")) << ir;
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
