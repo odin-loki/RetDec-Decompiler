@@ -23,9 +23,11 @@ namespace utils {
 // We assume that the largest supported character size is 32 bits.
 using WideCharType = std::uint32_t;
 
-// Strings may have different character sizes, so we need to use a generic
-// basic_string instead of std::string/std::wstring.
-using WideStringType = std::basic_string<WideCharType>;
+// Strings may have different character sizes, so they are held as 32-bit
+// units. std::u32string rather than std::basic_string<std::uint32_t>: the
+// standard provides char_traits only for character types, and libc++ has
+// deprecated (and is removing) the generic fallback for integer types.
+using WideStringType = std::u32string;
 
 bool hasOnlyDecimalDigits(const std::string &str);
 
