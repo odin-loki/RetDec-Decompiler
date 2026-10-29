@@ -37,8 +37,6 @@ The 0/216 default-`.c` rate is **closed** (216/216 at run 276).
 items that still stand are listed at the top of that file. Among them:
 
 - Native arm64 Mach-O still decompiles to an empty file (`ctest-macos` prints it)
-- `types_propagator.cpp` is in no `CMakeLists.txt`
-- libc++ deprecates `char_traits` for `WideCharType` (`uint32_t`)
 - `DerefOpExpr` inherits `UnaryOpExpr::getType()` (pointer, not pointee)
 - `ctest-linux` / `ctest-windows` still build a named subset of suites
 - Pipeline stages marked **hook** / **partial** in
