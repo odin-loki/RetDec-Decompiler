@@ -376,6 +376,37 @@ RecursiveHalvingEvidence RecursiveHalvingFingerprint::analyse(const ssa::SSAFunc
 	return ev;
 }
 
+// An element moved in memory: a store of a value that a load read, where
+// neither address is a stack slot. The shift is what makes an insertion sort;
+// at -O0 every loop spills loaded values back to stack slots, and a binary
+// search -- two loops, subs, compares, those spills -- writes no element at all.
+static bool hasElementMove(const ssa::SSAFunction& fn)
+{
+	const auto addrIsStack = [&](const ssa::IrInstr& i) {
+		for (const auto& u: i.uses)
+			if (u.operandIndex == (i.op == ssa::IrInstr::Op::Store ? 1 : 0))
+				if (const auto* a = fn.value(u.valueId); a && a->isStackSlot) return true;
+		return false;
+	};
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* st: blk->instrs)
+		{
+			if (!st || st->op != ssa::IrInstr::Op::Store || addrIsStack(*st)) continue;
+			for (const auto& u: st->uses)
+			{
+				if (u.operandIndex != 0) continue;
+				const auto* v = fn.value(u.valueId);
+				const auto* ld = v ? v->defInstr : nullptr;
+				if (ld && ld->op == ssa::IrInstr::Op::Load && !addrIsStack(*ld)) return true;
+			}
+		}
+	}
+	return false;
+}
+
 // ─── InsertionSortFingerprint ─────────────────────────────────────────────────
 
 bool InsertionSortFingerprint::hasBackwardShiftLoop(const ssa::SSAFunction& fn) const
@@ -386,7 +417,8 @@ bool InsertionSortFingerprint::hasBackwardShiftLoop(const ssa::SSAFunction& fn) 
 	//  - Typically 3-6 basic blocks.
 	// Two compares: inner shift test plus the outer insertion bound.
 	// One compare is an atoi/parse loop (B9 atoi_hex_table O2).
-	return countSubs(fn) >= 1 && countCompares(fn) >= 2 && countStores(fn) >= 1 && fn.blockCount() >= 3;
+	return countSubs(fn) >= 1 && countCompares(fn) >= 2 && countStores(fn) >= 1 && fn.blockCount() >= 3
+		&& hasElementMove(fn);
 }
 
 bool InsertionSortFingerprint::hasThresholdGuard(const ssa::SSAFunction& fn, int& threshold) const

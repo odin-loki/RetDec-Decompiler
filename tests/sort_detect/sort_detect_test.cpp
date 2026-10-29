@@ -403,6 +403,21 @@ static void addNestedLoop(ssa::SSAFunction& fn)
 	fn.block(3)->succs.push_back(1); // outer walk
 }
 
+// The shift itself: a store writing back a value a load read, in memory that
+// is not a stack slot -- `a[j + 1] = a[j]`.
+static void addElementMove(ssa::SSAFunction& fn, ssa::BlockId blk = 2)
+{
+	auto* loaded = fn.allocValue(ssa::ValueKind::VirtualReg);
+	auto* ld = fn.addInstr(blk, ssa::IrInstr::Op::Load);
+	ld->defValue = loaded->id;
+	loaded->defInstr = ld;
+	auto* st = fn.addInstr(blk, ssa::IrInstr::Op::Store);
+	ssa::Use u;
+	u.valueId = loaded->id;
+	u.operandIndex = 0;
+	st->uses.push_back(u);
+}
+
 TEST(InsertionSortFingerprintTest, BasicInsertionPattern)
 {
 	// Sub (decrement) + Compare + Store + extra blocks.
@@ -415,6 +430,7 @@ TEST(InsertionSortFingerprintTest, BasicInsertionPattern)
 		 ssa::IrInstr::Op::CondBranch},
 		3);
 	addNestedLoop(*fn);
+	addElementMove(*fn);
 	InsertionSortFingerprint isf;
 	auto ev = isf.analyse(*fn);
 	EXPECT_TRUE(ev.found);
@@ -448,6 +464,37 @@ TEST(InsertionSortFingerprintTest, ASingleBackwardCopyLoopIsNotInsertion)
 	InsertionSortDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_LT(r.confidence, 0.5f);
+}
+
+// A binary search at -O0 has the whole instruction mix -- two loops, a Sub,
+// compares, stores -- but every store is a spill to a stack slot and no
+// element moves. It was reported as an insertion sort at 0.55.
+TEST(InsertionSortFingerprintTest, StoresThatOnlySpillToTheStackAreNotAShift)
+{
+	auto fn = makeFunc(
+		"bsearch_o0",
+		{ssa::IrInstr::Op::Sub,
+		 ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::CondBranch},
+		3);
+	addNestedLoop(*fn);
+	addElementMove(*fn);
+	// ...whose store goes to a stack slot.
+	auto* slot = fn->allocValue(ssa::ValueKind::VirtualReg);
+	slot->isStackSlot = true;
+	for (const auto& blk: fn->blocks())
+		for (auto* i: blk->instrs)
+			if (i && i->op == ssa::IrInstr::Op::Store)
+			{
+				ssa::Use a;
+				a.valueId = slot->id;
+				a.operandIndex = 1;
+				i->uses.push_back(a);
+			}
+
+	InsertionSortFingerprint isf;
+	EXPECT_FALSE(isf.analyse(*fn).found);
 }
 
 TEST(InsertionSortFingerprintTest, OneCompareIsNotInsertion)
@@ -485,6 +532,7 @@ TEST(InsertionSortFingerprintTest, ThresholdGuard16)
 	u.valueId = imm16->id;
 	u.operandIndex = 0;
 	cmpI->uses.push_back(u);
+	addElementMove(*fn);
 
 	InsertionSortFingerprint isf;
 	auto ev = isf.analyse(*fn);
@@ -990,6 +1038,7 @@ TEST(InsertionSortDetectorTest, BasicPattern)
 		3);
 	fn->block(2)->succs.push_back(2);
 	fn->block(3)->succs.push_back(1);
+	addElementMove(*fn);
 	InsertionSortDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_GE(r.confidence, 0.40f);

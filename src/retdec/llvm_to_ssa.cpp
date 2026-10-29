@@ -311,7 +311,13 @@ std::unique_ptr<ssa::SSAModule> buildSsaModule(const llvm::Module& m)
 				if (!li.getType()->isVoidTy())
 				{
 					auto it = valueMap.find(&li);
-					if (it != valueMap.end()) instr->defValue = it->second;
+					if (it != valueMap.end())
+					{
+						instr->defValue = it->second;
+						// And back: a detector that walks from a use to its
+						// definition reads IrValue::defInstr.
+						if (ssa::IrValue* v = fn->value(it->second)) v->defInstr = instr;
+					}
 				}
 				translated.push_back({&li, instr});
 			}

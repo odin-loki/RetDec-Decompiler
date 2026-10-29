@@ -604,3 +604,32 @@ TEST(LlvmToSsa, ATargetWhoseSlotTheLoopWritesIsNotInvariant)
 
 	EXPECT_LT(retdec::algo_recover::BinarySearchDetector().detect(*fn).confidence, 0.9f);
 }
+
+// defValue went one way only: an instruction named the value it defines, and
+// the value did not name its instruction, so a walk from a use back to its
+// definition through IrValue::defInstr found nothing on production input.
+TEST(LlvmToSsa, ADefinedValuePointsBackToItsInstruction)
+{
+	llvm::LLVMContext ctx;
+	auto module = parseIR(ctx, kForLoopIR);
+	ASSERT_NE(module, nullptr);
+	auto ssaMod = buildSsaModule(*module);
+	const auto* fn = findFn(*ssaMod, "sum_loop");
+	ASSERT_NE(fn, nullptr);
+
+	std::size_t defs = 0;
+	for (uint32_t b = 0; b < fn->blockCount(); ++b)
+	{
+		const auto* blk = fn->block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i || i->defValue == retdec::ssa::kInvalidValue) continue;
+			++defs;
+			const auto* v = fn->value(i->defValue);
+			ASSERT_NE(v, nullptr);
+			EXPECT_EQ(v->defInstr, i);
+		}
+	}
+	EXPECT_GT(defs, 0u);
+}
