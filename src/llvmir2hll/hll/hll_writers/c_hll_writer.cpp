@@ -1558,8 +1558,33 @@ void CHLLWriter::visit(ShPtr<ForLoopStmt> stmt)
 	out->keyword("for");
 	out->space();
 	out->punctuation('(');
-	stmt->getIndVar()->getType()->accept(this);
-	out->space();
+	// VarDefForLoopOptimizer keeps the function-level definition when the
+	// induction variable is read after the loop; declaring it again here
+	// would shadow it and leave the later read with the stale outer value.
+	bool definedOutside = false;
+	{
+		// Walk back through the statements that lexically precede the loop
+		// (earlier siblings, then enclosing statements).  Bounded: a broken
+		// predecessor chain must not spin here.
+		ShPtr<Statement> s = stmt->getUniquePredecessor()
+				? stmt->getUniquePredecessor() : stmt->getParent();
+		for (int steps = 0; s && steps < 512; ++steps)
+		{
+			auto vd = cast<VarDefStmt>(s);
+			if (vd && vd->getVar() == stmt->getIndVar())
+			{
+				definedOutside = true;
+				break;
+			}
+			auto p = s->getUniquePredecessor();
+			s = p ? p : s->getParent();
+		}
+	}
+	if (!definedOutside)
+	{
+		stmt->getIndVar()->getType()->accept(this);
+		out->space();
+	}
 	stmt->getIndVar()->accept(this);
 	out->operatorX("=", true, true);
 	stmt->getStartValue()->accept(this);

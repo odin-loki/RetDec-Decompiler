@@ -45,5 +45,11 @@
     "f_rec((",
     "? -",
     "!function_"
+  ],
+  "xarch-aarch64-pie": [
+    "uint32_t g1[16] = {3, 1, 4, 1, 5,",
+    "f_rec(result - 1)",
+    "!; i >= 1;",
+    "!(uint64_t)i)"
   ]
 }

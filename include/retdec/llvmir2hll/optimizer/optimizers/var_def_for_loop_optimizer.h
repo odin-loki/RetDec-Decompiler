@@ -11,6 +11,7 @@
 #include "retdec/llvmir2hll/optimizer/func_optimizer.h"
 #include "retdec/llvmir2hll/support/smart_ptr.h"
 #include "retdec/llvmir2hll/support/types.h"
+#include <vector>
 
 namespace retdec {
 namespace llvmir2hll {
@@ -58,11 +59,20 @@ private:
 	/// @{
 	using OrderedAllVisitor::visit;
 	virtual void visit(ShPtr<ForLoopStmt> stmt) override;
+	virtual void visit(ShPtr<VarDefStmt> stmt) override;
+	virtual void visit(ShPtr<Variable> var) override;
 	/// @}
 
 private:
 	/// Set of induction variables of for loops in each function.
 	VarSet indVars;
+
+	/// Variables read outside every for loop that has them as induction
+	/// variable.
+	VarSet usedOutside;
+
+	/// Induction variables of the for loops enclosing the visited code.
+	std::vector<ShPtr<Variable>> loopVars;
 };
 
 } // namespace llvmir2hll

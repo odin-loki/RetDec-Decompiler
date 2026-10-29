@@ -7,6 +7,7 @@
 */
 
 #include "retdec/llvmir2hll/analysis/value_analysis.h"
+#include "retdec/llvmir2hll/analysis/var_uses_visitor.h"
 #include "retdec/llvmir2hll/evaluator/arithm_expr_evaluator.h"
 #include "retdec/llvmir2hll/ir/add_op_expr.h"
 #include "retdec/llvmir2hll/ir/assign_stmt.h"
@@ -130,6 +131,26 @@ void WhileTrueToForLoopOptimizer::visit(ShPtr<WhileLoopStmt> stmt) {
 	if (!endCond) {
 		// The loop cannot be optimized.
 		return;
+	}
+
+	// When the update follows the exit test, the original loop leaves the
+	// induction variable un-stepped on exit while the for loop steps it once
+	// more. Decline when the variable is read anywhere outside the loop.
+	if (!indVarInfo->updateBeforeExit) {
+		auto vuv = VarUsesVisitor::create(va, /*enableCaching=*/false);
+		auto uses = vuv->getUses(indVarInfo->indVar, currFunc);
+		for (const auto &use : uses->dirUses) {
+			if (use == indVarInfo->initStmt) {
+				continue;
+			}
+			bool inside = false;
+			for (auto p = use; p; p = p->getParent()) {
+				if (p == stmt) { inside = true; break; }
+			}
+			if (!inside) {
+				return;
+			}
+		}
 	}
 
 	if (indVarInfo->updateBeforeExit) {
@@ -377,7 +398,9 @@ ShPtr<Expression> WhileTrueToForLoopOptimizer::computeEndCondOfForLoop(
 			return gtOpExpr;
 		} else {
 			return GtEqOpExpr::create(gtOpExpr->getFirstOperand(),
-				gtOpExpr->getSecondOperand());
+				gtOpExpr->getSecondOperand(),
+				gtOpExpr->getVariant() == GtOpExpr::Variant::SCmp
+					? GtEqOpExpr::Variant::SCmp : GtEqOpExpr::Variant::UCmp);
 		}
 	} else if (auto gtEqOpExpr = cast<GtEqOpExpr>(endCondOpExpr)) {
 		// >=
@@ -386,17 +409,15 @@ ShPtr<Expression> WhileTrueToForLoopOptimizer::computeEndCondOfForLoop(
 		// because in a "while true" loop, the loop body is entered at least
 		// once.
 		if (indVarInfo->updateBeforeExit) {
-			return GtEqOpExpr::create(
-				gtEqOpExpr->getFirstOperand(),
-				gtEqOpExpr->getSecondOperand()
-			);
+			return gtEqOpExpr;
 		} else {
 			return GtEqOpExpr::create(
 				gtEqOpExpr->getFirstOperand(),
 				SubOpExpr::create(
 					gtEqOpExpr->getSecondOperand(),
 					ConstInt::create(1, 32)
-				)
+				),
+				gtEqOpExpr->getVariant()
 			);
 		}
 	} else if (auto neqOpExpr = cast<NeqOpExpr>(endCondOpExpr)) {
