@@ -413,8 +413,10 @@ void writeHelperStubs(std::ostream& os)
 	os << "RETDEC_BUILDABLE_WEAK uint64_t __readfsqword(unsigned long a) "
 		  "{ (void)a; return 0; }\n";
 	os << "RETDEC_BUILDABLE_WEAK void __asm_hlt(void) {}\n";
-	os << "RETDEC_BUILDABLE_WEAK void *__asm_rep_stosq_memset(void *d, int c, "
-		  "unsigned long n) { return memset(d, c, (size_t)n); }\n";
+	// REP STOSQ stores RCX quadwords of RAX, not RCX bytes of AL.
+	os << "RETDEC_BUILDABLE_WEAK void *__asm_rep_stosq_memset(void *d, uint64_t v, "
+		  "unsigned long n) { uint64_t *p = (uint64_t *)d; "
+		  "for (unsigned long i = 0; i < n; ++i) p[i] = v; return d; }\n";
 }
 
 void writeLibcArityMacros(std::ostream& os)
@@ -1833,7 +1835,7 @@ void maybeWriteBuildableSidecars(const std::string& outputCPath, const std::stri
 	header << "uint64_t __readUndefQword(void);\n";
 	header << "uint64_t __readfsqword(unsigned long);\n";
 	header << "void __asm_hlt(void);\n";
-	header << "void *__asm_rep_stosq_memset(void *, int, unsigned long);\n";
+	header << "void *__asm_rep_stosq_memset(void *, uint64_t, unsigned long);\n";
 
 	const auto typeBlocks = scrapeTypeBlocks(src);
 	if (!typeBlocks.empty())
