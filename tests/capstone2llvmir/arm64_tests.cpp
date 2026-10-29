@@ -14625,6 +14625,43 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ERET_call)
 	});
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LDIAPP)
+{
+	setRegisters({
+		{ARM64_REG_X2, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x123456789abcdef0_qw},
+		{0x1008, 0xfedcba9876543210_qw},
+	});
+
+	emulate_bin("40 18 41 d9"); // ldiapp x0, x1, [x2]
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0x123456789abcdef0},
+		{ARM64_REG_X1, 0xfedcba9876543210},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000, 0x1008});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_STILP)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0x1111},
+		{ARM64_REG_X1, 0x2222},
+		{ARM64_REG_X2, 0x1000},
+	});
+
+	emulate_bin("40 18 01 d9"); // stilp x0, x1, [x2]
+
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0x1111_qw},
+		{0x1008, 0x2222_qw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

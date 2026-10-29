@@ -4733,6 +4733,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdp(cs_insn* i, cs_arm64* ai,
 	case ARM64_INS_LDNP:
 		// Hints PE that the memory is not going to be used in near future
 	case ARM64_INS_LDP:
+	case ARM64_INS_LDIAPP:
 	case ARM64_INS_LDXP:
 	case ARM64_INS_LDAXP:
 		data_size = llvm::ConstantInt::get(getDefaultType(), getRegisterByteSize(ai->operands[0].reg));
