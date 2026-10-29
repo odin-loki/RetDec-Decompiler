@@ -11737,5 +11737,278 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecCryptoHalf(cs_insn* i, c
 	translatePseudoAsmGeneric(i, pi, irb);
 }
 
+/**
+ * Quad-precision VSX (XS*QP) on fp128: arithmetic (the round-to-odd O forms
+ * round to nearest here), fused multiply-add, compares to CR or mask, C-style
+ * max/min, conversions with saturation, and the sign/exponent/significand
+ * bit operations. Also XSCMPEXPDP/QP and the data-class tests
+ * XSTSTDC{SP,DP,QP} and XVTSTDC{SP,DP}. FPSCR flags and FPCC are not
+ * modelled; XSRQPI/XSRQPXP (round to integer) are not lifted.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxQuad(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	if (pi->op_count < 2 || pi->op_count > 3)
+	{
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+	cs_ppc_op ops[3];
+	for (unsigned k = 0; k < pi->op_count; ++k)
+	{
+		ops[k] = pi->operands[k];
+		if (ops[k].type == PPC_OP_REG && ops[k].reg >= PPC_REG_VF0 && ops[k].reg <= PPC_REG_VF31)
+		{
+			ops[k].reg = ppc_reg(PPC_REG_V0 + (ops[k].reg - PPC_REG_VF0));
+		}
+	}
+	auto* i1 = irb.getInt1Ty();
+	auto* i32 = irb.getInt32Ty();
+	auto* i64 = irb.getInt64Ty();
+	auto* i128 = irb.getInt128Ty();
+	auto* f128 = llvm::Type::getFP128Ty(irb.getContext());
+	auto* f64 = irb.getDoubleTy();
+	auto c128 = [&](uint64_t v) { return llvm::ConstantInt::get(i128, v); };
+	auto vr = [&](unsigned k) { return loadOpI128(ops[k], irb); };
+	auto qf = [&](unsigned k) { return irb.CreateBitCast(vr(k), f128); };
+	auto out = [&](llvm::Value* v) { storeOpI128(ops[0], v, irb); };
+	auto outF = [&](llvm::Value* f) { out(irb.CreateBitCast(f, i128)); };
+	auto hiDw = [&](llvm::Value* v) { return irb.CreateTrunc(irb.CreateLShr(v, 64), i64); };
+	auto toHiDw = [&](llvm::Value* v64) { return irb.CreateShl(irb.CreateZExt(v64, i128), 64); };
+	auto signBit = llvm::APInt::getOneBitSet(128, 127);
+	auto setCr = [&](llvm::Value* lt, llvm::Value* gt, llvm::Value* eq, llvm::Value* un) {
+		uint32_t crReg = ops[0].type == PPC_OP_REG && ops[0].reg >= PPC_REG_CR0 && ops[0].reg <= PPC_REG_CR7
+				? ops[0].reg : PPC_REG_CR0;
+		uint32_t ltR = PPC_REG_CR0LT, gtR = PPC_REG_CR0GT, eqR = PPC_REG_CR0EQ, unR = PPC_REG_CR0UN;
+		crFieldRegisters(crReg, ltR, gtR, eqR, unR);
+		storeRegister(ltR, lt, irb);
+		storeRegister(gtR, gt, irb);
+		storeRegister(eqR, eq, irb);
+		storeRegister(unR, un, irb);
+	};
+	// Fields of an IEEE value held in the low `w` bits of x.
+	struct Fields { llvm::Value* sign; llvm::Value* exp; llvm::Value* frac; llvm::Value* expMax; };
+	auto fields = [&](llvm::Value* x, unsigned eBits, unsigned fBits) {
+		auto* ty = x->getType();
+		Fields f;
+		f.sign = irb.CreateTrunc(irb.CreateLShr(x, eBits + fBits), i1);
+		f.exp = irb.CreateAnd(irb.CreateLShr(x, fBits), llvm::ConstantInt::get(ty, (1ull << eBits) - 1));
+		f.frac = irb.CreateAnd(x, llvm::ConstantInt::get(ty, llvm::APInt::getLowBitsSet(ty->getIntegerBitWidth(), fBits)));
+		f.expMax = irb.CreateICmpEQ(f.exp, llvm::ConstantInt::get(ty, (1ull << eBits) - 1));
+		return f;
+	};
+	auto isNan = [&](const Fields& f) {
+		return irb.CreateAnd(f.expMax, irb.CreateICmpNE(f.frac, llvm::ConstantInt::get(f.frac->getType(), 0)));
+	};
+	auto dataClass = [&](llvm::Value* x, unsigned eBits, unsigned fBits, uint64_t dcmx) -> llvm::Value* {
+		auto f = fields(x, eBits, fBits);
+		auto* fz = irb.CreateICmpEQ(f.frac, llvm::ConstantInt::get(f.frac->getType(), 0));
+		auto* ez = irb.CreateICmpEQ(f.exp, llvm::ConstantInt::get(f.exp->getType(), 0));
+		auto* nan = irb.CreateAnd(f.expMax, irb.CreateNot(fz));
+		auto* inf = irb.CreateAnd(f.expMax, fz);
+		auto* zero = irb.CreateAnd(ez, fz);
+		auto* den = irb.CreateAnd(ez, irb.CreateNot(fz));
+		auto* pos = irb.CreateNot(f.sign);
+		llvm::Value* m = irb.getFalse();
+		if (dcmx & 0x40) m = irb.CreateOr(m, nan);
+		if (dcmx & 0x20) m = irb.CreateOr(m, irb.CreateAnd(inf, pos));
+		if (dcmx & 0x10) m = irb.CreateOr(m, irb.CreateAnd(inf, f.sign));
+		if (dcmx & 0x08) m = irb.CreateOr(m, irb.CreateAnd(zero, pos));
+		if (dcmx & 0x04) m = irb.CreateOr(m, irb.CreateAnd(zero, f.sign));
+		if (dcmx & 0x02) m = irb.CreateOr(m, irb.CreateAnd(den, pos));
+		if (dcmx & 0x01) m = irb.CreateOr(m, irb.CreateAnd(den, f.sign));
+		return m;
+	};
+	auto fp128Const = [&](double d) { return llvm::ConstantFP::get(f128, d); };
+	// Saturating truncating conversion of fp128 to an n-bit integer (NaN gives
+	// the minimum for signed, 0 for unsigned), widened to i128.
+	auto cvtSat = [&](llvm::Value* x, unsigned n, bool sgn) -> llvm::Value* {
+		auto* ity = irb.getIntNTy(n);
+		auto* nan = irb.CreateFCmpUNO(x, x);
+		llvm::Value* mx = llvm::ConstantInt::get(ity, sgn ? llvm::APInt::getSignedMaxValue(n) : llvm::APInt::getMaxValue(n));
+		llvm::Value* mn = llvm::ConstantInt::get(ity, sgn ? llvm::APInt::getSignedMinValue(n) : llvm::APInt(n, 0));
+		auto* hiF = fp128Const(std::ldexp(1.0, sgn ? int(n) - 1 : int(n)));
+		auto* loF = sgn ? fp128Const(-std::ldexp(1.0, int(n) - 1)) : fp128Const(0.0);
+		auto* tooBig = irb.CreateFCmpOGE(x, hiF);
+		auto* tooSmall = irb.CreateFCmpOLT(x, loF);
+		auto* safe = irb.CreateSelect(irb.CreateOr(nan, irb.CreateOr(tooBig, tooSmall)), fp128Const(0.0), x);
+		llvm::Value* v = sgn ? irb.CreateFPToSI(safe, ity) : irb.CreateFPToUI(safe, ity);
+		v = irb.CreateSelect(tooBig, mx, irb.CreateSelect(irb.CreateOr(tooSmall, nan), mn, v));
+		return sgn ? irb.CreateSExt(v, i128) : irb.CreateZExt(v, i128);
+	};
+
+	switch (i->id)
+	{
+		case PPC_INS_XSABSQP: out(irb.CreateAnd(vr(1), llvm::ConstantInt::get(i128, ~signBit))); return;
+		case PPC_INS_XSNABSQP: out(irb.CreateOr(vr(1), llvm::ConstantInt::get(i128, signBit))); return;
+		case PPC_INS_XSNEGQP: out(irb.CreateXor(vr(1), llvm::ConstantInt::get(i128, signBit))); return;
+		case PPC_INS_XSCPSGNQP:
+			out(irb.CreateOr(irb.CreateAnd(vr(1), llvm::ConstantInt::get(i128, signBit)),
+					irb.CreateAnd(vr(2), llvm::ConstantInt::get(i128, ~signBit))));
+			return;
+		case PPC_INS_XSXEXPQP:
+		{
+			auto f = fields(vr(1), 15, 112);
+			out(irb.CreateShl(f.exp, 64));
+			return;
+		}
+		case PPC_INS_XSXSIGQP:
+		{
+			auto f = fields(vr(1), 15, 112);
+			auto* hidden = irb.CreateAnd(irb.CreateICmpNE(f.exp, c128(0)), irb.CreateNot(f.expMax));
+			out(irb.CreateOr(f.frac, irb.CreateShl(irb.CreateZExt(hidden, i128), 112)));
+			return;
+		}
+		case PPC_INS_XSIEXPQP:
+		{
+			// Capstone names VRB as an FPR (f4 for v4); it is a VR.
+			if (ops[2].type == PPC_OP_REG && ops[2].reg >= PPC_REG_F0 && ops[2].reg <= PPC_REG_F31)
+			{
+				ops[2].reg = ppc_reg(PPC_REG_V0 + (ops[2].reg - PPC_REG_F0));
+			}
+			auto* a = vr(1);
+			auto* keep = llvm::ConstantInt::get(i128, signBit | llvm::APInt::getLowBitsSet(128, 112));
+			auto* e = irb.CreateShl(irb.CreateAnd(irb.CreateLShr(vr(2), 64), c128(0x7fff)), 112);
+			out(irb.CreateOr(irb.CreateAnd(a, keep), e));
+			return;
+		}
+		case PPC_INS_XSCMPEXPQP:
+		case PPC_INS_XSCMPEXPDP:
+		{
+			bool q = i->id == PPC_INS_XSCMPEXPQP;
+			llvm::Value* a = q ? vr(1) : hiDw(vr(1));
+			llvm::Value* b = q ? vr(2) : hiDw(vr(2));
+			auto fa = fields(a, q ? 15 : 11, q ? 112 : 52);
+			auto fb = fields(b, q ? 15 : 11, q ? 112 : 52);
+			auto* un = irb.CreateOr(isNan(fa), isNan(fb));
+			auto* nun = irb.CreateNot(un);
+			setCr(irb.CreateAnd(nun, irb.CreateICmpULT(fa.exp, fb.exp)), irb.CreateAnd(nun, irb.CreateICmpUGT(fa.exp, fb.exp)),
+					irb.CreateAnd(nun, irb.CreateICmpEQ(fa.exp, fb.exp)), un);
+			return;
+		}
+		case PPC_INS_XSTSTDCQP:
+		case PPC_INS_XSTSTDCDP:
+		case PPC_INS_XSTSTDCSP:
+		{
+			if (ops[2].type != PPC_OP_IMM) break;
+			uint64_t dcmx = uint64_t(ops[2].imm) & 0x7f;
+			llvm::Value* x = vr(1);
+			llvm::Value* m = nullptr;
+			llvm::Value* sign = nullptr;
+			if (i->id == PPC_INS_XSTSTDCQP)
+			{
+				m = dataClass(x, 15, 112, dcmx);
+				sign = irb.CreateTrunc(irb.CreateLShr(x, 127), i1);
+			}
+			else if (i->id == PPC_INS_XSTSTDCDP)
+			{
+				auto* d = hiDw(x);
+				m = dataClass(d, 11, 52, dcmx);
+				sign = irb.CreateTrunc(irb.CreateLShr(d, 63), i1);
+			}
+			else
+			{
+				// The operand is single-precision held in double format.
+				auto* s = irb.CreateBitCast(irb.CreateFPTrunc(irb.CreateBitCast(hiDw(x), f64), irb.getFloatTy()), i32);
+				m = dataClass(s, 8, 23, dcmx);
+				sign = irb.CreateTrunc(irb.CreateLShr(s, 31), i1);
+			}
+			setCr(sign, irb.getFalse(), m, irb.getFalse());
+			return;
+		}
+		case PPC_INS_XVTSTDCDP:
+		case PPC_INS_XVTSTDCSP:
+		{
+			if (ops[2].type != PPC_OP_IMM) break;
+			uint64_t dcmx = uint64_t(ops[2].imm) & 0x7f;
+			unsigned w = i->id == PPC_INS_XVTSTDCDP ? 64 : 32;
+			auto* x = vr(1);
+			llvm::Value* r = c128(0);
+			for (unsigned sh = 0; sh < 128; sh += w)
+			{
+				auto* lane = irb.CreateTrunc(irb.CreateLShr(x, sh), irb.getIntNTy(w));
+				auto* m = w == 64 ? dataClass(lane, 11, 52, dcmx) : dataClass(lane, 8, 23, dcmx);
+				auto* ones = irb.CreateSExt(m, irb.getIntNTy(w));
+				r = irb.CreateOr(r, irb.CreateShl(irb.CreateZExt(ones, i128), sh));
+			}
+			out(r);
+			return;
+		}
+		case PPC_INS_XSCMPUQP:
+		case PPC_INS_XSCMPOQP:
+		{
+			auto* a = qf(1);
+			auto* b = qf(2);
+			setCr(irb.CreateFCmpOLT(a, b), irb.CreateFCmpOGT(a, b), irb.CreateFCmpOEQ(a, b), irb.CreateFCmpUNO(a, b));
+			return;
+		}
+		case PPC_INS_XSCMPEQQP:
+		case PPC_INS_XSCMPGEQP:
+		case PPC_INS_XSCMPGTQP:
+		{
+			auto* a = qf(1);
+			auto* b = qf(2);
+			llvm::Value* c = i->id == PPC_INS_XSCMPEQQP ? irb.CreateFCmpOEQ(a, b)
+					: i->id == PPC_INS_XSCMPGEQP ? irb.CreateFCmpOGE(a, b) : irb.CreateFCmpOGT(a, b);
+			out(irb.CreateSExt(c, i128));
+			return;
+		}
+		case PPC_INS_XSMAXCQP:
+		case PPC_INS_XSMINCQP:
+		{
+			auto* a = qf(1);
+			auto* b = qf(2);
+			auto* c = i->id == PPC_INS_XSMAXCQP ? irb.CreateFCmpOGT(a, b) : irb.CreateFCmpOLT(a, b);
+			outF(irb.CreateSelect(c, a, b));
+			return;
+		}
+		case PPC_INS_XSADDQP: case PPC_INS_XSADDQPO: outF(irb.CreateFAdd(qf(1), qf(2))); return;
+		case PPC_INS_XSSUBQP: case PPC_INS_XSSUBQPO: outF(irb.CreateFSub(qf(1), qf(2))); return;
+		case PPC_INS_XSMULQP: case PPC_INS_XSMULQPO: outF(irb.CreateFMul(qf(1), qf(2))); return;
+		case PPC_INS_XSDIVQP: case PPC_INS_XSDIVQPO: outF(irb.CreateFDiv(qf(1), qf(2))); return;
+		case PPC_INS_XSSQRTQP: case PPC_INS_XSSQRTQPO:
+			outF(irb.CreateCall(llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::sqrt, {f128}), {qf(1)}));
+			return;
+		case PPC_INS_XSMADDQP: case PPC_INS_XSMADDQPO:
+		case PPC_INS_XSMSUBQP: case PPC_INS_XSMSUBQPO:
+		case PPC_INS_XSNMADDQP: case PPC_INS_XSNMADDQPO:
+		case PPC_INS_XSNMSUBQP: case PPC_INS_XSNMSUBQPO:
+		{
+			bool sub = i->id == PPC_INS_XSMSUBQP || i->id == PPC_INS_XSMSUBQPO || i->id == PPC_INS_XSNMSUBQP
+					|| i->id == PPC_INS_XSNMSUBQPO;
+			bool neg = i->id == PPC_INS_XSNMADDQP || i->id == PPC_INS_XSNMADDQPO || i->id == PPC_INS_XSNMSUBQP
+					|| i->id == PPC_INS_XSNMSUBQPO;
+			llvm::Value* t = qf(0);
+			if (sub) t = irb.CreateFNeg(t);
+			llvm::Value* r = irb.CreateCall(
+					llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::fma, {f128}), {qf(1), qf(2), t});
+			if (neg) r = irb.CreateFNeg(r);
+			outF(r);
+			return;
+		}
+		case PPC_INS_XSCVDPQP:
+			outF(irb.CreateFPExt(irb.CreateBitCast(hiDw(vr(1)), f64), f128));
+			return;
+		case PPC_INS_XSCVQPDP:
+		case PPC_INS_XSCVQPDPO:
+			out(toHiDw(irb.CreateBitCast(irb.CreateFPTrunc(qf(1), f64), i64)));
+			return;
+		case PPC_INS_XSCVQPSDZ: out(irb.CreateShl(cvtSat(qf(1), 64, true), 64)); return;
+		case PPC_INS_XSCVQPUDZ: out(irb.CreateShl(cvtSat(qf(1), 64, false), 64)); return;
+		case PPC_INS_XSCVQPSWZ:
+			out(toHiDw(irb.CreateSExt(irb.CreateTrunc(cvtSat(qf(1), 32, true), i32), i64)));
+			return;
+		case PPC_INS_XSCVQPUWZ: out(irb.CreateShl(cvtSat(qf(1), 32, false), 64)); return;
+		case PPC_INS_XSCVQPSQZ: out(cvtSat(qf(1), 128, true)); return;
+		case PPC_INS_XSCVQPUQZ: out(cvtSat(qf(1), 128, false)); return;
+		case PPC_INS_XSCVSDQP: outF(irb.CreateSIToFP(hiDw(vr(1)), f128)); return;
+		case PPC_INS_XSCVUDQP: outF(irb.CreateUIToFP(hiDw(vr(1)), f128)); return;
+		case PPC_INS_XSCVSQQP: outF(irb.CreateSIToFP(vr(1), f128)); return;
+		case PPC_INS_XSCVUQQP: outF(irb.CreateUIToFP(vr(1), f128)); return;
+		default:
+			break;
+	}
+	translatePseudoAsmGeneric(i, pi, irb);
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec

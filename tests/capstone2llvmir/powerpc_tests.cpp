@@ -19711,6 +19711,270 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XXGENPCVWM_le_comp)
 	EXPECT_EQ(0x0f0e0d0c07060504ULL, vLow(PPC_REG_VSL1)) << dumpFunction(_function);
 }
 
+namespace {
+
+bool hasFp128Op(llvm::Function* f, unsigned opcode)
+{
+	for (auto& bb : *f)
+		for (auto& in : bb)
+		{
+			if (in.getOpcode() != opcode) continue;
+			if (in.getType()->isFP128Ty()) return true;
+			for (auto& op : in.operands())
+				if (op->getType()->isFP128Ty()) return true;
+		}
+	return false;
+}
+
+bool hasAsmCall(llvm::Function* f)
+{
+	for (auto& bb : *f)
+		for (auto& in : bb)
+			if (auto* c = llvm::dyn_cast<llvm::CallInst>(&in))
+				if (c->getCalledFunction() && c->getCalledFunction()->getName().starts_with("__asm_")) return true;
+	return false;
+}
+
+} // anonymous namespace
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSABSQP)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0xc000800000000000ULL, 0x5ULL);
+	emulate_bin("fc 40 1e 48"); // xsabsqp v2, v3
+
+	EXPECT_EQ(0x4000800000000000ULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
+	EXPECT_EQ(0x5ULL, vLow(PPC_REG_V2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSCPSGNQP)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0x8000000000000000ULL, 0x0ULL);
+	setV(PPC_REG_V4, 0x4000800000000000ULL, 0x7ULL);
+	emulate_bin("fc 43 20 c8"); // xscpsgnqp v2, v3, v4
+
+	EXPECT_EQ(0xc000800000000000ULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
+	EXPECT_EQ(0x7ULL, vLow(PPC_REG_V2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSXEXPQP)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0xc000800000000000ULL, 0x5ULL);
+	emulate_bin("fc 42 1e 48"); // xsxexpqp v2, v3
+
+	EXPECT_EQ(0x4000ULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
+	EXPECT_EQ(0x0ULL, vLow(PPC_REG_V2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSXSIGQP)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0xc000800000000000ULL, 0x5ULL);
+	emulate_bin("fc 52 1e 48"); // xsxsigqp v2, v3
+
+	EXPECT_EQ(0x0001800000000000ULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
+	EXPECT_EQ(0x5ULL, vLow(PPC_REG_V2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSIEXPQP)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0x8123456789abcdefULL, 0x1ULL);
+	setV(PPC_REG_V4, 0x3fffULL, 0x0ULL);
+	emulate_bin("fc 43 26 c8"); // xsiexpqp v2, v3, v4
+
+	EXPECT_EQ(0xbfff456789abcdefULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
+	EXPECT_EQ(0x1ULL, vLow(PPC_REG_V2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSADDQP)
+{
+	ALL_MODES;
+
+	// The test emulator has no fp128 arithmetic, so check the lifted IR.
+	auto* f = translate(utils::hexStringToBytes("fc 43 20 08")); // xsaddqp v2, v3, v4
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasFp128Op(f, llvm::Instruction::FAdd)) << dumpFunction(f);
+	EXPECT_FALSE(hasAsmCall(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSMULQP)
+{
+	ALL_MODES;
+
+	// The test emulator has no fp128 arithmetic, so check the lifted IR.
+	auto* f = translate(utils::hexStringToBytes("fc 43 20 48")); // xsmulqp v2, v3, v4
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasFp128Op(f, llvm::Instruction::FMul)) << dumpFunction(f);
+	EXPECT_FALSE(hasAsmCall(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSMADDQP)
+{
+	ALL_MODES;
+
+	// The test emulator has no fp128 arithmetic, so check the lifted IR.
+	auto* f = translate(utils::hexStringToBytes("fc 43 23 08")); // xsmaddqp v2, v3, v4
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasFp128Op(f, llvm::Instruction::Call)) << dumpFunction(f);
+	EXPECT_FALSE(hasAsmCall(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSCVSDQP)
+{
+	ALL_MODES;
+
+	// The test emulator has no fp128 arithmetic, so check the lifted IR.
+	auto* f = translate(utils::hexStringToBytes("fc 4a 1e 88")); // xscvsdqp v2, v3
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasFp128Op(f, llvm::Instruction::SIToFP)) << dumpFunction(f);
+	EXPECT_FALSE(hasAsmCall(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSCVQPSDZ)
+{
+	ALL_MODES;
+
+	// The test emulator has no fp128 arithmetic, so check the lifted IR.
+	auto* f = translate(utils::hexStringToBytes("fc 59 1e 88")); // xscvqpsdz v2, v3
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasFp128Op(f, llvm::Instruction::FPToSI)) << dumpFunction(f);
+	EXPECT_FALSE(hasAsmCall(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSCVQPUWZ_saturates)
+{
+	ALL_MODES;
+
+	// The test emulator has no fp128 arithmetic, so check the lifted IR.
+	auto* f = translate(utils::hexStringToBytes("fc 41 1e 88")); // xscvqpuwz v2, v3
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasFp128Op(f, llvm::Instruction::FPToUI)) << dumpFunction(f);
+	EXPECT_FALSE(hasAsmCall(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSCVDPQP)
+{
+	ALL_MODES;
+
+	// The test emulator has no fp128 arithmetic, so check the lifted IR.
+	auto* f = translate(utils::hexStringToBytes("fc 56 1e 88")); // xscvdpqp v2, v3
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasFp128Op(f, llvm::Instruction::FPExt)) << dumpFunction(f);
+	EXPECT_FALSE(hasAsmCall(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSCVQPDP)
+{
+	ALL_MODES;
+
+	// The test emulator has no fp128 arithmetic, so check the lifted IR.
+	auto* f = translate(utils::hexStringToBytes("fc 54 1e 88")); // xscvqpdp v2, v3
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasFp128Op(f, llvm::Instruction::FPTrunc)) << dumpFunction(f);
+	EXPECT_FALSE(hasAsmCall(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSCMPGTQP)
+{
+	ALL_MODES;
+
+	// The test emulator has no fp128 arithmetic, so check the lifted IR.
+	auto* f = translate(utils::hexStringToBytes("fc 43 21 c8")); // xscmpgtqp v2, v3, v4
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasFp128Op(f, llvm::Instruction::FCmp)) << dumpFunction(f);
+	EXPECT_FALSE(hasAsmCall(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSMINCQP)
+{
+	ALL_MODES;
+
+	// The test emulator has no fp128 arithmetic, so check the lifted IR.
+	auto* f = translate(utils::hexStringToBytes("fc 43 25 c8")); // xsmincqp v2, v3, v4
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasFp128Op(f, llvm::Instruction::FCmp)) << dumpFunction(f);
+	EXPECT_FALSE(hasAsmCall(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSCMPUQP)
+{
+	ALL_MODES;
+
+	// The test emulator has no fp128 arithmetic, so check the lifted IR.
+	auto* f = translate(utils::hexStringToBytes("fc 83 25 08")); // xscmpuqp cr1, v3, v4
+	ASSERT_NE(nullptr, f);
+	EXPECT_TRUE(hasFp128Op(f, llvm::Instruction::FCmp)) << dumpFunction(f);
+	EXPECT_FALSE(hasAsmCall(f)) << dumpFunction(f);
+}
+
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSCMPEXPQP)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0x4000800000000000ULL, 0x0ULL);
+	setV(PPC_REG_V4, 0x4000000000000000ULL, 0x9ULL);
+	emulate_bin("fc 83 21 48"); // xscmpexpqp cr1, v3, v4
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_CR1LT, false}, {PPC_REG_CR1GT, false}, {PPC_REG_CR1EQ, true}, {PPC_REG_CR1UN, false},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSTSTDCQP)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0x8000000000000000ULL, 0x1ULL);
+	emulate_bin("fc ff 1d 88"); // xststdcqp cr1, v3, 0x7f
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_CR1LT, true}, {PPC_REG_CR1GT, false}, {PPC_REG_CR1EQ, true}, {PPC_REG_CR1UN, false},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSTSTDCDP)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_VSL3, 0x7ff0000000000000ULL, 0x0ULL);
+	emulate_bin("f0 83 1d a8"); // xststdcdp cr1, f3, 3 (denormals)
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_CR1LT, false}, {PPC_REG_CR1GT, false}, {PPC_REG_CR1EQ, false}, {PPC_REG_CR1UN, false},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XVTSTDCDP)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_VSL3, 0x0000000000000001ULL, 0x8000000000000000ULL);
+	emulate_bin("f0 23 1f a8"); // xvtstdcdp vs1, vs3, 3
+
+	EXPECT_EQ(0xffffffffffffffffULL, vHigh(PPC_REG_VSL1)) << dumpFunction(_function);
+	EXPECT_EQ(0x0ULL, vLow(PPC_REG_VSL1)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XVTSTDCSP)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_VSL3, 0x7f800000ff800001ULL, 0x3f80000000000000ULL);
+	emulate_bin("f0 20 1e ec"); // xvtstdcsp vs1, vs3, 96
+
+	EXPECT_EQ(0xffffffffffffffffULL, vHigh(PPC_REG_VSL1)) << dumpFunction(_function);
+	EXPECT_EQ(0x0ULL, vLow(PPC_REG_VSL1)) << dumpFunction(_function);
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
