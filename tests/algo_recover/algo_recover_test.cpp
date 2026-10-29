@@ -3017,3 +3017,71 @@ TEST(IdiomDetectorTest, NewNodePushedOntoAGlobalHeadIsNotClaimed)
 	// With the bucket hash folded away, `table[k] = n` is a global head too.
 	EXPECT_FALSE(detects(*makeHeadInsert(false, /*argHead=*/false), IdiomKind::LinkedList));
 }
+
+namespace {
+
+enum class StackStep { Push, Pop, WrappedPush };
+
+/// `stk[top++] = v`, `return stk[--top]`, or a queue's `q[t] = v; t = (t+1) % 16`.
+std::unique_ptr<ssa::SSAFunction> makeStackStep(StackStep kind)
+{
+	auto fn = std::make_unique<ssa::SSAFunction>("step");
+	fn->addBlock("entry");
+	const auto cell = reg(*fn, 64)->id;
+	const auto base = reg(*fn, 64)->id;
+	auto* ld = fn->addInstr(0, ssa::IrInstr::Op::Load);
+	ld->uses.push_back({cell, 0});
+	const auto top = defined(*fn, ld);
+	auto* step = fn->addInstr(0, kind == StackStep::Pop ? ssa::IrInstr::Op::Sub : ssa::IrInstr::Op::Add);
+	step->uses.push_back({top, 0});
+	step->uses.push_back({immValue(*fn, 1), 1});
+	ssa::ValueId next = defined(*fn, step);
+	if (kind == StackStep::WrappedPush)
+	{
+		auto* rem = fn->addInstr(0, ssa::IrInstr::Op::Rem);
+		rem->uses.push_back({next, 0});
+		rem->uses.push_back({immValue(*fn, 16), 1});
+		next = defined(*fn, rem);
+	}
+	auto* wb = fn->addInstr(0, ssa::IrInstr::Op::Store);
+	wb->uses.push_back({next, 0});
+	wb->uses.push_back({cell, 1});
+	auto* shl = fn->addInstr(0, ssa::IrInstr::Op::Shl);
+	shl->uses.push_back({kind == StackStep::Pop ? next : top, 0});
+	shl->uses.push_back({immValue(*fn, 2), 1});
+	auto* add = fn->addInstr(0, ssa::IrInstr::Op::Add);
+	add->uses.push_back({defined(*fn, shl), 0});
+	add->uses.push_back({base, 1});
+	const auto slot = defined(*fn, add);
+	if (kind == StackStep::Pop)
+	{
+		auto* e = fn->addInstr(0, ssa::IrInstr::Op::Load);
+		e->uses.push_back({slot, 0});
+		defined(*fn, e);
+	}
+	else
+	{
+		auto* e = fn->addInstr(0, ssa::IrInstr::Op::Store);
+		e->uses.push_back({reg(*fn, 64)->id, 0});
+		e->uses.push_back({slot, 1});
+	}
+	fn->addInstr(0, ssa::IrInstr::Op::Ret);
+	return fn;
+}
+
+} // namespace
+
+TEST(IdiomDetectorTest, StoringAtTopAndBumpingItIsAStackPush)
+{
+	EXPECT_TRUE(detects(*makeStackStep(StackStep::Push), IdiomKind::Stack));
+}
+
+TEST(IdiomDetectorTest, DroppingTopAndLoadingThereIsAStackPop)
+{
+	EXPECT_TRUE(detects(*makeStackStep(StackStep::Pop), IdiomKind::Stack));
+}
+
+TEST(IdiomDetectorTest, AWrappedCursorIsAQueueNotAStack)
+{
+	EXPECT_FALSE(detects(*makeStackStep(StackStep::WrappedPush), IdiomKind::Stack));
+}

@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- Idiom detector: array stack push/pop (memory counter written back as top±1 with stk[top] stored or stk[top-1] loaded, small loop-free functions) exports Stack/LIFO. Fixes stack_array -O0.
 - Idiom detector: node head insert onto a caller-provided head (Node** parameter) exports LinkedList; SSA values now mark function parameters (IrValue::isArgument). Fixes linked_list -O0.
 - Ring buffer detector: two register-held wrapped cursors ((i+1)%N twice) count as a ring when nothing is persisted; fixes ring_buffer -O3.
 - Idiom detector: open-addressing probe (wrapped slot occupancy test + strcmp/memcmp key compare) exports HashTable/OpenAddressing; fixes hash_table -O2/-O3.

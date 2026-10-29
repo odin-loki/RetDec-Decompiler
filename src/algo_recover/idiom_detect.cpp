@@ -895,6 +895,69 @@ bool hasHeadInsert(const ssa::SSAFunction& fn, bool indexed)
 	return false;
 }
 
+/// `base + x`, `base + x * k` or `base + (x << k)` for the given x.
+bool isIndexedBy(const ssa::SSAFunction& fn, ssa::ValueId addr, ssa::ValueId x)
+{
+	const auto* add = defOf(fn, stripCasts(fn, addr));
+	if (!add || add->op != ssa::IrInstr::Op::Add) return false;
+	for (const auto& u: add->uses)
+	{
+		const ssa::ValueId v = stripCasts(fn, u.valueId);
+		if (v == x) return true;
+		const auto* s = defOf(fn, v);
+		if (s && (s->op == ssa::IrInstr::Op::Shl || s->op == ssa::IrInstr::Op::Mul)
+			&& stripCasts(fn, operandAt(*s, 0)) == x)
+			return true;
+	}
+	return false;
+}
+
+/// An array stack's push or pop, loop-free: a counter in memory written back
+/// as `top + 1` with `stk[top]` stored, or as `top - 1` with `stk[top - 1]`
+/// loaded.  A queue's cursors wrap, so they are not `top +- 1`.
+bool hasArrayStackStep(const ssa::SSAFunction& fn)
+{
+	// A push or pop is a handful of instructions; an unrolled traversal
+	// appending `q[tail++] = v` in straight-line code is not.
+	if (hasBackEdge(fn) || fn.instrCount() > 48) return false;
+	std::vector<const ssa::IrInstr*> loads, stores;
+	for (const auto& blk: fn.blocks())
+	{
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i || addrOnStack(fn, *i)) continue;
+			if (i->op == ssa::IrInstr::Op::Load) loads.push_back(i);
+			if (i->op == ssa::IrInstr::Op::Store) stores.push_back(i);
+		}
+	}
+	for (const auto* wb: stores)
+	{
+		const ssa::ValueId cell = stripCasts(fn, operandAt(*wb, 1));
+		const ssa::ValueId next = stripCasts(fn, operandAt(*wb, 0));
+		const auto* step = defOf(fn, next);
+		if (!step || (step->op != ssa::IrInstr::Op::Add && step->op != ssa::IrInstr::Op::Sub)) continue;
+		const bool up = step->op == ssa::IrInstr::Op::Add && immOperand(fn, *step, 1);
+		const bool down = (step->op == ssa::IrInstr::Op::Sub && immOperand(fn, *step, 1))
+			|| (step->op == ssa::IrInstr::Op::Add
+				&& (immOperand(fn, *step, 0xffffffffULL) || immOperand(fn, *step, ~0ULL)));
+		if (!up && !down) continue;
+		ssa::ValueId top = ssa::kInvalidValue;
+		for (const auto& u: step->uses)
+			if (const auto* ld = defOf(fn, stripCasts(fn, u.valueId)); ld && ld->op == ssa::IrInstr::Op::Load
+				&& stripCasts(fn, operandAt(*ld, 0)) == cell)
+				top = stripCasts(fn, u.valueId);
+		if (top == ssa::kInvalidValue) continue;
+		if (up)
+			for (const auto* st: stores)
+				if (st != wb && isIndexedBy(fn, operandAt(*st, 1), top)) return true;
+		if (down)
+			for (const auto* ld: loads)
+				if (isIndexedBy(fn, operandAt(*ld, 0), next)) return true;
+	}
+	return false;
+}
+
 /// BFS's inner step: `if (!vis[v]) { vis[v] = 1; q[tail++] = v; }`.  In one
 /// loop block a flag tested against zero is set to 1 and a value is appended
 /// to an indexed slot.
@@ -1107,7 +1170,9 @@ std::vector<IdiomResult> IdiomDetector::detect(const ssa::SSAFunction& fn) const
 	// Straight-line and tiny, so it runs before the size preflight.
 	if (hasHeadInsert(fn, true))
 		out.push_back(makeResult(IdiomKind::HashTableChaining, 0.80f, "bucket_head_insert"));
-	else if (hasHeadInsert(fn, false))
+	if (hasArrayStackStep(fn))
+		out.push_back(makeResult(IdiomKind::Stack, 0.80f, "counter_indexed_push_pop"));
+	if (hasHeadInsert(fn, false))
 		out.push_back(makeResult(IdiomKind::LinkedList, 0.80f, "node_head_insert"));
 	if (!passesPreflight(fn)) return out;
 
