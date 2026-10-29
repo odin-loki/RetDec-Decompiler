@@ -8454,7 +8454,8 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvxPmovNarrow(cs_insn* i, cs_x8
 		Trunc,
 		SSat,
 		USat,
-		Mask2Vec
+		Mask2Vec,
+		Vec2Mask
 	} kind = Trunc;
 	switch (i->id)
 	{
@@ -8479,7 +8480,43 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvxPmovNarrow(cs_insn* i, cs_x8
 	case X86_INS_VPMOVM2Q: dstElem = 64; kind = Mask2Vec; break;
 	case X86_INS_VPBROADCASTMW2D: dstElem = 32; kind = Mask2Vec; break;
 	case X86_INS_VPBROADCASTMB2Q: dstElem = 64; kind = Mask2Vec; break;
+	case X86_INS_VPMOVWB: srcElem = 16; dstElem = 8; break;
+	case X86_INS_VPMOVSWB: srcElem = 16; dstElem = 8; kind = SSat; break;
+	case X86_INS_VPMOVUSWB: srcElem = 16; dstElem = 8; kind = USat; break;
+	case X86_INS_VPMOVB2M: srcElem = 8; kind = Vec2Mask; break;
+	case X86_INS_VPMOVW2M: srcElem = 16; kind = Vec2Mask; break;
+	case X86_INS_VPMOVD2M: srcElem = 32; kind = Vec2Mask; break;
+	case X86_INS_VPMOVQ2M: srcElem = 64; kind = Vec2Mask; break;
 	default: translatePseudoAsmGeneric(i, xi, irb); return;
+	}
+
+	if (kind == Vec2Mask)
+	{
+		// Each lane's sign bit becomes one mask bit; upper mask bits are cleared.
+		if (xi->op_count != 2 || xi->operands[0].type != X86_OP_REG || xi->operands[1].type != X86_OP_REG
+			|| xi->operands[0].reg < X86_REG_K0 || xi->operands[0].reg > X86_REG_K7)
+		{
+			translatePseudoAsmGeneric(i, xi, irb);
+			return;
+		}
+		unsigned srcBits = 0;
+		Value* src = loadVectorOp(xi->operands[1], irb, srcBits);
+		srcBits = xi->operands[1].size * 8;
+		if (src == nullptr || (srcBits != 128 && srcBits != 256 && srcBits != 512))
+		{
+			translatePseudoAsmGeneric(i, xi, irb);
+			return;
+		}
+		src = irb.CreateZExtOrTrunc(src, irb.getIntNTy(srcBits));
+		unsigned n = srcBits / srcElem;
+		Value* m = irb.getInt64(0);
+		for (unsigned lane = 0; lane < n; ++lane)
+		{
+			Value* bit = irb.CreateTrunc(irb.CreateLShr(src, lane * srcElem + srcElem - 1), irb.getInt1Ty());
+			m = irb.CreateOr(m, irb.CreateShl(irb.CreateZExt(bit, irb.getInt64Ty()), lane));
+		}
+		storeRegister(xi->operands[0].reg, m, irb);
+		return;
 	}
 
 	if (kind == Mask2Vec)
