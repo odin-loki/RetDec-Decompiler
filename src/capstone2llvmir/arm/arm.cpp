@@ -8000,7 +8000,9 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMveVec(cs_insn* i, cs_arm* ai, 
 			isSigned = dt[1] == 's';
 		}
 	}
-	bool fpOk = std::string(i->mnemonic).find("nm") != std::string::npos;
+	std::string mn0 = i->mnemonic;
+	bool fpOk = mn0.find("nm") != std::string::npos || mn0.compare(0, 5, "vcmul") == 0
+			|| mn0.compare(0, 5, "vfmas") == 0;
 	if ((isFp && !fpOk) || lb == 0 || lb > 32 || ai->op_count < 2)
 	{
 		fallback();
@@ -8288,6 +8290,105 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMveVec(cs_insn* i, cs_arm* ai, 
 			r = irb.CreateSelect(irb.CreateOr(better, rNan), e, r);
 		}
 		storeRegister(reg(0), irb.CreateBitCast(r, i32), irb);
+		return;
+	}
+	if (op == "vmaxnma" || op == "vminnma")
+	{
+		if (!isFp || lb != 32 || ai->op_count != 2) { fallback(); return; }
+		auto* ft = irb.getFloatTy();
+		auto* d = loadNeonVector(reg(0), 32, true, irb);
+		auto* a = loadNeonVector(reg(1), 32, true, irb);
+		auto fabs = [&](llvm::Value* v) {
+			return irb.CreateSelect(irb.CreateFCmpOLT(v, llvm::ConstantFP::get(ft, 0.0)), irb.CreateFNeg(v), v);
+		};
+		llvm::Value* r = d;
+		for (unsigned k = 0; k < 4; ++k)
+		{
+			auto* x = fabs(irb.CreateExtractElement(d, uint64_t(k)));
+			auto* y = fabs(irb.CreateExtractElement(a, uint64_t(k)));
+			auto* better = op == "vmaxnma" ? irb.CreateFCmpOGT(y, x) : irb.CreateFCmpOLT(y, x);
+			r = irb.CreateInsertElement(r, irb.CreateSelect(irb.CreateOr(better, irb.CreateFCmpUNO(x, x)), y, x),
+					uint64_t(k));
+		}
+		storeNeonVector(reg(0), r, irb);
+		return;
+	}
+
+	if (op == "vcmul")
+	{
+		if (!isFp || lb != 32 || ai->op_count != 4 || ai->operands[3].type != ARM_OP_IMM) { fallback(); return; }
+		auto* a = loadNeonVector(reg(1), 32, true, irb);
+		auto* b = loadNeonVector(reg(2), 32, true, irb);
+		llvm::Value* r = a;
+		int64_t rot = ai->operands[3].imm;
+		for (unsigned k = 0; k < 4; k += 2)
+		{
+			auto* ae = irb.CreateExtractElement(a, uint64_t(k));
+			auto* ao = irb.CreateExtractElement(a, uint64_t(k + 1));
+			auto* be = irb.CreateExtractElement(b, uint64_t(k));
+			auto* bo = irb.CreateExtractElement(b, uint64_t(k + 1));
+			llvm::Value *re, *im;
+			switch (rot)
+			{
+				case 0: re = irb.CreateFMul(ae, be); im = irb.CreateFMul(ae, bo); break;
+				case 90: re = irb.CreateFNeg(irb.CreateFMul(ao, bo)); im = irb.CreateFMul(ao, be); break;
+				case 180: re = irb.CreateFNeg(irb.CreateFMul(ae, be)); im = irb.CreateFNeg(irb.CreateFMul(ae, bo)); break;
+				case 270: re = irb.CreateFMul(ao, bo); im = irb.CreateFNeg(irb.CreateFMul(ao, be)); break;
+				default: fallback(); return;
+			}
+			r = irb.CreateInsertElement(r, re, uint64_t(k));
+			r = irb.CreateInsertElement(r, im, uint64_t(k + 1));
+		}
+		storeNeonVector(reg(0), r, irb);
+		return;
+	}
+
+	if (op == "vfmas" || op == "vmlas")
+	{
+		bool f = op == "vfmas";
+		if (ai->op_count != 3 || f != isFp || (f && lb != 32)) { fallback(); return; }
+		auto* d = loadNeonVector(reg(0), lb, f, irb);
+		auto* a = loadNeonVector(reg(1), lb, f, irb);
+		llvm::Value* sc = irb.CreateZExtOrTrunc(loadRegister(reg(2), irb), i32);
+		sc = f ? irb.CreateBitCast(sc, irb.getFloatTy()) : irb.CreateTrunc(sc, irb.getIntNTy(lb));
+		llvm::Value* r = d;
+		for (unsigned k = 0; k < lanesOf(d); ++k)
+		{
+			auto* x = irb.CreateExtractElement(d, uint64_t(k));
+			auto* y = irb.CreateExtractElement(a, uint64_t(k));
+			llvm::Value* e = f ? irb.CreateFAdd(irb.CreateFMul(x, y), sc) : irb.CreateAdd(irb.CreateMul(x, y), sc);
+			r = irb.CreateInsertElement(r, e, uint64_t(k));
+		}
+		storeNeonVector(reg(0), r, irb);
+		return;
+	}
+
+	if (op == "vqrdmlah" || op == "vqdmlah" || op == "vqrdmlash" || op == "vqdmlash")
+	{
+		if (ai->op_count != 3 || lb > 32 || isNeonRegister(reg(2))) { fallback(); return; }
+		bool rnd = op.compare(0, 4, "vqrd") == 0;
+		bool sh = op.back() == 'h' && op.find("ash") != std::string::npos;
+		auto* et = irb.getIntNTy(lb);
+		auto* wt = irb.getIntNTy(2 * lb + 2);
+		auto* d = loadNeonVector(reg(0), lb, false, irb);
+		auto* a = loadNeonVector(reg(1), lb, false, irb);
+		auto* sc = irb.CreateSExt(irb.CreateTrunc(irb.CreateZExtOrTrunc(loadRegister(reg(2), irb), i32), et), wt);
+		auto* mx = llvm::ConstantInt::get(wt, llvm::APInt::getSignedMaxValue(lb).sext(2 * lb + 2));
+		auto* mn = llvm::ConstantInt::get(wt, llvm::APInt::getSignedMinValue(lb).sext(2 * lb + 2));
+		llvm::Value* r = d;
+		for (unsigned k = 0; k < lanesOf(d); ++k)
+		{
+			auto* x = irb.CreateSExt(irb.CreateExtractElement(d, uint64_t(k)), wt);
+			auto* y = irb.CreateSExt(irb.CreateExtractElement(a, uint64_t(k)), wt);
+			// vq[r]dmlah: d = (d << esize) + 2*n*s; vq[r]dmlash: d = (n << esize) + 2*d*s.
+			llvm::Value* e = sh ? irb.CreateAdd(irb.CreateShl(y, lb), irb.CreateShl(irb.CreateMul(x, sc), 1))
+					: irb.CreateAdd(irb.CreateShl(x, lb), irb.CreateShl(irb.CreateMul(y, sc), 1));
+			if (rnd) e = irb.CreateAdd(e, llvm::ConstantInt::get(wt, 1ull << (lb - 1)));
+			e = irb.CreateAShr(e, lb);
+			e = irb.CreateSelect(irb.CreateICmpSGT(e, mx), mx, irb.CreateSelect(irb.CreateICmpSLT(e, mn), mn, e));
+			r = irb.CreateInsertElement(r, irb.CreateTrunc(e, et), uint64_t(k));
+		}
+		storeNeonVector(reg(0), r, irb);
 		return;
 	}
 	fallback();

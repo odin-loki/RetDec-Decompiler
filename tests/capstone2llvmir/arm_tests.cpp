@@ -12259,6 +12259,124 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMINNMAV_f32)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMAXNMA_f32)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x3f800000c0400000ULL)},
+		{ARM_REG_D1, armDBits(0x400000007fc00000ULL)},
+		{ARM_REG_D2, armDBits(0xc080000040000000ULL)},
+		{ARM_REG_D3, armDBits(0xbf80000040a00000ULL)},
+	});
+
+	emulate_bin("3f ee 83 0e");
+
+	EXPECT_EQ(0x4080000040400000ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x4000000040a00000ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCMUL_f32_90)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_D2, armDBits(0x400000003f800000ULL)},
+		{ARM_REG_D3, armDBits(0x4080000040400000ULL)},
+		{ARM_REG_D4, armDBits(0x40c0000040a00000ULL)},
+		{ARM_REG_D5, armDBits(0x4100000040e00000ULL)},
+	});
+
+	emulate_bin("32 fe 05 0e");
+
+	EXPECT_EQ(0x41200000c1400000ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x41e00000c2000000ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VFMAS_f32)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0x3f000000},
+		{ARM_REG_D0, armDBits(0x400000003f800000ULL)},
+		{ARM_REG_D1, armDBits(0x4080000040400000ULL)},
+		{ARM_REG_D2, armDBits(0x40c0000040a00000ULL)},
+		{ARM_REG_D3, armDBits(0x4100000040e00000ULL)},
+	});
+
+	emulate_bin("33 ee 40 1e");
+
+	EXPECT_EQ(0x4148000040b00000ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x4202000041ac0000ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMLAS_i32)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0x64},
+		{ARM_REG_D0, armDBits(0x200000001ULL)},
+		{ARM_REG_D1, armDBits(0x400000003ULL)},
+		{ARM_REG_D2, armDBits(0x600000005ULL)},
+		{ARM_REG_D3, armDBits(0x800000007ULL)},
+	});
+
+	emulate_bin("23 ee 40 1e");
+
+	EXPECT_EQ(0x7000000069ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x8400000079ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQRDMLAH_s32)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0x40000000},
+		{ARM_REG_D0, armDBits(0x0ULL)},
+		{ARM_REG_D1, armDBits(0x7fffffff00000005ULL)},
+		{ARM_REG_D2, armDBits(0x8000000040000000ULL)},
+		{ARM_REG_D3, armDBits(0x4000000000000000ULL)},
+	});
+
+	emulate_bin("22 ee 40 0e");
+
+	EXPECT_EQ(0xc000000020000000ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x7fffffff00000005ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQDMLASH_s16)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0x4000},
+		{ARM_REG_D0, armDBits(0x7fff4000ULL)},
+		{ARM_REG_D1, armDBits(0x0ULL)},
+		{ARM_REG_D2, armDBits(0x37fff0001ULL)},
+		{ARM_REG_D3, armDBits(0x0ULL)},
+	});
+
+	emulate_bin("12 ee 60 1e");
+
+	EXPECT_EQ(0x37fff2001ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
