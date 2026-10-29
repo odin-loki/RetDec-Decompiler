@@ -2184,6 +2184,15 @@ TEST(IdiomDetectorTest, StoringAPassedValueInALoopIsMemset)
 	EXPECT_TRUE(detects(*fn, IdiomKind::Memset));
 }
 
+// An LCS table filled while walking the strings is not strlen or strcmp.
+TEST(IdiomDetectorTest, AByteWalkThatFillsATableIsNotStrlen)
+{
+	auto fn = makeByteWalk(/*compareAgainstZero=*/true, /*loadBytes=*/1);
+	storeToMemory(*fn, reg(*fn)->id);
+	EXPECT_FALSE(detects(*fn, IdiomKind::Strlen));
+	EXPECT_FALSE(detects(*fn, IdiomKind::Strcmp));
+}
+
 TEST(IdiomDetectorTest, StoringAComputedValueInALoopIsNotMemset)
 {
 	auto fn = makeLoop();

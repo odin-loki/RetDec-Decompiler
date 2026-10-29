@@ -291,6 +291,17 @@ bool hasByteFillLoop(const ssa::SSAFunction& fn)
 	return fill;
 }
 
+/// A loop that writes to memory other than its own stack slots: it builds
+/// something (a table, an output buffer), which strlen and strcmp never do.
+bool writesMemoryInLoop(const ssa::SSAFunction& fn)
+{
+	bool writes = false;
+	forEachLoopInstr(fn, [&](const ssa::IrInstr& i) {
+		if (i.op == ssa::IrInstr::Op::Store && i.uses.size() >= 2 && !addrOnStack(fn, i)) writes = true;
+	});
+	return writes;
+}
+
 // Blocks reachable from `from` without entering `stop`.
 std::vector<uint8_t> reachWithout(const ssa::SSAFunction& fn, ssa::BlockId from, ssa::BlockId stop)
 {
@@ -475,7 +486,7 @@ std::vector<IdiomResult> IdiomDetector::detect(const ssa::SSAFunction& fn) const
 		out.push_back(makeResult(IdiomKind::Atoi, 0.88f, "digit_loop"));
 	}
 
-	if (hasNullTerminatedLoop(fn))
+	if (hasNullTerminatedLoop(fn) && !writesMemoryInLoop(fn))
 	{
 		if (hasBytePairCompare(fn))
 			out.push_back(makeResult(IdiomKind::Strcmp, 0.82f, "null_term_byte_pair_compare"));
