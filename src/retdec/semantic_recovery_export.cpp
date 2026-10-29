@@ -327,11 +327,44 @@ std::string includeGuardFromHeaderName(const std::string& headerName)
 	return g;
 }
 
+/// REP STOS*/MOVS* pseudo calls emitted by the x86 lifter. Each stores or
+/// copies RCX elements of the instruction's width (forward direction), so the
+/// buildable stubs must count elements, not bytes.
+struct RepStringStub
+{
+	const char* name;
+	const char* elem;
+	bool isCopy;
+};
+
+const RepStringStub kRepStringStubs[] = {
+	{"__asm_rep_stosb_memset", "uint8_t", false},
+	{"__asm_rep_stosw_memset", "uint16_t", false},
+	{"__asm_rep_stosd_memset", "uint32_t", false},
+	{"__asm_rep_stosq_memset", "uint64_t", false},
+	{"__asm_rep_movsb_memcpy", "uint8_t", true},
+	{"__asm_rep_movsw_memcpy", "uint16_t", true},
+	{"__asm_rep_movsd_memcpy", "uint32_t", true},
+	{"__asm_rep_movsq_memcpy", "uint64_t", true},
+};
+
+bool isRepStringStubName(const std::string& name)
+{
+	for (const auto& r : kRepStringStubs)
+	{
+		if (name == r.name)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 bool isSkippedCallName(const std::string& name)
 {
 	return name == "if" || name == "for" || name == "while" || name == "switch" || name == "return" || name == "sizeof"
 		|| name == "__readUndefQword" || name == "__readfsqword" || name == "__asm_hlt"
-		|| name == "__asm_rep_stosq_memset" || name == "__retdec_stub";
+		|| isRepStringStubName(name) || name == "__retdec_stub";
 }
 
 const char* libcHeaderForName(const std::string& name)
@@ -387,7 +420,7 @@ bool isPthreadName(const std::string& name)
 
 bool isAsmIntrinsicName(const std::string& name)
 {
-	return name.compare(0, 6, "__asm_") == 0 && name != "__asm_hlt" && name != "__asm_rep_stosq_memset";
+	return name.compare(0, 6, "__asm_") == 0 && name != "__asm_hlt" && !isRepStringStubName(name);
 }
 
 bool sourceDefinesMain(const std::string& src)
@@ -413,10 +446,21 @@ void writeHelperStubs(std::ostream& os)
 	os << "RETDEC_BUILDABLE_WEAK uint64_t __readfsqword(unsigned long a) "
 		  "{ (void)a; return 0; }\n";
 	os << "RETDEC_BUILDABLE_WEAK void __asm_hlt(void) {}\n";
-	// REP STOSQ stores RCX quadwords of RAX, not RCX bytes of AL.
-	os << "RETDEC_BUILDABLE_WEAK void *__asm_rep_stosq_memset(void *d, uint64_t v, "
-		  "unsigned long n) { uint64_t *p = (uint64_t *)d; "
-		  "for (unsigned long i = 0; i < n; ++i) p[i] = v; return d; }\n";
+	for (const auto& r : kRepStringStubs)
+	{
+		if (r.isCopy)
+		{
+			os << "RETDEC_BUILDABLE_WEAK void *" << r.name << "(void *d, const void *s, unsigned long n) { "
+			   << r.elem << " *p = (" << r.elem << " *)d; const " << r.elem << " *q = (const " << r.elem
+			   << " *)s; for (unsigned long i = 0; i < n; ++i) p[i] = q[i]; return d; }\n";
+		}
+		else
+		{
+			os << "RETDEC_BUILDABLE_WEAK void *" << r.name << "(void *d, " << r.elem << " v, unsigned long n) { "
+			   << r.elem << " *p = (" << r.elem << " *)d; for (unsigned long i = 0; i < n; ++i) p[i] = v; "
+			   << "return d; }\n";
+		}
+	}
 }
 
 void writeLibcArityMacros(std::ostream& os)
@@ -1835,7 +1879,11 @@ void maybeWriteBuildableSidecars(const std::string& outputCPath, const std::stri
 	header << "uint64_t __readUndefQword(void);\n";
 	header << "uint64_t __readfsqword(unsigned long);\n";
 	header << "void __asm_hlt(void);\n";
-	header << "void *__asm_rep_stosq_memset(void *, uint64_t, unsigned long);\n";
+	for (const auto& r : kRepStringStubs)
+	{
+		header << "void *" << r.name << "(void *, " << (r.isCopy ? std::string("const void *") : std::string(r.elem))
+			   << ", unsigned long);\n";
+	}
 
 	const auto typeBlocks = scrapeTypeBlocks(src);
 	if (!typeBlocks.empty())
