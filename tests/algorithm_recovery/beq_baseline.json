@@ -13,6 +13,7 @@
   "hash_table-gcc-O0",
   "hash_table-gcc-O2",
   "hash_table-gcc-O3",
+  "heapsort-gcc-O0",
   "heapsort-gcc-O2",
   "heapsort-gcc-O3",
   "insertion_sort-gcc-O0",
