@@ -123,8 +123,13 @@ bool IfStructureOptimizer::tryOptimization2(ShPtr<IfStmt> stmt) {
 	stmt->appendStatement(stmt->getFirstIfBody());
 
 	// Move the body of the else clause to the if clause.
-	stmt->setFirstIfBody(stmt->getElseClause());
+	// Detach it first: removeElseClause() drops the if's observer from the
+	// body, which would otherwise leave the new then-body unobserved, so a
+	// later Statement::replaceStatement() on its first statement would not
+	// update the clause and the rest of the body would be lost.
+	ShPtr<Statement> elseBody(stmt->getElseClause());
 	stmt->removeElseClause();
+	stmt->setFirstIfBody(elseBody);
 
 	return true;
 }
