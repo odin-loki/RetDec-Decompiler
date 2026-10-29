@@ -1,0 +1,15 @@
+{
+ "equivalent": [
+  "bfs_graph-gcc-O2",
+  "binary_search-gcc-O2",
+  "binary_search-gcc-O3",
+  "dfs_graph-gcc-O0",
+  "dfs_graph-gcc-O2",
+  "hash_table-gcc-O0",
+  "insertion_sort-gcc-O0",
+  "insertion_sort-gcc-O2",
+  "insertion_sort-gcc-O3",
+  "mergesort-gcc-O0",
+  "mergesort-gcc-O2"
+ ]
+}
