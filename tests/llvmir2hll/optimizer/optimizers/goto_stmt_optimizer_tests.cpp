@@ -237,6 +237,47 @@ GotoPastLoopIsKeptByDefault) {
 	EXPECT_EQ(gotoStmt, loop->getBody());
 }
 
+// goto L; a = 1; L: a = 3; return 1;  ==>  a = 3; return 1; a = 1; ...
+TEST_F(GotoStmtOptimizerTests,
+GotoToShortReturningTailIsReplacedByACopy) {
+	ShPtr<Variable> varA(Variable::create("a", IntType::create(32)));
+	testFunc->addLocalVar(varA);
+	auto ret = ReturnStmt::create(ConstInt::create(1, 32));
+	auto target = AssignStmt::create(varA, ConstInt::create(3, 32), ret);
+	target->setLabel("L");
+	auto skipped = AssignStmt::create(varA, ConstInt::create(1, 32), target);
+	auto gotoStmt = GotoStmt::create(target);
+	auto ifGoto = IfStmt::create(varA, gotoStmt, skipped);
+	testFunc->setBody(ifGoto);
+
+	Optimizer::optimize<GotoStmtOptimizer>(module, true);
+
+	auto copy = cast<AssignStmt>(ifGoto->getFirstIfBody());
+	ASSERT_TRUE(copy) << "expected a copy of `a = 3`";
+	EXPECT_NE(target, copy);
+	EXPECT_FALSE(copy->hasLabel());
+	EXPECT_TRUE(isa<ReturnStmt>(copy->getSuccessor()));
+	EXPECT_FALSE(target->hasLabel());
+	EXPECT_EQ(skipped, ifGoto->getSuccessor());
+}
+
+TEST_F(GotoStmtOptimizerTests,
+GotoToTailWithoutReturnIsKept) {
+	ShPtr<Variable> varA(Variable::create("a", IntType::create(32)));
+	testFunc->addLocalVar(varA);
+	auto target = AssignStmt::create(varA, ConstInt::create(3, 32));
+	target->setLabel("L");
+	auto skipped = AssignStmt::create(varA, ConstInt::create(1, 32), target);
+	auto gotoStmt = GotoStmt::create(target);
+	auto ifGoto = IfStmt::create(varA, gotoStmt, skipped);
+	testFunc->setBody(ifGoto);
+
+	Optimizer::optimize<GotoStmtOptimizer>(module, true);
+
+	EXPECT_EQ(gotoStmt, ifGoto->getFirstIfBody());
+	EXPECT_TRUE(target->hasLabel());
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec

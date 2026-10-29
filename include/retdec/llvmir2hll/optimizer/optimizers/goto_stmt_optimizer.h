@@ -30,6 +30,7 @@ private:
 	/// @}
 
 	bool tryBreakOutOfLoop(ShPtr<GotoStmt> stmt);
+	bool tryCopyReturningTail(ShPtr<GotoStmt> stmt);
 
 	bool breakOutOfLoops = false;
 };

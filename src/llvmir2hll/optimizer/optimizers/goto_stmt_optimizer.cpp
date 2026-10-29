@@ -82,6 +82,26 @@ void collectGotos(ShPtr<Statement> stmt, std::set<ShPtr<GotoStmt>> &out,
 	}
 }
 
+/// The statements from @a target to a return, if they are a short run of
+/// plain statements; otherwise empty.
+std::vector<ShPtr<Statement>> shortReturningTail(ShPtr<Statement> target) {
+	std::vector<ShPtr<Statement>> tail;
+	for (auto cur = target; cur; cur = cur->getSuccessor()) {
+		if (tail.size() >= 4 || (cur != target && cur->hasLabel())) {
+			break;
+		}
+		tail.push_back(cur);
+		if (isa<ReturnStmt>(cur)) {
+			return tail;
+		}
+		if (!(isa<AssignStmt>(cur) || isa<CallStmt>(cur) ||
+				isa<EmptyStmt>(cur))) {
+			break;
+		}
+	}
+	return {};
+}
+
 } // anonymous namespace
 
 /**
@@ -102,6 +122,52 @@ void collectGotos(ShPtr<Statement> stmt, std::set<ShPtr<GotoStmt>> &out,
 *
 * @return @c true if @a stmt was replaced.
 */
+/**
+* @brief Replaces a goto to a short run of plain statements that ends in a
+*        return with a copy of that run.
+*
+* @code
+* goto L;          f(x);
+* ...        ==>   return 0;
+* L: f(x);         ...
+* return 0;        L: f(x);
+*                  return 0;
+* @endcode
+*/
+bool GotoStmtOptimizer::tryCopyReturningTail(ShPtr<GotoStmt> stmt) {
+	auto target = stmt->getTarget();
+	auto tail = target ? shortReturningTail(target) : std::vector<ShPtr<Statement>>{};
+	if (tail.empty()) {
+		return false;
+	}
+	ShPtr<Statement> first;
+	ShPtr<Statement> prev;
+	for (const auto &t : tail) {
+		auto c = ucast<Statement>(t->clone());
+		c->setMetadata("");
+		c->removeLabel();
+		if (prev) {
+			prev->setSuccessor(c);
+		} else {
+			first = c;
+		}
+		prev = c;
+	}
+	Statement::replaceStatement(stmt, first);
+
+	std::set<ShPtr<GotoStmt>> live;
+	std::set<ShPtr<Statement>> seen;
+	collectGotos(currFunc->getBody(), live, seen);
+	bool stillTargeted = false;
+	for (const auto &g : live) {
+		stillTargeted = stillTargeted || g->getTarget() == target;
+	}
+	if (!stillTargeted) {
+		target->removeLabel();
+	}
+	return true;
+}
+
 bool GotoStmtOptimizer::tryBreakOutOfLoop(ShPtr<GotoStmt> stmt) {
 	auto target = stmt->getTarget();
 	auto loop = cast<WhileLoopStmt>(innermostBreakScope(stmt));
@@ -211,8 +277,8 @@ void GotoStmtOptimizer::visit(ShPtr<GotoStmt> stmt) {
 		return;
 	}
 
-	if (breakOutOfLoops) {
-		tryBreakOutOfLoop(stmt);
+	if (breakOutOfLoops && !tryBreakOutOfLoop(stmt)) {
+		tryCopyReturningTail(stmt);
 	}
 }
 
