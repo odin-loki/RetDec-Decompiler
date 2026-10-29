@@ -57,12 +57,6 @@ bool isPow2(ShPtr<ConstInt> ci, unsigned& log2out) {
 	return true;
 }
 
-bool isUnsigned(ShPtr<Expression> expr) {
-    if (auto t = cast<IntType>(expr->getType()))
-        return !t->isSigned();
-    return false;
-}
-
 ShPtr<ConstInt> sameWidthConst(uint64_t val, ShPtr<Expression> ref) {
     unsigned bits = 32;
     if (auto t = cast<IntType>(ref->getType())) bits = t->getSize();
@@ -90,7 +84,9 @@ void Pow2SubOptimizer::visit(ShPtr<MulOpExpr> expr) {
 void Pow2SubOptimizer::visit(ShPtr<DivOpExpr> expr) {
     OrderedAllVisitor::visit(expr);
     auto ci = cast<ConstInt>(expr->getSecondOperand());
-    if (!ci || !isUnsigned(expr->getFirstOperand())) return;
+    // Only an unsigned division is a logical shift; the operand's C type
+    // says nothing about which division LLVM did (-7 / 2 is -3, -7 >> 1 is -4).
+    if (!ci || expr->getVariant() != DivOpExpr::Variant::UDiv) return;
     unsigned log2 = 0;
     if (!isPow2(ci, log2) || log2 == 0) return;
     auto base = expr->getFirstOperand();
@@ -101,7 +97,8 @@ void Pow2SubOptimizer::visit(ShPtr<DivOpExpr> expr) {
 void Pow2SubOptimizer::visit(ShPtr<ModOpExpr> expr) {
     OrderedAllVisitor::visit(expr);
     auto ci = cast<ConstInt>(expr->getSecondOperand());
-    if (!ci || !isUnsigned(expr->getFirstOperand())) return;
+    // Likewise only an unsigned remainder is a mask (-7 % 2 is -1).
+    if (!ci || expr->getVariant() != ModOpExpr::Variant::UMod) return;
     unsigned log2 = 0;
     if (!isPow2(ci, log2) || log2 == 0) return;
     auto base = expr->getFirstOperand();

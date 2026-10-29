@@ -493,6 +493,26 @@ SecondOperandIsVariableRightArithmeticalShiftNotOptimized) {
 	EXPECT_EQ(varA, outOp2);
 }
 
+TEST_F(BitShiftOptimizerTests,
+ArithmeticalRightShiftOfUnsignedVariableIsNotADivision) {
+	// return (unsigned)a >> 2 (arithmetical shift);
+	//
+	// The shift copies the sign bit, a division by 4 would not.
+	//
+	ShPtr<Variable> varA(Variable::create("a", IntType::create(64, false)));
+	ShPtr<ReturnStmt> returnStmt(ReturnStmt::create(BitShrOpExpr::create(
+		varA, ConstInt::create(2, 64), BitShrOpExpr::Variant::Arithmetical)));
+	testFunc->setBody(returnStmt);
+
+	Optimizer::optimize<BitShiftOptimizer>(module);
+
+	ShPtr<ReturnStmt> outReturnBody(cast<ReturnStmt>(testFunc->getBody()));
+	ASSERT_TRUE(outReturnBody);
+	ShPtr<BitShrOpExpr> outShr(cast<BitShrOpExpr>(outReturnBody->getRetVal()));
+	ASSERT_TRUE(outShr) << "expected the shift to stay, got " << outReturnBody;
+	EXPECT_TRUE(outShr->isArithmetical());
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec

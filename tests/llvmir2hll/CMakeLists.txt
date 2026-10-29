@@ -118,6 +118,7 @@ add_executable(tests-llvmir2hll
 	optimizer/optimizers/simplify_arithm_expr/negation_operator_sub_optimizer_tests.cpp
 	optimizer/optimizers/simplify_arithm_expr/negative_operand_sub_optimizer_tests.cpp
 	optimizer/optimizers/simplify_arithm_expr/one_sub_optimizer_tests.cpp
+	optimizer/optimizers/simplify_arithm_expr/pow2_sub_optimizer_tests.cpp
 	optimizer/optimizers/simplify_arithm_expr/ternary_operator_sub_optimizer_tests.cpp
 	optimizer/optimizers/simplify_arithm_expr/three_operands_sub_optimizer_tests.cpp
 	optimizer/optimizers/simplify_arithm_expr/zero_sub_optimizer_tests.cpp

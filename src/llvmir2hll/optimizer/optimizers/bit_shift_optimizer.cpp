@@ -134,7 +134,11 @@ void BitShiftOptimizer::visit(ShPtr<BitShrOpExpr> expr) {
 	// First, visit (and possibly optimize) nested expression.
 	Optimizer::visit(expr);
 
-	// Check whether we can optimize this shift.
+	// Check whether we can optimize this shift. An arithmetic shift is not a
+	// division even of an unsigned-typed operand: it copies the sign bit.
+	if (!expr->isLogical()) {
+		return;
+	}
 	if (!isFirstOpUnsignedIntTypeOrPositiveConstInt(expr)) {
 		return;
 	}
@@ -145,7 +149,8 @@ void BitShiftOptimizer::visit(ShPtr<BitShrOpExpr> expr) {
 	// Replace the shift with division and update the second operand.
 	ShPtr<ConstInt> secOpConstInt(cast<ConstInt>(expr->getSecondOperand()));
 	ShPtr<DivOpExpr> divOpExpr(DivOpExpr::create(expr->getFirstOperand(),
-		ConstInt::getTwoToPositivePower(secOpConstInt)));
+		ConstInt::getTwoToPositivePower(secOpConstInt),
+		DivOpExpr::Variant::UDiv));
 	Expression::replaceExpression(expr, divOpExpr);
 }
 
