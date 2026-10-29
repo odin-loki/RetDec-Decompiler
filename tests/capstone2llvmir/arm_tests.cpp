@@ -12377,6 +12377,103 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQDMLASH_s16)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSHLC)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0xabcdef05},
+		{ARM_REG_D0, armDBits(0x80000000f0000001ULL)},
+		{ARM_REG_D1, armDBits(0xffffffff12345678ULL)},
+	});
+
+	emulate_bin("a4 ee c0 0f");
+
+	EXPECT_EQ(0xf00000015ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0xfffffff123456788ULL, dBits(ARM_REG_D1));
+	EXPECT_EQ(0xfULL, getRegisterValueUnsigned(ARM_REG_R0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VINS_f16)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x3333444411112222ULL)},
+	});
+
+	emulate_bin("b0 fe e0 0a");
+
+	EXPECT_EQ(0x3333444444442222ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMOVX_f16)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x3333444411112222ULL)},
+	});
+
+	emulate_bin("b0 fe 60 0a");
+
+	EXPECT_EQ(0x3333444400003333ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VJCVT_neg)
+{
+	ONLY_MODE_ARM;
+	_translator->modifyExtraMode(static_cast<cs_mode>(_translator->getExtraMode() | CS_MODE_V8));
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x0ULL)},
+		{ARM_REG_D1, armDBits(0xc00e000000000000ULL)},
+	});
+
+	emulate_bin("c1 0b b9 ee");
+
+	EXPECT_EQ(0xfffffffdULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VJCVT_wrap)
+{
+	ONLY_MODE_ARM;
+	_translator->modifyExtraMode(static_cast<cs_mode>(_translator->getExtraMode() | CS_MODE_V8));
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x0ULL)},
+		{ARM_REG_D1, armDBits(0x41f0000000500000ULL)},
+	});
+
+	emulate_bin("c1 0b b9 ee");
+
+	EXPECT_EQ(0x5ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VJCVT_huge)
+{
+	ONLY_MODE_ARM;
+	_translator->modifyExtraMode(static_cast<cs_mode>(_translator->getExtraMode() | CS_MODE_V8));
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0xffffffffULL)},
+		{ARM_REG_D1, armDBits(0x7e37e43c8800759cULL)},
+	});
+
+	emulate_bin("c1 0b b9 ee");
+
+	EXPECT_EQ(0x0ULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

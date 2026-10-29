@@ -8630,5 +8630,89 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMveMisc(cs_insn* i, cs_arm* ai,
 	fallback();
 }
 
+
+/**
+ * VSHLC (MVE whole-vector shift left with carry), VINS/VMOVX (fp16 half moves)
+ * and VJCVT (JavaScript double-to-int32 conversion; the Z flag is not set).
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateArmMiscFp(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	auto fallback = [&]() { translatePseudoAsmGeneric(i, ai, irb); };
+	auto* i32 = irb.getInt32Ty();
+	std::string m = i->mnemonic;
+	std::string op = m.substr(0, m.find('.'));
+	if (op == "vshlc")
+	{
+		if (ai->op_count != 3 || ai->operands[2].type != ARM_OP_IMM) { fallback(); return; }
+		unsigned sh = unsigned(ai->operands[2].imm);
+		if (sh < 1 || sh > 32) { fallback(); return; }
+		auto* v = loadNeonVector(ai->operands[0].reg, 32, false, irb);
+		auto rd = ai->operands[1].reg;
+		auto* i64 = irb.getInt64Ty();
+		llvm::Value* carry = irb.CreateZExtOrTrunc(loadRegister(rd, irb), i32);
+		uint64_t cm = sh == 32 ? 0xffffffffull : ((1ull << sh) - 1);
+		carry = irb.CreateAnd(carry, llvm::ConstantInt::get(i32, cm));
+		llvm::Value* r = v;
+		for (unsigned k = 0; k < 4; ++k)
+		{
+			auto* e = irb.CreateZExt(irb.CreateExtractElement(v, uint64_t(k)), i64);
+			auto* w = irb.CreateOr(irb.CreateShl(e, sh), irb.CreateZExt(carry, i64));
+			r = irb.CreateInsertElement(r, irb.CreateTrunc(w, i32), uint64_t(k));
+			carry = irb.CreateTrunc(irb.CreateLShr(w, 32), i32);
+		}
+		storeNeonVector(ai->operands[0].reg, r, irb);
+		storeRegister(rd, carry, irb);
+		return;
+	}
+	if (op == "vins" || op == "vmovx")
+	{
+		if (ai->op_count != 2) { fallback(); return; }
+		auto* src = loadNeonBits(ai->operands[1].reg, irb);
+		if (src->getType()->getIntegerBitWidth() != 32) { fallback(); return; }
+		llvm::Value* r = nullptr;
+		if (op == "vmovx")
+		{
+			r = irb.CreateLShr(src, 16);
+		}
+		else
+		{
+			auto* d = loadNeonBits(ai->operands[0].reg, irb);
+			r = irb.CreateOr(irb.CreateAnd(d, llvm::ConstantInt::get(i32, 0xffff)), irb.CreateShl(src, 16));
+		}
+		storeNeonBits(ai->operands[0].reg, r, irb);
+		return;
+	}
+	if (op == "vjcvt")
+	{
+		if (ai->op_count != 2) { fallback(); return; }
+		auto* bits = loadNeonBits(ai->operands[1].reg, irb);
+		if (bits->getType()->getIntegerBitWidth() != 64) { fallback(); return; }
+		auto* i64 = irb.getInt64Ty();
+		auto* i128 = irb.getInt128Ty();
+		auto* ex = irb.CreateAnd(irb.CreateLShr(bits, 52), llvm::ConstantInt::get(i64, 0x7ff));
+		auto* frac = irb.CreateAnd(bits, llvm::ConstantInt::get(i64, (1ull << 52) - 1));
+		auto* mant = irb.CreateZExt(irb.CreateOr(frac, llvm::ConstantInt::get(i64, 1ull << 52)), i128);
+		// value = mant * 2^(ex - 1075)
+		auto* e = irb.CreateSub(ex, llvm::ConstantInt::get(i64, 1075));
+		auto* isLeft = irb.CreateICmpSGE(e, llvm::ConstantInt::get(i64, 0));
+		auto* lAmt = irb.CreateSelect(irb.CreateICmpSGT(e, llvm::ConstantInt::get(i64, 64)),
+				llvm::ConstantInt::get(i64, 64), e);
+		auto* nE = irb.CreateNeg(e);
+		auto* rAmt = irb.CreateSelect(irb.CreateICmpSGT(nE, llvm::ConstantInt::get(i64, 64)),
+				llvm::ConstantInt::get(i64, 64), nE);
+		auto* left = irb.CreateShl(mant, irb.CreateZExt(irb.CreateSelect(isLeft, lAmt, llvm::ConstantInt::get(i64, 0)), i128));
+		auto* right = irb.CreateLShr(mant, irb.CreateZExt(irb.CreateSelect(isLeft, llvm::ConstantInt::get(i64, 0), rAmt), i128));
+		llvm::Value* r = irb.CreateTrunc(irb.CreateSelect(isLeft, left, right), i32);
+		auto* zeroExp = irb.CreateICmpEQ(ex, llvm::ConstantInt::get(i64, 0));
+		auto* special = irb.CreateICmpEQ(ex, llvm::ConstantInt::get(i64, 0x7ff));
+		r = irb.CreateSelect(irb.CreateOr(zeroExp, special), llvm::ConstantInt::get(i32, 0), r);
+		auto* neg = irb.CreateICmpSLT(bits, llvm::ConstantInt::get(i64, 0));
+		r = irb.CreateSelect(neg, irb.CreateNeg(r), r);
+		storeNeonBits(ai->operands[0].reg, r, irb);
+		return;
+	}
+	fallback();
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec
