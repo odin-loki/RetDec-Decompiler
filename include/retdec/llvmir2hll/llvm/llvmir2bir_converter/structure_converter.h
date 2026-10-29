@@ -92,7 +92,15 @@ private:
 	bool reduceCFG(ShPtr<CFGNode> cfg);
 	/// Attempts Controlled Node Splitting (T1/T2) to reduce irreducible regions.
 	/// Returns true if any split was applied and reduceCFG should be retried.
-	bool tryControlledNodeSplitting(ShPtr<CFGNode> cfg);
+	struct BodyMeasure {
+		unsigned gotos = 0;
+		unsigned statements = 0;
+	};
+	ShPtr<Statement> structureFuncBody(llvm::Function &func,
+		bool repeatedSplitting);
+	static BodyMeasure measureStructuredBody(ShPtr<Statement> body);
+	bool tryControlledNodeSplitting(ShPtr<CFGNode> cfg, bool relaxed,
+		bool onlyOutsideLoops);
 	bool inspectCFGNode(ShPtr<CFGNode> node);
 	ShPtr<CFGNode> popFromQueue(CFGNodeQueue &queue) const;
 	void addUnvisitedSuccessorsToQueue(const ShPtr<CFGNode> &node,

@@ -8,6 +8,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- When classic structuring leaves gotos in a function, it is structured a
+  second time with repeated controlled node splitting of small blocks (up to
+  16 statements) outside loops, and the result is kept if it has clearly
+  fewer gotos and is at most about twice the size. gcc -O3 fully unrolls
+  short loops into acyclic regions whose exit blocks are shared by many
+  arms; duplicating those blocks replaces the jumps. bfs -O3 goes from 33
+  gotos to 11 (751 to 802 lines); the corpus total from 84 to 62.
 - BEQ-01 (`scripts/ci/check_behaviour_equivalence.py`) compiles the
   decompiled C of each `tests/algorithm_recovery/beq/*.c` entry function
   (gcc -O0/-O2/-O3), links it against the original driver, and compares

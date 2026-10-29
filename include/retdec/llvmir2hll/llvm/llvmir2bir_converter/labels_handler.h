@@ -39,6 +39,10 @@ public:
 	void setGotoTargetLabel(ShPtr<Statement> target,
 		const llvm::BasicBlock *targetBB);
 
+	/// Labels handed out so far; lets a caller undo a discarded attempt.
+	const StringSet &getUsedLabels() const { return usedLabels; }
+	void setUsedLabels(const StringSet &labels) { usedLabels = labels; }
+
 private:
 	std::string createLabelFor(
 			const llvm::BasicBlock *bb,

@@ -64,6 +64,14 @@ const unsigned LIMIT_CLONED_STATEMENTS = 5;
 /// if target body has less statements, it is inserted in place of goto statement
 const unsigned MIN_GOTO_STATEMENTS = 3;
 
+/// Upper bound on controlled node splits per function, so pathological CFGs
+/// cannot blow up the output.
+const unsigned MAX_NODE_SPLITS = 64;
+
+/// Largest body (in statements, see tryControlledNodeSplitting) that
+/// controlled node splitting may clone.
+const unsigned MAX_SPLIT_WEIGHT = 16;
+
 /// If LLVM reports multiple exit blocks for this natural loop, attach a debug
 /// comment on the structured loop (framework Cat. 1.2).
 void attachMultiExitLoopComment(const ShPtr<Statement> &stmt, llvm::Loop *loop) {
@@ -102,6 +110,79 @@ StructureConverter::StructureConverter(llvm::Pass *basePass,
 ShPtr<Statement> StructureConverter::convertFuncBody(llvm::Function &func) {
 	PRECONDITION(!func.isDeclaration(), "func cannot be a declaration");
 
+	// First the classic structuring, with one controlled node split. Only if
+	// that leaves gotos, structure the function again with repeated
+	// splitting of small blocks outside loops (tail duplication). gcc -O3
+	// fully unrolls short loops into acyclic regions whose small exit blocks
+	// are shared by many arms, and duplicating those blocks reads much
+	// better than jumping to them. The second result is kept only when it
+	// has clearly fewer gotos and is at most about twice as big; otherwise the first stands.
+	const auto labelsBefore = labelsHandler->getUsedLabels();
+	auto body = structureFuncBody(func, false);
+	const auto first = measureStructuredBody(body);
+	if (first.gotos == 0) {
+		return body;
+	}
+	const auto labelsAfterFirst = labelsHandler->getUsedLabels();
+	labelsHandler->setUsedLabels(labelsBefore);
+	auto retry = structureFuncBody(func, true);
+	const auto second = measureStructuredBody(retry);
+	// Later passes remove some gotos on their own, so a gain of one or two
+	// at this stage does not survive to the output (heapsort-gcc-O2 went
+	// from 3 to 5); ask for a clear gain.
+	const unsigned minGain = std::max(2u, first.gotos / 5);
+	if (second.gotos + minGain <= first.gotos &&
+			second.statements <= 2 * first.statements + 4 * MAX_SPLIT_WEIGHT) {
+		return retry;
+	}
+	labelsHandler->setUsedLabels(labelsAfterFirst);
+	return body;
+}
+
+/**
+* @brief Counts goto statements and all statements in @a body, recursing into
+*        compound statements.
+*/
+StructureConverter::BodyMeasure StructureConverter::measureStructuredBody(
+		ShPtr<Statement> body) {
+	BodyMeasure m;
+	std::function<void(ShPtr<Statement>)> walk = [&](ShPtr<Statement> stmt) {
+		for (; stmt; stmt = stmt->getSuccessor()) {
+			if (isa<EmptyStmt>(stmt)) {
+				continue;
+			}
+			++m.statements;
+			if (isa<GotoStmt>(stmt)) {
+				++m.gotos;
+			} else if (auto ifStmt = cast<IfStmt>(stmt)) {
+				for (auto c = ifStmt->clause_begin(); c != ifStmt->clause_end(); ++c) {
+					walk(c->second);
+				}
+				walk(ifStmt->getElseClause());
+			} else if (auto switchStmt = cast<SwitchStmt>(stmt)) {
+				for (auto c = switchStmt->clause_begin(); c != switchStmt->clause_end(); ++c) {
+					walk(c->second);
+				}
+			} else if (auto whileStmt = cast<WhileLoopStmt>(stmt)) {
+				walk(whileStmt->getBody());
+			} else if (auto forStmt = cast<ForLoopStmt>(stmt)) {
+				walk(forStmt->getBody());
+			} else if (auto uforStmt = cast<UForLoopStmt>(stmt)) {
+				walk(uforStmt->getBody());
+			}
+		}
+	};
+	walk(body);
+	return m;
+}
+
+/**
+* @brief Structures the body of @a func once. With @a repeatedSplitting,
+*        controlled node splitting is applied repeatedly to small blocks
+*        outside loops; otherwise at most once.
+*/
+ShPtr<Statement> StructureConverter::structureFuncBody(llvm::Function &func,
+		bool repeatedSplitting) {
 	initialiazeLLVMAnalyses(func);
 	auto cfg = createCFG(func.getEntryBlock());
 	detectBackEdges(cfg);
@@ -112,7 +193,12 @@ ShPtr<Statement> StructureConverter::convertFuncBody(llvm::Function &func) {
 
 	// Try Controlled Node Splitting to eliminate irreducible regions before
 	// falling back to gotos. See DECOMPILATION_IMPROVEMENT_FRAMEWORK.md Cat 1.1.
-	if (cfg->getSuccNum() != 0 && tryControlledNodeSplitting(cfg)) {
+	// With repeatedSplitting, one split often only exposes the next merge
+	// point; MAX_NODE_SPLITS bounds the total growth.
+	const unsigned maxSplits = repeatedSplitting ? MAX_NODE_SPLITS : 1;
+	for (unsigned splits = 0; splits < maxSplits &&
+			cfg->getSuccNum() != 0 &&
+			tryControlledNodeSplitting(cfg, repeatedSplitting, splits != 0); ++splits) {
 		while (cfg->getSuccNum() != 0 && reduceCFG(cfg)) {
 			// Retry reduction after node splitting.
 		}
@@ -438,24 +524,55 @@ bool StructureConverter::reduceCFG(ShPtr<CFGNode> cfg) {
 *        LLVM basic block with the original and redirects all but one incoming
 *        edge to the clone.
 *
-* Conservative: skips nodes with @c statementSuccessor wiring, skips bodies that
-*        fail the same size heuristic as @c canBeCloned.
+* Conservative: skips nodes with @c statementSuccessor wiring. Without
+*        @a relaxed only tiny bodies (LIMIT_CLONED_STATEMENTS flat statements)
+*        are split. With it, blocks outside every loop may weigh up to
+*        MAX_SPLIT_WEIGHT, and blocks inside a loop are split only when tiny
+*        and @a onlyOutsideLoops is false.
 *
 * @returns @c true if a split was applied.
 *
 * @par Preconditions
 *  - @a cfg is non-null
 */
-bool StructureConverter::tryControlledNodeSplitting(ShPtr<CFGNode> cfg) {
+bool StructureConverter::tryControlledNodeSplitting(ShPtr<CFGNode> cfg,
+		bool relaxed, bool onlyOutsideLoops) {
 	PRECONDITION_NON_NULL(cfg);
 
-	auto bodyAllowsSplitClone = [](const ShPtr<CFGNode> &node) -> bool {
-		auto stmtIt = node->getBody();
-		for (unsigned i = 0; i < LIMIT_CLONED_STATEMENTS; ++i) {
-			if (!stmtIt) {
+	// A node may be split when its body is small: at most
+	// MAX_SPLIT_WEIGHT statements, counted through nested ifs, with empty
+	// statements free. Most of an -O3 merge block is PHI copies, so the old
+	// "five flat statements" rule rejected every candidate. Loops, switches
+	// and jumps are never cloned here.
+	std::function<bool(ShPtr<Statement>, unsigned &)> weigh =
+			[&weigh](ShPtr<Statement> stmt, unsigned &weight) -> bool {
+		for (; stmt; stmt = stmt->getSuccessor()) {
+			if (isa<EmptyStmt>(stmt)) {
+				continue;
+			}
+			if (auto ifStmt = cast<IfStmt>(stmt)) {
+				for (auto c = ifStmt->clause_begin(); c != ifStmt->clause_end(); ++c) {
+					if (!weigh(c->second, weight)) {
+						return false;
+					}
+				}
+				if (!weigh(ifStmt->getElseClause(), weight)) {
+					return false;
+				}
+			} else if (stmt->isCompound() || isa<GotoStmt>(stmt) ||
+					isa<BreakStmt>(stmt) || isa<ContinueStmt>(stmt)) {
 				return false;
 			}
-			if (stmtIt->isCompound()) {
+			if (++weight > MAX_SPLIT_WEIGHT) {
+				return false;
+			}
+		}
+		return true;
+	};
+	auto bodyIsTiny = [](const ShPtr<CFGNode> &node) -> bool {
+		auto stmtIt = node->getBody();
+		for (unsigned i = 0; i < LIMIT_CLONED_STATEMENTS; ++i) {
+			if (!stmtIt || stmtIt->isCompound()) {
 				return false;
 			}
 			if (!stmtIt->hasSuccessor()) {
@@ -464,6 +581,19 @@ bool StructureConverter::tryControlledNodeSplitting(ShPtr<CFGNode> cfg) {
 			stmtIt = stmtIt->getSuccessor();
 		}
 		return false;
+	};
+	// Inside a loop only the original tiny-body rule applies, and only for
+	// the first split (onlyOutsideLoops is false). Inside a loop, splitting a merge point tends to trade one goto for a cloned
+	// loop tail plus new gotos (mergesort-gcc-O3 went from 13 to 24).
+	auto bodyAllowsSplitClone = [this, &weigh, &bodyIsTiny, relaxed, onlyOutsideLoops](const ShPtr<CFGNode> &node) -> bool {
+		if (!relaxed) {
+			return bodyIsTiny(node);
+		}
+		if (loopInfo->getLoopFor(node->getFirstBB())) {
+			return !onlyOutsideLoops && bodyIsTiny(node);
+		}
+		unsigned weight = 0;
+		return node->getBody() && weigh(node->getBody(), weight);
 	};
 
 	CFGNodeQueue toBeVisited({cfg});

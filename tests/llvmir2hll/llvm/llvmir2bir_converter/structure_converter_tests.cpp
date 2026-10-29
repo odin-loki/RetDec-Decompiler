@@ -4784,6 +4784,60 @@ TEST_F(StructureConverterTests, MultiExitLoopGotoHasATargetTheEmitterReaches)
 	}
 }
 
+TEST_F(StructureConverterTests, CrossingMergesOutsideLoopsAreSplitInsteadOfGotos)
+{
+	// Two arms of an if each branch to the same pair of blocks, the shape
+	// gcc -O3 leaves after fully unrolling a short loop (bfs). Each shared
+	// block is bigger than the tiny-body clone limit, so only repeated
+	// splitting outside loops structures it without gotos.
+	auto module = convertLLVMIR2BIR(R"(
+		declare void @test(i32)
+
+		define void @function(i32 %a, i32 %b, i32 %c) {
+		entry:
+			%c1 = icmp eq i32 %a, 0
+			br i1 %c1, label %left, label %right
+		left:
+			call void @test(i32 1)
+			%c2 = icmp eq i32 %b, 0
+			br i1 %c2, label %x, label %y
+		right:
+			call void @test(i32 2)
+			%c3 = icmp eq i32 %c, 0
+			br i1 %c3, label %x, label %y
+		x:
+			call void @test(i32 10)
+			call void @test(i32 11)
+			call void @test(i32 12)
+			call void @test(i32 13)
+			call void @test(i32 14)
+			call void @test(i32 15)
+			call void @test(i32 16)
+			br label %z
+		y:
+			call void @test(i32 20)
+			call void @test(i32 21)
+			call void @test(i32 22)
+			call void @test(i32 23)
+			call void @test(i32 24)
+			call void @test(i32 25)
+			call void @test(i32 26)
+			br label %z
+		z:
+			call void @test(i32 3)
+			ret void
+		}
+	)");
+
+	auto f = module->getFuncByName("function");
+	ASSERT_TRUE(f);
+	auto reachable = ReachableStmtCollector::collect(f->getBody());
+	for (const auto& stmt: reachable)
+	{
+		EXPECT_FALSE(isa<GotoStmt>(stmt)) << "a shared block was reached by goto instead of being split";
+	}
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec
