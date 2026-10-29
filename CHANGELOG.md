@@ -8,6 +8,14 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- BEQ-01 (`scripts/ci/check_behaviour_equivalence.py`) compiles the
+  decompiled C of each `tests/algorithm_recovery/beq/*.c` entry function
+  (gcc -O0/-O2/-O3), links it against the original driver, and compares
+  stdout and exit status; 11/27 are equivalent and the baseline guards them.
+  It found three bugs, now fixed: stack typed views that split a store from
+  its loads, sub-based branch folding comparing zero-extended 64-bit
+  registers, and the if-else swap leaving the then-body unobserved (which
+  let VarDefStmt drop the rest of the body).
 - AES-NI/VAES, SHA, CRC32, and PCLMULQDQ lift to `llvm.x86.*` (CRC32
   `r64,r/m8` stays pseudo — LLVM has no 64.8 form). ARM32/ARM64 AES/SHA/CRC32
   match that bar; ARM64 `PMULL`/`PMULL2` is the PCLMUL analogue; ARM32
