@@ -63,6 +63,13 @@ class Capstone2LlvmIrTranslatorRiscvTests :
 			}
 		}
 
+		void enableZcmp()
+		{
+			// Zcmp reuses the C.FSDSP/C.FLDSP encodings, so it is opt-in.
+			_translator->modifyExtraMode(static_cast<cs_mode>(
+					_translator->getExtraMode() | CS_MODE_RISCV_ZCMP_ZCMT_ZCE));
+		}
+
 		uint64_t sx32(uint32_t v)
 		{
 			return GetParam() == CS_MODE_RISCV64
@@ -2533,6 +2540,127 @@ TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_SM3P1)
 		{RISCV_REG_A0, sx32(0x05014549)},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CM_PUSH_saves_ra_s0_s1)
+{
+	ALL_MODES;
+	enableZcmp();
+
+	setRegisters({
+		{RISCV_REG_SP, 0x2000},
+		{RISCV_REG_RA, 0x11},
+		{RISCV_REG_X8, 0x22},
+		{RISCV_REG_X9, 0x33},
+	});
+
+	// cm.push {ra, s0-s1}, -16 (RV32) / -32 (RV64)
+	emulate_bin("62 b8");
+
+	if (GetParam() == CS_MODE_RISCV32)
+	{
+		EXPECT_JUST_REGISTERS_STORED({{RISCV_REG_SP, 0x1ff0}});
+		EXPECT_JUST_MEMORY_STORED({
+			{0x1ffc, 0x33_dw},
+			{0x1ff8, 0x22_dw},
+			{0x1ff4, 0x11_dw},
+		});
+	}
+	else
+	{
+		EXPECT_JUST_REGISTERS_STORED({{RISCV_REG_SP, 0x1fe0}});
+		EXPECT_JUST_MEMORY_STORED({
+			{0x1ff8, 0x33_qw},
+			{0x1ff0, 0x22_qw},
+			{0x1fe8, 0x11_qw},
+		});
+	}
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CM_POPRETZ_restores_and_returns)
+{
+	ALL_MODES;
+	enableZcmp();
+
+	bool rv32 = GetParam() == CS_MODE_RISCV32;
+	setRegisters({
+		{RISCV_REG_SP, rv32 ? 0x1ff0 : 0x1fe0},
+		{RISCV_REG_A0, 0x99},
+	});
+	if (rv32)
+	{
+		setMemory({
+			{0x1ffc, 0x33_dw},
+			{0x1ff8, 0x22_dw},
+			{0x1ff4, 0x4000_dw},
+		});
+	}
+	else
+	{
+		setMemory({
+			{0x1ff8, 0x33_qw},
+			{0x1ff0, 0x22_qw},
+			{0x1fe8, 0x4000_qw},
+		});
+	}
+
+	// cm.popretz {ra, s0-s1}, 16 (RV32) / 32 (RV64)
+	emulate_bin("62 bc");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_SP, 0x2000},
+		{RISCV_REG_RA, 0x4000},
+		{RISCV_REG_X8, 0x22},
+		{RISCV_REG_X9, 0x33},
+		{RISCV_REG_A0, 0},
+	});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getReturnFunction(), {0x4000}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CM_MVSA01_copies_a0_a1)
+{
+	ALL_MODES;
+	enableZcmp();
+
+	setRegisters({
+		{RISCV_REG_A0, 0x10},
+		{RISCV_REG_A1, 0x20},
+	});
+
+	// cm.mvsa01 s4, s6
+	emulate_bin("3a ae");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A0, RISCV_REG_A1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X20, 0x10},
+		{RISCV_REG_X22, 0x20},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CM_MVA01S_copies_to_a0_a1)
+{
+	ALL_MODES;
+	enableZcmp();
+
+	setRegisters({
+		{RISCV_REG_X20, 0x10},
+		{RISCV_REG_X22, 0x20},
+	});
+
+	// cm.mva01s s4, s6
+	emulate_bin("7a ae");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 0x10},
+		{RISCV_REG_A1, 0x20},
+	});
 	EXPECT_NO_VALUE_CALLED();
 }
 

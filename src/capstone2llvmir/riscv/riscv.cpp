@@ -415,7 +415,8 @@ bool Capstone2LlvmIrTranslatorRiscv_impl::isAllowedExtraMode(cs_mode m)
 			| static_cast<unsigned>(CS_MODE_RISCV_ZBKX)
 			| static_cast<unsigned>(CS_MODE_RISCV_ZBC)
 			| static_cast<unsigned>(CS_MODE_RISCV_ZBS)
-			| static_cast<unsigned>(CS_MODE_RISCV_VENTANA);
+			| static_cast<unsigned>(CS_MODE_RISCV_VENTANA)
+			| static_cast<unsigned>(CS_MODE_RISCV_ZCMP_ZCMT_ZCE);
 	auto stripped = static_cast<cs_mode>(static_cast<unsigned>(m) & ~ext);
 	return stripped == CS_MODE_LITTLE_ENDIAN
 			|| stripped == CS_MODE_BIG_ENDIAN;
@@ -6306,6 +6307,99 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateScalarCrypto(cs_insn* i, cs_r
 	}
 	auto* r = irb.CreateCall(f, args);
 	storeOp(ri->operands[0], r, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * Zcmp push/pop. Capstone 6 leaves the register list and stack adjustment
+ * out of the operands, so both come from the 16-bit encoding: rlist in bits
+ * 7:4 and spimm in bits 3:2. Registers are saved from the highest (s11)
+ * down to ra, just under the incoming sp.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateZcmp(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	if (i->id == RISCV_INS_CM_MVSA01 || i->id == RISCV_INS_CM_MVA01S)
+	{
+		if (ri->op_count != 2)
+		{
+			throwUnexpectedOperands(i);
+		}
+		if (i->id == RISCV_INS_CM_MVSA01)
+		{
+			auto* a0 = loadRegister(RISCV_REG_X10, irb);
+			auto* a1 = loadRegister(RISCV_REG_X11, irb);
+			storeOp(ri->operands[0], a0, irb);
+			storeOp(ri->operands[1], a1, irb);
+		}
+		else
+		{
+			auto* v0 = loadOp(ri->operands[0], irb);
+			auto* v1 = loadOp(ri->operands[1], irb);
+			storeRegister(RISCV_REG_X10, v0, irb);
+			storeRegister(RISCV_REG_X11, v1, irb);
+		}
+		return;
+	}
+
+	if (i->size != 2)
+	{
+		translatePseudoAsmGeneric(i, ri, irb);
+		return;
+	}
+	unsigned enc = i->bytes[0] | (unsigned(i->bytes[1]) << 8);
+	unsigned rlist = (enc >> 4) & 0xf;
+	unsigned spimm = (enc >> 2) & 0x3;
+	if (rlist < 4)
+	{
+		// Reserved; RV32E limits do not apply here.
+		translatePseudoAsmGeneric(i, ri, irb);
+		return;
+	}
+	static const uint32_t order[] = {
+		RISCV_REG_X1, RISCV_REG_X8, RISCV_REG_X9,
+		RISCV_REG_X18, RISCV_REG_X19, RISCV_REG_X20, RISCV_REG_X21,
+		RISCV_REG_X22, RISCV_REG_X23, RISCV_REG_X24, RISCV_REG_X25,
+		RISCV_REG_X26, RISCV_REG_X27};
+	unsigned n = rlist == 15 ? 13 : rlist - 3;
+	unsigned bytes = isXlen64() ? 8 : 4;
+	unsigned adj = ((n * bytes + 15) & ~15u) + spimm * 16;
+
+	auto* ty = getDefaultType();
+	auto* sp = loadRegister(RISCV_REG_X2, irb);
+	auto slot = [&](llvm::Value* base, int64_t off) {
+		auto* a = irb.CreateAdd(base, llvm::ConstantInt::get(ty, off, true));
+		return intToPtr(irb, a, ty);
+	};
+
+	if (i->id == RISCV_INS_CM_PUSH)
+	{
+		int64_t off = 0;
+		for (unsigned k = n; k-- > 0;)
+		{
+			off -= bytes;
+			auto* st = irb.CreateStore(loadRegister(order[k], irb), slot(sp, off));
+			attachPointeeType(st, ty);
+		}
+		storeRegister(RISCV_REG_X2, irb.CreateSub(sp, llvm::ConstantInt::get(ty, adj)), irb);
+		return;
+	}
+
+	int64_t off = adj;
+	for (unsigned k = n; k-- > 0;)
+	{
+		off -= bytes;
+		auto* ld = irb.CreateLoad(ty, slot(sp, off));
+		attachPointeeType(ld, ty);
+		storeRegister(order[k], ld, irb);
+	}
+	storeRegister(RISCV_REG_X2, irb.CreateAdd(sp, llvm::ConstantInt::get(ty, adj)), irb);
+	if (i->id == RISCV_INS_CM_POPRETZ)
+	{
+		storeRegister(RISCV_REG_X10, llvm::ConstantInt::get(ty, 0), irb);
+	}
+	if (i->id == RISCV_INS_CM_POPRET || i->id == RISCV_INS_CM_POPRETZ)
+	{
+		generateReturnFunctionCall(irb, loadRegister(RISCV_REG_X1, irb));
+	}
 }
 
 } // namespace capstone2llvmir
