@@ -769,24 +769,71 @@ void CHLLWriter::visit(ShPtr<NeqOpExpr> expr)
 	emitBinaryOpExpr("!=", expr);
 }
 
+/// Emits an ordered comparison. LLVM says whether it compares signed or
+/// unsigned; the C types of the operands may say the opposite (`x < 0` of a
+/// uint32_t is always false), and then the operand is cast so C compares
+/// the way the program did. Constants are left alone. Only a signed compare
+/// is trusted: UCmp is the default variant, which optimizers that build a
+/// comparison of their own get without choosing it.
+void CHLLWriter::emitOrderedCompare(const std::string& opRepr,
+		ShPtr<BinaryOpExpr> expr, bool isSigned)
+{
+	auto mismatched = [&](const ShPtr<Expression>& op) -> ShPtr<IntType> {
+		if (isa<Constant>(op)) return nullptr;
+		auto ty = cast<IntType>(op->getType());
+		if (!isSigned || !ty || ty->isBool() || ty->isSigned()) return nullptr;
+		return ty;
+	};
+	auto ty1 = mismatched(expr->getFirstOperand());
+	auto ty2 = mismatched(expr->getSecondOperand());
+	if (!ty1 && !ty2)
+	{
+		emitBinaryOpExpr(opRepr, expr);
+		return;
+	}
+	auto emitOperand = [&](const ShPtr<Expression>& op, const ShPtr<IntType>& ty) {
+		if (!ty)
+		{
+			op->accept(this);
+			return;
+		}
+		out->punctuation('(');
+		IntType::create(ty->getSize(), isSigned)->accept(this);
+		out->punctuation(')');
+		// The cast binds tighter than any binary operator; an operand that
+		// brackets itself already needs no second pair.
+		const bool wrap = !isa<Variable>(op) && !isa<BinaryOpExpr>(op) ? false
+			: isa<BinaryOpExpr>(op) && !bracketsManager->areBracketsNeeded(op);
+		if (wrap) out->punctuation('(');
+		op->accept(this);
+		if (wrap) out->punctuation(')');
+	};
+	const bool bracketsAreNeeded = bracketsManager->areBracketsNeeded(expr);
+	if (bracketsAreNeeded) out->punctuation('(');
+	emitOperand(expr->getFirstOperand(), ty1);
+	out->operatorX(opRepr, true, true);
+	emitOperand(expr->getSecondOperand(), ty2);
+	if (bracketsAreNeeded) out->punctuation(')');
+}
+
 void CHLLWriter::visit(ShPtr<LtOpExpr> expr)
 {
-	emitBinaryOpExpr("<", expr);
+	emitOrderedCompare("<", expr, expr->getVariant() == LtOpExpr::Variant::SCmp);
 }
 
 void CHLLWriter::visit(ShPtr<GtOpExpr> expr)
 {
-	emitBinaryOpExpr(">", expr);
+	emitOrderedCompare(">", expr, expr->getVariant() == GtOpExpr::Variant::SCmp);
 }
 
 void CHLLWriter::visit(ShPtr<LtEqOpExpr> expr)
 {
-	emitBinaryOpExpr("<=", expr);
+	emitOrderedCompare("<=", expr, expr->getVariant() == LtEqOpExpr::Variant::SCmp);
 }
 
 void CHLLWriter::visit(ShPtr<GtEqOpExpr> expr)
 {
-	emitBinaryOpExpr(">=", expr);
+	emitOrderedCompare(">=", expr, expr->getVariant() == GtEqOpExpr::Variant::SCmp);
 }
 
 void CHLLWriter::visit(ShPtr<TernaryOpExpr> expr)

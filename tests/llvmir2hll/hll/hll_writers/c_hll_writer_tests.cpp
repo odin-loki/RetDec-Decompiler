@@ -129,6 +129,33 @@ TEST_F(CHLLWriterTests, SignExtendingShiftPairIsEmittedAsACastAndAMultiply)
 	ASSERT_FALSE(contains(code, "<<")) << code;
 }
 
+// `icmp slt i32 %x, 0` of a value typed uint32_t: a bare `x < 0` is always
+// false in C.
+TEST_F(CHLLWriterTests, SignedCompareOfAnUnsignedValueIsEmittedThroughASignedCast)
+{
+	auto x = Variable::create("x", IntType::create(32, false));
+	module->addGlobalVar(
+		Variable::create("g", IntType::create(1)),
+		LtOpExpr::create(x, ConstInt::create(0, 32), LtOpExpr::Variant::SCmp));
+
+	auto code = emitCodeForCurrentModule();
+
+	ASSERT_TRUE(contains(code, "(int32_t)x < 0")) << code;
+}
+
+TEST_F(CHLLWriterTests, CompareWhoseTypesAgreeIsEmittedPlain)
+{
+	auto x = Variable::create("x", IntType::create(32, true));
+	module->addGlobalVar(
+		Variable::create("g", IntType::create(1)),
+		LtOpExpr::create(x, ConstInt::create(0, 32), LtOpExpr::Variant::SCmp));
+
+	auto code = emitCodeForCurrentModule();
+
+	ASSERT_TRUE(contains(code, "x < 0")) << code;
+	ASSERT_FALSE(contains(code, "(int32_t)x")) << code;
+}
+
 TEST_F(CHLLWriterTests,
 EmitsNonEmptyCode) {
 	auto code = emitCodeForCurrentModule();
