@@ -1104,6 +1104,9 @@ Capstone2LlvmIrTranslatorPowerpc_impl::_i2fm =
 		{PPC_INS_DIVDU, &Capstone2LlvmIrTranslatorPowerpc_impl::translateDivw},
 		{PPC_INS_DIVDE, &Capstone2LlvmIrTranslatorPowerpc_impl::translateDivde},
 		{PPC_INS_DIVDEU, &Capstone2LlvmIrTranslatorPowerpc_impl::translateDivde},
+		{PPC_INS_ADDG6S, &Capstone2LlvmIrTranslatorPowerpc_impl::translatePpcDecimalAssist},
+		{PPC_INS_CDTBCD, &Capstone2LlvmIrTranslatorPowerpc_impl::translatePpcDecimalAssist},
+		{PPC_INS_CBCDTD, &Capstone2LlvmIrTranslatorPowerpc_impl::translatePpcDecimalAssist},
 		{PPC_INS_DIVW, &Capstone2LlvmIrTranslatorPowerpc_impl::translateDivw},
 		{PPC_INS_DIVWU, &Capstone2LlvmIrTranslatorPowerpc_impl::translateDivw},
 		// AltiVec data-stream prefetch hints, nothing as DCBT is.

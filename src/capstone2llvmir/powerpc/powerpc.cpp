@@ -9032,6 +9032,100 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateTwin(cs_insn* i, cs_ppc* pi
 	}
 }
 
+namespace {
+
+unsigned ppcDpdToBcd(unsigned d)
+{
+	auto b = [&](unsigned k) { return (d >> k) & 1u; };
+	unsigned p = b(9), q = b(8), r = b(7), s = b(6), t = b(5), u = b(4), v = b(3), w = b(2), x = b(1), y = b(0);
+	unsigned pqr = (p << 2) | (q << 1) | r, stu = (s << 2) | (t << 1) | u, wxy = (w << 2) | (x << 1) | y;
+	unsigned d2 = 0, d1 = 0, d0 = 0;
+	if (!v) { d2 = pqr; d1 = stu; d0 = wxy; }
+	else if (!w && !x) { d2 = pqr; d1 = stu; d0 = 8 + y; }
+	else if (!w && x) { d2 = pqr; d1 = 8 + u; d0 = (s << 2) | (t << 1) | y; }
+	else if (w && !x) { d2 = 8 + r; d1 = stu; d0 = (p << 2) | (q << 1) | y; }
+	else if (!s && !t) { d2 = 8 + r; d1 = 8 + u; d0 = (p << 2) | (q << 1) | y; }
+	else if (!s && t) { d2 = 8 + r; d1 = (p << 2) | (q << 1) | u; d0 = 8 + y; }
+	else if (s && !t) { d2 = pqr; d1 = 8 + u; d0 = 8 + y; }
+	else { d2 = 8 + r; d1 = 8 + u; d0 = 8 + y; }
+	return (d2 << 8) | (d1 << 4) | d0;
+}
+
+} // anonymous namespace
+
+/**
+ * ADDG6S, CDTBCD and CBCDTD: decimal-assist operations. The DPD<->BCD
+ * declet conversions index constant lookup vectors.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translatePpcDecimalAssist(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	auto* dt = getDefaultType();
+	unsigned xlen = dt->getIntegerBitWidth();
+	auto c = [&](uint64_t v) { return llvm::ConstantInt::get(dt, v); };
+	if (i->id == PPC_INS_ADDG6S)
+	{
+		if (pi->op_count != 3) { translatePseudoAsmGeneric(i, pi, irb); return; }
+		auto* a = irb.CreateZExtOrTrunc(loadOp(pi->operands[1], irb), dt);
+		auto* b = irb.CreateZExtOrTrunc(loadOp(pi->operands[2], irb), dt);
+		auto* sum = irb.CreateAdd(a, b);
+		// Carry into bit k is bit k of a ^ b ^ sum; the carry out of the
+		// top nibble is the carry out of the whole addition.
+		auto* cin = irb.CreateXor(irb.CreateXor(a, b), sum);
+		auto* co = irb.CreateZExt(irb.CreateICmpULT(sum, a), dt);
+		llvm::Value* carries = irb.CreateOr(irb.CreateLShr(cin, 4), irb.CreateShl(co, xlen - 4));
+		uint64_t nib = 0;
+		for (unsigned k = 0; k < xlen; k += 4) nib |= uint64_t(1) << k;
+		auto* noCarry = irb.CreateAnd(irb.CreateNot(carries), c(nib));
+		auto* r = irb.CreateMul(noCarry, c(6));
+		storeOp(pi->operands[0], r, irb);
+		return;
+	}
+	if (pi->op_count != 2)
+	{
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+	bool toBcd = i->id == PPC_INS_CDTBCD;
+	auto* i16 = irb.getInt16Ty();
+	std::vector<uint16_t> tab(toBcd ? 1024 : 4096, 0);
+	for (unsigned d = 0; d < 1024; ++d)
+	{
+		unsigned bcd = ppcDpdToBcd(d);
+		if (toBcd)
+		{
+			tab[d] = uint16_t(bcd);
+		}
+		else
+		{
+			bool nonCanon = ((d >> 1) & 1) && ((d >> 2) & 1) && ((d >> 3) & 1) && ((d >> 5) & 1)
+					&& ((d >> 6) & 1) && ((d >> 8) & 3);
+			if (!nonCanon) tab[bcd] = uint16_t(d);
+		}
+	}
+	// A constant vector with a dynamic extractelement rather than a global
+	// table: no memory access appears in the lifted code.
+	std::vector<llvm::Constant*> elems;
+	for (auto v : tab) elems.push_back(llvm::ConstantInt::get(i16, v));
+	auto* table = llvm::ConstantVector::get(elems);
+	auto look = [&](llvm::Value* idx) {
+		return irb.CreateZExt(irb.CreateExtractElement(table, irb.CreateZExt(idx, irb.getInt32Ty())), dt);
+	};
+	auto* src = irb.CreateZExtOrTrunc(loadOp(pi->operands[1], irb), dt);
+	llvm::Value* r = c(0);
+	unsigned inBits = toBcd ? 10 : 12, outBits = toBcd ? 12 : 10;
+	for (unsigned w = 0; w < xlen; w += 32)
+	{
+		for (unsigned h = 0; h < 2; ++h)
+		{
+			auto* part = irb.CreateAnd(irb.CreateLShr(src, w + h * inBits), c((1u << inBits) - 1));
+			auto* conv = look(irb.CreateTrunc(part, irb.getIntNTy(inBits)));
+			r = irb.CreateOr(r, irb.CreateShl(conv, w + h * outBits));
+		}
+	}
+	storeOp(pi->operands[0], r, irb);
+}
+
+
 /**
  * XER[OV] of an OE=1 form, from its source operands and, for the
  * carry-in forms, XER[CA].
