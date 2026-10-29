@@ -91,6 +91,8 @@ private:
 	virtual void visit(ShPtr<BitShlOpExpr> expr) override;
 	virtual void visit(ShPtr<BitShrOpExpr> expr) override;
 	bool emitSignExtendedShift(ShPtr<BitShrOpExpr> expr);
+	void emitOrderedCompare(const std::string& opRepr, ShPtr<BinaryOpExpr> expr,
+		bool isSigned);
 	virtual void visit(ShPtr<TernaryOpExpr> expr) override;
 	virtual void visit(ShPtr<CallExpr> expr) override;
 	virtual void visit(ShPtr<CommaOpExpr> expr) override;
