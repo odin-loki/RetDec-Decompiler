@@ -5468,6 +5468,38 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSL_reg)
 // ARM_INS_LSR
 //
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSR_imm_s_same_reg)
+{
+	// arm -O1 f_bits: `lsrs r1, r1, #1` lost its shift, so the popcount
+	// loop never terminated.
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_R1, 0x3},
+		{ARM_REG_CPSR_C, false},
+	});
+
+	emulate("lsrs r1, r1, #1");
+
+	EXPECT_EQ(0x1, getRegisterValueUnsigned(ARM_REG_R1));
+	EXPECT_EQ(0, getRegisterValueUnsigned(ARM_REG_CPSR_Z));
+	EXPECT_EQ(1, getRegisterValueUnsigned(ARM_REG_CPSR_C));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ASR_imm_s_same_reg)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_R2, 0x80000010},
+	});
+
+	emulate("asrs r2, r2, #4");
+
+	EXPECT_EQ(0xf8000001, getRegisterValueUnsigned(ARM_REG_R2));
+	EXPECT_EQ(1, getRegisterValueUnsigned(ARM_REG_CPSR_N));
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LSR_imm)
 {
 	ALL_MODES;

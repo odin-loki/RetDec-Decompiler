@@ -3582,6 +3582,72 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMov(cs_insn* i, cs_arm* ai, llv
 	EXPECT_IS_BINARY(i, ai, irb);
 
 	op1 = loadOpBinaryOp1(ai, irb);
+
+	// Capstone 6 decodes ARM-mode `movs r1, r1, lsr #1` (the `lsrs r1, r1, #1`
+	// alias with Rd == Rm) as a plain two-operand `movs r1, r1`: no alias id
+	// and no shift on the source. arm -O1 f_bits' popcount loop then never
+	// shifted and never ended. Recover a register-form shift the decoder
+	// dropped from the encoding itself.
+	if (_basicMode == CS_MODE_ARM && i->size == 4 && ai->op_count == 2
+			&& ai->operands[1].type == ARM_OP_REG
+			&& ai->operands[1].shift.type == ARM_SFT_INVALID)
+	{
+		bool be = (static_cast<unsigned>(_extraMode)
+				& static_cast<unsigned>(CS_MODE_BIG_ENDIAN)) != 0;
+		uint32_t w = be
+				? (uint32_t(i->bytes[0]) << 24 | uint32_t(i->bytes[1]) << 16
+					| uint32_t(i->bytes[2]) << 8 | i->bytes[3])
+				: (uint32_t(i->bytes[3]) << 24 | uint32_t(i->bytes[2]) << 16
+					| uint32_t(i->bytes[1]) << 8 | i->bytes[0]);
+		unsigned opc = (w >> 21) & 0xf;
+		bool dataProcReg = ((w >> 26) & 3) == 0 && ((w >> 25) & 1) == 0;
+		if (dataProcReg && (opc == 0xd || opc == 0xf))
+		{
+			unsigned type = (w >> 5) & 3;
+			auto* ty = op1->getType();
+			if ((w >> 4) & 1)
+			{
+				// Register-controlled shift: Rs in bits 11:8.
+				if (((w >> 7) & 1) == 0)
+				{
+					unsigned rs = (w >> 8) & 0xf;
+					uint32_t rsReg = rs <= 12 ? ARM_REG_R0 + rs
+							: (rs == 13 ? ARM_REG_SP : (rs == 14 ? ARM_REG_LR : ARM_REG_PC));
+					llvm::Value* n = loadRegister(rsReg, irb);
+					n = irb.CreateAnd(irb.CreateZExtOrTrunc(n, ty), 0xff);
+					switch (type)
+					{
+						case 0: op1 = generateShiftLsl(irb, op1, n); break;
+						case 1: op1 = generateShiftLsr(irb, op1, n); break;
+						case 2: op1 = generateShiftAsr(irb, op1, n); break;
+						default: op1 = generateShiftRor(irb, op1, n); break;
+					}
+				}
+			}
+			else
+			{
+				unsigned imm = (w >> 7) & 0x1f;
+				if (type == 0 && imm != 0)
+				{
+					op1 = generateShiftLsl(irb, op1, llvm::ConstantInt::get(ty, imm));
+				}
+				else if (type == 1 || type == 2)
+				{
+					auto* n = llvm::ConstantInt::get(ty, imm ? imm : 32);
+					op1 = type == 1
+							? generateShiftLsr(irb, op1, n)
+							: generateShiftAsr(irb, op1, n);
+				}
+				else if (type == 3)
+				{
+					op1 = imm
+							? generateShiftRor(irb, op1, llvm::ConstantInt::get(ty, imm))
+							: generateShiftRrx(irb, op1, llvm::ConstantInt::get(ty, 1));
+				}
+			}
+		}
+	}
+
 	if (i->id == ARM_INS_MVN)
 	{
 		op1 = generateValueNegate(irb, op1);
