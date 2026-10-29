@@ -2,7 +2,8 @@
   "algorithms": [
     "Mutex",
     "Concurrency",
-    "Pthread"
+    "Pthread",
+    "Thread"
   ],
   "functions": {}
 }

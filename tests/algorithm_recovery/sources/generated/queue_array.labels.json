@@ -1,7 +1,9 @@
 {
   "algorithms": [
     "Queue",
-    "FIFO"
+    "FIFO",
+    "RingBuffer",
+    "CircularBuffer"
   ],
   "functions": {}
 }
