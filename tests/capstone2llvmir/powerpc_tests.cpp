@@ -18226,6 +18226,96 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STXV)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LXSD)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R3, 0x2000},
+	});
+	setV(PPC_REG_V2, 0x5555, 0x6666);
+	setMemoryValueUnsigned(0x2008, 0x0123456789abcdefULL, 64);
+
+	emulate_bin("e4 43 00 0a"); // lxsd v2, 8(r3)
+
+	EXPECT_EQ(0x0123456789abcdefULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
+	EXPECT_EQ(0x0ULL, vLow(PPC_REG_V2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STXSD)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R3, 0x2000},
+	});
+	setV(PPC_REG_V2, 0x1122334455667788ULL, 0x99);
+
+	emulate_bin("f4 43 00 0a"); // stxsd v2, 8(r3)
+
+	EXPECT_EQ(0x1122334455667788ULL, getMemoryValueUnsigned(0x2008, 64)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LXSIWAX)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R3, 0x2000},
+		{PPC_REG_R4, 0x10},
+	});
+	setV(PPC_REG_V2, 0, 0);
+	setMemoryValueUnsigned(0x2010, 0x80000001ULL, 32);
+
+	emulate_bin("7c 43 20 99"); // lxsiwax vs34, r3, r4
+
+	EXPECT_EQ(0xffffffff80000001ULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LXSSP)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R4, 0x2000},
+	});
+	setV(PPC_REG_V3, 0, 0);
+	setMemoryValueUnsigned(0x2008, 0x3fc00000ULL, 32); // 1.5f
+
+	emulate_bin("e4 64 00 0b"); // lxssp v3, 8(r4)
+
+	EXPECT_EQ(0x3ff8000000000000ULL, vHigh(PPC_REG_V3)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STXSSP)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R4, 0x2000},
+	});
+	setV(PPC_REG_V3, 0x3ff8000000000000ULL, 0);
+
+	emulate_bin("f4 64 00 0b"); // stxssp v3, 8(r4)
+
+	EXPECT_EQ(0x3fc00000ULL, getMemoryValueUnsigned(0x2008, 32)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STXSIHX)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R3, 0x2000},
+		{PPC_REG_R4, 0x4},
+	});
+	setV(PPC_REG_V1, 0x000000000000beefULL, 0);
+
+	emulate_bin("7c 23 27 5b"); // stxsihx vs33, r3, r4
+
+	EXPECT_EQ(0xbeefULL, getMemoryValueUnsigned(0x2004, 16)) << dumpFunction(_function);
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

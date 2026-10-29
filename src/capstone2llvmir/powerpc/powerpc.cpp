@@ -9828,5 +9828,83 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateDcbz(cs_insn* i, cs_ppc* pi
 	}
 }
 
+
+/**
+ * Scalar VSX loads/stores of doubleword 0 of a VSR:
+ * PPC_INS_LXSD, PPC_INS_STXSD, PPC_INS_LXSSP, PPC_INS_STXSSP,
+ * PPC_INS_LXSSPX, PPC_INS_STXSSPX, PPC_INS_LXSIWZX, PPC_INS_LXSIWAX,
+ * PPC_INS_LXSIBZX, PPC_INS_LXSIHZX, PPC_INS_STXSIWX, PPC_INS_STXSIBX,
+ * PPC_INS_STXSIHX. Doubleword 1 of the target is undefined and is zeroed.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxScalarLoadStore(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
+
+	cs_ppc_op op0 = pi->operands[0];
+	if (op0.type == PPC_OP_REG && op0.reg >= PPC_REG_VF0 && op0.reg <= PPC_REG_VF31)
+	{
+		op0.reg = ppc_reg(PPC_REG_V0 + (op0.reg - PPC_REG_VF0));
+	}
+	auto* add = loadIndexedEffectiveAddress(pi, irb);
+	auto* i64 = irb.getInt64Ty();
+	auto* i128 = irb.getInt128Ty();
+
+	auto storeDw0 = [&](llvm::Value* dw) {
+		storeOpI128(op0, irb.CreateShl(irb.CreateZExt(dw, i128), 64), irb);
+	};
+	auto loadDw0 = [&]() {
+		return irb.CreateTrunc(irb.CreateLShr(loadOpI128(op0, irb), 64), i64);
+	};
+
+	switch (i->id)
+	{
+	case PPC_INS_LXSD:
+		storeDw0(loadIntPtr(irb, add, i64));
+		break;
+	case PPC_INS_LXSSP:
+	case PPC_INS_LXSSPX:
+	{
+		auto* w = loadIntPtr(irb, add, irb.getInt32Ty());
+		auto* d = irb.CreateFPExt(irb.CreateBitCast(w, irb.getFloatTy()), irb.getDoubleTy());
+		storeDw0(irb.CreateBitCast(d, i64));
+		break;
+	}
+	case PPC_INS_LXSIWZX:
+		storeDw0(irb.CreateZExt(loadIntPtr(irb, add, irb.getInt32Ty()), i64));
+		break;
+	case PPC_INS_LXSIWAX:
+		storeDw0(irb.CreateSExt(loadIntPtr(irb, add, irb.getInt32Ty()), i64));
+		break;
+	case PPC_INS_LXSIBZX:
+		storeDw0(irb.CreateZExt(loadIntPtr(irb, add, irb.getInt8Ty()), i64));
+		break;
+	case PPC_INS_LXSIHZX:
+		storeDw0(irb.CreateZExt(loadIntPtr(irb, add, irb.getInt16Ty()), i64));
+		break;
+	case PPC_INS_STXSD:
+		storeIntPtr(irb, loadDw0(), add, i64);
+		break;
+	case PPC_INS_STXSSP:
+	case PPC_INS_STXSSPX:
+	{
+		auto* d = irb.CreateBitCast(loadDw0(), irb.getDoubleTy());
+		auto* s = irb.CreateBitCast(irb.CreateFPTrunc(d, irb.getFloatTy()), irb.getInt32Ty());
+		storeIntPtr(irb, s, add, irb.getInt32Ty());
+		break;
+	}
+	case PPC_INS_STXSIWX:
+		storeIntPtr(irb, irb.CreateTrunc(loadDw0(), irb.getInt32Ty()), add, irb.getInt32Ty());
+		break;
+	case PPC_INS_STXSIBX:
+		storeIntPtr(irb, irb.CreateTrunc(loadDw0(), irb.getInt8Ty()), add, irb.getInt8Ty());
+		break;
+	case PPC_INS_STXSIHX:
+		storeIntPtr(irb, irb.CreateTrunc(loadDw0(), irb.getInt16Ty()), add, irb.getInt16Ty());
+		break;
+	default:
+		break;
+	}
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec
