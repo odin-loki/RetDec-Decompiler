@@ -1307,6 +1307,49 @@ TEST(InsertionSortDetectorTest, AGapHalvedInALoopIsShellSort)
 	EXPECT_EQ(r.algorithm, SortAlgorithm::ShellSort);
 }
 
+std::unique_ptr<ssa::SSAFunction> makeShiftLoopStepping(bool byVariable)
+{
+	auto fn = makeFunc(
+		"stepping",
+		{ssa::IrInstr::Op::Sub,
+		 ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::Store,
+		 ssa::IrInstr::Op::CondBranch},
+		3);
+	addNestedLoop(*fn);
+	addElementMove(*fn);
+	ssa::BlockId onCycle = 0;
+	for (uint32_t b = 0; b < fn->blockCount(); ++b)
+		if (ssa::blockOnCycle(*fn, b)) onCycle = b;
+	auto* step = fn->addInstr(onCycle, ssa::IrInstr::Op::Sub);
+	auto* j = fn->allocValue(ssa::ValueKind::VirtualReg);
+	step->uses.push_back({j->id, 0});
+	ssa::IrValue* by = fn->allocValue(byVariable ? ssa::ValueKind::VirtualReg : ssa::ValueKind::Immediate);
+	by->imm = 1;
+	step->uses.push_back({by->id, 1});
+	return fn;
+}
+
+// -O2 folds the gaps to constants; `j -= gap` still steps by a variable.
+TEST(InsertionSortDetectorTest, AVariableStepInTheShiftLoopIsShellSort)
+{
+	auto fn = makeShiftLoopStepping(/*byVariable=*/true);
+	InsertionSortDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_GE(r.confidence, 0.40f);
+	EXPECT_EQ(r.algorithm, SortAlgorithm::ShellSort);
+}
+
+TEST(InsertionSortDetectorTest, AStepOfOneStaysInsertionSort)
+{
+	auto fn = makeShiftLoopStepping(/*byVariable=*/false);
+	InsertionSortDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_GE(r.confidence, 0.40f);
+	EXPECT_EQ(r.algorithm, SortAlgorithm::InsertionSort);
+}
+
 // ─── ElementTypeRecoverer tests ───────────────────────────────────────────────
 
 TEST(ElementTypeRecovererTest, NoCompareReturnsUnknown)

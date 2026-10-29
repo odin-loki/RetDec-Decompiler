@@ -176,6 +176,26 @@ static bool hasHalvingInLoop(const ssa::SSAFunction& fn) {
     return false;
 }
 
+/// `j -= gap` in a block on a cycle: the shifting loop steps by a variable,
+/// not by one. With the gaps folded to constants (-O2), the halving is gone
+/// but the variable step is not.
+static bool hasVariableStepInLoop(const ssa::SSAFunction& fn) {
+    for (const auto& blk : fn.blocks()) {
+        if (!blk || !ssa::blockOnCycle(fn, blk->id)) continue;
+        for (const auto* i : blk->instrs) {
+            if (!i || i->op != ssa::IrInstr::Op::Sub) continue;
+            for (const auto& u : i->uses) {
+                if (u.operandIndex != 1) continue;
+                const auto* v = fn.value(u.valueId);
+                if (!v || v->kind == ssa::ValueKind::Immediate) continue;
+                const auto* d = v->defInstr;
+                if (d && d->op == ssa::IrInstr::Op::Load) continue;
+                return true;
+            }
+        }
+    }
+    return false;
+}
 
 SortResult InsertionSortDetector::detect(const ssa::SSAFunction& fn) const {
     SortResult result;
@@ -186,7 +206,7 @@ SortResult InsertionSortDetector::detect(const ssa::SSAFunction& fn) const {
     result.confidence = ev.found ? ev.confidence : 0.0f;
     // A gap that halves on a loop makes it Shell sort: insertion sort's inner
     // step is always one, so it never halves anything inside a loop.
-    if (result.confidence > 0.0f && hasHalvingInLoop(fn))
+    if (result.confidence > 0.0f && (hasHalvingInLoop(fn) || hasVariableStepInLoop(fn)))
         result.algorithm = SortAlgorithm::ShellSort;
 
     // Variant: insertion sort is typically small and standalone.
