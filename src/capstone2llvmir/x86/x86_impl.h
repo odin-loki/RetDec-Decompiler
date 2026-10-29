@@ -418,6 +418,7 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		void translateAvxPermI2(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateAvxCompressExpand(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateAvxLzcnt(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAvx512BitOps(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateAvxScatter(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateAvxConflict(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateXop(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);

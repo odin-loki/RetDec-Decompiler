@@ -23335,6 +23335,127 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, CLFLUSH_is_nothing)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPOPCNTD_counts_bits)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0x000000ff00000003ULL);
+
+	emulate_bin("62 f2 7d 08 55 c1"); // vpopcntd xmm0, xmm1
+
+	EXPECT_EQ(0x0000000800000002ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPROLD_rotates_by_immediate)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0x1234567880000001ULL);
+
+	emulate_bin("62 f1 7d 08 72 c9 04"); // vprold xmm0, xmm1, 4
+
+	EXPECT_EQ(0x2345678100000018ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPRORVQ_rotates_by_lane_count)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x10, 0x1);
+	setXmm(X86_REG_XMM2, 68, 1);
+
+	emulate_bin("62 f2 f5 08 14 c2"); // vprorvq xmm0, xmm1, xmm2
+
+	EXPECT_EQ(0x8000000000000000ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x1ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPSHLDD_funnels_left)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0x11223344);
+	setXmm(X86_REG_XMM2, 0, 0xaabbccdd);
+
+	emulate_bin("62 f3 75 08 71 c2 08"); // vpshldd xmm0, xmm1, xmm2, 8
+
+	EXPECT_EQ(0x223344aaULL, xmmLow(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPSHRDD_funnels_right)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0x11223344);
+	setXmm(X86_REG_XMM2, 0, 0xaabbccdd);
+
+	emulate_bin("62 f3 75 08 73 c2 08"); // vpshrdd xmm0, xmm1, xmm2, 8
+
+	EXPECT_EQ(0xdd112233ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPSHLDVD_funnels_left_by_lane)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0, 0x11223344);
+	setXmm(X86_REG_XMM1, 0, 0xaabbccdd);
+	setXmm(X86_REG_XMM2, 0, 8);
+
+	emulate_bin("62 f2 75 08 71 c2"); // vpshldvd xmm0, xmm1, xmm2
+
+	EXPECT_EQ(0x223344aaULL, xmmLow(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPTERNLOGD_xor3)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0, 0xf0);
+	setXmm(X86_REG_XMM1, 0, 0xcc);
+	setXmm(X86_REG_XMM2, 0, 0xaa);
+
+	emulate_bin("62 f3 75 08 25 c2 96"); // vpternlogd xmm0, xmm1, xmm2, 0x96
+
+	EXPECT_EQ(0x96ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPTERNLOGQ_majority)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0, 0xf0);
+	setXmm(X86_REG_XMM1, 0, 0xcc);
+	setXmm(X86_REG_XMM2, 0, 0xaa);
+
+	emulate_bin("62 f3 f5 08 25 c2 e8"); // vpternlogq xmm0, xmm1, xmm2, 0xe8
+
+	EXPECT_EQ(0xe8ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPSLLVW_shifts_words)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0x0001000100010001ULL);
+	setXmm(X86_REG_XMM2, 0, 0x00000010000f0001ULL);
+
+	emulate_bin("62 f2 f5 08 12 c2"); // vpsllvw xmm0, xmm1, xmm2
+
+	EXPECT_EQ(0x0001000080000002ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

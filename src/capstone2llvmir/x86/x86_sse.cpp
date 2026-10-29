@@ -7464,6 +7464,9 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvxVariableShift(cs_insn* i, cs
 	case X86_INS_VPSRLVQ: elemBits = 64; break;
 	case X86_INS_VPSRAVD: elemBits = 32; arith = true; break;
 	case X86_INS_VPSRAVQ: elemBits = 64; arith = true; break;
+	case X86_INS_VPSLLVW: elemBits = 16; left = true; break;
+	case X86_INS_VPSRLVW: elemBits = 16; break;
+	case X86_INS_VPSRAVW: elemBits = 16; arith = true; break;
 	default:
 		translatePseudoAsmGeneric(i, xi, irb);
 		return;
@@ -9416,6 +9419,155 @@ void Capstone2LlvmIrTranslatorX86_impl::translateMmxCvt(
             throw GenericError("Unhandled insn ID in translateMmxCvt().");
     }
 }
+
+/**
+ * AVX-512 lane-wise bit ops without masking: VPOPCNT{B,W,D,Q}, the
+ * rotates VPROL/VPROR (immediate and variable), the funnel shifts
+ * VPSHLD/VPSHRD (immediate and VPSHLDV/VPSHRDV variable) and VPTERNLOG.
+ * Masked, broadcast or rounding forms stay pseudo calls.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateAvx512BitOps(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	enum Kind { POPCNT, ROT_IMM, ROT_VAR, SHD_IMM, SHD_VAR, TERN };
+	Kind kind = POPCNT;
+	unsigned eb = 32;
+	bool right = false;
+	switch (i->id)
+	{
+	case X86_INS_VPOPCNTB: eb = 8; break;
+	case X86_INS_VPOPCNTW: eb = 16; break;
+	case X86_INS_VPOPCNTD: eb = 32; break;
+	case X86_INS_VPOPCNTQ: eb = 64; break;
+	case X86_INS_VPROLD: kind = ROT_IMM; break;
+	case X86_INS_VPROLQ: kind = ROT_IMM; eb = 64; break;
+	case X86_INS_VPRORD: kind = ROT_IMM; right = true; break;
+	case X86_INS_VPRORQ: kind = ROT_IMM; eb = 64; right = true; break;
+	case X86_INS_VPROLVD: kind = ROT_VAR; break;
+	case X86_INS_VPROLVQ: kind = ROT_VAR; eb = 64; break;
+	case X86_INS_VPRORVD: kind = ROT_VAR; right = true; break;
+	case X86_INS_VPRORVQ: kind = ROT_VAR; eb = 64; right = true; break;
+	case X86_INS_VPSHLDW: kind = SHD_IMM; eb = 16; break;
+	case X86_INS_VPSHLDD: kind = SHD_IMM; break;
+	case X86_INS_VPSHLDQ: kind = SHD_IMM; eb = 64; break;
+	case X86_INS_VPSHRDW: kind = SHD_IMM; eb = 16; right = true; break;
+	case X86_INS_VPSHRDD: kind = SHD_IMM; right = true; break;
+	case X86_INS_VPSHRDQ: kind = SHD_IMM; eb = 64; right = true; break;
+	case X86_INS_VPSHLDVW: kind = SHD_VAR; eb = 16; break;
+	case X86_INS_VPSHLDVD: kind = SHD_VAR; break;
+	case X86_INS_VPSHLDVQ: kind = SHD_VAR; eb = 64; break;
+	case X86_INS_VPSHRDVW: kind = SHD_VAR; eb = 16; right = true; break;
+	case X86_INS_VPSHRDVD: kind = SHD_VAR; right = true; break;
+	case X86_INS_VPSHRDVQ: kind = SHD_VAR; eb = 64; right = true; break;
+	case X86_INS_VPTERNLOGD: kind = TERN; break;
+	case X86_INS_VPTERNLOGQ: kind = TERN; eb = 64; break;
+	default:
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	unsigned want = 0;
+	switch (kind)
+	{
+	case POPCNT: want = 2; break;
+	case ROT_IMM: case ROT_VAR: want = 3; break;
+	case SHD_IMM: case TERN: want = 4; break;
+	case SHD_VAR: want = 3; break;
+	}
+	bool bcast = false;
+	for (unsigned k = 0; k < xi->op_count; ++k)
+	{
+		bcast |= xi->operands[k].avx_bcast != X86_AVX_BCAST_INVALID;
+	}
+	unsigned destBits = xi->op_count ? xi->operands[0].size * 8 : 0;
+	bool immLast = kind == ROT_IMM || kind == SHD_IMM || kind == TERN;
+	if (xi->op_count != want || hasEvexModifier(xi) || bcast
+			|| (destBits != 128 && destBits != 256 && destBits != 512)
+			|| (immLast && xi->operands[want - 1].type != X86_OP_IMM))
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	unsigned n = destBits / eb;
+	auto* intTy = irb.getIntNTy(destBits);
+	auto* elemTy = irb.getIntNTy(eb);
+	auto* vecTy = vecType(elemTy, n);
+	auto vop = [&](unsigned k) -> llvm::Value* {
+		unsigned bits = destBits;
+		llvm::Value* v = loadVectorOp(xi->operands[k], irb, bits);
+		if (v == nullptr)
+		{
+			return nullptr;
+		}
+		return irb.CreateBitCast(irb.CreateZExtOrTrunc(v, intTy), vecTy);
+	};
+	// The test interpreter only lowers scalar intrinsics, so work lane by lane.
+	// Funnel shifts spelled out with plain shifts; the count is taken modulo
+	// the lane width and the double shift avoids an out-of-range amount.
+	auto funnel = [&](bool r, llvm::Value* hi, llvm::Value* lo, llvm::Value* c) -> llvm::Value* {
+		auto* one = llvm::ConstantInt::get(elemTy, 1);
+		auto* m = llvm::ConstantInt::get(elemTy, eb - 1);
+		c = irb.CreateAnd(c, m);
+		auto* inv = irb.CreateSub(m, c);
+		if (r)
+		{
+			return irb.CreateOr(irb.CreateLShr(lo, c), irb.CreateShl(irb.CreateShl(hi, one), inv));
+		}
+		return irb.CreateOr(irb.CreateShl(hi, c), irb.CreateLShr(irb.CreateLShr(lo, one), inv));
+	};
+	llvm::Value* v[3] = {nullptr, nullptr, nullptr};
+	unsigned first = (kind == SHD_VAR || kind == TERN) ? 0 : 1;
+	unsigned last = kind == POPCNT || kind == ROT_IMM ? 1 : 2;
+	for (unsigned k = first; k <= last; ++k)
+	{
+		v[k] = vop(k);
+		if (v[k] == nullptr)
+		{
+			translatePseudoAsmGeneric(i, xi, irb);
+			return;
+		}
+	}
+	uint64_t imm = immLast ? static_cast<uint64_t>(xi->operands[want - 1].imm) : 0;
+	llvm::Value* res = llvm::UndefValue::get(vecTy);
+	for (unsigned lane = 0; lane < n; ++lane)
+	{
+		llvm::Value* e[3] = {nullptr, nullptr, nullptr};
+		for (unsigned k = first; k <= last; ++k)
+		{
+			e[k] = irb.CreateExtractElement(v[k], lane);
+		}
+		llvm::Value* r = nullptr;
+		auto* cImm = llvm::ConstantInt::get(elemTy, imm & (eb - 1));
+		switch (kind)
+		{
+		case POPCNT: r = irb.CreateUnaryIntrinsic(llvm::Intrinsic::ctpop, e[1]); break;
+		case ROT_IMM: r = funnel(right, e[1], e[1], cImm); break;
+		case ROT_VAR: r = funnel(right, e[1], e[1], e[2]); break;
+		case SHD_IMM: r = right ? funnel(true, e[2], e[1], cImm) : funnel(false, e[1], e[2], cImm); break;
+		case SHD_VAR: r = right ? funnel(true, e[1], e[0], e[2]) : funnel(false, e[0], e[1], e[2]); break;
+		case TERN:
+		{
+			r = llvm::ConstantInt::get(elemTy, 0);
+			for (unsigned k = 0; k < 8; ++k)
+			{
+				if (!((imm >> k) & 1))
+				{
+					continue;
+				}
+				auto* t = irb.CreateAnd(irb.CreateAnd(
+						(k & 4) ? e[0] : irb.CreateNot(e[0]),
+						(k & 2) ? e[1] : irb.CreateNot(e[1])),
+						(k & 1) ? e[2] : irb.CreateNot(e[2]));
+				r = irb.CreateOr(r, t);
+			}
+			break;
+		}
+		}
+		res = irb.CreateInsertElement(res, r, lane);
+	}
+	storeVectorOp(xi->operands[0], irb.CreateBitCast(res, intTy), destBits, irb);
+}
+
 
 } // namespace capstone2llvmir
 } // namespace retdec
