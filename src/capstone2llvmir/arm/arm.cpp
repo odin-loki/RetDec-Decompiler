@@ -8266,6 +8266,61 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMveMisc(cs_insn* i, cs_arm* ai,
 		return;
 	}
 
+	// VLD2x/VLD4x/VST2x/VST4x: each beat-pattern instruction is lifted as the
+	// complete (de)interleave; a full group of 2 or 4 then yields the exact result.
+	if (op.size() == 5 && (op.compare(0, 4, "vld2") == 0 || op.compare(0, 4, "vld4") == 0
+			|| op.compare(0, 4, "vst2") == 0 || op.compare(0, 4, "vst4") == 0))
+	{
+		unsigned nr = op[3] - '0';
+		bool load = op[1] == 'l';
+		if (ai->op_count != nr + 1 || ai->operands[nr].type != ARM_OP_MEM || lb == 64)
+		{
+			fallback();
+			return;
+		}
+		auto& mo = ai->operands[nr];
+		if (mo.mem.index != ARM_REG_INVALID || mo.mem.base == ARM_REG_INVALID)
+		{
+			fallback();
+			return;
+		}
+		auto* base = loadRegister(mo.mem.base, irb);
+		auto* laneTy = irb.getIntNTy(lb);
+		std::vector<llvm::Value*> vs;
+		for (unsigned r = 0; r < nr; ++r)
+		{
+			vs.push_back(load ? static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::FixedVectorType::get(laneTy, n)))
+					: loadNeonVector(ai->operands[r].reg, lb, false, irb));
+		}
+		for (unsigned k = 0; k < n; ++k)
+		{
+			for (unsigned r = 0; r < nr; ++r)
+			{
+				auto* at = irb.CreateAdd(base, llvm::ConstantInt::get(ty, (k * nr + r) * lb / 8));
+				if (load)
+				{
+					vs[r] = irb.CreateInsertElement(vs[r], loadIntPtr(irb, at, laneTy), uint64_t(k));
+				}
+				else
+				{
+					storeIntPtr(irb, irb.CreateExtractElement(vs[r], uint64_t(k)), at, laneTy);
+				}
+			}
+		}
+		if (load)
+		{
+			for (unsigned r = 0; r < nr; ++r)
+			{
+				storeNeonVector(ai->operands[r].reg, vs[r], irb);
+			}
+		}
+		if (insnWriteback())
+		{
+			storeRegister(mo.mem.base, irb.CreateAdd(base, llvm::ConstantInt::get(ty, 16 * nr)), irb);
+		}
+		return;
+	}
+
 	if (op == "vidup" || op == "vddup")
 	{
 		if (ai->op_count != 3 || ai->operands[1].type != ARM_OP_REG || ai->operands[2].type != ARM_OP_IMM || lb > 32)

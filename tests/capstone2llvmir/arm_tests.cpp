@@ -11904,6 +11904,167 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCMLA_f32_90)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VLD20_32)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0x1000},
+	});
+	setMemoryValueUnsigned(0x1000, 0x0, 32);
+	setMemoryValueUnsigned(0x1004, 0x1, 32);
+	setMemoryValueUnsigned(0x1008, 0x2, 32);
+	setMemoryValueUnsigned(0x100c, 0x3, 32);
+	setMemoryValueUnsigned(0x1010, 0x4, 32);
+	setMemoryValueUnsigned(0x1014, 0x5, 32);
+	setMemoryValueUnsigned(0x1018, 0x6, 32);
+	setMemoryValueUnsigned(0x101c, 0x7, 32);
+
+	emulate_bin("90 fc 00 1f");
+
+	EXPECT_EQ(0x200000000ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x600000004ULL, dBits(ARM_REG_D1));
+	EXPECT_EQ(0x300000001ULL, dBits(ARM_REG_D2));
+	EXPECT_EQ(0x700000005ULL, dBits(ARM_REG_D3));
+	EXPECT_EQ(0x1000ULL, getRegisterValueUnsigned(ARM_REG_R0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VLD21_32_wb)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0x1000},
+	});
+	setMemoryValueUnsigned(0x1000, 0x0, 32);
+	setMemoryValueUnsigned(0x1004, 0x1, 32);
+	setMemoryValueUnsigned(0x1008, 0x2, 32);
+	setMemoryValueUnsigned(0x100c, 0x3, 32);
+	setMemoryValueUnsigned(0x1010, 0x4, 32);
+	setMemoryValueUnsigned(0x1014, 0x5, 32);
+	setMemoryValueUnsigned(0x1018, 0x6, 32);
+	setMemoryValueUnsigned(0x101c, 0x7, 32);
+
+	emulate_bin("b0 fc 20 1f");
+
+	EXPECT_EQ(0x200000000ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x600000004ULL, dBits(ARM_REG_D1));
+	EXPECT_EQ(0x300000001ULL, dBits(ARM_REG_D2));
+	EXPECT_EQ(0x700000005ULL, dBits(ARM_REG_D3));
+	EXPECT_EQ(0x1020ULL, getRegisterValueUnsigned(ARM_REG_R0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VLD40_8)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0x1000},
+	});
+	setMemoryValueUnsigned(0x1000, 0x0, 8);
+	setMemoryValueUnsigned(0x1001, 0x1, 8);
+	setMemoryValueUnsigned(0x1002, 0x2, 8);
+	setMemoryValueUnsigned(0x1003, 0x3, 8);
+	setMemoryValueUnsigned(0x1004, 0x4, 8);
+	setMemoryValueUnsigned(0x1005, 0x5, 8);
+	setMemoryValueUnsigned(0x1006, 0x6, 8);
+	setMemoryValueUnsigned(0x1007, 0x7, 8);
+	setMemoryValueUnsigned(0x1008, 0x8, 8);
+	setMemoryValueUnsigned(0x1009, 0x9, 8);
+	setMemoryValueUnsigned(0x100a, 0xa, 8);
+	setMemoryValueUnsigned(0x100b, 0xb, 8);
+	setMemoryValueUnsigned(0x100c, 0xc, 8);
+	setMemoryValueUnsigned(0x100d, 0xd, 8);
+	setMemoryValueUnsigned(0x100e, 0xe, 8);
+	setMemoryValueUnsigned(0x100f, 0xf, 8);
+	setMemoryValueUnsigned(0x1010, 0x10, 8);
+	setMemoryValueUnsigned(0x1011, 0x11, 8);
+	setMemoryValueUnsigned(0x1012, 0x12, 8);
+	setMemoryValueUnsigned(0x1013, 0x13, 8);
+	setMemoryValueUnsigned(0x1014, 0x14, 8);
+	setMemoryValueUnsigned(0x1015, 0x15, 8);
+	setMemoryValueUnsigned(0x1016, 0x16, 8);
+	setMemoryValueUnsigned(0x1017, 0x17, 8);
+	setMemoryValueUnsigned(0x1018, 0x18, 8);
+	setMemoryValueUnsigned(0x1019, 0x19, 8);
+	setMemoryValueUnsigned(0x101a, 0x1a, 8);
+	setMemoryValueUnsigned(0x101b, 0x1b, 8);
+	setMemoryValueUnsigned(0x101c, 0x1c, 8);
+	setMemoryValueUnsigned(0x101d, 0x1d, 8);
+	setMemoryValueUnsigned(0x101e, 0x1e, 8);
+	setMemoryValueUnsigned(0x101f, 0x1f, 8);
+	setMemoryValueUnsigned(0x1020, 0x20, 8);
+	setMemoryValueUnsigned(0x1021, 0x21, 8);
+	setMemoryValueUnsigned(0x1022, 0x22, 8);
+	setMemoryValueUnsigned(0x1023, 0x23, 8);
+	setMemoryValueUnsigned(0x1024, 0x24, 8);
+	setMemoryValueUnsigned(0x1025, 0x25, 8);
+	setMemoryValueUnsigned(0x1026, 0x26, 8);
+	setMemoryValueUnsigned(0x1027, 0x27, 8);
+	setMemoryValueUnsigned(0x1028, 0x28, 8);
+	setMemoryValueUnsigned(0x1029, 0x29, 8);
+	setMemoryValueUnsigned(0x102a, 0x2a, 8);
+	setMemoryValueUnsigned(0x102b, 0x2b, 8);
+	setMemoryValueUnsigned(0x102c, 0x2c, 8);
+	setMemoryValueUnsigned(0x102d, 0x2d, 8);
+	setMemoryValueUnsigned(0x102e, 0x2e, 8);
+	setMemoryValueUnsigned(0x102f, 0x2f, 8);
+	setMemoryValueUnsigned(0x1030, 0x30, 8);
+	setMemoryValueUnsigned(0x1031, 0x31, 8);
+	setMemoryValueUnsigned(0x1032, 0x32, 8);
+	setMemoryValueUnsigned(0x1033, 0x33, 8);
+	setMemoryValueUnsigned(0x1034, 0x34, 8);
+	setMemoryValueUnsigned(0x1035, 0x35, 8);
+	setMemoryValueUnsigned(0x1036, 0x36, 8);
+	setMemoryValueUnsigned(0x1037, 0x37, 8);
+	setMemoryValueUnsigned(0x1038, 0x38, 8);
+	setMemoryValueUnsigned(0x1039, 0x39, 8);
+	setMemoryValueUnsigned(0x103a, 0x3a, 8);
+	setMemoryValueUnsigned(0x103b, 0x3b, 8);
+	setMemoryValueUnsigned(0x103c, 0x3c, 8);
+	setMemoryValueUnsigned(0x103d, 0x3d, 8);
+	setMemoryValueUnsigned(0x103e, 0x3e, 8);
+	setMemoryValueUnsigned(0x103f, 0x3f, 8);
+
+	emulate_bin("90 fc 01 1e");
+
+	EXPECT_EQ(0x1c1814100c080400ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x3c3834302c282420ULL, dBits(ARM_REG_D1));
+	EXPECT_EQ(0x1f1b17130f0b0703ULL, dBits(ARM_REG_D6));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VST20_32)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0x1000},
+		{ARM_REG_D0, armDBits(0x200000000ULL)},
+		{ARM_REG_D1, armDBits(0x600000004ULL)},
+		{ARM_REG_D2, armDBits(0x300000001ULL)},
+		{ARM_REG_D3, armDBits(0x700000005ULL)},
+	});
+
+	emulate_bin("80 fc 00 1f");
+
+	EXPECT_EQ(0x0ULL, getMemoryValueUnsigned(0x1000, 32));
+	EXPECT_EQ(0x1ULL, getMemoryValueUnsigned(0x1004, 32));
+	EXPECT_EQ(0x2ULL, getMemoryValueUnsigned(0x1008, 32));
+	EXPECT_EQ(0x3ULL, getMemoryValueUnsigned(0x100c, 32));
+	EXPECT_EQ(0x4ULL, getMemoryValueUnsigned(0x1010, 32));
+	EXPECT_EQ(0x5ULL, getMemoryValueUnsigned(0x1014, 32));
+	EXPECT_EQ(0x6ULL, getMemoryValueUnsigned(0x1018, 32));
+	EXPECT_EQ(0x7ULL, getMemoryValueUnsigned(0x101c, 32));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
