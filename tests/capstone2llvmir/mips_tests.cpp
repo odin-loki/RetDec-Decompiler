@@ -9724,7 +9724,7 @@ TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_BC1EQZ_branch)
 	EXPECT_JUST_VALUES_CALLED({
 		{_translator->getCondBranchFunction(), {true, 0x100c}},
 	});
-	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_BC1EQZ));
+	EXPECT_EQ(1u, _translator->getDelaySlot(MIPS_INS_BC1EQZ));
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_BC1NEZ_branch)
@@ -9741,7 +9741,7 @@ TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_BC1NEZ_branch)
 	EXPECT_JUST_VALUES_CALLED({
 		{_translator->getCondBranchFunction(), {true, 0x100c}},
 	});
-	EXPECT_EQ(0u, _translator->getDelaySlot(MIPS_INS_BC1NEZ));
+	EXPECT_EQ(1u, _translator->getDelaySlot(MIPS_INS_BC1NEZ));
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_SELEQZ_S_keep)
@@ -12126,6 +12126,193 @@ TEST_P(Capstone2LlvmIrTranslatorMipsMicroTests, MIPS_INS_MFLO16)
 		{MIPS_REG_2, 0x5678},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_BC2EQZ_tests_cop2_bit0)
+{
+	emulate_bin("0a 00 25 49", 0x1000); // bc2eqz $5, 0x102c
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCondBranchFunction(), {true, 0x102c}},
+	});
+	EXPECT_EQ(1u, _translator->getDelaySlot(MIPS_INS_BC2EQZ));
+	EXPECT_NE(nullptr, _module.getGlobalVariable("cop2_5"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsR6Tests, MIPS_INS_BC2NEZ_tests_cop2_bit0)
+{
+	emulate_bin("0a 00 a5 49", 0x1000); // bc2nez $5, 0x102c
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCondBranchFunction(), {false, 0x102c}},
+	});
+}
+
+//
+// Octeon+ SAA/SAAD (atomic add to memory).
+//
+
+class Capstone2LlvmIrTranslatorMipsOcteonPTests : public Capstone2LlvmIrTranslatorTests,
+												  public ::testing::WithParamInterface<cs_mode> {
+protected:
+	virtual void initKeystoneEngine() override
+	{
+		if (ks_open(KS_ARCH_MIPS, KS_MODE_MIPS64, &_assembler) != KS_ERR_OK)
+		{
+			throw std::runtime_error("ERROR: failed on ks_open().\n");
+		}
+	}
+
+	virtual void initCapstone2LlvmIrTranslator() override
+	{
+		_translator = Capstone2LlvmIrTranslator::createMips64(
+				&_module, static_cast<cs_mode>(CS_MODE_OCTEON | CS_MODE_OCTEONP));
+	}
+};
+
+INSTANTIATE_TEST_SUITE_P(
+	InstantiateMipsOcteonP,
+	Capstone2LlvmIrTranslatorMipsOcteonPTests,
+	::testing::Values(CS_MODE_OCTEON),
+	PrintCapstoneModeToString_Mips());
+
+TEST_P(Capstone2LlvmIrTranslatorMipsOcteonPTests, MIPS_INS_SAA)
+{
+	setRegisters({
+		{MIPS_REG_V1, 0x100000005_qw},
+		{MIPS_REG_A0, 0x2000},
+	});
+	setMemory({
+		{0x2000, 0x10_dw},
+	});
+
+	emulate_bin("18 00 83 70"); // saa $v1, ($a0)
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_A0});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_JUST_MEMORY_LOADED({0x2000});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x2000, 0x15_dw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsOcteonPTests, MIPS_INS_SAAD)
+{
+	setRegisters({
+		{MIPS_REG_V1, 0x100000005_qw},
+		{MIPS_REG_A0, 0x2000},
+	});
+	setMemory({
+		{0x2000, 0x10_qw},
+	});
+
+	emulate_bin("19 00 83 70"); // saad $v1, ($a0)
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V1, MIPS_REG_A0});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_JUST_MEMORY_LOADED({0x2000});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x2000, 0x100000015_qw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// MIPS16 compare-and-branch-on-T.
+//
+
+class Capstone2LlvmIrTranslatorMips16Tests : public Capstone2LlvmIrTranslatorTests,
+											 public ::testing::WithParamInterface<cs_mode> {
+protected:
+	virtual void initKeystoneEngine() override
+	{
+		if (ks_open(KS_ARCH_MIPS, KS_MODE_MIPS32, &_assembler) != KS_ERR_OK)
+		{
+			throw std::runtime_error("ERROR: failed on ks_open().\n");
+		}
+	}
+
+	virtual void initCapstone2LlvmIrTranslator() override
+	{
+		_translator = Capstone2LlvmIrTranslator::createMips32(&_module, CS_MODE_MIPS16);
+	}
+};
+
+INSTANTIATE_TEST_SUITE_P(
+	InstantiateMips16,
+	Capstone2LlvmIrTranslatorMips16Tests,
+	::testing::Values(CS_MODE_16),
+	PrintCapstoneModeToString_Mips());
+
+TEST_P(Capstone2LlvmIrTranslatorMips16Tests, MIPS_INS_CMP)
+{
+	setRegisters({
+		{MIPS_REG_V0, 0xf0},
+		{MIPS_REG_V1, 0x0f},
+	});
+
+	emulate_bin("6a ea"); // cmp $v0, $v1
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V0, MIPS_REG_V1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_T8, 0xff},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMips16Tests, MIPS_INS_CMPI)
+{
+	setRegisters({
+		{MIPS_REG_V0, 7},
+	});
+
+	emulate_bin("07 72"); // cmpi $v0, 7
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_V0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_T8, 0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMips16Tests, MIPS_INS_BTEQZ)
+{
+	setRegisters({
+		{MIPS_REG_T8, 0},
+	});
+
+	emulate_bin("05 60", 0x1000); // bteqz +5 halfwords -> 0x100c
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_T8});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCondBranchFunction(), {true, 0x100c}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMips16Tests, MIPS_INS_BTNEZ_backward)
+{
+	setRegisters({
+		{MIPS_REG_T8, 0},
+	});
+
+	emulate_bin("fb 61", 0x1000); // btnez -5 halfwords -> 0xff8
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_T8});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCondBranchFunction(), {false, 0xff8}},
+	});
 }
 
 } // namespace tests

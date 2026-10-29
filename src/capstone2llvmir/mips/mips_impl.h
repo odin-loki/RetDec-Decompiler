@@ -175,6 +175,11 @@ class Capstone2LlvmIrTranslatorMips_impl :
 		void translateBaddu(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateCnBitfield(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateBbit(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
+		void translateBc2eqz(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
+		void translateSaa(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
+		void translateMips16Cmp(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
+		void translateMips16Bteqz(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
+		llvm::GlobalVariable* getCop2Reg(uint32_t reg);
 		void translateVmulu(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateMtm(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateCondBranchTernary(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);

@@ -170,7 +170,10 @@ bool Capstone2LlvmIrTranslatorMips_impl::isAllowedExtraMode(cs_mode m)
 			|| m == CS_MODE_BIG_ENDIAN
 			|| m == CS_MODE_MICRO
 			|| m == CS_MODE_MIPS64R6
-			|| m == CS_MODE_OCTEON;
+			|| m == CS_MODE_OCTEON
+			|| m == CS_MODE_OCTEONP
+			|| m == (CS_MODE_OCTEON | CS_MODE_OCTEONP)
+			|| m == CS_MODE_MIPS16;
 }
 
 uint32_t Capstone2LlvmIrTranslatorMips_impl::getArchByteSize()
@@ -232,6 +235,9 @@ std::size_t Capstone2LlvmIrTranslatorMips_impl::getDelaySlot(uint32_t id) const
 			MIPS_INS_BLEZ, MIPS_INS_BLEZL, MIPS_INS_BGTZ, MIPS_INS_BGTZL,
 			MIPS_INS_BLTZ, MIPS_INS_BLTZL, MIPS_INS_BGEZ, MIPS_INS_BGEZL,
 			MIPS_INS_BEQZ, MIPS_INS_BNEZ,
+			// R6 BC1EQZ/BC1NEZ/BC2EQZ/BC2NEZ keep a delay slot (their
+			// ...C forms on microMIPS R6 do not).
+			MIPS_INS_BC1EQZ, MIPS_INS_BC1NEZ, MIPS_INS_BC2EQZ, MIPS_INS_BC2NEZ,
 			MIPS_INS_ALIAS_BEQZ, MIPS_INS_ALIAS_BNEZ,
 			// microMIPS 16-bit branches/jumps still have a delay slot.
 			MIPS_INS_B16, MIPS_INS_BEQZ16, MIPS_INS_BNEZ16,
@@ -2448,6 +2454,123 @@ void Capstone2LlvmIrTranslatorMips_impl::translateCnBitfield(cs_insn* i, cs_mips
  * BBIT032 / BBIT132 add 32 to the bit index. Branch if the selected bit is
  * 0 (BBIT0/032) or 1 (BBIT1/132).
  */
+/**
+ * COP2 registers are implementation defined; keep each one as an i32 global
+ * so BC2EQZ/BC2NEZ can test its bit 0 rather than becoming opaque calls.
+ */
+llvm::GlobalVariable* Capstone2LlvmIrTranslatorMips_impl::getCop2Reg(uint32_t reg)
+{
+	const char* rn = cs_reg_name(_handle, reg);
+	std::string name = std::string("cop2_") + (rn ? rn : std::to_string(reg));
+	if (auto* gv = _module->getGlobalVariable(name))
+	{
+		return gv;
+	}
+	auto* i32 = llvm::Type::getInt32Ty(_module->getContext());
+	return new llvm::GlobalVariable(*_module, i32, false, llvm::GlobalValue::ExternalLinkage,
+			llvm::ConstantInt::get(i32, 0), name);
+}
+
+/**
+ * MIPS_INS_BC2EQZ, MIPS_INS_BC2NEZ (+ compact forms): branch on bit 0 of a
+ * COP2 register.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateBc2eqz(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, mi, irb);
+
+	if (mi->operands[0].type != MIPS_OP_REG)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+	auto* gv = getCop2Reg(mi->operands[0].reg);
+	llvm::Value* v = irb.CreateLoad(gv->getValueType(), gv);
+	v = irb.CreateAnd(v, llvm::ConstantInt::get(v->getType(), 1));
+	auto* z = llvm::ConstantInt::get(v->getType(), 0);
+	bool isEq = i->id == MIPS_INS_BC2EQZ || i->id == MIPS_INS_BC2EQZC;
+	auto* c = isEq ? irb.CreateICmpEQ(v, z) : irb.CreateICmpNE(v, z);
+	op1 = loadOp(mi->operands[1], irb);
+	generateCondBranchFunctionCall(irb, c, op1);
+}
+
+/**
+ * MIPS_INS_SAA, MIPS_INS_SAAD (Octeon+): atomic memory[base] += rt,
+ * 32-bit for SAA and 64-bit for SAAD. Nothing is written back to a GPR.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateSaa(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, mi, irb);
+
+	auto* ty = i->id == MIPS_INS_SAAD ? irb.getInt64Ty() : irb.getInt32Ty();
+	auto* rt = irb.CreateZExtOrTrunc(loadOp(mi->operands[0], irb), ty);
+	llvm::Value* addr = nullptr;
+	if (mi->operands[1].type == MIPS_OP_MEM)
+	{
+		addr = loadRegister(mi->operands[1].mem.base, irb);
+		if (mi->operands[1].mem.disp)
+		{
+			addr = irb.CreateAdd(addr, llvm::ConstantInt::getSigned(addr->getType(), mi->operands[1].mem.disp));
+		}
+	}
+	else
+	{
+		addr = loadOp(mi->operands[1], irb);
+	}
+	auto* pt = llvm::PointerType::get(ty, 0);
+	auto* p = irb.CreateIntToPtr(addr, pt);
+	auto* old = irb.CreateLoad(ty, p);
+	irb.CreateStore(irb.CreateAdd(old, rt), p);
+}
+
+/**
+ * MIPS16 CMP rx, ry / CMPI rx, imm: T ($24) = rx XOR (ry | zero-extended imm).
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMips16Cmp(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, mi, irb);
+
+	auto* a = loadOp(mi->operands[0], irb);
+	llvm::Value* b = nullptr;
+	if (mi->operands[1].type == MIPS_OP_IMM)
+	{
+		b = llvm::ConstantInt::get(a->getType(), static_cast<uint64_t>(mi->operands[1].imm) & 0xffff);
+	}
+	else
+	{
+		b = irb.CreateZExtOrTrunc(loadOp(mi->operands[1], irb), a->getType());
+	}
+	storeRegister(MIPS_REG_T8, irb.CreateXor(a, b), irb);
+}
+
+/**
+ * MIPS16 BTEQZ/BTNEZ: branch when T ($24) is (not) zero. Capstone reports the
+ * raw offset field, so the target is computed here: PC of the next
+ * instruction plus the sign-extended halfword offset (8 bits, or 16 bits for
+ * the EXTEND form). MIPS16 conditional branches have no delay slot.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMips16Bteqz(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_UNARY(i, mi, irb);
+
+	int64_t off = 0;
+	uint64_t raw = static_cast<uint64_t>(mi->operands[0].imm);
+	if (i->size == 4)
+	{
+		off = static_cast<int16_t>(raw & 0xffff);
+	}
+	else
+	{
+		off = static_cast<int8_t>(raw & 0xff);
+	}
+	uint64_t target = i->address + i->size + static_cast<uint64_t>(off * 2);
+
+	auto* t = loadRegister(MIPS_REG_T8, irb);
+	auto* z = llvm::ConstantInt::get(t->getType(), 0);
+	auto* c = i->id == MIPS_INS_BTEQZ ? irb.CreateICmpEQ(t, z) : irb.CreateICmpNE(t, z);
+	generateCondBranchFunctionCall(irb, c, llvm::ConstantInt::get(getDefaultType(), target));
+}
+
 void Capstone2LlvmIrTranslatorMips_impl::translateBbit(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_TERNARY(i, mi, irb);

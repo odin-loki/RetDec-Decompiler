@@ -473,6 +473,8 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorMips_impl::*)(cs_insn* i, c
 		{MIPS_INS_ALIAS_BAL, &Capstone2LlvmIrTranslatorMips_impl::translateJal},
 		{MIPS_INS_BALC, &Capstone2LlvmIrTranslatorMips_impl::translateJal},
 		{MIPS_INS_BALIGN, &Capstone2LlvmIrTranslatorMips_impl::translateDspCtrl},
+		{MIPS_INS_SAA, &Capstone2LlvmIrTranslatorMips_impl::translateSaa},
+		{MIPS_INS_SAAD, &Capstone2LlvmIrTranslatorMips_impl::translateSaa},
 		{MIPS_INS_BBIT0, &Capstone2LlvmIrTranslatorMips_impl::translateBbit},
 		{MIPS_INS_BBIT032, &Capstone2LlvmIrTranslatorMips_impl::translateBbit},
 		{MIPS_INS_BBIT1, &Capstone2LlvmIrTranslatorMips_impl::translateBbit},
@@ -498,14 +500,16 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorMips_impl::*)(cs_insn* i, c
 		{MIPS_INS_BC1NEZC, &Capstone2LlvmIrTranslatorMips_impl::translateBc1eqz},
 		{MIPS_INS_BC1T, &Capstone2LlvmIrTranslatorMips_impl::translateBc1t},
 		{MIPS_INS_BC1TL, &Capstone2LlvmIrTranslatorMips_impl::translateBc1t},
-		{MIPS_INS_BC2EQZ, nullptr},
+		{MIPS_INS_BC2EQZ, &Capstone2LlvmIrTranslatorMips_impl::translateBc2eqz},
+		{MIPS_INS_BC2EQZC, &Capstone2LlvmIrTranslatorMips_impl::translateBc2eqz},
 		#ifdef MIPS_INS_BC2F
 		{MIPS_INS_BC2F, nullptr},
 		#endif
 		#ifdef MIPS_INS_BC2FL
 		{MIPS_INS_BC2FL, nullptr},
 		#endif
-		{MIPS_INS_BC2NEZ, nullptr},
+		{MIPS_INS_BC2NEZ, &Capstone2LlvmIrTranslatorMips_impl::translateBc2eqz},
+		{MIPS_INS_BC2NEZC, &Capstone2LlvmIrTranslatorMips_impl::translateBc2eqz},
 		#ifdef MIPS_INS_BC2T
 		{MIPS_INS_BC2T, nullptr},
 		#endif
@@ -632,8 +636,8 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorMips_impl::*)(cs_insn* i, c
 		{MIPS_INS_ALIAS_B, &Capstone2LlvmIrTranslatorMips_impl::translateJ},
 		{MIPS_INS_BNEZ, &Capstone2LlvmIrTranslatorMips_impl::translateCondBranchBinary},
 		{MIPS_INS_ALIAS_BNEZ, &Capstone2LlvmIrTranslatorMips_impl::translateCondBranchBinary},
-		{MIPS_INS_BTEQZ, nullptr},
-		{MIPS_INS_BTNEZ, nullptr},
+		{MIPS_INS_BTEQZ, &Capstone2LlvmIrTranslatorMips_impl::translateMips16Bteqz},
+		{MIPS_INS_BTNEZ, &Capstone2LlvmIrTranslatorMips_impl::translateMips16Bteqz},
 		{MIPS_INS_CACHE, &Capstone2LlvmIrTranslatorMips_impl::translateNop},
 		{MIPS_INS_CEIL_W_S, &Capstone2LlvmIrTranslatorMips_impl::translateFpToInt},
 		{MIPS_INS_CEIL_W_D, &Capstone2LlvmIrTranslatorMips_impl::translateFpToInt},
@@ -731,7 +735,7 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorMips_impl::*)(cs_insn* i, c
 		{MIPS_INS_CMP_ULT_D, &Capstone2LlvmIrTranslatorMips_impl::translateR6Cmp},
 		{MIPS_INS_CMP_UN_S, &Capstone2LlvmIrTranslatorMips_impl::translateR6Cmp},
 		{MIPS_INS_CMP_UN_D, &Capstone2LlvmIrTranslatorMips_impl::translateR6Cmp},
-		{MIPS_INS_CMP, nullptr},
+		{MIPS_INS_CMP, &Capstone2LlvmIrTranslatorMips_impl::translateMips16Cmp},
 		{MIPS_INS_COPY_S, &Capstone2LlvmIrTranslatorMips_impl::translateMsaCopy},
 		{MIPS_INS_COPY_S_B, &Capstone2LlvmIrTranslatorMips_impl::translateMsaCopy},
 		{MIPS_INS_COPY_S_H, &Capstone2LlvmIrTranslatorMips_impl::translateMsaCopy},
@@ -825,7 +829,7 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorMips_impl::*)(cs_insn* i, c
 		{MIPS_INS_ALIAS_C_ULT_S, &Capstone2LlvmIrTranslatorMips_impl::translateC},
 		{MIPS_INS_ALIAS_C_UN_D, &Capstone2LlvmIrTranslatorMips_impl::translateC},
 		{MIPS_INS_ALIAS_C_UN_S, &Capstone2LlvmIrTranslatorMips_impl::translateC},
-		{MIPS_INS_CMPI, nullptr},
+		{MIPS_INS_CMPI, &Capstone2LlvmIrTranslatorMips_impl::translateMips16Cmp},
 		{MIPS_INS_DADD, &Capstone2LlvmIrTranslatorMips_impl::translateAdd},
 		{MIPS_INS_DADDI, &Capstone2LlvmIrTranslatorMips_impl::translateAdd},
 		{MIPS_INS_DADDIU, &Capstone2LlvmIrTranslatorMips_impl::translateAdd},
