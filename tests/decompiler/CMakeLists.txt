@@ -132,9 +132,12 @@ foreach(_name IN LISTS _CORPUS_NATIVE_SOURCES)
     if(MSVC)
         add_custom_command(
             OUTPUT "${_bin}"
+            # cl takes one /Fo per command line, so the objects go to a
+            # directory of their own per fixture (both builds compile the stub).
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${_CORPUS_FIXTURES_DIR}/${_name}_obj"
             COMMAND ${CMAKE_C_COMPILER} ${_MSVC_FIXTURE_C}
-                "/Fo${_CORPUS_FIXTURES_DIR}/${_name}_main.obj" "${_src}"
-                "/Fo${_CORPUS_FIXTURES_DIR}/${_name}_printf.obj" "${_MSVC_PRINTF_STUB}"
+                "/Fo${_CORPUS_FIXTURES_DIR}/${_name}_obj/"
+                "${_src}" "${_MSVC_PRINTF_STUB}"
                 "/Fe${_bin}" ${_MSVC_FIXTURE_LINK}
             DEPENDS "${_src}" "${_MSVC_PRINTF_STUB}"
             COMMENT "Building corpus fixture ${_name} (MSVC)"
