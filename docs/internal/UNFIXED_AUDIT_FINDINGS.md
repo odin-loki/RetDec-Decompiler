@@ -15,7 +15,7 @@ Verified against the tree or left open in the last batches of this file:
 
 | Item | Why it still stands |
 |------|---------------------|
-| Native arm64 Mach-O → empty `.c` | Decoding phases never run. `ctest-macos` attempts it every run. Corpus is ELF. |
+| ~~Native arm64 Mach-O → empty `.c`~~ | Closed: chained fixups and the exports trie are read (74e9d144) and AArch64 GPRs are recognised under capstone 6 (e0ec0d86); a fixup-chains arm64 sample decompiles to `uint64_t _add(uint64_t a1, uint64_t a2)` with its call sites. Corpus is still ELF. |
 | `DerefOpExpr` / `UnaryOpExpr::getType()` | Returns the operand's type (the pointer), not the pointee. Consumers tuned against that |
 | `ctest-linux` / `ctest-windows` suite subset | Named targets only. `ctest-macos` runs `ctest` with no `-L` |
 | Pipeline stages marked hook/partial | [PIPELINE_REDESIGN_TODO.md](PIPELINE_REDESIGN_TODO.md) — not done |
