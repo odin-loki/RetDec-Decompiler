@@ -606,7 +606,7 @@ comment was added; it now leaves an untouched output byte for byte.
 bypass `--silent`, `-f json` and log redirection entirely. The log half is fixed:
 `managed_decompiler.cpp` writes its progress, warnings and errors through
 `Log::info()` / `Log::error()` instead of `std::cerr`, so `--silent` and log
-redirection apply. Managed output is still source text, not JSON, under `-f json`.
+redirection apply. Managed output is still source text under `-f json`; the CLI now says so with a warning instead of silently ignoring the flag.
 
 ---
 

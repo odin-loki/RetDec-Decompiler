@@ -1193,6 +1193,12 @@ int decompile(retdec::config::Config& config, ProgramOptions& po)
 							<< " does not match managed emitter for " << managedFormatName(managedFmt) << "; using "
 							<< outputLangCliName(defaultOutputLangForManaged(managedFmt)) << "." << std::endl;
 			}
+			if (config.parameters.getOutputFormat() != "plain")
+			{
+				Log::error() << "Warning: -f " << config.parameters.getOutputFormat()
+							<< " is not supported for " << managedFormatName(managedFmt)
+							<< " input; writing source text." << std::endl;
+			}
 			int rc = decompileManaged(managedFmt, config.parameters.getInputFile(), config.parameters.getOutputFile());
 			return rc == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 		}
