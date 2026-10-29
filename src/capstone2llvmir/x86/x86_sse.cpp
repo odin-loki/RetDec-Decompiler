@@ -9874,5 +9874,93 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvxChunks(cs_insn* i, cs_x86* x
 }
 
 
+void Capstone2LlvmIrTranslatorX86_impl::translateAvxCvtQq(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	// AVX512DQ 64-bit integer <-> float/double conversions, lane by lane.
+	// Rounding follows round-to-nearest-even for the non-T forms (MXCSR not modelled).
+	bool toInt = true, trunc = false, uns = false, dbl = true;
+	switch (i->id)
+	{
+	case X86_INS_VCVTTPD2QQ: trunc = true; break;
+	case X86_INS_VCVTPD2QQ: break;
+	case X86_INS_VCVTTPD2UQQ: trunc = true; uns = true; break;
+	case X86_INS_VCVTPD2UQQ: uns = true; break;
+	case X86_INS_VCVTTPS2QQ: trunc = true; dbl = false; break;
+	case X86_INS_VCVTPS2QQ: dbl = false; break;
+	case X86_INS_VCVTTPS2UQQ: trunc = true; uns = true; dbl = false; break;
+	case X86_INS_VCVTPS2UQQ: uns = true; dbl = false; break;
+	case X86_INS_VCVTQQ2PD: toInt = false; break;
+	case X86_INS_VCVTUQQ2PD: toInt = false; uns = true; break;
+	case X86_INS_VCVTQQ2PS: toInt = false; dbl = false; break;
+	case X86_INS_VCVTUQQ2PS: toInt = false; uns = true; dbl = false; break;
+	default: translatePseudoAsmGeneric(i, xi, irb); return;
+	}
+	bool bcast = false;
+	for (unsigned k = 0; k < xi->op_count; ++k)
+	{
+		bcast |= xi->operands[k].avx_bcast != X86_AVX_BCAST_INVALID;
+	}
+	if (xi->op_count != 2 || hasEvexModifier(xi) || bcast)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	auto* fpTy = dbl ? irb.getDoubleTy() : irb.getFloatTy();
+	auto* i64 = irb.getInt64Ty();
+	unsigned fb = dbl ? 64 : 32;
+	unsigned srcElem = toInt ? fb : 64, dstElem = toInt ? 64 : fb;
+	unsigned n = dstElem >= srcElem ? xi->operands[0].size * 8 / dstElem : xi->operands[1].size * 8 / srcElem;
+	unsigned srcBits = n * srcElem, destBits = n * dstElem;
+	if (n == 0 || (destBits != 64 && destBits != 128 && destBits != 256 && destBits != 512))
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	llvm::Value* raw = nullptr;
+	if (xi->operands[1].type == X86_OP_MEM)
+	{
+		if (xi->operands[1].size * 8 != srcBits) { translatePseudoAsmGeneric(i, xi, irb); return; }
+		raw = loadOp(xi->operands[1], irb, irb.getIntNTy(srcBits));
+	}
+	else
+	{
+		unsigned b = 0;
+		raw = loadVectorOp(xi->operands[1], irb, b);
+		if (raw == nullptr || b < srcBits) { translatePseudoAsmGeneric(i, xi, irb); return; }
+		raw = irb.CreateTrunc(raw, irb.getIntNTy(srcBits));
+	}
+	auto* dt = irb.getIntNTy(destBits);
+	llvm::Value* res = llvm::ConstantInt::get(dt, 0);
+	for (unsigned k = 0; k < n; ++k)
+	{
+		auto* e = irb.CreateTrunc(irb.CreateLShr(raw, k * srcElem), irb.getIntNTy(srcElem));
+		llvm::Value* r = nullptr;
+		if (toInt)
+		{
+			llvm::Value* f = irb.CreateBitCast(e, fpTy);
+			if (!trunc)
+			{
+				// Ties-to-even without intrinsics: (|f| + 2^p) - 2^p for |f| < 2^p.
+				auto* m = llvm::ConstantFP::get(fpTy, dbl ? 4503599627370496.0 : 8388608.0);
+				auto* neg = irb.CreateFCmpOLT(f, llvm::ConstantFP::get(fpTy, 0.0));
+				auto* a = irb.CreateSelect(neg, irb.CreateFNeg(f), f);
+				auto* r = irb.CreateFSub(irb.CreateFAdd(a, m), m);
+				r = irb.CreateSelect(irb.CreateFCmpOGE(a, m), a, r);
+				f = irb.CreateSelect(neg, irb.CreateFNeg(r), r);
+			}
+			r = uns ? fpToUiDefined(f, i64, irb) : irb.CreateFPToSI(f, i64);
+		}
+		else
+		{
+			auto* f = uns ? irb.CreateUIToFP(e, fpTy) : irb.CreateSIToFP(e, fpTy);
+			r = irb.CreateBitCast(f, irb.getIntNTy(fb));
+		}
+		res = irb.CreateOr(res, irb.CreateShl(irb.CreateZExt(r, dt), k * dstElem));
+	}
+	storeVectorOp(xi->operands[0], destBits < 128 ? irb.CreateZExt(res, irb.getInt128Ty()) : res,
+			destBits < 128 ? 128 : destBits, irb);
+}
+
+
 } // namespace capstone2llvmir
 } // namespace retdec
