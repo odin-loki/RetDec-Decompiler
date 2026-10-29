@@ -5013,7 +5013,6 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateStoreFloatAsInt(cs_insn* i,
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecPerm(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_QUATERNARY(i, pi, irb);
-	(void)i;
 
 	auto* a = loadOpI128(pi->operands[1], irb);
 	auto* b = loadOpI128(pi->operands[2], irb);
@@ -5029,7 +5028,11 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecPerm(cs_insn* i, cs_ppc*
 		auto* cbyte = irb.CreateTrunc(
 				irb.CreateLShr(c, llvm::ConstantInt::get(c->getType(), place)),
 				irb.getInt8Ty());
-		auto* idx = irb.CreateZExt(irb.CreateAnd(cbyte, irb.getInt8(31)), irb.getInt32Ty());
+		llvm::Value* idx = irb.CreateZExt(irb.CreateAnd(cbyte, irb.getInt8(31)), irb.getInt32Ty());
+		if (i->id == PPC_INS_VPERMR)
+		{
+			idx = irb.CreateSub(irb.getInt32(31), idx);
+		}
 		auto* fromRight = irb.CreateMul(
 				irb.CreateSub(irb.getInt32(31), idx),
 				irb.getInt32(8));
@@ -5114,6 +5117,20 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecMerge(cs_insn* i, cs_ppc
 		break;
 	default:
 		break;
+	}
+	if (i->id == PPC_INS_VMRGEW || i->id == PPC_INS_VMRGOW)
+	{
+		// Even/odd words: [a0, b0, a2, b2] / [a1, b1, a3, b3].
+		unsigned odd = i->id == PPC_INS_VMRGOW ? 1u : 0u;
+		auto w = [&](llvm::Value* v, unsigned idx) {
+			return irb.CreateZExt(irb.CreateTrunc(irb.CreateLShr(v, (3u - idx) * 32u), irb.getInt32Ty()), i128);
+		};
+		llvm::Value* r = irb.CreateShl(w(a, odd), 96);
+		r = irb.CreateOr(r, irb.CreateShl(w(b, odd), 64));
+		r = irb.CreateOr(r, irb.CreateShl(w(a, 2u + odd), 32));
+		r = irb.CreateOr(r, w(b, 2u + odd));
+		storeOpI128(pi->operands[0], r, irb);
+		return;
 	}
 	const unsigned n = 128u / elemBits;
 	const unsigned pairs = n / 2u;
@@ -5477,6 +5494,28 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecPack(cs_insn* i, cs_ppc*
 	case PPC_INS_VPKSWUS:
 		srcBits = 32;
 		nSrc = 4;
+		saturate = true;
+		srcSigned = true;
+		dstUnsigned = true;
+		break;
+	case PPC_INS_VPKUDUM:
+		srcBits = 64;
+		nSrc = 2;
+		break;
+	case PPC_INS_VPKUDUS:
+		srcBits = 64;
+		nSrc = 2;
+		saturate = true;
+		break;
+	case PPC_INS_VPKSDSS:
+		srcBits = 64;
+		nSrc = 2;
+		saturate = true;
+		srcSigned = true;
+		break;
+	case PPC_INS_VPKSDUS:
+		srcBits = 64;
+		nSrc = 2;
 		saturate = true;
 		srcSigned = true;
 		dstUnsigned = true;
@@ -8204,6 +8243,15 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecUnpack(
 	case PPC_INS_VUPKLSH:
 		srcBits = 16;
 		dstBits = 32;
+		high = false;
+		break;
+	case PPC_INS_VUPKHSW:
+		srcBits = 32;
+		dstBits = 64;
+		break;
+	case PPC_INS_VUPKLSW:
+		srcBits = 32;
+		dstBits = 64;
 		high = false;
 		break;
 	case PPC_INS_VUPKHPX:
