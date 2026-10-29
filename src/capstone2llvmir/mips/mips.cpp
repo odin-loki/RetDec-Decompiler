@@ -7819,6 +7819,25 @@ void Capstone2LlvmIrTranslatorMips_impl::translateMaddf(cs_insn* i, cs_mips* mi,
 
 	EXPECT_IS_QUATERNARY(i, mi, irb);
 
+	// Capstone does not tag pre-R6 `madd.d fd,fr,fs,ft` NOTFP64BIT, so the
+	// operands would load as single floats: map them to the FDn pairs.
+	std::string mnem = i->mnemonic;
+	bool dbl = mnem.size() >= 2 && mnem.compare(mnem.size() - 2, 2, ".d") == 0;
+	auto fdReg = [&](cs_mips_op& o) {
+		uint32_t r = canonicalizeMipsReg(o.reg);
+		return MIPS_REG_F0 <= r && r <= MIPS_REG_F31
+				? singlePrecisionToDoublePrecisionFpRegister(r) : r;
+	};
+	if (dbl && getRegister(fdReg(mi->operands[0])))
+	{
+		op1 = loadRegister(fdReg(mi->operands[1]), irb);
+		op2 = loadRegister(fdReg(mi->operands[2]), irb);
+		op3 = loadRegister(fdReg(mi->operands[3]), irb);
+		auto* add = irb.CreateFAdd(irb.CreateFMul(op2, op3), op1);
+		storeRegister(fdReg(mi->operands[0]), add, irb);
+		return;
+	}
+
 	op1 = loadOp(mi->operands[1], irb);
 	op2 = loadOp(mi->operands[2], irb);
 	op3 = loadOp(mi->operands[3], irb);
