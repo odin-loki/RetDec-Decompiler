@@ -11125,5 +11125,370 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxMemMisc(cs_insn* i, cs_p
 	}
 }
 
+
+/**
+ * ISA 3.0/3.1 vector integer odds and ends:
+ * PPC_INS_VDIVE[SU][WDQ], PPC_INS_VMUL10[C|E|EC]UQ, PPC_INS_VCMP[SU]Q,
+ * PPC_INS_VRLQNM, PPC_INS_VRLQMI, PPC_INS_XXPERMX, PPC_INS_VPDEPD,
+ * PPC_INS_VPEXTD, PPC_INS_VCFUGED, PPC_INS_VCLZDM, PPC_INS_VCTZDM,
+ * PPC_INS_VGNB, PPC_INS_VBPERMD, PPC_INS_VMSUMUDM, PPC_INS_VMSUMCUD,
+ * PPC_INS_VPERMXOR, PPC_INS_VSHASIGMAW, PPC_INS_VSHASIGMAD,
+ * PPC_INS_XVTLSBB, PPC_INS_XVCVBF16SPN, PPC_INS_XVCVSPBF16
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecIsa31Ops(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	if (pi->op_count < 2)
+	{
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+	cs_ppc_op ops[5];
+	for (unsigned k = 0; k < pi->op_count && k < 5; ++k)
+	{
+		ops[k] = pi->operands[k];
+		if (ops[k].type == PPC_OP_REG && ops[k].reg >= PPC_REG_VF0 && ops[k].reg <= PPC_REG_VF31)
+		{
+			ops[k].reg = ppc_reg(PPC_REG_V0 + (ops[k].reg - PPC_REG_VF0));
+		}
+	}
+	auto* i64 = irb.getInt64Ty();
+	auto* i128 = irb.getInt128Ty();
+	auto* i256 = irb.getIntNTy(256);
+	auto c64 = [&](uint64_t v) { return llvm::ConstantInt::get(i64, v); };
+	auto c128 = [&](uint64_t v) { return llvm::ConstantInt::get(i128, v); };
+	auto imm = [&](unsigned k) -> uint64_t {
+		return k < pi->op_count && ops[k].type == PPC_OP_IMM ? uint64_t(ops[k].imm) : 0;
+	};
+	auto vr = [&](unsigned k) { return loadOpI128(ops[k], irb); };
+	auto out = [&](llvm::Value* v) { storeOpI128(ops[0], v, irb); };
+	// Apply fn lane by lane (lane width `bits`), result lanes OR-ed back.
+	auto lanes = [&](unsigned bits, llvm::Value* a, llvm::Value* b,
+			const std::function<llvm::Value*(llvm::Value*, llvm::Value*)>& fn) {
+		auto* ty = irb.getIntNTy(bits);
+		llvm::Value* r = c128(0);
+		for (unsigned sh = 0; sh < 128; sh += bits)
+		{
+			auto* x = irb.CreateTrunc(irb.CreateLShr(a, sh), ty);
+			auto* y = b ? irb.CreateTrunc(irb.CreateLShr(b, sh), ty) : nullptr;
+			r = irb.CreateOr(r, irb.CreateShl(irb.CreateZExt(fn(x, y), i128), sh));
+		}
+		return r;
+	};
+	auto pext = [&](llvm::Value* src, llvm::Value* m) {
+		llvm::Value* res = c64(0);
+		llvm::Value* k = c64(0);
+		for (unsigned j = 0; j < 64; ++j)
+		{
+			auto* mb = irb.CreateAnd(irb.CreateLShr(m, j), c64(1));
+			auto* sb = irb.CreateAnd(irb.CreateLShr(src, j), c64(1));
+			res = irb.CreateOr(res, irb.CreateShl(irb.CreateAnd(sb, mb), k));
+			k = irb.CreateAdd(k, mb);
+		}
+		return res;
+	};
+	auto pdep = [&](llvm::Value* src, llvm::Value* m) {
+		llvm::Value* res = c64(0);
+		llvm::Value* k = c64(0);
+		for (unsigned j = 0; j < 64; ++j)
+		{
+			auto* mb = irb.CreateAnd(irb.CreateLShr(m, j), c64(1));
+			auto* sb = irb.CreateAnd(irb.CreateLShr(src, k), c64(1));
+			res = irb.CreateOr(res, irb.CreateShl(irb.CreateAnd(sb, mb), j));
+			k = irb.CreateAdd(k, mb);
+		}
+		return res;
+	};
+	auto ctpop64 = [&](llvm::Value* v) {
+		auto* fn = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::ctpop, i64);
+		return irb.CreateCall(fn, {v});
+	};
+	auto crField = [&](unsigned k) -> int {
+		if (ops[k].type == PPC_OP_REG && ops[k].reg >= PPC_REG_CR0 && ops[k].reg <= PPC_REG_CR7)
+		{
+			return int(ops[k].reg - PPC_REG_CR0);
+		}
+		return -1;
+	};
+	static const uint32_t crb[8][4] = {
+		{PPC_REG_CR0LT, PPC_REG_CR0GT, PPC_REG_CR0EQ, PPC_REG_CR0UN},
+		{PPC_REG_CR1LT, PPC_REG_CR1GT, PPC_REG_CR1EQ, PPC_REG_CR1UN},
+		{PPC_REG_CR2LT, PPC_REG_CR2GT, PPC_REG_CR2EQ, PPC_REG_CR2UN},
+		{PPC_REG_CR3LT, PPC_REG_CR3GT, PPC_REG_CR3EQ, PPC_REG_CR3UN},
+		{PPC_REG_CR4LT, PPC_REG_CR4GT, PPC_REG_CR4EQ, PPC_REG_CR4UN},
+		{PPC_REG_CR5LT, PPC_REG_CR5GT, PPC_REG_CR5EQ, PPC_REG_CR5UN},
+		{PPC_REG_CR6LT, PPC_REG_CR6GT, PPC_REG_CR6EQ, PPC_REG_CR6UN},
+		{PPC_REG_CR7LT, PPC_REG_CR7GT, PPC_REG_CR7EQ, PPC_REG_CR7UN},
+	};
+	auto setCr = [&](unsigned bf, llvm::Value* lt, llvm::Value* gt, llvm::Value* eq) {
+		storeRegister(crb[bf][0], lt, irb);
+		storeRegister(crb[bf][1], gt, irb);
+		storeRegister(crb[bf][2], eq, irb);
+		storeRegister(crb[bf][3], irb.getFalse(), irb);
+	};
+	auto rotr = [&](llvm::Value* x, unsigned n) {
+		unsigned w = x->getType()->getIntegerBitWidth();
+		return irb.CreateOr(irb.CreateLShr(x, n), irb.CreateShl(x, w - n));
+	};
+
+	switch (i->id)
+	{
+		case PPC_INS_VDIVESW: case PPC_INS_VDIVEUW:
+		case PPC_INS_VDIVESD: case PPC_INS_VDIVEUD:
+		case PPC_INS_VDIVESQ: case PPC_INS_VDIVEUQ:
+		{
+			if (pi->op_count != 3) break;
+			unsigned bits = 32;
+			if (i->id == PPC_INS_VDIVESD || i->id == PPC_INS_VDIVEUD) bits = 64;
+			if (i->id == PPC_INS_VDIVESQ || i->id == PPC_INS_VDIVEUQ) bits = 128;
+			bool sgn = i->id == PPC_INS_VDIVESW || i->id == PPC_INS_VDIVESD || i->id == PPC_INS_VDIVESQ;
+			out(lanes(bits, vr(1), vr(2), [&](llvm::Value* x, llvm::Value* y) {
+				auto* wty = irb.getIntNTy(2 * bits);
+				auto* dividend = irb.CreateShl(sgn ? irb.CreateSExt(x, wty) : irb.CreateZExt(x, wty), bits);
+				auto* zero = irb.CreateICmpEQ(y, llvm::ConstantInt::get(y->getType(), 0));
+				auto* yy = irb.CreateSelect(zero, llvm::ConstantInt::get(y->getType(), 1), y);
+				auto* div = sgn ? irb.CreateSDiv(dividend, irb.CreateSExt(yy, wty))
+						: irb.CreateUDiv(dividend, irb.CreateZExt(yy, wty));
+				// Division by zero is undefined; zero is produced.
+				return irb.CreateSelect(zero, llvm::ConstantInt::get(x->getType(), 0), irb.CreateTrunc(div, x->getType()));
+			}));
+			return;
+		}
+		case PPC_INS_VMUL10UQ: case PPC_INS_VMUL10CUQ:
+		case PPC_INS_VMUL10EUQ: case PPC_INS_VMUL10ECUQ:
+		{
+			bool ext = i->id == PPC_INS_VMUL10EUQ || i->id == PPC_INS_VMUL10ECUQ;
+			bool carry = i->id == PPC_INS_VMUL10CUQ || i->id == PPC_INS_VMUL10ECUQ;
+			if (ext && pi->op_count != 3) break;
+			auto* p = irb.CreateMul(irb.CreateZExt(vr(1), i256), llvm::ConstantInt::get(i256, 10));
+			if (ext)
+			{
+				p = irb.CreateAdd(p, irb.CreateZExt(irb.CreateAnd(vr(2), c128(0xf)), i256));
+			}
+			out(irb.CreateTrunc(carry ? irb.CreateLShr(p, 128) : p, i128));
+			return;
+		}
+		case PPC_INS_VCMPSQ: case PPC_INS_VCMPUQ:
+		{
+			int bf = crField(0);
+			if (bf < 0 || pi->op_count != 3) break;
+			auto* a = vr(1);
+			auto* b = vr(2);
+			bool s = i->id == PPC_INS_VCMPSQ;
+			setCr(unsigned(bf), s ? irb.CreateICmpSLT(a, b) : irb.CreateICmpULT(a, b),
+					s ? irb.CreateICmpSGT(a, b) : irb.CreateICmpUGT(a, b), irb.CreateICmpEQ(a, b));
+			return;
+		}
+		case PPC_INS_VRLQNM: case PPC_INS_VRLQMI:
+		{
+			if (pi->op_count != 3) break;
+			auto* a = vr(1);
+			auto* b = vr(2);
+			auto* sh = irb.CreateAnd(irb.CreateLShr(b, 64), c128(127));
+			auto* me = irb.CreateAnd(irb.CreateLShr(b, 72), c128(127));
+			auto* mb = irb.CreateAnd(irb.CreateLShr(b, 80), c128(127));
+			auto* rsh = irb.CreateAnd(irb.CreateSub(c128(128), sh), c128(127));
+			auto* rot = irb.CreateOr(irb.CreateShl(a, sh), irb.CreateLShr(a, rsh));
+			auto* ones = llvm::ConstantInt::get(i128, llvm::APInt::getAllOnes(128));
+			auto* m1 = irb.CreateLShr(ones, mb);
+			auto* m2 = irb.CreateShl(ones, irb.CreateSub(c128(127), me));
+			auto* mask = irb.CreateSelect(irb.CreateICmpULE(mb, me), irb.CreateAnd(m1, m2), irb.CreateOr(m1, m2));
+			auto* r = irb.CreateAnd(rot, mask);
+			if (i->id == PPC_INS_VRLQMI)
+			{
+				r = irb.CreateOr(r, irb.CreateAnd(vr(0), irb.CreateNot(mask)));
+			}
+			out(r);
+			return;
+		}
+		case PPC_INS_XXPERMX:
+		{
+			if (pi->op_count != 5) break;
+			auto* ab = irb.CreateOr(irb.CreateShl(irb.CreateZExt(vr(1), i256), 128), irb.CreateZExt(vr(2), i256));
+			auto* c = vr(3);
+			uint64_t uim = imm(4) & 7;
+			llvm::Value* r = c128(0);
+			for (unsigned k = 0; k < 16; ++k)
+			{
+				auto* idx = irb.CreateAnd(irb.CreateLShr(c, 8 * (15 - k)), c128(0xff));
+				auto* sel = irb.CreateICmpEQ(irb.CreateLShr(idx, 5), c128(uim));
+				auto* pos = irb.CreateZExt(irb.CreateSub(c128(31), irb.CreateAnd(idx, c128(31))), i256);
+				auto* byte = irb.CreateTrunc(irb.CreateAnd(irb.CreateLShr(ab, irb.CreateShl(pos, 3)), llvm::ConstantInt::get(i256, 0xff)), i128);
+				byte = irb.CreateSelect(sel, byte, c128(0));
+				r = irb.CreateOr(r, irb.CreateShl(byte, 8 * (15 - k)));
+			}
+			out(r);
+			return;
+		}
+		case PPC_INS_VPDEPD: case PPC_INS_VPEXTD: case PPC_INS_VCFUGED:
+		case PPC_INS_VCLZDM: case PPC_INS_VCTZDM:
+		{
+			if (pi->op_count != 3) break;
+			auto id = i->id;
+			out(lanes(64, vr(1), vr(2), [&](llvm::Value* s, llvm::Value* m) -> llvm::Value* {
+				switch (id)
+				{
+					case PPC_INS_VPDEPD: return pdep(s, m);
+					case PPC_INS_VPEXTD: return pext(s, m);
+					case PPC_INS_VCFUGED:
+					{
+						auto* lo = pext(s, m);
+						auto* hi = pext(s, irb.CreateNot(m));
+						auto* n = ctpop64(m);
+						auto* full = irb.CreateICmpEQ(n, c64(64));
+						auto* hs = irb.CreateShl(hi, irb.CreateSelect(full, c64(0), n));
+						return irb.CreateOr(irb.CreateSelect(full, c64(0), hs), lo);
+					}
+					case PPC_INS_VCLZDM:
+					{
+						auto* e = pext(s, m);
+						auto* n = ctpop64(m);
+						auto* fn = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::ctlz, i64);
+						return irb.CreateSub(irb.CreateCall(fn, {e, irb.getFalse()}), irb.CreateSub(c64(64), n));
+					}
+					default:
+					{
+						auto* e = pext(s, m);
+						auto* n = ctpop64(m);
+						auto* fn = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::cttz, i64);
+						auto* t = irb.CreateCall(fn, {e, irb.getFalse()});
+						return irb.CreateSelect(irb.CreateICmpULT(t, n), t, n);
+					}
+				}
+			}));
+			return;
+		}
+		case PPC_INS_VGNB:
+		{
+			if (pi->op_count != 3) break;
+			unsigned n = unsigned(imm(2));
+			if (n < 2 || n > 7) break;
+			auto* src = vr(1);
+			unsigned cnt = (128 + n - 1) / n;
+			llvm::Value* r = c64(0);
+			for (unsigned j = 0; j < cnt; ++j)
+			{
+				unsigned bit = j * n; // big-endian bit number
+				auto* b = irb.CreateTrunc(irb.CreateAnd(irb.CreateLShr(src, 127 - bit), c128(1)), i64);
+				r = irb.CreateOr(r, irb.CreateShl(b, cnt - 1 - j));
+			}
+			storeOp(ops[0], r, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+			return;
+		}
+		case PPC_INS_VBPERMD:
+		{
+			if (pi->op_count != 3) break;
+			out(lanes(64, vr(1), vr(2), [&](llvm::Value* a, llvm::Value* b) {
+				llvm::Value* v = c64(0);
+				for (unsigned k = 0; k < 8; ++k)
+				{
+					auto* idx = irb.CreateAnd(irb.CreateLShr(b, 56 - 8 * k), c64(0xff));
+					auto* ok = irb.CreateICmpULT(idx, c64(64));
+					auto* sh = irb.CreateSelect(ok, irb.CreateSub(c64(63), idx), c64(0));
+					auto* bt = irb.CreateSelect(ok, irb.CreateAnd(irb.CreateLShr(a, sh), c64(1)), c64(0));
+					v = irb.CreateOr(v, irb.CreateShl(bt, 7 - k));
+				}
+				return v;
+			}));
+			return;
+		}
+		case PPC_INS_VMSUMUDM: case PPC_INS_VMSUMCUD:
+		{
+			if (pi->op_count != 4) break;
+			auto* a = vr(1);
+			auto* b = vr(2);
+			auto dw = [&](llvm::Value* v, unsigned k) {
+				return irb.CreateZExt(irb.CreateTrunc(irb.CreateLShr(v, 64 * k), i64), i256);
+			};
+			auto* s = irb.CreateAdd(irb.CreateMul(dw(a, 1), dw(b, 1)), irb.CreateMul(dw(a, 0), dw(b, 0)));
+			s = irb.CreateAdd(s, irb.CreateZExt(vr(3), i256));
+			out(irb.CreateTrunc(i->id == PPC_INS_VMSUMCUD ? irb.CreateLShr(s, 128) : s, i128));
+			return;
+		}
+		case PPC_INS_VPERMXOR:
+		{
+			if (pi->op_count != 4) break;
+			auto* a = vr(1);
+			auto* b = vr(2);
+			auto* c = vr(3);
+			llvm::Value* r = c128(0);
+			auto byteAt = [&](llvm::Value* v, llvm::Value* idx) {
+				auto* sh = irb.CreateShl(irb.CreateSub(c128(15), idx), 3);
+				return irb.CreateAnd(irb.CreateLShr(v, sh), c128(0xff));
+			};
+			for (unsigned k = 0; k < 16; ++k)
+			{
+				auto* ctl = irb.CreateAnd(irb.CreateLShr(c, 8 * (15 - k)), c128(0xff));
+				auto* x = irb.CreateXor(byteAt(a, irb.CreateLShr(ctl, 4)), byteAt(b, irb.CreateAnd(ctl, c128(0xf))));
+				r = irb.CreateOr(r, irb.CreateShl(x, 8 * (15 - k)));
+			}
+			out(r);
+			return;
+		}
+		case PPC_INS_VSHASIGMAW: case PPC_INS_VSHASIGMAD:
+		{
+			if (pi->op_count != 4) break;
+			bool w = i->id == PPC_INS_VSHASIGMAW;
+			unsigned st = unsigned(imm(2)) & 1, six = unsigned(imm(3)) & 0xf;
+			auto* src = vr(1);
+			unsigned bits = w ? 32 : 64;
+			llvm::Value* r = c128(0);
+			for (unsigned k = 0; k < 128 / bits; ++k)
+			{
+				// Lane k counts from the most significant element.
+				unsigned sh = 128 - bits * (k + 1);
+				auto* x = irb.CreateTrunc(irb.CreateLShr(src, sh), irb.getIntNTy(bits));
+				unsigned sbit = w ? (six >> (3 - k)) & 1 : (six >> (3 - 2 * k)) & 1;
+				llvm::Value* v = nullptr;
+				if (w)
+				{
+					if (!st) v = sbit ? irb.CreateXor(irb.CreateXor(rotr(x, 17), rotr(x, 19)), irb.CreateLShr(x, 10))
+							: irb.CreateXor(irb.CreateXor(rotr(x, 7), rotr(x, 18)), irb.CreateLShr(x, 3));
+					else v = sbit ? irb.CreateXor(irb.CreateXor(rotr(x, 6), rotr(x, 11)), rotr(x, 25))
+							: irb.CreateXor(irb.CreateXor(rotr(x, 2), rotr(x, 13)), rotr(x, 22));
+				}
+				else
+				{
+					if (!st) v = sbit ? irb.CreateXor(irb.CreateXor(rotr(x, 19), rotr(x, 61)), irb.CreateLShr(x, 6))
+							: irb.CreateXor(irb.CreateXor(rotr(x, 1), rotr(x, 8)), irb.CreateLShr(x, 7));
+					else v = sbit ? irb.CreateXor(irb.CreateXor(rotr(x, 14), rotr(x, 18)), rotr(x, 41))
+							: irb.CreateXor(irb.CreateXor(rotr(x, 28), rotr(x, 34)), rotr(x, 39));
+				}
+				r = irb.CreateOr(r, irb.CreateShl(irb.CreateZExt(v, i128), sh));
+			}
+			out(r);
+			return;
+		}
+		case PPC_INS_XVTLSBB:
+		{
+			int bf = crField(0);
+			if (bf < 0) break;
+			auto* lsb = irb.CreateAnd(vr(1), llvm::ConstantInt::get(i128, llvm::APInt::getSplat(128, llvm::APInt(8, 1))));
+			auto* allOnes = irb.CreateICmpEQ(lsb, llvm::ConstantInt::get(i128, llvm::APInt::getSplat(128, llvm::APInt(8, 1))));
+			auto* allZero = irb.CreateICmpEQ(lsb, c128(0));
+			setCr(unsigned(bf), allOnes, irb.getFalse(), allZero);
+			return;
+		}
+		case PPC_INS_XVCVBF16SPN:
+			out(lanes(32, vr(1), nullptr, [&](llvm::Value* x, llvm::Value*) {
+				return irb.CreateShl(x, 16);
+			}));
+			return;
+		case PPC_INS_XVCVSPBF16:
+			out(lanes(32, vr(1), nullptr, [&](llvm::Value* x, llvm::Value*) {
+				auto* ty = x->getType();
+				auto c = [&](uint64_t v) { return llvm::ConstantInt::get(ty, v); };
+				auto* isNan = irb.CreateICmpUGT(irb.CreateAnd(x, c(0x7fffffff)), c(0x7f800000));
+				auto* lsb = irb.CreateAnd(irb.CreateLShr(x, 16), c(1));
+				auto* rounded = irb.CreateLShr(irb.CreateAdd(irb.CreateAdd(x, c(0x7fff)), lsb), 16);
+				auto* nan = irb.CreateOr(irb.CreateLShr(x, 16), c(0x40));
+				return irb.CreateSelect(isNan, nan, rounded);
+			}));
+			return;
+		default:
+			break;
+	}
+	translatePseudoAsmGeneric(i, pi, irb);
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec
