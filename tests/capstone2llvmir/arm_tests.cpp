@@ -12792,6 +12792,62 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UQRSHL_negative_rounds_right)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ERET)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_LR, 0x4000},
+	});
+
+	emulate_bin("6e 00 60 e1"); // eret
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getReturnFunction(), {0x4000}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_RFEIA)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_R0, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x5000_dw},
+	});
+
+	emulate_bin("00 0a 90 f8"); // rfeia r0
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getReturnFunction(), {0x5000}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_RFEDB_writeback)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_R1, 0x2008},
+	});
+	setMemory({
+		{0x2000, 0x6000_dw},
+	});
+
+	emulate_bin("00 0a 31 f9"); // rfedb r1!
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R1, 0x2000},
+	});
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getReturnFunction(), {0x6000}},
+	});
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

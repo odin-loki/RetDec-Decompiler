@@ -376,7 +376,7 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorArm_impl::*)(cs_insn* i, cs
 		{ARM_INS_DMB, &Capstone2LlvmIrTranslatorArm_impl::translateFence},
 		{ARM_INS_DSB, &Capstone2LlvmIrTranslatorArm_impl::translateFence},
 		{ARM_INS_EOR, &Capstone2LlvmIrTranslatorArm_impl::translateEor},
-		{ARM_INS_ERET, nullptr},
+		{ARM_INS_ERET, &Capstone2LlvmIrTranslatorArm_impl::translateExceptionReturn},
 		{ARM_INS_VMOV, &Capstone2LlvmIrTranslatorArm_impl::translateVfpMov},
 		// Capstone 6.x prints `vmov.f64 d0, #1.0` as VMOV (the 5.x FCONSTD/FCONSTS
 		// ids are gone). translateVfpMov already handles ARM_OP_FP.
@@ -465,10 +465,10 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorArm_impl::*)(cs_insn* i, cs
 		{ARM_INS_REV, &Capstone2LlvmIrTranslatorArm_impl::translateRev},
 		{ARM_INS_REV16, &Capstone2LlvmIrTranslatorArm_impl::translateRev16},
 		{ARM_INS_REVSH, &Capstone2LlvmIrTranslatorArm_impl::translateRev16},
-		{ARM_INS_RFEDA, nullptr},
-		{ARM_INS_RFEDB, nullptr},
-		{ARM_INS_RFEIA, nullptr},
-		{ARM_INS_RFEIB, nullptr},
+		{ARM_INS_RFEDA, &Capstone2LlvmIrTranslatorArm_impl::translateExceptionReturn},
+		{ARM_INS_RFEDB, &Capstone2LlvmIrTranslatorArm_impl::translateExceptionReturn},
+		{ARM_INS_RFEIA, &Capstone2LlvmIrTranslatorArm_impl::translateExceptionReturn},
+		{ARM_INS_RFEIB, &Capstone2LlvmIrTranslatorArm_impl::translateExceptionReturn},
 		{ARM_INS_RSB, &Capstone2LlvmIrTranslatorArm_impl::translateSub},
 		{ARM_INS_RSC, &Capstone2LlvmIrTranslatorArm_impl::translateSbc},
 		{ARM_INS_SADD16, &Capstone2LlvmIrTranslatorArm_impl::translateParallelArith},

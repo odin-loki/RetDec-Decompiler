@@ -9093,5 +9093,46 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMveScalarRegShift(cs_insn* i, c
 	storeRegister(ai->operands[0].reg, irb.CreateTrunc(r, i32), irb);
 }
 
+
+/**
+ * ERET returns to LR (the non-Hyp SUBS PC, LR, #0 view; ELR_hyp is not
+ * modelled). RFE{IA,IB,DA,DB} returns to the word loaded from [Rn] at the
+ * mode's offset; the SPSR word is not applied to CPSR.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateExceptionReturn(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	if (armIsId(i, ARM_INS_ERET))
+	{
+		generateReturnFunctionCall(irb, loadRegister(ARM_REG_LR, irb));
+		return;
+	}
+	if (ai->op_count != 1 || ai->operands[0].type != ARM_OP_MEM)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	auto* ty = getDefaultType();
+	auto rn = ai->operands[0].mem.base;
+	auto* base = loadRegister(rn, irb);
+	int64_t off = 0, wb = 8;
+	switch (i->id)
+	{
+		case ARM_INS_RFEIA: off = 0; wb = 8; break;
+		case ARM_INS_RFEIB: off = 4; wb = 8; break;
+		case ARM_INS_RFEDA: off = -4; wb = -8; break;
+		case ARM_INS_RFEDB: off = -8; wb = -8; break;
+		default:
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+	}
+	auto* addr = irb.CreateAdd(base, llvm::ConstantInt::getSigned(ty, off));
+	auto* target = loadIntPtr(irb, addr, ty);
+	if (insnWriteback())
+	{
+		storeRegister(rn, irb.CreateAdd(base, llvm::ConstantInt::getSigned(ty, wb)), irb);
+	}
+	generateReturnFunctionCall(irb, target);
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec
