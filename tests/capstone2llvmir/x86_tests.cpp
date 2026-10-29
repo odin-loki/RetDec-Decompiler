@@ -23681,6 +23681,36 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPHADDUBQ_xop)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPMACSSWW_saturates)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0x00037fff);
+	setXmm(X86_REG_XMM2, 0, 0xffff0002);
+	setXmm(X86_REG_XMM3, 0, 0x00000001);
+
+	emulate_bin("8f e8 70 85 c2 30"); // vpmacssww xmm0, xmm1, xmm2, xmm3
+
+	EXPECT_EQ(0xfffd7fffULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPMACSDQH_uses_high_dwords)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0x0000000300000000);
+	setXmm(X86_REG_XMM2, 0, 0xfffffffe00000000);
+	setXmm(X86_REG_XMM3, 5, 10);
+
+	emulate_bin("8f e8 70 9f c2 30"); // vpmacsdqh xmm0, xmm1, xmm2, xmm3
+
+	EXPECT_EQ(4ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(5ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

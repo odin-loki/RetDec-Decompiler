@@ -9682,10 +9682,11 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvxChunks(cs_insn* i, cs_x86* x
 {
 	// Whole-chunk moves: broadcasts of a 64/128/256-bit block, 128-bit lane
 	// shuffles, extracts of 128/256-bit halves, and XOP horizontal add/sub.
-	enum Kind { BCAST, SHUF, EXTRACT, HADD, HSUB };
+	enum Kind { BCAST, SHUF, EXTRACT, HADD, HSUB, MACS };
 	Kind kind = BCAST;
 	unsigned sb = 0, db = 0;
 	bool sgn = true;
+	bool hiHalf = false;
 	switch (i->id)
 	{
 	case X86_INS_VBROADCASTF32X2: case X86_INS_VBROADCASTI32X2: sb = 64; break;
@@ -9712,18 +9713,28 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvxChunks(cs_insn* i, cs_x86* x
 	case X86_INS_VPHSUBBW: kind = HSUB; sb = 8; db = 16; break;
 	case X86_INS_VPHSUBWD: kind = HSUB; sb = 16; db = 32; break;
 	case X86_INS_VPHSUBDQ: kind = HSUB; sb = 32; db = 64; break;
+	// XOP multiply-accumulate: dst = src1 * src2 + src3 per lane; db is the
+	// accumulator lane, sb the factor lane (DQL/DQH pick the low/high dword).
+	case X86_INS_VPMACSWW: kind = MACS; sb = 16; db = 16; sgn = false; break;
+	case X86_INS_VPMACSSWW: kind = MACS; sb = 16; db = 16; break;
+	case X86_INS_VPMACSDD: kind = MACS; sb = 32; db = 32; sgn = false; break;
+	case X86_INS_VPMACSSDD: kind = MACS; sb = 32; db = 32; break;
+	case X86_INS_VPMACSDQL: kind = MACS; sb = 32; db = 64; sgn = false; break;
+	case X86_INS_VPMACSSDQL: kind = MACS; sb = 32; db = 64; break;
+	case X86_INS_VPMACSDQH: kind = MACS; sb = 32; db = 64; sgn = false; hiHalf = true; break;
+	case X86_INS_VPMACSSDQH: kind = MACS; sb = 32; db = 64; hiHalf = true; break;
 	default:
 		translatePseudoAsmGeneric(i, xi, irb);
 		return;
 	}
-	unsigned want = kind == SHUF ? 4 : (kind == EXTRACT ? 3 : 2);
+	unsigned want = kind == SHUF || kind == MACS ? 4 : (kind == EXTRACT ? 3 : 2);
 	bool bcast = false;
 	for (unsigned k = 0; k < xi->op_count; ++k)
 	{
 		bcast |= xi->operands[k].avx_bcast != X86_AVX_BCAST_INVALID;
 	}
 	if (xi->op_count != want || hasEvexModifier(xi) || bcast
-			|| (want > 2 && xi->operands[want - 1].type != X86_OP_IMM))
+			|| (want > 2 && kind != MACS && xi->operands[want - 1].type != X86_OP_IMM))
 	{
 		translatePseudoAsmGeneric(i, xi, irb);
 		return;
@@ -9821,6 +9832,34 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvxChunks(cs_insn* i, cs_x86* x
 					s = irb.CreateAdd(s, sgn ? irb.CreateSExt(e, et) : irb.CreateZExt(e, et));
 				}
 			}
+			res = irb.CreateOr(res, irb.CreateShl(irb.CreateZExt(s, dt), llvm::ConstantInt::get(dt, k * db)));
+		}
+		break;
+	}
+	case MACS:
+	{
+		// sgn here means "saturate"; the products are always signed.
+		if (destBits != 128) { translatePseudoAsmGeneric(i, xi, irb); return; }
+		auto* a = load(1, 128);
+		auto* b = load(2, 128);
+		auto* c = load(3, 128);
+		if (a == nullptr || b == nullptr || c == nullptr) { translatePseudoAsmGeneric(i, xi, irb); return; }
+		auto* wt = irb.getIntNTy(db * 2);
+		auto* et = irb.getIntNTy(db);
+		res = llvm::ConstantInt::get(dt, 0);
+		for (unsigned k = 0; k < 128 / db; ++k)
+		{
+			unsigned fi = db == sb ? k : 2 * k + (hiHalf ? 1 : 0);
+			auto* p = irb.CreateMul(irb.CreateSExt(chunk(a, fi, sb), wt), irb.CreateSExt(chunk(b, fi, sb), wt));
+			llvm::Value* s = irb.CreateAdd(p, irb.CreateSExt(chunk(c, k, db), wt));
+			if (sgn)
+			{
+				auto* mx = llvm::ConstantInt::get(wt, llvm::APInt::getSignedMaxValue(db).sext(db * 2));
+				auto* mn = llvm::ConstantInt::get(wt, llvm::APInt::getSignedMinValue(db).sext(db * 2));
+				s = irb.CreateSelect(irb.CreateICmpSGT(s, mx), mx, s);
+				s = irb.CreateSelect(irb.CreateICmpSLT(s, mn), mn, s);
+			}
+			s = irb.CreateTrunc(s, et);
 			res = irb.CreateOr(res, irb.CreateShl(irb.CreateZExt(s, dt), llvm::ConstantInt::get(dt, k * db)));
 		}
 		break;
