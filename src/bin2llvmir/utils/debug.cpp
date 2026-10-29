@@ -5,6 +5,7 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <atomic>
 #include <fstream>
 
 #include <llvm/IR/CFG.h>
@@ -59,7 +60,7 @@ void dumpModuleToFile(
 		fs::path dirName,
 		const std::string& fileName)
 {
-	static unsigned cntr = 0;
+	static std::atomic<unsigned> cntr{0};
 	std::string n = fileName.empty()
 			? "dump_" + std::to_string(cntr++) + ".ll"
 			: fileName;

@@ -315,7 +315,7 @@ llvm::Function* getWriteUndefQword(llvm::Module* m)
 
 char ValueProtect::ID = 0;
 
-std::map<llvm::Type*, llvm::Function*> ValueProtect::_type2fnc;
+thread_local std::map<llvm::Type*, llvm::Function*> ValueProtect::_type2fnc;
 
 static RegisterPass<ValueProtect> X(
 		"retdec-value-protect",

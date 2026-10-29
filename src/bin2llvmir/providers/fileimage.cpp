@@ -653,7 +653,7 @@ bool FileImage::isImportTerminating(
 //=============================================================================
 //
 
-std::map<llvm::Module*, FileImage> FileImageProvider::_module2image;
+ModuleMap<llvm::Module*, FileImage> FileImageProvider::_module2image;
 
 /**
  * Create and add to provider a file image created from file at @a path for
@@ -721,6 +721,11 @@ bool FileImageProvider::getFileImage(
 /**
  * Clear all stored data.
  */
+void FileImageProvider::clear(llvm::Module* m)
+{
+	_module2image.erase(m);
+}
+
 void FileImageProvider::clear()
 {
 	_module2image.clear();

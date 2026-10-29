@@ -237,7 +237,7 @@ llvm::Type* Lti::getLlvmType(std::shared_ptr<retdec::ctypes::Type> type)
 //=============================================================================
 //
 
-std::map<llvm::Module*, Lti> LtiProvider::_module2lti;
+ModuleMap<llvm::Module*, Lti> LtiProvider::_module2lti;
 
 Lti* LtiProvider::addLti(
 	llvm::Module *m,
@@ -264,6 +264,11 @@ bool LtiProvider::getLti(llvm::Module* m, Lti*& lti)
 {
 	lti = getLti(m);
 	return lti != nullptr;
+}
+
+void LtiProvider::clear(llvm::Module* m)
+{
+	_module2lti.erase(m);
 }
 
 void LtiProvider::clear()

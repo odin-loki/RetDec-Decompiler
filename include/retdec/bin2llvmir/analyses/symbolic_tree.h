@@ -156,14 +156,14 @@ class SymbolicTree
 		static void setNaryLimit(unsigned n);
 
 	private:
-		static Abi* _abi;
-		static Config* _config;
-		static bool _val2valUsed;
-		static bool _trackThroughAllocaLoads;
-		static bool _trackThroughGeneralRegisterLoads;
-		static bool _trackOnlyFlagRegisters;
-		static bool _simplifyAtCreation;
-		static unsigned _naryLimit;
+		static thread_local Abi* _abi;
+		static thread_local Config* _config;
+		static thread_local bool _val2valUsed;
+		static thread_local bool _trackThroughAllocaLoads;
+		static thread_local bool _trackThroughGeneralRegisterLoads;
+		static thread_local bool _trackOnlyFlagRegisters;
+		static thread_local bool _simplifyAtCreation;
+		static thread_local unsigned _naryLimit;
 
 	// Private methods.
 	//

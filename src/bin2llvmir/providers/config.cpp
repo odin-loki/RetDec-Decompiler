@@ -743,7 +743,7 @@ void Config::tagFunctionsWithUsedCryptoGlobals()
 //=============================================================================
 //
 
-std::map<llvm::Module*, Config> ConfigProvider::_module2config;
+ModuleMap<llvm::Module*, Config> ConfigProvider::_module2config;
 
 Config* ConfigProvider::addConfig(llvm::Module* m, retdec::config::Config& c)
 {
@@ -775,6 +775,11 @@ void ConfigProvider::doFinalization(llvm::Module* m)
 /**
  * Clear all stored data.
  */
+void ConfigProvider::clear(llvm::Module* m)
+{
+	_module2config.erase(m);
+}
+
 void ConfigProvider::clear()
 {
 	_module2config.clear();

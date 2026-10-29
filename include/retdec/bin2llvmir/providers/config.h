@@ -8,6 +8,7 @@
 #ifndef RETDEC_BIN2LLVMIR_PROVIDERS_CONFIG_H
 #define RETDEC_BIN2LLVMIR_PROVIDERS_CONFIG_H
 
+#include "retdec/bin2llvmir/providers/module_map.h"
 #include <optional>
 
 #include "retdec/config/config.h"
@@ -207,9 +208,10 @@ class ConfigProvider
 		static bool getConfig(llvm::Module* m, Config*& c);
 		static void doFinalization(llvm::Module* m);
 		static void clear();
+		static void clear(llvm::Module* m);
 
 	private:
-		static std::map<llvm::Module*, Config> _module2config;
+		static ModuleMap<llvm::Module*, Config> _module2config;
 };
 
 } // namespace bin2llvmir

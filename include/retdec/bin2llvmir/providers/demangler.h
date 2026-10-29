@@ -8,6 +8,7 @@
 #ifndef RETDEC_BIN2LLVMIR_PROVIDERS_DEMANGLER_H
 #define RETDEC_BIN2LLVMIR_PROVIDERS_DEMANGLER_H
 
+#include "retdec/bin2llvmir/providers/module_map.h"
 #include <memory>
 #include <map>
 
@@ -113,9 +114,11 @@ public:
 
 	static void clear();
 
+	static void clear(llvm::Module* m);
+
 private:
 	/// Mapping of modules to demanglers associated with them.
-	static std::map<llvm::Module *, std::unique_ptr<Demangler>> _module2demangler;
+	static ModuleMap<llvm::Module*, std::unique_ptr<Demangler>> _module2demangler;
 };
 
 } // namespace bin2llvmir

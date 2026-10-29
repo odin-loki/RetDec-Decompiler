@@ -698,14 +698,14 @@ bool SymbolicTree::isNary(unsigned N) const
 //==============================================================================
 //
 
-Abi* SymbolicTree::_abi = nullptr;
-Config* SymbolicTree::_config = nullptr;
-bool SymbolicTree::_val2valUsed = false;
-bool SymbolicTree::_trackThroughAllocaLoads = true;
-bool SymbolicTree::_trackThroughGeneralRegisterLoads = true;
-bool SymbolicTree::_trackOnlyFlagRegisters = false;
-bool SymbolicTree::_simplifyAtCreation = true;
-unsigned SymbolicTree::_naryLimit = 3;
+thread_local Abi* SymbolicTree::_abi = nullptr;
+thread_local Config* SymbolicTree::_config = nullptr;
+thread_local bool SymbolicTree::_val2valUsed = false;
+thread_local bool SymbolicTree::_trackThroughAllocaLoads = true;
+thread_local bool SymbolicTree::_trackThroughGeneralRegisterLoads = true;
+thread_local bool SymbolicTree::_trackOnlyFlagRegisters = false;
+thread_local bool SymbolicTree::_simplifyAtCreation = true;
+thread_local unsigned SymbolicTree::_naryLimit = 3;
 
 void SymbolicTree::clear()
 {

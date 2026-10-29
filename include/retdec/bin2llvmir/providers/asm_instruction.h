@@ -8,6 +8,7 @@
 #ifndef RETDEC_BIN2LLVMIR_PROVIDERS_ASM_INSTRUCTION_H
 #define RETDEC_BIN2LLVMIR_PROVIDERS_ASM_INSTRUCTION_H
 
+#include "retdec/bin2llvmir/providers/module_map.h"
 #include <map>
 
 #include <capstone/capstone.h>
@@ -179,6 +180,7 @@ class AsmInstruction
 				llvm::Function* f);
 		static bool isLlvmToAsmInstruction(const llvm::Value* inst);
 		static void clear();
+		static void clear(const llvm::Module* m);
 
 	private:
 		const llvm::GlobalVariable* getLlvmToAsmGlobalVariablePrivate(
@@ -195,8 +197,8 @@ class AsmInstruction
 
 	private:
 		llvm::StoreInst* _llvmToAsmInstr = nullptr;
-		static std::vector<ModuleGlobalPair> _module2global;
-		static std::vector<ModuleInstructionMap> _module2instMap;
+		static ModuleMap<const llvm::Module*, llvm::GlobalVariable*> _module2global;
+		static ModuleMap<const llvm::Module*, Llvm2CapstoneInsnMap> _module2instMap;
 
 	public:
 		template<

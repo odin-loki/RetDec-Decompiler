@@ -8,6 +8,7 @@
 #ifndef RETDEC_BIN2LLVMIR_PROVIDERS_LTI_H
 #define RETDEC_BIN2LLVMIR_PROVIDERS_LTI_H
 
+#include "retdec/bin2llvmir/providers/module_map.h"
 #include <memory>
 #include <llvm/IR/Module.h>
 
@@ -66,9 +67,10 @@ class LtiProvider
 		static Lti* getLti(llvm::Module* m);
 		static bool getLti(llvm::Module* m, Lti*& lti);
 		static void clear();
+		static void clear(llvm::Module* m);
 
 	private:
-		static std::map<llvm::Module*, Lti> _module2lti;
+		static ModuleMap<llvm::Module*, Lti> _module2lti;
 };
 
 } // namespace bin2llvmir

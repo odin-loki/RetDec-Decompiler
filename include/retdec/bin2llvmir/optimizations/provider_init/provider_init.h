@@ -34,6 +34,14 @@ class ProviderInitialization : public llvm::ModulePass
 		retdec::config::Config* _config = nullptr;
 };
 
+/**
+ * Drops every provider entry belonging to @a m: config, file image, ABI,
+ * demangler, debug info, LTI, names and the asm-instruction maps. Call it
+ * when a pipeline is done with its module so concurrent pipelines do not
+ * accumulate each other's state.
+ */
+void releaseProviders(llvm::Module* m);
+
 } // namespace bin2llvmir
 } // namespace retdec
 

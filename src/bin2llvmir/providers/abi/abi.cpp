@@ -339,7 +339,7 @@ Config* Abi::getConfig() const
 //==============================================================================
 //
 
-std::map<llvm::Module*, std::unique_ptr<Abi>> AbiProvider::_module2abi;
+ModuleMap<llvm::Module*, std::unique_ptr<Abi>> AbiProvider::_module2abi;
 
 Abi* AbiProvider::addAbi(
 		llvm::Module* m,
@@ -448,6 +448,11 @@ bool AbiProvider::getAbi(llvm::Module* m, Abi*& abi)
 {
 	abi = getAbi(m);
 	return abi != nullptr;
+}
+
+void AbiProvider::clear(llvm::Module* m)
+{
+	_module2abi.erase(m);
 }
 
 void AbiProvider::clear()

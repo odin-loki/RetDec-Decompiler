@@ -5,6 +5,7 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <atomic>
 #include "retdec/utils/bounds.h"
 #include <cassert>
 #include <cstdarg>
@@ -630,7 +631,7 @@ void PDBTypeStruct::parse(lfStructure* record, int size, PDBTypeDefIndexMap& typ
 		}
 	}
 
-	static unsigned anonCntr = 0;
+	static std::atomic<unsigned> anonCntr{0};
 	if (struct_name.empty())
 	{
 		struct_name = "anon_struct_" + std::to_string(anonCntr++);

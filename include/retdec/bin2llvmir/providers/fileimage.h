@@ -8,6 +8,7 @@
 #ifndef RETDEC_BIN2LLVMIR_PROVIDERS_FILEIMAGE_H
 #define RETDEC_BIN2LLVMIR_PROVIDERS_FILEIMAGE_H
 
+#include "retdec/bin2llvmir/providers/module_map.h"
 #include <memory>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Module.h>
@@ -137,6 +138,8 @@ class FileImageProvider
 
 		static void clear();
 
+		static void clear(llvm::Module* m);
+
 	private:
 		static FileImage* addFileImage(
 				llvm::Module* m,
@@ -144,7 +147,7 @@ class FileImageProvider
 
 	private:
 		/// Mapping of modules to file images associated with them.
-		static std::map<llvm::Module*, FileImage> _module2image;
+		static ModuleMap<llvm::Module*, FileImage> _module2image;
 };
 
 } // namespace bin2llvmir

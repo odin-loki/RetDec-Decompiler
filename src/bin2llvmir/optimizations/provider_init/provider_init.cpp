@@ -171,21 +171,31 @@ void ProviderInitialization::setConfig(retdec::config::Config* c)
 	_config = c;
 }
 
+void releaseProviders(llvm::Module* m)
+{
+	AbiProvider::clear(m);
+	AsmInstruction::clear(m);
+	ConfigProvider::clear(m);
+	DebugFormatProvider::clear(m);
+	DemanglerProvider::clear(m);
+	FileImageProvider::clear(m);
+	LtiProvider::clear(m);
+	NamesProvider::clear(m);
+	// SymbolicTree's settings are per thread, and a thread runs one
+	// pipeline at a time.
+	SymbolicTree::clear();
+}
+
 /**
  * @return Always @c false -- this pass does not modify module.
  */
 bool ProviderInitialization::runOnModule(Module& m)
 {
-	AbiProvider::clear();
-	AsmInstruction::clear();
-	ConfigProvider::clear();
-	DebugFormatProvider::clear();
-	DemanglerProvider::clear();
-	FileImageProvider::clear();
-	LtiProvider::clear();
-	NamesProvider::clear();
-	SymbolicTree::clear();
-	CallingConventionProvider::clear();
+	// Drop only this module's entries: other pipelines may be running on
+	// other threads with entries of their own in the same tables. A module
+	// address can be reused after an earlier module is destroyed, so the
+	// stale entry for it must go before the new ones are added.
+	releaseProviders(&m);
 
 	// Config.
 	//
@@ -416,7 +426,7 @@ bool ProviderInitialization::runOnModule(Module& m)
 
 	NamesProvider::addNames(&m, c, debug, f, d, lti);
 
-	AsmInstruction::clear();
+	AsmInstruction::clear(&m);
 
 	return false;
 }

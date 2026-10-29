@@ -25,7 +25,7 @@ namespace bin2llvmir {
 //=============================================================================
 //
 
-std::map<Module*, DebugFormat> DebugFormatProvider::_module2debug;
+ModuleMap<llvm::Module*, DebugFormat> DebugFormatProvider::_module2debug;
 
 /**
  * Create and add to provider a debug info for the given module @a m, file
@@ -84,6 +84,11 @@ bool DebugFormatProvider::getDebugFormat(llvm::Module* m, DebugFormat*& df)
 /**
  * Clear all stored data.
  */
+void DebugFormatProvider::clear(llvm::Module* m)
+{
+	_module2debug.erase(m);
+}
+
 void DebugFormatProvider::clear()
 {
 	_module2debug.clear();

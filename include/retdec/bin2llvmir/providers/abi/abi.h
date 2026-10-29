@@ -8,6 +8,7 @@
 #ifndef RETDEC_BIN2LLVMIR_PROVIDERS_ABI_ABI_H
 #define RETDEC_BIN2LLVMIR_PROVIDERS_ABI_ABI_H
 
+#include "retdec/bin2llvmir/providers/module_map.h"
 #include <map>
 #include <memory>
 #include <set>
@@ -172,9 +173,10 @@ class AbiProvider
 		static Abi* getAbi(llvm::Module* m);
 		static bool getAbi(llvm::Module* m, Abi*& abi);
 		static void clear();
+		static void clear(llvm::Module* m);
 
 	private:
-		static std::map<llvm::Module*, std::unique_ptr<Abi>> _module2abi;
+		static ModuleMap<llvm::Module*, std::unique_ptr<Abi>> _module2abi;
 };
 
 } // namespace bin2llvmir

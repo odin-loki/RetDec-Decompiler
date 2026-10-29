@@ -546,7 +546,7 @@ bool NameContainer::loadImportOrds(const std::string& libName)
 //==============================================================================
 //
 
-std::map<llvm::Module*, NameContainer> NamesProvider::_module2names;
+ModuleMap<llvm::Module*, NameContainer> NamesProvider::_module2names;
 
 NameContainer* NamesProvider::addNames(
 		llvm::Module* m,
@@ -579,6 +579,11 @@ bool NamesProvider::getNames(llvm::Module* m, NameContainer*& names)
 {
 	names = getNames(m);
 	return names != nullptr;
+}
+
+void NamesProvider::clear(llvm::Module* m)
+{
+	_module2names.erase(m);
 }
 
 void NamesProvider::clear()

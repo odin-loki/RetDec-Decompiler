@@ -62,7 +62,7 @@ class ValueProtect : public llvm::ModulePass
 		llvm::Module* _module = nullptr;
 		Config* _config = nullptr;
 		Abi* _abi = nullptr;
-		static std::map<llvm::Type*, llvm::Function*> _type2fnc;
+		static thread_local std::map<llvm::Type*, llvm::Function*> _type2fnc;
 };
 
 } // namespace bin2llvmir

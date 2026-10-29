@@ -665,6 +665,15 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 		context = std::make_unique<llvm::LLVMContext>();
 		module = createLlvmModule(*context);
 	}
+	// The providers hold this module's Config, FileImage, ABI and the rest
+	// in process-wide tables keyed by the module. Drop them when this
+	// decompilation ends, however it ends, and before the module itself goes
+	// (this guard is declared after it, so it is destroyed first).
+	struct ProviderRelease
+	{
+		llvm::Module* m;
+		~ProviderRelease() { bin2llvmir::releaseProviders(m); }
+	} providerRelease{module.get()};
 
 	// Create a PassManager to hold and optimize the collection of passes we
 	// are about to build.

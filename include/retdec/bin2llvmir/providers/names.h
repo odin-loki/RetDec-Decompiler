@@ -8,6 +8,7 @@
 #ifndef RETDEC_BIN2LLVMIR_PROVIDERS_NAMES_H
 #define RETDEC_BIN2LLVMIR_PROVIDERS_NAMES_H
 
+#include "retdec/bin2llvmir/providers/module_map.h"
 #include <map>
 #include <set>
 
@@ -212,9 +213,10 @@ class NamesProvider
 		static NameContainer* getNames(llvm::Module* m);
 		static bool getNames(llvm::Module* m, NameContainer*& names);
 		static void clear();
+		static void clear(llvm::Module* m);
 
 	private:
-		static std::map<llvm::Module*, NameContainer> _module2names;
+		static ModuleMap<llvm::Module*, NameContainer> _module2names;
 };
 
 } // namespace bin2llvmir

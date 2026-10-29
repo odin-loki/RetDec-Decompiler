@@ -7,6 +7,7 @@
 
 #define LOG_ENABLED false
 
+#include <atomic>
 #include <cstring>
 #include <memory>
 #include <llvm/DebugInfo/DWARF/LowLevel/DWARFExpression.h>
@@ -408,7 +409,7 @@ std::string DebugFormat::_loadDwarf_type(llvm::DWARFDie die)
 				return it->second;
 			}
 
-			static unsigned anonStuctCntr = 0;
+			static std::atomic<unsigned> anonStuctCntr{0};
 			auto n = llvm::dwarf::toString(die.find(llvm::dwarf::DW_AT_name));
 			std::string name = n
 					? std::string("%") + *n

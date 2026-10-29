@@ -23,8 +23,8 @@ using namespace llvm;
 namespace retdec {
 namespace bin2llvmir {
 
-std::vector<AsmInstruction::ModuleGlobalPair> AsmInstruction::_module2global;
-std::vector<AsmInstruction::ModuleInstructionMap> AsmInstruction::_module2instMap;
+ModuleMap<const llvm::Module*, llvm::GlobalVariable*> AsmInstruction::_module2global;
+ModuleMap<const llvm::Module*, Llvm2CapstoneInsnMap> AsmInstruction::_module2instMap;
 
 AsmInstruction::AsmInstruction() {}
 
@@ -190,33 +190,23 @@ const llvm::GlobalVariable* AsmInstruction::getLlvmToAsmGlobalVariablePrivate(ll
 
 Llvm2CapstoneInsnMap& AsmInstruction::getLlvmToCapstoneInsnMap(const llvm::Module* m)
 {
-	for (auto& p: _module2instMap)
+	auto f = _module2instMap.find(m);
+	if (f != _module2instMap.end())
 	{
-		if (p.first == m)
-		{
-			return p.second;
-		}
+		return f->second;
 	}
-
-	auto it = _module2instMap.emplace(_module2instMap.end(), std::make_pair(m, std::map<llvm::StoreInst*, cs_insn*>()));
-	return it->second;
+	return _module2instMap.emplace(m, Llvm2CapstoneInsnMap()).first->second;
 }
 
 llvm::GlobalVariable* AsmInstruction::getLlvmToAsmGlobalVariable(const llvm::Module* m)
 {
-	for (auto& p: _module2global)
-	{
-		if (p.first == m)
-		{
-			return p.second;
-		}
-	}
-	return nullptr;
+	auto f = _module2global.find(m);
+	return f != _module2global.end() ? f->second : nullptr;
 }
 
 void AsmInstruction::setLlvmToAsmGlobalVariable(const llvm::Module* m, llvm::GlobalVariable* gv)
 {
-	_module2global.emplace_back(m, gv);
+	_module2global.emplace(m, gv);
 }
 
 retdec::common::Address AsmInstruction::getInstructionAddress(llvm::Instruction* inst)
@@ -310,6 +300,12 @@ bool AsmInstruction::isLlvmToAsmInstruction(const llvm::Value* inst)
 	return s->getPointerOperand() == getLlvmToAsmGlobalVariable(m);
 }
 
+void AsmInstruction::clear(const llvm::Module* m)
+{
+	_module2global.erase(m);
+	_module2instMap.erase(m);
+}
+
 void AsmInstruction::clear()
 {
 	_module2global.clear();
@@ -328,16 +324,13 @@ bool AsmInstruction::isInvalid() const
 
 cs_insn* AsmInstruction::getCapstoneInsn() const
 {
-	for (auto& p: _module2instMap)
+	auto p = _module2instMap.find(_llvmToAsmInstr->getModule());
+	if (p == _module2instMap.end())
 	{
-		if (p.first == _llvmToAsmInstr->getModule())
-		{
-			auto it = p.second.find(_llvmToAsmInstr);
-			return it != p.second.end() ? it->second : nullptr;
-		}
+		return nullptr;
 	}
-
-	return nullptr;
+	auto it = p->second.find(_llvmToAsmInstr);
+	return it != p->second.end() ? it->second : nullptr;
 }
 
 std::string AsmInstruction::getDsm() const

@@ -137,7 +137,7 @@ std::unique_ptr<Demangler> DemanglerFactory::getBorlandDemangler(
 /******************************************************************/
 /********************** Demangler Provider ************************/
 /******************************************************************/
-std::map<Module *, std::unique_ptr<Demangler>> DemanglerProvider::_module2demangler;
+ModuleMap<llvm::Module*, std::unique_ptr<Demangler>> DemanglerProvider::_module2demangler;
 
 /**
  * Create and add to provider a demangler for the given module @a m
@@ -197,6 +197,11 @@ bool DemanglerProvider::getDemangler(
 /**
  * Clear all stored data.
  */
+void DemanglerProvider::clear(llvm::Module* m)
+{
+	_module2demangler.erase(m);
+}
+
 void DemanglerProvider::clear()
 {
 	_module2demangler.clear();

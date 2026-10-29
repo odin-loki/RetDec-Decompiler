@@ -5,6 +5,7 @@
 * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
+#include <atomic>
 #include <fstream>
 
 #include "retdec/llvmir2hll/ir/add_op_expr.h"
@@ -94,7 +95,7 @@ void BIRWriter::emit(ShPtr<Module> m, const std::string& fileName) {
 	emitFunctions();
 
 	fs::path dirName(".");
-	static unsigned cntr = 0;
+	static std::atomic<unsigned> cntr{0};
 	std::string n = fileName.empty()
 			? "dump_" + std::to_string(cntr++) + ".bir"
 			: fileName;

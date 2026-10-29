@@ -8,6 +8,7 @@
 #ifndef RETDEC_BIN2LLVMIR_PROVIDERS_DEBUGFORMAT_H
 #define RETDEC_BIN2LLVMIR_PROVIDERS_DEBUGFORMAT_H
 
+#include "retdec/bin2llvmir/providers/module_map.h"
 #include <llvm/IR/Module.h>
 
 #include "retdec/bin2llvmir/providers/demangler.h"
@@ -51,9 +52,11 @@ class DebugFormatProvider
 
 		static void clear();
 
+		static void clear(llvm::Module* m);
+
 	private:
 		/// Mapping of modules to debug info associated with them.
-		static std::map<llvm::Module*, DebugFormat> _module2debug;
+		static ModuleMap<llvm::Module*, DebugFormat> _module2debug;
 };
 
 } // namespace bin2llvmir
