@@ -73,6 +73,10 @@ const unsigned MAX_NODE_SPLITS = 64;
 /// controlled node splitting may clone.
 const unsigned MAX_SPLIT_WEIGHT = 16;
 
+/// Larger split weights tried, in order, when the retry pass still leaves
+/// gotos. A result is kept only within the size budget of convertFuncBody.
+const unsigned ESCALATED_SPLIT_WEIGHTS[] = {24, 32, 48};
+
 /// LLVM instructions that may be copied to make one irreducible cycle
 /// reducible. Per function, at most half of its instructions are copied.
 const unsigned MAX_IRREDUCIBLE_COPY_PER_CYCLE = 96;
@@ -143,12 +147,40 @@ ShPtr<Statement> StructureConverter::convertFuncBody(llvm::Function &func) {
 	// at this stage does not survive to the output (heapsort-gcc-O2 went
 	// from 3 to 5); ask for a clear gain.
 	const unsigned minGain = std::max(2u, first.gotos / 5);
+	ShPtr<Statement> best = body;
+	BodyMeasure bestM = first;
+	auto bestLabels = labelsAfterFirst;
 	if (second.gotos + minGain <= first.gotos &&
 			second.statements <= 2 * first.statements + 4 * MAX_SPLIT_WEIGHT) {
-		return retry;
+		best = retry;
+		bestM = second;
+		bestLabels = labelsHandler->getUsedLabels();
 	}
-	labelsHandler->setUsedLabels(labelsAfterFirst);
-	return body;
+
+	// If gotos remain, let larger blocks be split, within a per-function
+	// budget: the result may be at most 1.5 times as big as the classic one
+	// and must have fewer gotos than the best so far.
+	const unsigned budget = first.statements + first.statements / 2;
+	for (unsigned w : ESCALATED_SPLIT_WEIGHTS) {
+		if (bestM.gotos == 0) {
+			break;
+		}
+		labelsHandler->setUsedLabels(labelsBefore);
+		splitWeightLimit = w;
+		auto attempt = structureFuncBody(func, true);
+		splitWeightLimit = MAX_SPLIT_WEIGHT;
+		const auto m = measureStructuredBody(attempt);
+		if (m.statements > budget) {
+			break;
+		}
+		if (m.gotos + std::max(2u, bestM.gotos / 5) <= bestM.gotos) {
+			best = attempt;
+			bestM = m;
+			bestLabels = labelsHandler->getUsedLabels();
+		}
+	}
+	labelsHandler->setUsedLabels(bestLabels);
+	return best;
 }
 
 /**
@@ -558,7 +590,7 @@ bool StructureConverter::tryControlledNodeSplitting(ShPtr<CFGNode> cfg,
 	// "five flat statements" rule rejected every candidate. Loops, switches
 	// and gotos are never cloned here.
 	std::function<bool(ShPtr<Statement>, unsigned &)> weigh =
-			[&weigh, within](ShPtr<Statement> stmt, unsigned &weight) -> bool {
+			[&weigh, within, limit = splitWeightLimit](ShPtr<Statement> stmt, unsigned &weight) -> bool {
 		for (; stmt; stmt = stmt->getSuccessor()) {
 			if (isa<EmptyStmt>(stmt)) {
 				continue;
@@ -581,7 +613,7 @@ bool StructureConverter::tryControlledNodeSplitting(ShPtr<CFGNode> cfg,
 				// would not.
 				return false;
 			}
-			if (++weight > MAX_SPLIT_WEIGHT) {
+			if (++weight > limit) {
 				return false;
 			}
 		}

@@ -4838,6 +4838,59 @@ TEST_F(StructureConverterTests, CrossingMergesOutsideLoopsAreSplitInsteadOfGotos
 	}
 }
 
+namespace {
+
+/// IR in the shape of CrossingMergesOutsideLoopsAreSplitInsteadOfGotos, with
+/// shared blocks of @a sharedCalls calls and @a padCalls calls after them.
+std::string crossingMergesIR(unsigned sharedCalls, unsigned padCalls) {
+	auto calls = [](unsigned base, unsigned n) {
+		std::string r;
+		for (unsigned i = 0; i < n; ++i) {
+			r += "\tcall void @test(i32 " + std::to_string(base + i) + ")\n";
+		}
+		return r;
+	};
+	return "declare void @test(i32)\n"
+		"define void @function(i32 %a, i32 %b, i32 %c) {\n"
+		"entry:\n\t%c1 = icmp eq i32 %a, 0\n\tbr i1 %c1, label %left, label %right\n"
+		"left:\n\tcall void @test(i32 1)\n\t%c2 = icmp eq i32 %b, 0\n\tbr i1 %c2, label %x, label %y\n"
+		"right:\n\tcall void @test(i32 2)\n\t%c3 = icmp eq i32 %c, 0\n\tbr i1 %c3, label %x, label %y\n"
+		"x:\n" + calls(100, sharedCalls) + "\tbr label %z\n"
+		"y:\n" + calls(200, sharedCalls) + "\tbr label %z\n"
+		"z:\n" + calls(1000, padCalls) + "\tret void\n}\n";
+}
+
+bool hasReachableGoto(ShPtr<Function> f) {
+	for (const auto& stmt: ReachableStmtCollector::collect(f->getBody())) {
+		if (isa<GotoStmt>(stmt)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+} // anonymous namespace
+
+TEST_F(StructureConverterTests, LargerSharedBlocksAreSplitWithinTheSizeBudget)
+{
+	// Shared blocks of 20 statements exceed the default split weight, but
+	// the function is large enough that copying them stays within 1.5x.
+	auto module = convertLLVMIR2BIR(crossingMergesIR(20, 120));
+	auto f = module->getFuncByName("function");
+	ASSERT_TRUE(f);
+	EXPECT_FALSE(hasReachableGoto(f)) << "larger shared blocks should be split within the budget";
+}
+
+TEST_F(StructureConverterTests, VeryLargeSharedBlocksStayGotos)
+{
+	// Shared blocks of 60 statements are heavier than any escalated split
+	// weight, so they are not copied, however large the function.
+	auto module = convertLLVMIR2BIR(crossingMergesIR(60, 400));
+	auto f = module->getFuncByName("function");
+	ASSERT_TRUE(f);
+	EXPECT_TRUE(hasReachableGoto(f)) << "blocks over the largest split weight must not be copied";
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec

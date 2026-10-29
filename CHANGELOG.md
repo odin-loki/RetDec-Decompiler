@@ -27,6 +27,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   of the function are copied, and only if the copied blocks are acyclic.
   heapsort -O2 goes from 3 gotos to 1 (279 to 318 lines) and -O3 from 6 to
   1 (304 to 350); the corpus total from 47 to 40.
+- If gotos remain after the second pass, it is repeated with larger split
+  weights (24, 32, then 48 statements). A result is kept only when it has
+  clearly fewer gotos and the function's body is at most 1.5 times the size
+  of the classic result. heapsort -O2 goes from 1 goto to 0 (318 to 326
+  lines) and -O3 from 1 to 0 (350 to 367); the corpus total from 40 to 38.
 - BEQ-01 (`scripts/ci/check_behaviour_equivalence.py`) compiles the
   decompiled C of each `tests/algorithm_recovery/beq/*.c` entry function
   (gcc -O0/-O2/-O3), links it against the original driver, and compares

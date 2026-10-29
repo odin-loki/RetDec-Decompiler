@@ -332,6 +332,8 @@ private:
 
 	/// Set during the retry pass of convertFuncBody (see there).
 	bool repeatedSplitting = false;
+	/// Largest block weight controlled node splitting may clone.
+	unsigned splitWeightLimit = 16;
 };
 
 } // namespace llvmir2hll
