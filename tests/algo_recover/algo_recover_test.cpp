@@ -2159,6 +2159,26 @@ TEST(IdiomDetectorTest, DigitConstantsOutsideTheLoopAreNotAtoi)
 	EXPECT_FALSE(detects(*fn, IdiomKind::Atoi));
 }
 
+TEST(IdiomDetectorTest, ContinuationBitAndDivideBy128IsVarint)
+{
+	// `out[i] = v | 0x80; v >>= 7;` once the byte store drops the 0x7F mask
+	// and the shift is lifted as an unsigned divide.
+	auto fn = makeLoop();
+	opImm(*fn, ssa::IrInstr::Op::Or, 0x80u);
+	opImm(*fn, ssa::IrInstr::Op::Div, 0x80u);
+	pad(*fn);
+	EXPECT_TRUE(detects(*fn, IdiomKind::Varint));
+}
+
+TEST(IdiomDetectorTest, ContinuationBitWithoutTheShiftIsNotVarint)
+{
+	auto fn = makeLoop();
+	opImm(*fn, ssa::IrInstr::Op::Or, 0x80u);
+	opImm(*fn, ssa::IrInstr::Op::Add, 1u);
+	pad(*fn);
+	EXPECT_FALSE(detects(*fn, IdiomKind::Varint));
+}
+
 TEST(IdiomDetectorTest, LowBitAddedThenShiftedOutIsPopcount)
 {
 	auto fn = makeLoop();

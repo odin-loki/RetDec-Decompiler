@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- Varint: also recognised when the byte store drops the `& 0x7F` mask and
+  `v >>= 7` is lifted as an unsigned divide by 128 (continuation bit ORed
+  in and the value divided by 128 inside the loop). varint_encode -O0 is now
+  detected; -O2/-O3 fold the call with its constant argument away. Macro-F1
+  0.4185 to 0.4338 (41/126).
 - Atoi: the digit test is also recognised when gcc folds
   `c >= '0' && c <= '9'` into one unsigned check `(c - '0') < 10` (an add
   of -'0' at any width), and only constants inside the loop count.

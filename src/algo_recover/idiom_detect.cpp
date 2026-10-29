@@ -49,12 +49,27 @@ bool hasSelfCall(const ssa::SSAFunction& fn)
 	return false;
 }
 
+template <typename F>
+void forEachLoopInstr(const ssa::SSAFunction& fn, F&& f);
+bool immOperand(const ssa::SSAFunction& fn, const ssa::IrInstr& i, uint64_t value);
+
 bool hasVarintLoop(const ssa::SSAFunction& fn)
 {
 	const bool mask7f = hasConstant(fn, 0x7Fu);
 	const bool mask80 = hasConstant(fn, 0x80u);
 	const bool shr7 = hasConstant(fn, 7u) && countOp(fn, ssa::IrInstr::Op::Shr) >= 1;
-	return hasBackEdge(fn) && mask7f && shr7 && (mask80 || countOp(fn, ssa::IrInstr::Op::And) >= 1);
+	if (hasBackEdge(fn) && mask7f && shr7 && (mask80 || countOp(fn, ssa::IrInstr::Op::And) >= 1)) return true;
+	// After truncation to a byte the `& 0x7F` disappears, and the shift is
+	// lifted as an unsigned divide by 128: inside the loop, the continuation
+	// bit ORed in and the value shifted down by seven.
+	bool cont = false, down7 = false;
+	forEachLoopInstr(fn, [&](const ssa::IrInstr& i) {
+		if (i.op == ssa::IrInstr::Op::Or && immOperand(fn, i, 0x80u)) cont = true;
+		if (((i.op == ssa::IrInstr::Op::Shr || i.op == ssa::IrInstr::Op::Sar) && immOperand(fn, i, 7u))
+			|| (i.op == ssa::IrInstr::Op::Div && immOperand(fn, i, 0x80u)))
+			down7 = true;
+	});
+	return cont && down7;
 }
 
 /// A byte loaded from memory and tested against zero: `while (*p)`.
