@@ -9428,7 +9428,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateMmxCvt(
  */
 void Capstone2LlvmIrTranslatorX86_impl::translateAvx512BitOps(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
 {
-	enum Kind { POPCNT, ROT_IMM, ROT_VAR, SHD_IMM, SHD_VAR, TERN, PERM, MADD52, DOT };
+	enum Kind { POPCNT, ROT_IMM, ROT_VAR, SHD_IMM, SHD_VAR, TERN, PERM, MADD52, DOT, PERMT2, PERMI2, MSHIFT, GFMUL };
 	bool hi = false;
 	bool sat = false;
 	bool words = false;
@@ -9471,6 +9471,12 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvx512BitOps(cs_insn* i, cs_x86
 	case X86_INS_VPDPBUSDS: kind = DOT; sat = true; break;
 	case X86_INS_VPDPWSSD: kind = DOT; words = true; break;
 	case X86_INS_VPDPWSSDS: kind = DOT; words = true; sat = true; break;
+	case X86_INS_VPERMT2B: kind = PERMT2; eb = 8; break;
+	case X86_INS_VPERMT2W: kind = PERMT2; eb = 16; break;
+	case X86_INS_VPERMI2B: kind = PERMI2; eb = 8; break;
+	case X86_INS_VPERMI2W: kind = PERMI2; eb = 16; break;
+	case X86_INS_VPMULTISHIFTQB: kind = MSHIFT; eb = 64; break;
+	case X86_INS_VGF2P8MULB: kind = GFMUL; eb = 8; break;
 	default:
 		translatePseudoAsmGeneric(i, xi, irb);
 		return;
@@ -9482,7 +9488,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvx512BitOps(cs_insn* i, cs_x86
 	case POPCNT: want = 2; break;
 	case ROT_IMM: case ROT_VAR: want = 3; break;
 	case SHD_IMM: case TERN: want = 4; break;
-	case SHD_VAR: case PERM: case MADD52: case DOT: want = 3; break;
+	case SHD_VAR: case PERM: case MADD52: case DOT: case PERMT2: case PERMI2: case MSHIFT: case GFMUL: want = 3; break;
 	}
 	bool bcast = false;
 	for (unsigned k = 0; k < xi->op_count; ++k)
@@ -9527,7 +9533,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvx512BitOps(cs_insn* i, cs_x86
 		return irb.CreateOr(irb.CreateShl(hi, c), irb.CreateLShr(irb.CreateLShr(lo, one), inv));
 	};
 	llvm::Value* v[3] = {nullptr, nullptr, nullptr};
-	unsigned first = (kind == SHD_VAR || kind == TERN || kind == MADD52 || kind == DOT) ? 0 : 1;
+	unsigned first = (kind == SHD_VAR || kind == TERN || kind == MADD52 || kind == DOT || kind == PERMT2 || kind == PERMI2) ? 0 : 1;
 	unsigned last = kind == POPCNT || kind == ROT_IMM ? 1 : 2;
 	for (unsigned k = first; k <= last; ++k)
 	{
@@ -9613,6 +9619,56 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvx512BitOps(cs_insn* i, cs_x86
 				sum = irb.CreateSelect(irb.CreateICmpSLT(sum, mn), mn, sum);
 			}
 			r = irb.CreateTrunc(sum, elemTy);
+			break;
+		}
+		case PERMT2:
+		case PERMI2:
+		{
+			// Two-table permute: bit log2(n) of the index picks the table.
+			// T2: index op1, tables op0 (overwritten) and op2.
+			// I2: index op0 (overwritten), tables op1 and op2.
+			llvm::Value* ix = kind == PERMT2 ? e[1] : e[0];
+			llvm::Value* t1 = kind == PERMT2 ? v[0] : v[1];
+			auto* i32 = irb.getInt32Ty();
+			auto* idx = irb.CreateZExt(irb.CreateAnd(ix, llvm::ConstantInt::get(elemTy, n - 1)), i32);
+			auto* sel = irb.CreateICmpNE(irb.CreateAnd(ix, llvm::ConstantInt::get(elemTy, n)),
+					llvm::ConstantInt::get(elemTy, 0));
+			r = irb.CreateSelect(sel, irb.CreateExtractElement(v[2], idx), irb.CreateExtractElement(t1, idx));
+			break;
+		}
+		case MSHIFT:
+		{
+			// Each control byte picks an unaligned byte (rotating) from the data qword.
+			auto* i64 = irb.getInt64Ty();
+			r = llvm::ConstantInt::get(i64, 0);
+			for (unsigned j = 0; j < 8; ++j)
+			{
+				auto* c = irb.CreateAnd(irb.CreateLShr(e[1], 8 * j), llvm::ConstantInt::get(i64, 63));
+				auto* inv = irb.CreateAnd(irb.CreateSub(llvm::ConstantInt::get(i64, 64), c),
+						llvm::ConstantInt::get(i64, 63));
+				auto* rot = irb.CreateOr(irb.CreateLShr(e[2], c), irb.CreateShl(e[2], inv));
+				r = irb.CreateOr(r, irb.CreateShl(irb.CreateAnd(rot, llvm::ConstantInt::get(i64, 0xff)), 8 * j));
+			}
+			break;
+		}
+		case GFMUL:
+		{
+			// GF(2^8) multiply modulo x^8 + x^4 + x^3 + x + 1.
+			auto* i16 = irb.getInt16Ty();
+			llvm::Value* a = irb.CreateZExt(e[1], i16);
+			llvm::Value* b = irb.CreateZExt(e[2], i16);
+			llvm::Value* acc = llvm::ConstantInt::get(i16, 0);
+			for (unsigned j = 0; j < 8; ++j)
+			{
+				auto* bit = irb.CreateAnd(irb.CreateLShr(b, j), llvm::ConstantInt::get(i16, 1));
+				acc = irb.CreateXor(acc, irb.CreateMul(irb.CreateShl(a, j), bit));
+			}
+			for (int j = 14; j >= 8; --j)
+			{
+				auto* bit = irb.CreateAnd(irb.CreateLShr(acc, j), llvm::ConstantInt::get(i16, 1));
+				acc = irb.CreateXor(acc, irb.CreateMul(llvm::ConstantInt::get(i16, 0x11b << (j - 8)), bit));
+			}
+			r = irb.CreateTrunc(acc, elemTy);
 			break;
 		}
 		}
