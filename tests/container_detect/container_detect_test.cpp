@@ -1077,6 +1077,33 @@ TEST(UnorderedMapDetectorTest, EmittedTypeContainsUnorderedMap)
 	if (r.confidence >= 0.10f) EXPECT_NE(r.emittedType.find("unordered_map"), std::string::npos);
 }
 
+TEST(StringDetectorTest, SmallAddAndTwoLoadsIsNotAString)
+{
+	auto fn = makeFunc("counted_loop", {ssa::IrInstr::Op::Load, ssa::IrInstr::Op::Load}, 1);
+	addImmInstr(*fn, ssa::IrInstr::Op::Add, 1);
+	StringDetector det;
+	EXPECT_EQ(det.detect(*fn).confidence, 0.0f);
+}
+
+TEST(UnorderedMapDetectorTest, LoopWithLoadsAndNoHashIsNotAHashTable)
+{
+	// A counted loop reloading spilled registers: loads, a compare and a
+	// back edge, but no hash and no bucket mask.
+	auto fn = makeFunc(
+		"counted_loop",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Add,
+			ssa::IrInstr::Op::Compare,
+		},
+		1);
+	fn->block(1)->succs.push_back(0);
+	UnorderedMapDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_EQ(r.confidence, 0.0f);
+}
+
 // ─── StringDetector tests ─────────────────────────────────────────────────────
 
 TEST(StringDetectorTest, EmptyFunctionLowConfidence)

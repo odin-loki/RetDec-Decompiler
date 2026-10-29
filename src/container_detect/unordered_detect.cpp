@@ -168,7 +168,8 @@ HashTableEvidence UnorderedMapDetector::analyseStructure(const ssa::SSAFunction&
 	ev.hasHashCompute = hasHashFunction(fn);
 	ev.hasModulo = hasBucketModulo(fn);
 	ev.hasChainTraversal = hasChainTraversal(fn);
-	ev.found = ev.hasHashCompute && ev.hasModulo && ev.hasChainTraversal;
+	// A hash is required; a bucket mask or a chain walk places it in a table.
+	ev.found = ev.hasHashCompute && (ev.hasModulo || ev.hasChainTraversal);
 	ev.confidence = scoreEvidence(ev);
 	return ev;
 }
@@ -190,6 +191,15 @@ ContainerResult UnorderedMapDetector::detect(const ssa::SSAFunction& fn) const
 
 	auto ev = analyseStructure(fn);
 	result.confidence = ev.confidence;
+
+	// A detector whose defining signal is absent reports nothing: the partial
+	// scores of its supporting signals alone (loads, a loop, a small add) are
+	// present in nearly every function and used to label plain loops.
+	if (!ev.found)
+	{
+		result.confidence = 0.0f;
+		return result;
+	}
 
 	if (ev.confidence < 0.10f) return result;
 

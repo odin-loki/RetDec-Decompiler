@@ -233,6 +233,15 @@ ContainerResult ListDetector::detect(const ssa::SSAFunction& fn) const
 	auto ev = analyseStructure(fn);
 	result.confidence = ev.confidence;
 
+	// A detector whose defining signal is absent reports nothing: the partial
+	// scores of its supporting signals alone (loads, a loop, a small add) are
+	// present in nearly every function and used to label plain loops.
+	if (!ev.found)
+	{
+		result.confidence = 0.0f;
+		return result;
+	}
+
 	if (ev.confidence < 0.10f) return result;
 
 	result.emittedType = "std::list<int>";
