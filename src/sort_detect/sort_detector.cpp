@@ -185,10 +185,18 @@ SortDetector::SortDetector(Config cfg) : cfg_(std::move(cfg)) {
 bool SortDetector::passesPreflight(const ssa::SSAFunction& fn) const {
     if (static_cast<int>(fn.blockCount()) < cfg_.minBlocks) return false;
     int instrCount = 0;
+    int selfCalls = 0;
     for (uint32_t b = 0; b < fn.blockCount(); ++b) {
         const auto* blk = fn.block(b);
-        if (blk) instrCount += static_cast<int>(blk->instrs.size());
+        if (!blk) continue;
+        instrCount += static_cast<int>(blk->instrs.size());
+        for (const auto* i : blk->instrs)
+            if (i && i->op == ssa::IrInstr::Op::Call && i->calleeName == fn.name()) ++selfCalls;
     }
+    // A divide-and-conquer driver -- guard, helper call, two self-calls -- is
+    // short by nature, especially at -O0 where locals are untranslated stack
+    // slots; the size floor dropped every such quicksort before detection.
+    if (selfCalls >= 2) return true;
     return instrCount >= cfg_.minInstrs;
 }
 

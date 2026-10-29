@@ -937,11 +937,82 @@ TEST(QuicksortDetectorTest, PartitionWithSelfCallIsQuicksort)
 	addPhi(*fn, 1);
 	auto* call = fn->addInstr(fn->block(fn->entryId())->id, ssa::IrInstr::Op::Call);
 	call->calleeName = "qsort_rec";
+	// The partition loop.
+	fn->block(0)->succs.push_back(1);
+	fn->block(1)->succs.push_back(2);
+	fn->block(2)->succs.push_back(1);
 	QuicksortDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_EQ(r.algorithm, SortAlgorithm::Quicksort);
 	EXPECT_GE(r.confidence, 0.45f);
 	EXPECT_NEAR(r.confidence, 0.70f, 0.30f);
+}
+
+TEST(QuicksortDetectorTest, PartitionShapeWithoutALoopIsNotQuicksort)
+{
+	// Heapify: compares, a swap, one recursive call -- and no loop.
+	auto fn = makeFunc(
+		"heapify",
+		{ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::Store,
+		 ssa::IrInstr::Op::Store,
+		 ssa::IrInstr::Op::Add,
+		 ssa::IrInstr::Op::Sub,
+		 ssa::IrInstr::Op::CondBranch,
+		 ssa::IrInstr::Op::CondBranch},
+		/*extraBlocks=*/3);
+	addPhi(*fn, 0);
+	addPhi(*fn, 1);
+	auto* call = fn->addInstr(fn->block(fn->entryId())->id, ssa::IrInstr::Op::Call);
+	call->calleeName = "heapify";
+	fn->block(0)->succs.push_back(1);
+	fn->block(1)->succs.push_back(2);
+	QuicksortDetector det;
+	EXPECT_LT(det.detect(*fn).confidence, 0.45f);
+}
+
+// The -O0 driver: if (lo < hi) { p = partition(); qs(lo, p - 1); qs(p + 1, hi); }
+static std::unique_ptr<ssa::SSAFunction> makeRecursiveDriver(
+	const std::string& name, bool helperFirst, bool midpointShift)
+{
+	auto fn = std::make_unique<ssa::SSAFunction>(name);
+	auto* entry = fn->addBlock("entry");
+	auto* body = fn->addBlock("body");
+	fn->addBlock("exit");
+	fn->addInstr(entry->id, ssa::IrInstr::Op::Compare);
+	fn->addInstr(entry->id, ssa::IrInstr::Op::CondBranch);
+	entry->succs = {1, 2};
+	body->succs = {2};
+	auto call = [&](const std::string& callee) {
+		fn->addInstr(body->id, ssa::IrInstr::Op::Call)->calleeName = callee;
+	};
+	if (midpointShift) fn->addInstr(body->id, ssa::IrInstr::Op::Shr);
+	if (helperFirst) call("helper");
+	call(name);
+	call(name);
+	if (!helperFirst) call("helper");
+	return fn;
+}
+
+TEST(QuicksortDetectorTest, PartitionHelperThenTwoSelfCallsIsQuicksort)
+{
+	auto fn = makeRecursiveDriver("qs", /*helperFirst=*/true, /*midpointShift=*/false);
+	QuicksortDetector det;
+	EXPECT_GE(det.detect(*fn).confidence, 0.45f);
+}
+
+TEST(QuicksortDetectorTest, RecursingFirstAndMergingAfterIsNotQuicksort)
+{
+	auto fn = makeRecursiveDriver("ms", /*helperFirst=*/false, /*midpointShift=*/true);
+	QuicksortDetector det;
+	EXPECT_LT(det.detect(*fn).confidence, 0.45f);
+}
+
+TEST(MergesortDetectorTest, TwoSelfCallsSplitAtAShiftedMidpointIsMergesort)
+{
+	auto fn = makeRecursiveDriver("ms", /*helperFirst=*/false, /*midpointShift=*/true);
+	MergesortDetector det;
+	EXPECT_GE(det.detect(*fn).confidence, 0.45f);
 }
 
 // ─── BubbleSortDetector tests ─────────────────────────────────────────────────

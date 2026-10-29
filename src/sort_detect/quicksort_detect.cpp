@@ -6,6 +6,9 @@
 #include "retdec/sort_detect/sort_detect.h"
 #include "retdec/ssa/ssa.h"
 
+#include <cstdio>
+#include <cstdlib>
+
 namespace retdec {
 namespace sort_detect {
 
@@ -54,6 +57,59 @@ static bool hasDepthCounter(const ssa::SSAFunction& fn)
 	return hasSub && hasCmpZero;
 }
 
+static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)
+{
+	int n = 0;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+		if (const auto* blk = fn.block(b))
+			for (const auto* instr: blk->instrs)
+				if (instr && instr->op == op) ++n;
+	return n;
+}
+
+// The quicksort skeleton with the partition in a helper -- what -O0 keeps:
+//
+//     if (lo < hi) { p = partition(a, lo, hi); qs(a, lo, p - 1); qs(a, p + 1, hi); }
+//
+// No loop of its own, a call to another function first, then two self-calls.
+// Mergesort recurses first and merges after, and splits at a shifted midpoint.
+static bool isPartitionThenRecurse(const ssa::SSAFunction& fn)
+{
+	if (std::getenv("RETDEC_SORT_DIAG"))
+	{
+		std::fprintf(stderr, "QS %s cycle=%d shr=%d calls:", fn.name().c_str(), ssa::hasCycle(fn), countOp(fn, ssa::IrInstr::Op::Shr));
+		for (uint32_t b = 0; b < fn.blockCount(); ++b)
+			if (const auto* blk = fn.block(b))
+				for (const auto* i: blk->instrs)
+					if (i && i->op == ssa::IrInstr::Op::Call) std::fprintf(stderr, " [%u]%s", b, i->calleeName.c_str());
+		std::fprintf(stderr, "\n");
+	}
+	if (ssa::hasCycle(fn) || countOp(fn, ssa::IrInstr::Op::Shr) > 0) return false;
+	const std::string& name = fn.name();
+	bool sawHelper = false;
+	int selfAfterHelper = 0;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* instr: blk->instrs)
+		{
+			if (!instr || instr->op != ssa::IrInstr::Op::Call) continue;
+			if (instr->calleeName == name)
+			{
+				if (!sawHelper) return false;
+				++selfAfterHelper;
+			}
+			else if (!sawHelper)
+			{
+				if (instr->calleeName.empty()) return false;
+				sawHelper = true;
+			}
+		}
+	}
+	return selfAfterHelper == 2;
+}
+
 } // anonymous namespace
 
 SortResult QuicksortDetector::detect(const ssa::SSAFunction& fn) const
@@ -61,9 +117,19 @@ SortResult QuicksortDetector::detect(const ssa::SSAFunction& fn) const
 	SortResult result;
 	result.algorithm = SortAlgorithm::Quicksort;
 
+	if (isPartitionThenRecurse(fn))
+	{
+		result.confidence = 0.60f;
+		result.compilerVariant = CompilerVariant::Unknown;
+		return result;
+	}
+
 	PartitionFingerprint pf;
 	auto ev = pf.analyse(fn);
 	if (!ev.found || ev.confidence < 0.45f) return result;
+	// A partition is a loop.  Heapify -- compares, a swap, one recursive
+	// call, no loop -- matched the opcode bag and scored 1.0.
+	if (!ssa::hasCycle(fn)) return result;
 
 	// Introsort also has a partition phase; skip when depth-counter is present.
 	if (hasDepthCounter(fn)) return result;
