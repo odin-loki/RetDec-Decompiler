@@ -2262,6 +2262,39 @@ TEST(IdiomDetectorTest, TwoBytesComparedWithEachOtherIsStrcmpNotStrlen)
 	EXPECT_FALSE(detects(*fn, IdiomKind::Strlen));
 }
 
+// gcc -O2 keeps the other string's byte in a register: the first one is a
+// constant and the next is loaded at the bottom of the loop, so the compare
+// reads it through a phi.
+TEST(IdiomDetectorTest, AByteComparedWithAPhiOfLoadedBytesIsStrcmp)
+{
+	auto fn = makeByteWalk(/*compareAgainstZero=*/true, /*loadBytes=*/1);
+	ssa::IrValue* mem = fn->allocValue(ssa::ValueKind::MemRef);
+	mem->memWidth = 1;
+	ssa::IrValue* loaded = fn->allocValue(ssa::ValueKind::VirtualReg);
+	loaded->width = 8;
+	ssa::IrInstr* ld = fn->addInstr(1, ssa::IrInstr::Op::Load);
+	ld->uses.push_back({mem->id, 0});
+	ld->defValue = loaded->id;
+	loaded->defInstr = ld;
+	ssa::IrValue* init = fn->allocValue(ssa::ValueKind::Immediate);
+	init->imm = 'a';
+	ssa::IrValue* merged = fn->allocValue(ssa::ValueKind::VirtualReg);
+	merged->width = 8;
+	ssa::PhiNode* phi = fn->addPhi(1, 0);
+	phi->result = merged->id;
+	phi->addOperand(0, init->id);
+	phi->addOperand(1, loaded->id);
+	merged->defPhi = phi;
+	ssa::ValueId first = ssa::kInvalidValue;
+	for (auto* i: fn->block(1)->instrs)
+		if (i->op == ssa::IrInstr::Op::Load && i != ld) first = i->defValue;
+	ssa::IrInstr* cmp = fn->addInstr(1, ssa::IrInstr::Op::Compare);
+	cmp->uses.push_back({first, 0});
+	cmp->uses.push_back({merged->id, 1});
+	EXPECT_TRUE(detects(*fn, IdiomKind::Strcmp));
+	EXPECT_FALSE(detects(*fn, IdiomKind::Strlen));
+}
+
 TEST(IdiomDetectorTest, AByteTestedAgainstZeroWithoutALoopIsNotStrlen)
 {
 	auto fn = makeByteWalk(/*compareAgainstZero=*/true, /*loadBytes=*/1);

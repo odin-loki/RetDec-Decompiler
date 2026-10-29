@@ -123,16 +123,61 @@ bool hasByteTestedAgainstZero(const ssa::SSAFunction& fn)
 }
 
 // The byte Load a value comes from, through at most two width casts.
-const ssa::IrInstr* byteLoadOf(const ssa::SSAFunction& fn, ssa::ValueId id)
+const ssa::IrInstr* byteLoadOf(const ssa::SSAFunction& fn, ssa::ValueId id, int depth = 0)
 {
 	const ssa::IrValue* v = fn.value(id);
+	// A byte kept in a register across iterations (gcc -O2 strcmp: the
+	// next `*b` is loaded at the bottom of the loop and the first one is a
+	// constant) reaches the compare through a phi; any loaded incoming byte
+	// counts.
+	if (v && !v->defInstr && v->defPhi && depth < 2)
+	{
+		for (const auto& op: v->defPhi->operands)
+			if (op.second != id)
+				if (const auto* d = byteLoadOf(fn, op.second, depth + 1)) return d;
+		return nullptr;
+	}
 	const ssa::IrInstr* d = v ? v->defInstr : nullptr;
-	for (int hops = 0; d && d->op == ssa::IrInstr::Op::Assign && !d->uses.empty() && hops < 2; ++hops)
+	for (int hops = 0; d && d->op == ssa::IrInstr::Op::Assign && !d->uses.empty() && hops < 4; ++hops)
 	{
 		v = fn.value(d->uses[0].valueId);
 		d = v ? v->defInstr : nullptr;
 	}
+	if (d && d->op == ssa::IrInstr::Op::Phi && depth < 2)
+	{
+		for (const auto& u: d->uses)
+			if (u.valueId != d->defValue)
+				if (const auto* l = byteLoadOf(fn, u.valueId, depth + 1)) return l;
+		return nullptr;
+	}
 	if (!d || d->op != ssa::IrInstr::Op::Load) return nullptr;
+	// After reg2mem a loop-carried byte lives in a register slot: a wide
+	// reload of a slot whose stores are all bytes loaded from memory.
+	if (depth < 2)
+	{
+		ssa::ValueId slot = ssa::kInvalidValue;
+		for (const auto& u: d->uses)
+			if (const auto* a = fn.value(u.valueId); a && a->kind != ssa::ValueKind::MemRef && !a->defInstr)
+				slot = u.valueId;
+		if (slot != ssa::kInvalidValue)
+			for (const auto& blk: fn.blocks())
+				if (blk)
+					for (const auto* st: blk->instrs)
+					{
+						if (!st || st->op != ssa::IrInstr::Op::Store) continue;
+						ssa::ValueId val = ssa::kInvalidValue;
+						bool toSlot = false;
+						for (const auto& u: st->uses)
+						{
+							if (u.operandIndex == 1)
+								toSlot = toSlot || u.valueId == slot;
+							else
+								val = u.valueId;
+						}
+						if (toSlot && val != ssa::kInvalidValue)
+							if (const auto* l = byteLoadOf(fn, val, depth + 1)) return l;
+					}
+	}
 	bool byte = false;
 	for (const auto& u: d->uses)
 		if (const auto* m = fn.value(u.valueId); m && m->kind == ssa::ValueKind::MemRef && m->memWidth == 1) byte = true;
@@ -150,8 +195,14 @@ bool hasBytePairCompare(const ssa::SSAFunction& fn)
 		for (const auto* i: blk->instrs)
 		{
 			if (!i || i->op != ssa::IrInstr::Op::Compare || i->uses.size() < 2) continue;
-			const auto* a = byteLoadOf(fn, i->uses[0].valueId);
-			const auto* b = byteLoadOf(fn, i->uses[1].valueId);
+			// `cmp %sil, (%rax)` reads one byte straight from memory.
+			auto byteOperand = [&](ssa::ValueId id) -> const ssa::IrInstr* {
+				if (const auto* m = fn.value(id); m && m->kind == ssa::ValueKind::MemRef && m->memWidth == 1)
+					return i;
+				return byteLoadOf(fn, id);
+			};
+			const auto* a = byteOperand(i->uses[0].valueId);
+			const auto* b = byteOperand(i->uses[1].valueId);
 			if (a && b && a != b) return true;
 		}
 	}
