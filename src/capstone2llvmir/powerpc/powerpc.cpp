@@ -5,6 +5,7 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <functional>
 #include <cstring>
 #include <climits>
 #include <cmath>
@@ -10645,6 +10646,169 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecMaskOps(cs_insn* i, cs_p
 		storeRegister(gtR, irb.getFalse(), irb);
 		storeRegister(eqR, seen, irb);
 		storeRegister(soR, irb.getFalse(), irb);
+	}
+}
+
+
+/**
+ * PPC_INS_XSXEXPDP, PPC_INS_XSXSIGDP, PPC_INS_XSIEXPDP, PPC_INS_XVXEXPDP,
+ * PPC_INS_XVXEXPSP, PPC_INS_XVXSIGDP, PPC_INS_XVXSIGSP, PPC_INS_XVIEXPDP,
+ * PPC_INS_XVIEXPSP, PPC_INS_XXEVAL, PPC_INS_XXEXTRACTUW, PPC_INS_XXINSERTW
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxBitFields(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_SET(i, pi, irb, (std::set<int>{2, 3, 5}));
+	cs_ppc_op ops[5];
+	for (unsigned k = 0; k < pi->op_count && k < 5; ++k)
+	{
+		ops[k] = pi->operands[k];
+		if (ops[k].type == PPC_OP_REG && ops[k].reg >= PPC_REG_VF0 && ops[k].reg <= PPC_REG_VF31)
+		{
+			ops[k].reg = ppc_reg(PPC_REG_V0 + (ops[k].reg - PPC_REG_VF0));
+		}
+		else if (ops[k].type == PPC_OP_REG && ops[k].reg >= PPC_REG_X0 && ops[k].reg <= PPC_REG_X31)
+		{
+			ops[k].reg = ppc_reg(PPC_REG_R0 + (ops[k].reg - PPC_REG_X0));
+		}
+	}
+	auto* i64 = irb.getInt64Ty();
+	auto* i128 = irb.getInt128Ty();
+	auto c64 = [&](uint64_t v) { return llvm::ConstantInt::get(i64, v); };
+	auto dw0 = [&](unsigned k) {
+		return irb.CreateTrunc(irb.CreateLShr(loadOpI128(ops[k], irb), 64), i64);
+	};
+	auto gpr = [&](unsigned k) {
+		return irb.CreateZExtOrTrunc(loadOp(ops[k], irb), i64);
+	};
+	// Apply fn to each `bits`-wide lane of a (and b), big-endian lane order.
+	auto lanes = [&](unsigned bits, llvm::Value* a, llvm::Value* b,
+			const std::function<llvm::Value*(llvm::Value*, llvm::Value*)>& fn) {
+		auto* ty = irb.getIntNTy(bits);
+		llvm::Value* r = llvm::ConstantInt::get(i128, 0);
+		for (unsigned sh = 0; sh < 128; sh += bits)
+		{
+			auto* x = irb.CreateTrunc(irb.CreateLShr(a, sh), ty);
+			auto* y = b ? irb.CreateTrunc(irb.CreateLShr(b, sh), ty) : nullptr;
+			r = irb.CreateOr(r, irb.CreateShl(irb.CreateZExt(fn(x, y), i128), sh));
+		}
+		return r;
+	};
+	auto sig = [&](llvm::Value* x, unsigned bits) {
+		unsigned fracBits = bits == 64 ? 52 : 23;
+		unsigned expBits = bits == 64 ? 11 : 8;
+		auto* ty = x->getType();
+		auto* frac = irb.CreateAnd(x, llvm::ConstantInt::get(ty, (uint64_t(1) << fracBits) - 1));
+		auto* e = irb.CreateAnd(irb.CreateLShr(x, fracBits), llvm::ConstantInt::get(ty, (1u << expBits) - 1));
+		auto* normal = irb.CreateAnd(
+				irb.CreateICmpNE(e, llvm::ConstantInt::get(ty, 0)),
+				irb.CreateICmpNE(e, llvm::ConstantInt::get(ty, (1u << expBits) - 1)));
+		return irb.CreateOr(frac, irb.CreateShl(irb.CreateZExt(normal, ty), fracBits));
+	};
+
+	switch (i->id)
+	{
+	case PPC_INS_XSXEXPDP:
+		storeOp(ops[0], irb.CreateAnd(irb.CreateLShr(dw0(1), 52), c64(0x7ff)), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		return;
+	case PPC_INS_XSXSIGDP:
+		storeOp(ops[0], sig(dw0(1), 64), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		return;
+	case PPC_INS_XSIEXPDP:
+	{
+		auto* a = gpr(1);
+		auto* r = irb.CreateOr(
+				irb.CreateAnd(a, c64(0x800fffffffffffffULL)),
+				irb.CreateShl(irb.CreateAnd(gpr(2), c64(0x7ff)), 52));
+		storeOpI128(ops[0], irb.CreateShl(irb.CreateZExt(r, i128), 64), irb);
+		return;
+	}
+	case PPC_INS_XVXEXPDP:
+	case PPC_INS_XVXEXPSP:
+	{
+		bool dp = i->id == PPC_INS_XVXEXPDP;
+		auto r = lanes(dp ? 64 : 32, loadOpI128(ops[1], irb), nullptr, [&](llvm::Value* x, llvm::Value*) {
+			return irb.CreateAnd(irb.CreateLShr(x, dp ? 52 : 23), llvm::ConstantInt::get(x->getType(), dp ? 0x7ff : 0xff));
+		});
+		storeOpI128(ops[0], r, irb);
+		return;
+	}
+	case PPC_INS_XVXSIGDP:
+	case PPC_INS_XVXSIGSP:
+	{
+		unsigned bits = i->id == PPC_INS_XVXSIGDP ? 64 : 32;
+		auto r = lanes(bits, loadOpI128(ops[1], irb), nullptr, [&](llvm::Value* x, llvm::Value*) {
+			return sig(x, bits);
+		});
+		storeOpI128(ops[0], r, irb);
+		return;
+	}
+	case PPC_INS_XVIEXPDP:
+	case PPC_INS_XVIEXPSP:
+	{
+		bool dp = i->id == PPC_INS_XVIEXPDP;
+		auto r = lanes(dp ? 64 : 32, loadOpI128(ops[1], irb), loadOpI128(ops[2], irb), [&](llvm::Value* x, llvm::Value* y) {
+			auto* ty = x->getType();
+			uint64_t em = dp ? 0x7ffULL : 0xffULL;
+			unsigned sh = dp ? 52 : 23;
+			return irb.CreateOr(
+					irb.CreateAnd(x, llvm::ConstantInt::get(ty, ~(em << sh))),
+					irb.CreateShl(irb.CreateAnd(y, llvm::ConstantInt::get(ty, em)), sh));
+		});
+		storeOpI128(ops[0], r, irb);
+		return;
+	}
+	case PPC_INS_XXEVAL:
+	{
+		if (pi->op_count != 5 || ops[4].type != PPC_OP_IMM)
+		{
+			throw GenericError("unexpected xxeval operands");
+		}
+		auto* a = loadOpI128(ops[1], irb);
+		auto* b = loadOpI128(ops[2], irb);
+		auto* c = loadOpI128(ops[3], irb);
+		unsigned imm = unsigned(ops[4].imm) & 0xff;
+		llvm::Value* r = llvm::ConstantInt::get(i128, 0);
+		for (unsigned idx = 0; idx < 8; ++idx)
+		{
+			// IMM bit idx (bit 0 = MSB) selects minterm A*4 + B*2 + C.
+			if (!((imm >> (7u - idx)) & 1u))
+			{
+				continue;
+			}
+			auto* ta = (idx & 4) ? a : irb.CreateNot(a);
+			auto* tb = (idx & 2) ? b : irb.CreateNot(b);
+			auto* tc = (idx & 1) ? c : irb.CreateNot(c);
+			r = irb.CreateOr(r, irb.CreateAnd(irb.CreateAnd(ta, tb), tc));
+		}
+		storeOpI128(ops[0], r, irb);
+		return;
+	}
+	case PPC_INS_XXEXTRACTUW:
+	case PPC_INS_XXINSERTW:
+	{
+		unsigned uim = ops[2].type == PPC_OP_IMM ? unsigned(ops[2].imm) & 0xf : 0u;
+		if (uim > 12)
+		{
+			uim = 12;
+		}
+		unsigned sh = (12u - uim) * 8u;
+		auto* src = loadOpI128(ops[1], irb);
+		if (i->id == PPC_INS_XXEXTRACTUW)
+		{
+			auto* w = irb.CreateAnd(irb.CreateLShr(src, sh), llvm::ConstantInt::get(i128, 0xffffffffULL));
+			storeOpI128(ops[0], irb.CreateShl(w, 64), irb);
+		}
+		else
+		{
+			auto* w = irb.CreateAnd(irb.CreateLShr(src, 64), llvm::ConstantInt::get(i128, 0xffffffffULL));
+			auto* mask = llvm::ConstantInt::get(i128, llvm::APInt(128, 0xffffffffULL).shl(sh));
+			auto* t = loadOpI128(ops[0], irb);
+			storeOpI128(ops[0], irb.CreateOr(irb.CreateAnd(t, irb.CreateNot(mask)), irb.CreateShl(w, sh)), irb);
+		}
+		return;
+	}
+	default:
+		throw GenericError("unhandled VSX bit-field op");
 	}
 }
 

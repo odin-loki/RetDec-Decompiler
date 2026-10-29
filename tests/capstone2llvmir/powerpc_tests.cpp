@@ -18944,6 +18944,98 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSMAXJDP)
 	EXPECT_EQ(0x4008000000000000ULL, vHigh(PPC_REG_VSL1)) << dumpFunction(_function);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSXEXPDP)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V2, 0x4008000000000000ULL, 0);
+	emulate_bin("f0 60 15 6e"); // xsxexpdp r3, vs34
+
+	EXPECT_EQ(0x400ULL, getRegisterValueUnsigned(PPC_REG_R3)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSXSIGDP)
+{
+	ONLY_MODE_64;
+
+	setV(PPC_REG_V2, 0x4008000000000000ULL, 0);
+	emulate_bin("f0 61 15 6e"); // xsxsigdp r3, vs34
+
+	EXPECT_EQ(0x0018000000000000ULL, getRegisterValueUnsigned(PPC_REG_R3)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSIEXPDP)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R3, 0x8008000000000000ULL},
+		{PPC_REG_R4, 0x400},
+	});
+	emulate_bin("f0 43 27 2d"); // xsiexpdp vs34, r3, r4
+
+	EXPECT_EQ(0xc008000000000000ULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
+	EXPECT_EQ(0x0ULL, vLow(PPC_REG_V2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XVXSIGSP)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0x3fc0000000000001ULL, 0x7f80000000000000ULL);
+	emulate_bin("f0 49 1f 6f"); // xvxsigsp vs34, vs35
+
+	EXPECT_EQ(0x00c0000000000001ULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
+	EXPECT_EQ(0x0ULL, vLow(PPC_REG_V2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XVIEXPSP)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0x3fc00000bfc00000ULL, 0x0ULL);
+	setV(PPC_REG_V4, 0x0000008000000081ULL, 0x0ULL);
+	emulate_bin("f0 43 26 c7"); // xviexpsp vs34, vs35, vs36
+
+	EXPECT_EQ(0x40400000c0c00000ULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XXEVAL_and)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0xff00ff00ff00ff00ULL, 0xffffffffffffffffULL);
+	setV(PPC_REG_V4, 0xffff0000ffff0000ULL, 0xffffffffffffffffULL);
+	setV(PPC_REG_V5, 0xfffffff0fffffff0ULL, 0x0ULL);
+	emulate_bin("05 00 00 01 88 43 21 5f"); // xxeval vs34, vs35, vs36, vs37, 1 (A&B&C)
+
+	EXPECT_EQ(0xff000000ff000000ULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
+	EXPECT_EQ(0x0ULL, vLow(PPC_REG_V2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XXEXTRACTUW)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0x0011223344556677ULL, 0x8899aabbccddeeffULL);
+	emulate_bin("f0 44 1a 97"); // xxextractuw vs34, vs35, 4
+
+	EXPECT_EQ(0x44556677ULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
+	EXPECT_EQ(0x0ULL, vLow(PPC_REG_V2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XXINSERTW)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V2, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setV(PPC_REG_V3, 0x0011223344556677ULL, 0x8899aabbccddeeffULL);
+	emulate_bin("f0 44 1a d7"); // xxinsertw vs34, vs35, 4
+
+	EXPECT_EQ(0xffffffff44556677ULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
+	EXPECT_EQ(0xffffffffffffffffULL, vLow(PPC_REG_V2)) << dumpFunction(_function);
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
