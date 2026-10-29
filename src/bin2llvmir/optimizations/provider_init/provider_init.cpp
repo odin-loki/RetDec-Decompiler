@@ -282,8 +282,7 @@ bool ProviderInitialization::runOnModule(Module& m)
 		c->getConfig().parameters.setEntryPoint(ep);
 	}
 
-	if ((f->getFileFormat()->getTargetArchitecture() == fileformat::Architecture::POWERPC
-			|| f->getFileFormat()->getTargetArchitecture() == fileformat::Architecture::MIPS)
+	if (f->getFileFormat()->getTargetArchitecture() == fileformat::Architecture::MIPS
 			&& f->getFileFormat()->getWordLength() == 64)
 	{
 		throw std::runtime_error("Unsupported target format and architecture combination");
