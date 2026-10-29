@@ -791,7 +791,15 @@ void CHLLWriter::emitOrderedCompare(const std::string& opRepr,
 {
 	auto mismatched = [&](const ShPtr<Expression>& op) -> ShPtr<IntType> {
 		if (isa<Constant>(op)) return nullptr;
-		auto ty = cast<IntType>(op->getType());
+		// A conditional takes the type of its arms (after the usual
+		// conversions), so look through it to a non-constant arm.
+		auto typed = op;
+		while (auto ternary = cast<TernaryOpExpr>(typed)) {
+			typed = isa<Constant>(ternary->getTrueValue())
+				? ternary->getFalseValue() : ternary->getTrueValue();
+		}
+		if (isa<Constant>(typed)) return nullptr;
+		auto ty = cast<IntType>(typed->getType());
 		if (!isSigned || !ty || ty->isBool() || ty->isSigned()) return nullptr;
 		return ty;
 	};
@@ -882,12 +890,16 @@ void CHLLWriter::visit(ShPtr<MulOpExpr> expr)
 
 void CHLLWriter::visit(ShPtr<ModOpExpr> expr)
 {
-	emitBinaryOpExpr("%", expr);
+	// Like the ordered compares: a signed remainder whose operand is typed
+	// unsigned would be computed unsigned by C's usual conversions.
+	emitOrderedCompare("%", expr, expr->getVariant() == ModOpExpr::Variant::SMod);
 }
 
 void CHLLWriter::visit(ShPtr<DivOpExpr> expr)
 {
-	emitBinaryOpExpr("/", expr);
+	// aarch64 `sdiv w8, w0, w1` with w1 typed uint32_t printed as v1 / v2,
+	// an unsigned division in C.
+	emitOrderedCompare("/", expr, expr->getVariant() == DivOpExpr::Variant::SDiv);
 }
 
 void CHLLWriter::visit(ShPtr<AndOpExpr> expr)
@@ -1180,6 +1192,44 @@ void CHLLWriter::visit(ShPtr<BitCastExpr> expr)
 
 void CHLLWriter::visit(ShPtr<ExtCastExpr> expr)
 {
+	// A C cast extends by the signedness of its operand's type, not by the
+	// variant of the IR cast. `sext i8 (trunc x)` whose trunc was typed
+	// unsigned printed as `(uint32_t)(unsigned char)x`, a zero extension.
+	// Put an explicitly signed (or unsigned) operand type in between when
+	// the operand's type disagrees with the variant. Plain `char` has
+	// implementation-defined signedness, so a signed byte is int8_t here.
+	auto variant = expr->getVariant();
+	auto opType = cast<IntType>(expr->getOperand()->getType());
+	if (variant != ExtCastExpr::Variant::FPExt && opType && !opType->isBool())
+	{
+		bool wantSigned = variant == ExtCastExpr::Variant::SExt;
+		unsigned size = opType->getSize();
+		bool sizeOk = size == 8 || size == 16 || size == 32 || size == 64;
+		if (sizeOk && (opType->isSigned() != wantSigned ||
+				(wantSigned && size == 8)))
+		{
+			out->punctuation('(');
+			expr->getType()->accept(this);
+			out->punctuation(')');
+			out->punctuation('(');
+			out->dataType((wantSigned ? std::string("") : std::string("u"))
+				+ "int" + std::to_string(size) + "_t");
+			out->punctuation(')');
+			auto operand = expr->getOperand();
+			// Casting straight to the narrow type truncates the same way,
+			// so the operand's own truncation adds nothing.
+			if (auto trunc = cast<TruncCastExpr>(operand))
+			{
+				auto truncTo = cast<IntType>(trunc->getType());
+				if (truncTo && !truncTo->isBool() && truncTo->getSize() == size)
+				{
+					operand = trunc->getOperand();
+				}
+			}
+			operand->accept(this);
+			return;
+		}
+	}
 	emitCastInStandardWay(expr);
 }
 

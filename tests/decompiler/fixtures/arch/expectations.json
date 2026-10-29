@@ -51,5 +51,10 @@
     "f_rec(result - 1)",
     "!; i >= 1;",
     "!(uint64_t)i)"
+  ],
+  "signs-aarch64-pie": [
+    "(int8_t)a1",
+    "/ (int32_t)(",
+    "!(unsigned char)a1"
   ]
 }
