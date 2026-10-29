@@ -14768,6 +14768,72 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_GCSPOPM)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SYSL)
+{
+	emulate("sysl x3, #1, c2, c3, #4");
+
+	EXPECT_NO_REGISTERS_LOADED();
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X3, ANY},
+	});
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_sysl"), {1, 2, 3, 4}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SYS)
+{
+	setRegisters({
+		{ARM64_REG_X5, 0x77},
+	});
+
+	emulate("sys #6, c15, c15, #7, x5");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_X5});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_sys"), {6, 15, 15, 7, 0x77}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_DC_CIVAC)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0x1000},
+	});
+
+	emulate("dc civac, x1");
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_dc_civac"), {0x1000}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_TLBI_noreg)
+{
+	emulate("tlbi vmalle1");
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_tlbi_vmalle1"), {}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_IC_IVAU)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0x2000},
+	});
+
+	emulate("ic ivau, x1");
+
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_ic_ivau"), {0x2000}},
+	});
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

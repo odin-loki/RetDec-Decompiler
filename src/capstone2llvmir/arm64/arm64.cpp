@@ -5,7 +5,10 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <cctype>
 #include <cmath>
+#include <cstdlib>
+#include <vector>
 #include <iomanip>
 #include <string>
 
@@ -9905,10 +9908,95 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateSysOp(cs_insn* i, cs_arm64* a
 		}
 		return;
 	}
-	if (m == "sysl")
+	if (m == "sysl" || m == "sys")
 	{
-		translatePseudoAsmGeneric(i, ai, irb);
+		// sys #op1, Cn, Cm, #op2{, Xt} / sysl Xt, #op1, Cn, Cm, #op2.
+		// Capstone leaves Cn/Cm without a usable value, so take the
+		// encoding fields from the text.
+		std::vector<uint64_t> nums;
+		std::vector<std::string> toks;
+		{
+			std::string cur;
+			for (char c : ops + ",")
+			{
+				if (c == ',')
+				{
+					auto b0 = cur.find_first_not_of(" \t");
+					auto e0 = cur.find_last_not_of(" \t");
+					toks.push_back(b0 == std::string::npos ? "" : cur.substr(b0, e0 - b0 + 1));
+					cur.clear();
+				}
+				else
+				{
+					cur += c;
+				}
+			}
+		}
+		bool isL = m == "sysl";
+		std::size_t first = isL ? 1 : 0;
+		bool ok = toks.size() >= first + 4;
+		for (std::size_t k = first; ok && k < first + 4; ++k)
+		{
+			std::string t = toks[k];
+			if (!t.empty() && (t[0] == '#' || t[0] == 'c' || t[0] == 'C'))
+			{
+				t = t.substr(1);
+			}
+			char* end = nullptr;
+			uint64_t v = std::strtoull(t.c_str(), &end, 0);
+			ok = !t.empty() && end && *end == '\0';
+			nums.push_back(v);
+		}
+		int k = lastReg();
+		if (!ok || (isL && k != 0))
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		std::vector<llvm::Value*> args;
+		std::vector<llvm::Type*> tys;
+		for (auto v : nums)
+		{
+			args.push_back(llvm::ConstantInt::get(i64, v));
+			tys.push_back(i64);
+		}
+		if (!isL && k >= 0)
+		{
+			args.push_back(irb.CreateZExtOrTrunc(loadRegister(ai->operands[k].reg, irb), i64));
+			tys.push_back(i64);
+		}
+		auto* fnc = getPseudoAsmFunction(i, isL ? i64 : irb.getVoidTy(), tys, isL ? "__asm_sysl" : "__asm_sys");
+		auto* c = irb.CreateCall(fnc, args);
+		if (isL)
+		{
+			storeRegister(ai->operands[0].reg, c, irb);
+		}
 		return;
+	}
+	if ((m == "ic" || m == "dc" || m == "tlbi" || m == "tlbip") && !ops.empty())
+	{
+		// Keep the maintenance operation in the pseudo function name, e.g.
+		// __asm_dc_civac(addr), __asm_tlbi_vmalle1().
+		std::string op = ops.substr(0, ops.find(','));
+		while (!op.empty() && op.back() == ' ') op.pop_back();
+		bool good = !op.empty();
+		for (char c : op) good = good && std::isalnum(static_cast<unsigned char>(c));
+		if (good)
+		{
+			std::vector<llvm::Value*> args;
+			std::vector<llvm::Type*> tys;
+			for (unsigned n = 0; n < ai->op_count; ++n)
+			{
+				if (ai->operands[n].type == ARM64_OP_REG)
+				{
+					args.push_back(irb.CreateZExtOrTrunc(loadRegister(ai->operands[n].reg, irb), i64));
+					tys.push_back(i64);
+				}
+			}
+			auto* fnc = getPseudoAsmFunction(i, irb.getVoidTy(), tys, "__asm_" + m + "_" + op);
+			irb.CreateCall(fnc, args);
+			return;
+		}
 	}
 	const uint32_t gcspr = ARM64_SYSREG_GCSPR_EL0;
 	if (m == "gcspushm" && ai->op_count == 1)
