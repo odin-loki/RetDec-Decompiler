@@ -12662,6 +12662,36 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VPNOT)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VFMAL_d)
+{
+	ONLY_MODE_ARM;
+	_translator->modifyExtraMode(static_cast<cs_mode>(_translator->getExtraMode() | CS_MODE_V8));
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x3f0000003f800000ULL)},
+		{ARM_REG_D1, armDBits(0xbc003e0042004000ULL)},
+	});
+
+	emulate_bin("31 08 21 fc");
+
+	EXPECT_EQ(0xc020000040800000ULL, dBits(ARM_REG_D0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VFMAL_d_indexed)
+{
+	ONLY_MODE_ARM;
+	_translator->modifyExtraMode(static_cast<cs_mode>(_translator->getExtraMode() | CS_MODE_V8));
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x3f0000003f800000ULL)},
+		{ARM_REG_D1, armDBits(0xbc003e0042004000ULL)},
+	});
+
+	emulate_bin("39 08 01 fe");
+
+	EXPECT_EQ(0xc0200000bf800000ULL, dBits(ARM_REG_D0));
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

@@ -8965,5 +8965,54 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMvePred(cs_insn* i, cs_arm* ai,
 	fallback();
 }
 
+
+/**
+ * VFMAL/VFMSL (FEAT_FHM, A32): Vd.f32[k] += (-)Vn.f16[k] * Vm.f16[k|idx],
+ * widened and fused. The D form reads S sources and the Q form D sources.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateNeonFml(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	if (ai->op_count != 3)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	bool sub = armIsId(i, ARM_INS_VFMSL);
+	auto d = ai->operands[0].reg;
+	unsigned n = neonBitWidth(d) / 32;
+	int lane = operandLane(ai->operands[2]);
+	auto* acc = loadNeonVector(d, 32, true, irb);
+	auto* a = loadNeonVector(ai->operands[1].reg, 16, true, irb);
+	auto* b = loadNeonVector(ai->operands[2].reg, 16, true, irb);
+	auto* f32 = irb.getFloatTy();
+	auto* fma = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::fma, f32);
+	llvm::Value* r = acc;
+	for (unsigned k = 0; k < n; ++k)
+	{
+		// Exact f16->f32 widening from the bits (the emulator has no half).
+		auto h = [&](llvm::Value* v) -> llvm::Value* {
+			if (v->getType()->isHalfTy()) v = irb.CreateBitCast(v, irb.getInt16Ty());
+			auto* i32 = irb.getInt32Ty();
+			auto* x = irb.CreateZExt(v, i32);
+			auto* sgn = irb.CreateShl(irb.CreateLShr(x, 15), 31);
+			auto* e = irb.CreateAnd(irb.CreateLShr(x, 10), irb.getInt32(0x1f));
+			auto* mt = irb.CreateAnd(x, irb.getInt32(0x3ff));
+			auto* normal = irb.CreateOr(irb.CreateShl(irb.CreateAdd(e, irb.getInt32(112)), 23), irb.CreateShl(mt, 13));
+			auto* infnan = irb.CreateOr(irb.getInt32(0x7f800000), irb.CreateShl(mt, 13));
+			// Subnormal: mant * 2^-24, exact in f32.
+			auto* sub = irb.CreateBitCast(irb.CreateFMul(irb.CreateUIToFP(mt, f32),
+					llvm::ConstantFP::get(f32, 5.9604644775390625e-08)), i32);
+			llvm::Value* bits = irb.CreateSelect(irb.CreateICmpEQ(e, irb.getInt32(0)), sub,
+					irb.CreateSelect(irb.CreateICmpEQ(e, irb.getInt32(31)), infnan, normal));
+			return irb.CreateBitCast(irb.CreateOr(bits, sgn), f32);
+		};
+		auto* x = h(irb.CreateExtractElement(a, k));
+		if (sub) x = irb.CreateFNeg(x);
+		auto* y = h(irb.CreateExtractElement(b, lane >= 0 ? unsigned(lane) : k));
+		r = irb.CreateInsertElement(r, irb.CreateCall(fma, {x, y, irb.CreateExtractElement(acc, k)}), k);
+	}
+	storeNeonVector(d, r, irb);
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec
