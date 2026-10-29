@@ -9,6 +9,10 @@
   "insertion_sort-gcc-O0",
   "insertion_sort-gcc-O2",
   "insertion_sort-gcc-O3",
+  "knapsack_01-gcc-O0",
+  "knapsack_01-gcc-O2",
+  "knapsack_01-gcc-O3",
+  "lcs_dp-gcc-O0",
   "mergesort-gcc-O0",
   "mergesort-gcc-O2"
  ]
