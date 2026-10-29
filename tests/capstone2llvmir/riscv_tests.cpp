@@ -997,6 +997,43 @@ TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_LHU)
 // RISCV_INS_LB  lb a0, 1(a1)   bytes 03 85 15 00
 //
 
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_HLV_B)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_A1, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0xfe_b},
+	});
+
+	emulate_bin("73 c5 05 60"); // hlv.b a0, (a1)
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, sx32(0xfffffffe)},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_HSV_W)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_A1, 0x1000},
+		{RISCV_REG_A2, 0x12345678},
+	});
+
+	emulate_bin("73 c0 c5 6a"); // hsv.w a2, (a1)
+
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0x12345678_dw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_LB)
 {
 	ALL_MODES;

@@ -6591,5 +6591,55 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateZfh(cs_insn* i, cs_riscv* ri,
 }
 
 
+/**
+ * Instructions that behave exactly like an already-lifted twin for a
+ * user-mode decompiler: the hypervisor virtual-machine loads/stores
+ * HLV/HLVX/HSV are ordinary loads/stores, and the Zicfiss SSAMOSWAP is an
+ * AMOSWAP on the shadow stack.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateTwin(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	unsigned sid = 0;
+	void (Capstone2LlvmIrTranslatorRiscv_impl::*fn)(cs_insn*, cs_riscv*, llvm::IRBuilder<>&) = nullptr;
+	switch (i->id)
+	{
+		case RISCV_INS_HLV_B: sid = RISCV_INS_LB; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateLoad; break;
+		case RISCV_INS_HLV_BU: sid = RISCV_INS_LBU; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateLoad; break;
+		case RISCV_INS_HLV_H: sid = RISCV_INS_LH; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateLoad; break;
+		case RISCV_INS_HLV_HU: sid = RISCV_INS_LHU; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateLoad; break;
+		case RISCV_INS_HLVX_HU: sid = RISCV_INS_LHU; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateLoad; break;
+		case RISCV_INS_HLV_W: sid = RISCV_INS_LW; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateLoad; break;
+		case RISCV_INS_HLV_WU: sid = RISCV_INS_LWU; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateLoad; break;
+		case RISCV_INS_HLVX_WU: sid = RISCV_INS_LWU; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateLoad; break;
+		case RISCV_INS_HLV_D: sid = RISCV_INS_LD; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateLoad; break;
+		case RISCV_INS_HSV_B: sid = RISCV_INS_SB; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateStore; break;
+		case RISCV_INS_HSV_H: sid = RISCV_INS_SH; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateStore; break;
+		case RISCV_INS_HSV_W: sid = RISCV_INS_SW; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateStore; break;
+		case RISCV_INS_HSV_D: sid = RISCV_INS_SD; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateStore; break;
+		case RISCV_INS_SSAMOSWAP_W: sid = RISCV_INS_AMOSWAP_W; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateAmo; break;
+		case RISCV_INS_SSAMOSWAP_W_AQ: sid = RISCV_INS_AMOSWAP_W_AQ; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateAmo; break;
+		case RISCV_INS_SSAMOSWAP_W_RL: sid = RISCV_INS_AMOSWAP_W_RL; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateAmo; break;
+		case RISCV_INS_SSAMOSWAP_D: sid = RISCV_INS_AMOSWAP_D; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateAmo; break;
+		case RISCV_INS_SSAMOSWAP_D_AQ: sid = RISCV_INS_AMOSWAP_D_AQ; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateAmo; break;
+		case RISCV_INS_SSAMOSWAP_D_RL: sid = RISCV_INS_AMOSWAP_D_RL; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateAmo; break;
+		default:
+			translatePseudoAsmGeneric(i, ri, irb);
+			return;
+	}
+	unsigned hid = i->id;
+	i->id = sid;
+	try
+	{
+		(this->*fn)(i, ri, irb);
+	}
+	catch (...)
+	{
+		i->id = hid;
+		throw;
+	}
+	i->id = hid;
+}
+
+
 } // namespace capstone2llvmir
 } // namespace retdec
