@@ -1566,6 +1566,52 @@ bool IdiomsLibgcc::run()
 		changed |= runInstruction(insn);
 	}
 
+	if (changed)
+	{
+		changed |= dropUnusedHelperBodies();
+	}
+
+	return changed;
+}
+
+/**
+ * Once every call to a libgcc helper became plain arithmetic, its decompiled
+ * body is dead -- and emitting it is harmful: a recompiled `__udivdi3`
+ * definition shadows the compiler's own, so the `/` the idiom produced
+ * linked against the (lossy) decompiled loop (rv32/mips m64, s64, pow).
+ * Delete the bodies of unused `__`-named helpers, to a fixpoint so the
+ * `__udivmoddi4` they called goes too.
+ */
+bool IdiomsLibgcc::dropUnusedHelperBodies()
+{
+	auto isHelper = [this](const std::string& n)
+	{
+		if (n.rfind("__", 0) != 0) return false;
+		if (contains(n, "udivmoddi4")) return true;
+		for (auto& p : _fnc2action)
+		{
+			if (contains(n, p.first)) return true;
+		}
+		return false;
+	};
+
+	bool changed = false;
+	bool again = true;
+	while (again)
+	{
+		again = false;
+		for (Function& f : *_module)
+		{
+			if (f.isDeclaration() || !f.use_empty()) continue;
+			if (!isHelper(f.getName().str())) continue;
+			if (auto* cf = _config->getConfigFunction(&f))
+			{
+				cf->setIsStaticallyLinked();
+			}
+			f.deleteBody();
+			again = changed = true;
+		}
+	}
 	return changed;
 }
 

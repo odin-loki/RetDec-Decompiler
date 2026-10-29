@@ -38,6 +38,7 @@ class IdiomsLibgcc : public llvm::ModulePass
 
 	private:
 		bool run();
+		bool dropUnusedHelperBodies();
 		bool runInstruction(llvm::Instruction* inst);
 
 	private:
