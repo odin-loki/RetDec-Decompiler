@@ -7683,7 +7683,9 @@ static unsigned sveMemElemBits(unsigned id)
 	case ARM64_INS_LD1SB:
 	case ARM64_INS_LDNT1SB:
 	case ARM64_INS_LDFF1B:
+	case ARM64_INS_LDNF1B:
 	case ARM64_INS_LDFF1SB:
+	case ARM64_INS_LDNF1SB:
 		return 8;
 	case ARM64_INS_LD1H:
 	case ARM64_INS_ST1H:
@@ -7693,7 +7695,9 @@ static unsigned sveMemElemBits(unsigned id)
 	case ARM64_INS_LD1SH:
 	case ARM64_INS_LDNT1SH:
 	case ARM64_INS_LDFF1H:
+	case ARM64_INS_LDNF1H:
 	case ARM64_INS_LDFF1SH:
+	case ARM64_INS_LDNF1SH:
 		return 16;
 	case ARM64_INS_LD1D:
 	case ARM64_INS_ST1D:
@@ -7701,10 +7705,12 @@ static unsigned sveMemElemBits(unsigned id)
 	case ARM64_INS_LDNT1D:
 	case ARM64_INS_STNT1D:
 	case ARM64_INS_LDFF1D:
+	case ARM64_INS_LDNF1D:
 		return 64;
 	case ARM64_INS_LD1SW:
 	case ARM64_INS_LDNT1SW:
 	case ARM64_INS_LDFF1SW:
+	case ARM64_INS_LDNF1SW:
 		return 32;
 	default:
 		return 32;
@@ -7715,7 +7721,7 @@ static bool sveLdIsSigned(unsigned id)
 {
 	return id == ARM64_INS_LD1SB || id == ARM64_INS_LD1SH || id == ARM64_INS_LD1SW
 		   || id == ARM64_INS_LDNT1SB || id == ARM64_INS_LDNT1SH || id == ARM64_INS_LDNT1SW
-		   || id == ARM64_INS_LDFF1SB || id == ARM64_INS_LDFF1SH || id == ARM64_INS_LDFF1SW;
+		   || id == ARM64_INS_LDFF1SB || id == ARM64_INS_LDNF1SB || id == ARM64_INS_LDFF1SH || id == ARM64_INS_LDNF1SH || id == ARM64_INS_LDFF1SW || id == ARM64_INS_LDNF1SW;
 }
 
 static bool sveLdIsLoad(unsigned id)
@@ -7725,9 +7731,9 @@ static bool sveLdIsLoad(unsigned id)
 		   || id == ARM64_INS_LD1RQD || id == ARM64_INS_LDNT1B || id == ARM64_INS_LDNT1H
 		   || id == ARM64_INS_LDNT1W || id == ARM64_INS_LDNT1D || id == ARM64_INS_LD1SB
 		   || id == ARM64_INS_LD1SH || id == ARM64_INS_LD1SW || id == ARM64_INS_LDNT1SB
-		   || id == ARM64_INS_LDNT1SH || id == ARM64_INS_LDNT1SW || id == ARM64_INS_LDFF1B
-		   || id == ARM64_INS_LDFF1H || id == ARM64_INS_LDFF1W || id == ARM64_INS_LDFF1D
-		   || id == ARM64_INS_LDFF1SB || id == ARM64_INS_LDFF1SH || id == ARM64_INS_LDFF1SW;
+		   || id == ARM64_INS_LDNT1SH || id == ARM64_INS_LDNT1SW || id == ARM64_INS_LDFF1B || id == ARM64_INS_LDNF1B
+		   || id == ARM64_INS_LDFF1H || id == ARM64_INS_LDNF1H || id == ARM64_INS_LDFF1W || id == ARM64_INS_LDNF1W || id == ARM64_INS_LDFF1D || id == ARM64_INS_LDNF1D
+		   || id == ARM64_INS_LDFF1SB || id == ARM64_INS_LDNF1SB || id == ARM64_INS_LDFF1SH || id == ARM64_INS_LDNF1SH || id == ARM64_INS_LDFF1SW || id == ARM64_INS_LDNF1SW;
 }
 
 static bool sveLdIsStore(unsigned id)
@@ -7739,9 +7745,19 @@ static bool sveLdIsStore(unsigned id)
 
 static bool sveLdIsFirstFault(unsigned id)
 {
-	return id == ARM64_INS_LDFF1B || id == ARM64_INS_LDFF1H || id == ARM64_INS_LDFF1W
-		   || id == ARM64_INS_LDFF1D || id == ARM64_INS_LDFF1SB || id == ARM64_INS_LDFF1SH
-		   || id == ARM64_INS_LDFF1SW;
+	return id == ARM64_INS_LDFF1B || id == ARM64_INS_LDNF1B || id == ARM64_INS_LDFF1H || id == ARM64_INS_LDNF1H || id == ARM64_INS_LDFF1W || id == ARM64_INS_LDNF1W
+		   || id == ARM64_INS_LDFF1D || id == ARM64_INS_LDNF1D || id == ARM64_INS_LDFF1SB || id == ARM64_INS_LDNF1SB || id == ARM64_INS_LDFF1SH || id == ARM64_INS_LDNF1SH
+		   || id == ARM64_INS_LDFF1SW || id == ARM64_INS_LDNF1SW;
+}
+
+/**
+ * Instructions whose effect is on state outside the modelled registers
+ * (system, 64-byte single-copy atomics, tag blocks, Apple AMX/WKdm/GXF,
+ * PAC generic) lift as opaque calls over their operands.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateArm64Opaque(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	translatePseudoAsmGeneric(i, ai, irb);
 }
 
 void Capstone2LlvmIrTranslatorArm64_impl::translateSveLdSt(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
@@ -9601,6 +9617,19 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateArm64Misc(cs_insn* i, cs_arm6
 			auto* tag = irb.CreateAnd(irb.CreateLShr(loadRegister(spOrX(rn), irb), 56), c64(15));
 			auto* r = irb.CreateOr(zrOrX(rm), irb.CreateShl(c64(1), tag));
 			if (rd != 31) storeRegister(xreg(rd), r, irb);
+			return;
+		}
+		case ARM64_INS_SUBPS:
+		{
+			auto s56 = [&](unsigned n) {
+				return irb.CreateAShr(irb.CreateShl(loadRegister(spOrX(n), irb), 8), 8);
+			};
+			auto* a = s56(rn);
+			auto* b = s56(rm);
+			auto* r = irb.CreateSub(a, b);
+			if (rd != 31) storeRegister(xreg(rd), r, irb);
+			flags(irb.CreateICmpSLT(r, c64(0)), irb.CreateICmpEQ(r, c64(0)),
+					irb.CreateICmpUGE(a, b), generateOverflowSub(r, a, b, irb));
 			return;
 		}
 		case ARM64_INS_SUBP:

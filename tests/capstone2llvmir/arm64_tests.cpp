@@ -15212,6 +15212,41 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_WHILEWR_limits_to_distance
 	EXPECT_EQ(nullptr, _module.getFunction("__asm_whilewr"));
 }
 
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SUBPS_sets_flags)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0xff00000000001000},
+		{ARM64_REG_X2, 0x2000},
+	});
+
+	emulate_bin("20 00 c2 ba"); // subps x0, x1, x2
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0xfffffffffffff000},
+		{ARM64_REG_CPSR_N, true},
+		{ARM64_REG_CPSR_Z, false},
+		{ARM64_REG_CPSR_C, false},
+		{ARM64_REG_CPSR_V, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LDNF1B_sve_emits_masked_load)
+{
+	auto* f = translate(utils::hexStringToBytes("20 a0 10 a4")); // ldnf1b {z0.b}, p0/z, [x1]
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_ldnf1b"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_PACGA_and_LD64B_are_opaque_calls)
+{
+	auto* f = translate(utils::hexStringToBytes("20 30 c2 9a 20 d0 3f f8")); // pacga x0, x1, x2; ld64b x0, [x1]
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("__asm_pacga"));
+	EXPECT_NE(nullptr, _module.getFunction("__asm_ld64b"));
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
