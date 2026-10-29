@@ -72,16 +72,30 @@ retdec_compiler_launcher_args(_YARAMOD_LAUNCHER_ARGS)
 #     cmake --build . -- -j
 #     ninja: option requires an argument -- j
 #
-# Which one those nested configures pick is inherited, and on macOS it is
-# Ninja, so the whole yaramod build dies there. Linux and Windows get Make and
-# do not. Pinning the generator for this one ExternalProject is the fix that
+# Which one those nested configures pick is inherited from this build, so
+# whenever this build uses Ninja (macOS, and Linux configured with -G Ninja)
+# the whole yaramod build dies there. Pinning the generator for this one ExternalProject is the fix that
 # does not depend on upstream's text, which matters here: the patch file beside
 # this one rewrites yaramod's CMakeLists by exact string, and a bug in a
 # sub-sub-project's build command is not something to chase that way.
 set(_YARAMOD_GENERATOR "")
-if(APPLE)
+if(APPLE OR (CMAKE_GENERATOR MATCHES "Ninja" AND NOT WIN32))
 	set(_YARAMOD_GENERATOR CMAKE_GENERATOR "Unix Makefiles")
 endif()
+
+# The nested ExternalProjects above (fmt, re2) are configured during
+# yaramod's build step and are not handed CMAKE_C(XX)_COMPILER, so they look
+# for `cc`/`c++` on PATH. A box whose compiler is only clang++-18 then fails:
+#
+#     CMake Error at CMakeLists.txt:9 (project):
+#       No CMAKE_CXX_COMPILER could be found.
+#
+# CC/CXX in the environment of the build step reach them.
+set(_YARAMOD_BUILD_COMMAND
+	BUILD_COMMAND ${CMAKE_COMMAND} -E env
+		CC=${CMAKE_C_COMPILER} CXX=${CMAKE_CXX_COMPILER}
+		${CMAKE_COMMAND} --build <BINARY_DIR> --config ${RETDEC_EP_CMAKE_BUILD_TYPE}
+)
 
 ExternalProject_Add(yaramod-project
 	SOURCE_DIR ${YARAMOD_SOURCE_DIR}
@@ -91,6 +105,7 @@ ExternalProject_Add(yaramod-project
 	DOWNLOAD_NAME yaramod.zip
 	DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 	${_YARAMOD_PATCH}
+	${_YARAMOD_BUILD_COMMAND}
 	CMAKE_ARGS
 		-DCMAKE_INSTALL_PREFIX=${YARAMOD_INSTALL_DIR}
 		${_YARAMOD_LAUNCHER_ARGS}
