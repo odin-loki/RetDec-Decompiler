@@ -12063,6 +12063,34 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CVT_PS_S)
 	EXPECT_EQ(0x3fc00000c0000000ULL, mipsPsBits(getRegisterValueDouble(MIPS_REG_F2))) << dumpFunction(_function);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorMipsMicroTests, MIPS_INS_MFHI16)
+{
+	setRegisters({
+		{MIPS_REG_HI, 0x1234},
+	});
+
+	emulate_bin("02 46"); // mfhi16 $v0
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x1234},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsMicroTests, MIPS_INS_MFLO16)
+{
+	setRegisters({
+		{MIPS_REG_LO, 0x5678},
+	});
+
+	emulate_bin("42 46"); // mflo16 $v0
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x5678},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
