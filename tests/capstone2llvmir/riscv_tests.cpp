@@ -6636,6 +6636,44 @@ TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_ELW)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+// .aqrl forms decode as the *_AQRL (= *_AQ_RL) ids.
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_AMOADD_W_AQRL)
+{
+	ALL_MODES;
+
+	auto* f = translate(utils::hexStringToBytes("2f 25 b6 06")); // amoadd.w.aqrl a0, a1, (a2)
+	ASSERT_NE(nullptr, f);
+	llvm::AtomicRMWInst* rmw = nullptr;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* a = dyn_cast<llvm::AtomicRMWInst>(&*it))
+		{
+			rmw = a;
+			break;
+		}
+	}
+	ASSERT_NE(nullptr, rmw);
+	EXPECT_EQ(llvm::AtomicRMWInst::Add, rmw->getOperation());
+	EXPECT_TRUE(llvm::isAcquireOrStronger(rmw->getOrdering()));
+	EXPECT_TRUE(llvm::isReleaseOrStronger(rmw->getOrdering()));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_LR_W_AQRL)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_A2, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x12345678_dw},
+	});
+
+	emulate_bin("2f 25 06 16"); // lr.w.aqrl a0, (a2)
+
+	EXPECT_EQ(0x12345678ULL, getRegisterValueUnsigned(RISCV_REG_A0) & 0xffffffffULL);
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
