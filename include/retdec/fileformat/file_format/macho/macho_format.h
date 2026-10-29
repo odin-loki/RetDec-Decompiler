@@ -88,6 +88,8 @@ class MachOFormat : public FileFormat
 		void parseIndirectTable(std::uint32_t offset, std::uint32_t size);
 		void dySymtabCommand();
 		void dyldInfoCommand(const llvm::object::MachOObjectFile::LoadCommandInfo &commandInfo);
+		void chainedFixupsCommand();
+		void exportsTrieCommand();
 		std::unique_ptr<Import> getImportFromBindEntry(const llvm::object::MachOBindEntry &input);
 		/// @}
 

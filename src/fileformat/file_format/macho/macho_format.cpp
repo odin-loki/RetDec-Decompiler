@@ -5,6 +5,7 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <algorithm>
 #include <memory>
 #include <system_error>
 
@@ -900,9 +901,13 @@ void MachOFormat::parseIndirectTable(std::uint32_t offset, std::uint32_t size)
  */
 void MachOFormat::dySymtabCommand()
 {
-	if (isDyld)
+	const auto& cmds = file->load_commands();
+	const bool hasChainedFixups = std::any_of(cmds.begin(), cmds.end(),
+		[](const auto& c) { return c.C.cmd == MachO::LC_DYLD_CHAINED_FIXUPS; });
+	if (isDyld || hasChainedFixups)
 	{
-		// LC_DYLD_INFO is preferred source of this information
+		// LC_DYLD_INFO / LC_DYLD_CHAINED_FIXUPS are the preferred source of
+		// this information, whichever order the load commands come in.
 		return;
 	}
 
@@ -1055,6 +1060,82 @@ void MachOFormat::dyldInfoCommand(const llvm::object::MachOObjectFile::LoadComma
 }
 
 /**
+ * Load imports from LC_DYLD_CHAINED_FIXUPS (macOS 12+, iOS 15+).
+ *
+ * Binaries linked for these targets carry no LC_DYLD_INFO: every bind lives in
+ * the chained-fixup chains instead, so without this the import table stays
+ * empty and every call through a stub is an unnamed function.
+ */
+void MachOFormat::chainedFixupsCommand()
+{
+	// Bind entries are the authoritative imports; LC_DYSYMTAB must not add a
+	// second, section-derived copy (dySymtabCommand checks isDyld).
+	isDyld = true;
+	if (!importTable)
+	{
+		importTable = new ImportTable;
+	}
+
+	Error err = Error::success();
+	for (const auto& fixup: file->fixupTable(err))
+	{
+		// typeName() is the base class's and says "unknown" for every entry.
+		if (!fixup.isBind())
+		{
+			continue;
+		}
+		if (fixup.segmentIndex() < 0
+			|| static_cast<std::size_t>(fixup.segmentIndex()) >= getDeclaredNumberOfSegments())
+		{
+			continue;
+		}
+		const auto* seg = getSegment(fixup.segmentIndex());
+		if (!seg)
+		{
+			continue;
+		}
+
+		auto importSym = std::make_unique<Import>();
+		importSym->setName(fixup.symbolName().str());
+		importSym->setLibraryIndex(fixup.ordinal() - 1);
+		importSym->invalidateOrdinalNumber();
+		importSym->setAddress(seg->getAddress() + fixup.segmentOffset());
+		importTable->addImport(std::move(importSym));
+	}
+	if (err)
+	{
+		// Malformed chains: keep what was read before the error.
+		consumeError(std::move(err));
+	}
+}
+
+/**
+ * Load exports from LC_DYLD_EXPORTS_TRIE, the chained-fixups counterpart of
+ * the export half of LC_DYLD_INFO.
+ */
+void MachOFormat::exportsTrieCommand()
+{
+	if (!exportTable)
+	{
+		exportTable = new ExportTable;
+	}
+	Export exportSym;
+	Error err = Error::success();
+	for (auto& exportRef: file->exports(err))
+	{
+		exportSym.setAddress(offsetToAddress(exportRef.address()));
+		exportSym.invalidateOrdinalNumber();
+		std::string name = exportRef.name().str();
+		exportSym.setName(name.empty() ? "exported_function_" + intToHexString(exportRef.address()) : name);
+		exportTable->addExport(exportSym);
+	}
+	if (err)
+	{
+		consumeError(std::move(err));
+	}
+}
+
+/**
  * Convert MachOBindEntry to import
  * @param input Source entry
  * @return Import
@@ -1124,6 +1205,10 @@ void MachOFormat::loadCommands()
 		// Imports and exports Mac OS 10.6+
 		case LC_DYLD_INFO:
 		case LC_DYLD_INFO | LC_REQ_DYLD: dyldInfoCommand(command); break;
+
+		// Imports and exports macOS 12+ / iOS 15+ (no LC_DYLD_INFO)
+		case MachO::LC_DYLD_CHAINED_FIXUPS: chainedFixupsCommand(); break;
+		case MachO::LC_DYLD_EXPORTS_TRIE: exportsTrieCommand(); break;
 
 		default: break;
 		}
