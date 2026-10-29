@@ -2037,6 +2037,163 @@ bool detects(const ssa::SSAFunction& fn, IdiomKind kind)
 	return false;
 }
 
+// ─── Arithmetic loop idioms ───────────────────────────────────────────────────
+
+std::unique_ptr<ssa::SSAFunction> makeLoop()
+{
+	auto fn = std::make_unique<ssa::SSAFunction>("loop_fn");
+	auto* entry = fn->addBlock("entry");
+	auto* loop = fn->addBlock("loop");
+	entry->succs.push_back(loop->id);
+	loop->succs.push_back(loop->id);
+	fn->addInstr(entry->id, ssa::IrInstr::Op::Branch);
+	return fn;
+}
+
+ssa::IrValue* reg(ssa::SSAFunction& fn, uint8_t width = 32)
+{
+	auto* v = fn.allocValue(ssa::ValueKind::VirtualReg);
+	v->width = width;
+	return v;
+}
+
+ssa::IrInstr* opImm(ssa::SSAFunction& fn, ssa::IrInstr::Op op, uint64_t value)
+{
+	auto* imm = fn.allocValue(ssa::ValueKind::Immediate);
+	imm->imm = value;
+	auto* i = fn.addInstr(1, op);
+	i->uses.push_back({reg(fn)->id, 0});
+	i->uses.push_back({imm->id, 1});
+	auto* d = reg(fn);
+	i->defValue = d->id;
+	d->defInstr = i;
+	return i;
+}
+
+void pad(ssa::SSAFunction& fn)
+{
+	fn.addInstr(1, ssa::IrInstr::Op::Compare);
+	fn.addInstr(1, ssa::IrInstr::Op::CondBranch);
+}
+
+/// Store `value` through a non-stack address in the loop.
+void storeToMemory(ssa::SSAFunction& fn, ssa::ValueId value)
+{
+	auto* st = fn.addInstr(1, ssa::IrInstr::Op::Store);
+	st->uses.push_back({value, 0});
+	st->uses.push_back({reg(fn, 64)->id, 1});
+}
+
+ssa::IrInstr* byteLoad(ssa::SSAFunction& fn)
+{
+	auto* mem = fn.allocValue(ssa::ValueKind::MemRef);
+	mem->memWidth = 1;
+	mem->memIsStack = false;
+	auto* ld = fn.addInstr(1, ssa::IrInstr::Op::Load);
+	ld->uses.push_back({mem->id, 0});
+	auto* v = reg(fn, 8);
+	ld->defValue = v->id;
+	v->defInstr = ld;
+	return ld;
+}
+
+TEST(IdiomDetectorTest, Crc32PolynomialInAShiftingLoopIsCrc)
+{
+	auto fn = makeLoop();
+	opImm(*fn, ssa::IrInstr::Op::Shr, 1);
+	opImm(*fn, ssa::IrInstr::Op::Xor, 0xEDB88320u);
+	pad(*fn);
+	EXPECT_TRUE(detects(*fn, IdiomKind::Crc));
+	EXPECT_FALSE(detects(*fn, IdiomKind::Popcount));
+}
+
+TEST(IdiomDetectorTest, APolynomialOutsideTheLoopIsNotCrc)
+{
+	auto fn = makeLoop();
+	opImm(*fn, ssa::IrInstr::Op::Shr, 1);
+	pad(*fn);
+	auto* imm = fn->allocValue(ssa::ValueKind::Immediate);
+	imm->imm = 0xEDB88320u;
+	fn->addInstr(0, ssa::IrInstr::Op::Xor)->uses.push_back({imm->id, 1});
+	EXPECT_FALSE(detects(*fn, IdiomKind::Crc));
+}
+
+TEST(IdiomDetectorTest, LowBitAddedThenShiftedOutIsPopcount)
+{
+	auto fn = makeLoop();
+	opImm(*fn, ssa::IrInstr::Op::And, 1);
+	opImm(*fn, ssa::IrInstr::Op::Add, 0);
+	opImm(*fn, ssa::IrInstr::Op::Shr, 1);
+	pad(*fn);
+	EXPECT_TRUE(detects(*fn, IdiomKind::Popcount));
+}
+
+TEST(IdiomDetectorTest, LowBitLoopThatXorsIsNotPopcount)
+{
+	auto fn = makeLoop();
+	opImm(*fn, ssa::IrInstr::Op::And, 1);
+	opImm(*fn, ssa::IrInstr::Op::Add, 0);
+	opImm(*fn, ssa::IrInstr::Op::Shr, 1);
+	opImm(*fn, ssa::IrInstr::Op::Xor, 3);
+	pad(*fn);
+	EXPECT_FALSE(detects(*fn, IdiomKind::Popcount));
+}
+
+TEST(IdiomDetectorTest, RemainderByAVariableInALoopIsGcd)
+{
+	auto fn = makeLoop();
+	auto* rem = fn->addInstr(1, ssa::IrInstr::Op::Rem);
+	rem->uses.push_back({reg(*fn)->id, 0});
+	rem->uses.push_back({reg(*fn)->id, 1});
+	pad(*fn);
+	fn->addInstr(1, ssa::IrInstr::Op::Assign);
+	EXPECT_TRUE(detects(*fn, IdiomKind::Gcd));
+}
+
+TEST(IdiomDetectorTest, RemainderByAConstantIsNotGcd)
+{
+	auto fn = makeLoop();
+	opImm(*fn, ssa::IrInstr::Op::Rem, 10);
+	pad(*fn);
+	fn->addInstr(1, ssa::IrInstr::Op::Assign);
+	EXPECT_FALSE(detects(*fn, IdiomKind::Gcd));
+}
+
+TEST(IdiomDetectorTest, ByteXoredAndStoredBackIsXorCipher)
+{
+	auto fn = makeLoop();
+	auto* ld = byteLoad(*fn);
+	auto* x = fn->addInstr(1, ssa::IrInstr::Op::Xor);
+	x->uses.push_back({ld->defValue, 0});
+	x->uses.push_back({reg(*fn, 8)->id, 1});
+	auto* d = reg(*fn, 8);
+	x->defValue = d->id;
+	d->defInstr = x;
+	storeToMemory(*fn, d->id);
+	pad(*fn);
+	EXPECT_TRUE(detects(*fn, IdiomKind::XorCipher));
+}
+
+TEST(IdiomDetectorTest, StoringAPassedValueInALoopIsMemset)
+{
+	auto fn = makeLoop();
+	storeToMemory(*fn, reg(*fn, 8)->id);
+	opImm(*fn, ssa::IrInstr::Op::Add, 1);
+	pad(*fn);
+	fn->addInstr(1, ssa::IrInstr::Op::Assign);
+	EXPECT_TRUE(detects(*fn, IdiomKind::Memset));
+}
+
+TEST(IdiomDetectorTest, StoringAComputedValueInALoopIsNotMemset)
+{
+	auto fn = makeLoop();
+	auto* orI = opImm(*fn, ssa::IrInstr::Op::Or, 0x80);
+	storeToMemory(*fn, orI->defValue);
+	pad(*fn);
+	fn->addInstr(1, ssa::IrInstr::Op::Assign);
+	EXPECT_FALSE(detects(*fn, IdiomKind::Memset));
+}
+
 } // namespace
 
 TEST(IdiomDetectorTest, AByteTestedAgainstZeroInALoopIsStrlen)

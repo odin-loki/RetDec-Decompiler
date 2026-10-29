@@ -158,6 +158,139 @@ bool hasBytePairCompare(const ssa::SSAFunction& fn)
 	return false;
 }
 
+// ─── Arithmetic loop idioms ───────────────────────────────────────────────────
+// Each looks only at instructions in blocks on a cycle, and at operands, so a
+// constant elsewhere in the function is not evidence.
+
+bool immOperand(const ssa::SSAFunction& fn, const ssa::IrInstr& i, uint64_t value)
+{
+	for (const auto& u: i.uses)
+		if (const auto* v = fn.value(u.valueId); v && v->kind == ssa::ValueKind::Immediate && v->imm == value)
+			return true;
+	return false;
+}
+
+bool anyImmOperand(const ssa::SSAFunction& fn, const ssa::IrInstr& i)
+{
+	for (const auto& u: i.uses)
+		if (const auto* v = fn.value(u.valueId); v && v->kind == ssa::ValueKind::Immediate) return true;
+	return false;
+}
+
+bool addrOnStack(const ssa::SSAFunction& fn, const ssa::IrInstr& i)
+{
+	const uint32_t idx = i.op == ssa::IrInstr::Op::Store ? 1 : 0;
+	for (const auto& u: i.uses)
+		if (u.operandIndex == idx)
+			if (const auto* a = fn.value(u.valueId); a && a->isStackSlot) return true;
+	return false;
+}
+
+template <typename F>
+void forEachLoopInstr(const ssa::SSAFunction& fn, F&& f)
+{
+	for (const auto& blk: fn.blocks())
+	{
+		if (!blk || !ssa::blockOnCycle(fn, blk->id)) continue;
+		for (const auto* i: blk->instrs)
+			if (i) f(*i);
+	}
+}
+
+/// Every load reads a stack slot: the loop works on scalars, not on memory.
+bool onlyScalarLoads(const ssa::SSAFunction& fn)
+{
+	for (const auto& blk: fn.blocks())
+	{
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+			if (i && i->op == ssa::IrInstr::Op::Load && !addrOnStack(fn, *i)) return false;
+	}
+	return true;
+}
+
+/// A reflected or normal CRC-32 polynomial XORed in inside a shifting loop.
+bool hasCrcLoop(const ssa::SSAFunction& fn)
+{
+	bool poly = false, shift = false;
+	forEachLoopInstr(fn, [&](const ssa::IrInstr& i) {
+		if ((immOperand(fn, i, 0xEDB88320u) || immOperand(fn, i, 0x04C11DB7u) || immOperand(fn, i, 0x82F63B78u)))
+			poly = true;
+		if (((i.op == ssa::IrInstr::Op::Shr || i.op == ssa::IrInstr::Op::Shl) && immOperand(fn, i, 1))
+			|| (i.op == ssa::IrInstr::Op::Div && immOperand(fn, i, 2)))
+			shift = true;
+	});
+	return poly && shift;
+}
+
+/// `c += x & 1; x >>= 1;` over a scalar: the low bit counted, then shifted out.
+bool hasBitCountLoop(const ssa::SSAFunction& fn)
+{
+	bool lowBit = false, shiftOne = false, add = false, xorIn = false;
+	forEachLoopInstr(fn, [&](const ssa::IrInstr& i) {
+		if ((i.op == ssa::IrInstr::Op::And && immOperand(fn, i, 1)) || (i.op == ssa::IrInstr::Op::Rem && immOperand(fn, i, 2)))
+			lowBit = true;
+		if (((i.op == ssa::IrInstr::Op::Shr || i.op == ssa::IrInstr::Op::Sar) && immOperand(fn, i, 1))
+			|| (i.op == ssa::IrInstr::Op::Div && immOperand(fn, i, 2)))
+			shiftOne = true;
+		if (i.op == ssa::IrInstr::Op::Add) add = true;
+		if (i.op == ssa::IrInstr::Op::Xor) xorIn = true;
+	});
+	return lowBit && shiftOne && add && !xorIn && onlyScalarLoads(fn);
+}
+
+/// Euclid: a remainder by a variable inside a loop over scalars.
+bool hasEuclidLoop(const ssa::SSAFunction& fn)
+{
+	bool remByVar = false;
+	forEachLoopInstr(fn, [&](const ssa::IrInstr& i) {
+		if (i.op == ssa::IrInstr::Op::Rem && !anyImmOperand(fn, i)) remByVar = true;
+	});
+	return remByVar && onlyScalarLoads(fn) && !hasCrcLoop(fn);
+}
+
+/// `buf[i] ^= k`: a byte loaded from memory, XORed, and stored back to memory.
+bool hasXorBufferLoop(const ssa::SSAFunction& fn)
+{
+	bool found = false;
+	forEachLoopInstr(fn, [&](const ssa::IrInstr& st) {
+		if (found || st.op != ssa::IrInstr::Op::Store || st.uses.empty() || addrOnStack(fn, st)) return;
+		const auto* v = fn.value(st.uses[0].valueId);
+		const ssa::IrInstr* d = v ? v->defInstr : nullptr;
+		for (int hops = 0; d && d->op == ssa::IrInstr::Op::Assign && !d->uses.empty() && hops < 2; ++hops)
+		{
+			v = fn.value(d->uses[0].valueId);
+			d = v ? v->defInstr : nullptr;
+		}
+		if (!d || d->op != ssa::IrInstr::Op::Xor) return;
+		for (const auto& u: d->uses)
+			if (const auto* ld = byteLoadOf(fn, u.valueId); ld && !addrOnStack(fn, *ld)) found = true;
+	});
+	return found && !hasCrcLoop(fn);
+}
+
+/// `p[i] = v`: a store to memory of a value not read from memory, in a
+/// loop that reads no memory at all.
+bool hasByteFillLoop(const ssa::SSAFunction& fn)
+{
+	if (!onlyScalarLoads(fn) || countOp(fn, ssa::IrInstr::Op::Call) > 0) return false;
+	bool fill = false;
+	forEachLoopInstr(fn, [&](const ssa::IrInstr& st) {
+		if (st.op != ssa::IrInstr::Op::Store || st.uses.empty() || addrOnStack(fn, st)) return;
+		// The fill value is passed through, not computed: a value built by
+		// arithmetic each iteration is an encoder, not a fill.
+		const auto* v = fn.value(st.uses[0].valueId);
+		const ssa::IrInstr* d = v ? v->defInstr : nullptr;
+		for (int hops = 0; d && d->op == ssa::IrInstr::Op::Assign && !d->uses.empty() && hops < 3; ++hops)
+		{
+			v = fn.value(d->uses[0].valueId);
+			d = v ? v->defInstr : nullptr;
+		}
+		if (!d || d->op == ssa::IrInstr::Op::Load) fill = true;
+	});
+	return fill;
+}
+
 // Blocks reachable from `from` without entering `stop`.
 std::vector<uint8_t> reachWithout(const ssa::SSAFunction& fn, ssa::BlockId from, ssa::BlockId stop)
 {
@@ -354,6 +487,12 @@ std::vector<IdiomResult> IdiomDetector::detect(const ssa::SSAFunction& fn) const
 	{
 		out.push_back(makeResult(IdiomKind::Dfs, 0.90f, "recursive_adjacency"));
 	}
+
+	if (hasCrcLoop(fn)) out.push_back(makeResult(IdiomKind::Crc, 0.90f, "crc_polynomial_shift_loop"));
+	else if (hasBitCountLoop(fn)) out.push_back(makeResult(IdiomKind::Popcount, 0.80f, "low_bit_shift_loop"));
+	if (hasEuclidLoop(fn)) out.push_back(makeResult(IdiomKind::Gcd, 0.80f, "remainder_by_variable_loop"));
+	if (hasXorBufferLoop(fn)) out.push_back(makeResult(IdiomKind::XorCipher, 0.80f, "xor_byte_in_place"));
+	if (hasByteFillLoop(fn)) out.push_back(makeResult(IdiomKind::Memset, 0.75f, "byte_fill_loop"));
 
 	if (hasVarintLoop(fn))
 	{
