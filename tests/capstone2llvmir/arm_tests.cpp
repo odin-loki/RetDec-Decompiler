@@ -9702,6 +9702,120 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSUBL_s16)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VADDV_s8)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0},
+		{ARM_REG_D2, armDBits(0x01020304050607ffULL)},
+		{ARM_REG_D3, armDBits(0ULL)},
+	});
+
+	emulate_bin("f1 ee 02 0f"); // vaddv.s8 r0, q1
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 27},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VADDVA_u16)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R2, 100},
+		{ARM_REG_D6, armDBits(0x0001000100010001ULL)},
+		{ARM_REG_D7, armDBits(0x000100010001ffffULL)},
+	});
+
+	emulate_bin("f5 fe 26 2f"); // vaddva.u16 r2, q3
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R2, 100+7+0xffff},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMAXV_s32)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0},
+		{ARM_REG_D2, armDBits(0xfffffffd00000005ULL)},
+		{ARM_REG_D3, armDBits(0x0000000900000001ULL)},
+	});
+
+	emulate_bin("ea ee 02 0f"); // vmaxv.s32 r0, q1
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 9},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMINV_u8)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0xff},
+		{ARM_REG_D2, armDBits(0x1010101010101003ULL)},
+		{ARM_REG_D3, armDBits(0x1010101010101010ULL)},
+	});
+
+	emulate_bin("e2 fe 82 0f"); // vminv.u8 r0, q1
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 3},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMAXAV_s16)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0},
+		{ARM_REG_D2, armDBits(0x0000000000008000ULL)},
+		{ARM_REG_D3, armDBits(5ULL)},
+	});
+
+	emulate_bin("e4 ee 02 0f"); // vmaxav.s16 r0, q1
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x8000},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VADDLV_s32)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_D2, armDBits(0xffffffff00000002ULL)},
+		{ARM_REG_D3, armDBits(0x7fffffff7fffffffULL)},
+	});
+
+	emulate_bin("89 ee 02 0f"); // vaddlv.s32 r0, r1, q1
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0xffffffff},
+		{ARM_REG_R1, 0},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VPADD_i32)
 {
 	ALL_MODES;

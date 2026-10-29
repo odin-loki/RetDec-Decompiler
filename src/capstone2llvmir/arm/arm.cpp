@@ -7892,5 +7892,92 @@ void Capstone2LlvmIrTranslatorArm_impl::translateClrm(cs_insn* i, cs_arm* ai, ll
 	}
 }
 
+/**
+ * MVE across-vector reductions into general registers: VADDV[A], VADDLV[A],
+ * VMAXV/VMINV and the absolute VMAXAV/VMINAV. Predication is ignored, as for
+ * the other MVE vector ops (VPT blocks are not modelled).
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateMveReduce(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	bool isFp = false, isSigned = false;
+	unsigned lb = vectorDataLaneBits(ai->vector_data, isFp, isSigned);
+	bool longForm = i->id == ARM_INS_VADDLV || i->id == ARM_INS_VADDLVA;
+	unsigned nOps = longForm ? 3 : 2;
+	if (isFp || lb == 0 || ai->op_count != nOps || ai->operands[nOps - 1].type != ARM_OP_REG)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	auto* v = loadNeonVector(ai->operands[nOps - 1].reg, lb, false, irb);
+	unsigned lanes = llvm::cast<llvm::FixedVectorType>(v->getType())->getNumElements();
+	auto* i32 = irb.getInt32Ty();
+	auto* i64 = irb.getInt64Ty();
+	auto* eTy = irb.getIntNTy(lb);
+	auto ext = [&](llvm::Value* x, llvm::Type* t) {
+		return isSigned ? irb.CreateSExtOrTrunc(x, t) : irb.CreateZExtOrTrunc(x, t);
+	};
+	if (longForm)
+	{
+		llvm::Value* sum = llvm::ConstantInt::get(i64, 0);
+		if (i->id == ARM_INS_VADDLVA)
+		{
+			auto* lo = irb.CreateZExt(loadRegister(ai->operands[0].reg, irb), i64);
+			auto* hi = irb.CreateZExt(loadRegister(ai->operands[1].reg, irb), i64);
+			sum = irb.CreateOr(lo, irb.CreateShl(hi, 32));
+		}
+		for (unsigned k = 0; k < lanes; ++k)
+		{
+			sum = irb.CreateAdd(sum, ext(irb.CreateExtractElement(v, uint64_t(k)), i64));
+		}
+		storeRegister(ai->operands[0].reg, irb.CreateTrunc(sum, i32), irb);
+		storeRegister(ai->operands[1].reg, irb.CreateTrunc(irb.CreateLShr(sum, 32), i32), irb);
+		return;
+	}
+	auto* rd = loadRegister(ai->operands[0].reg, irb);
+	llvm::Value* res = nullptr;
+	switch (i->id)
+	{
+		case ARM_INS_VADDV:
+		case ARM_INS_VADDVA:
+		{
+			res = i->id == ARM_INS_VADDVA ? rd : llvm::ConstantInt::get(i32, 0);
+			for (unsigned k = 0; k < lanes; ++k)
+			{
+				res = irb.CreateAdd(res, ext(irb.CreateExtractElement(v, uint64_t(k)), i32));
+			}
+			break;
+		}
+		case ARM_INS_VMAXV:
+		case ARM_INS_VMINV:
+		case ARM_INS_VMAXAV:
+		case ARM_INS_VMINAV:
+		{
+			bool isMax = i->id == ARM_INS_VMAXV || i->id == ARM_INS_VMAXAV;
+			bool abs = i->id == ARM_INS_VMAXAV || i->id == ARM_INS_VMINAV;
+			bool sgn = isSigned && !abs;
+			llvm::Value* acc = irb.CreateTrunc(rd, eTy);
+			for (unsigned k = 0; k < lanes; ++k)
+			{
+				llvm::Value* e = irb.CreateExtractElement(v, uint64_t(k));
+				if (abs)
+				{
+					e = irb.CreateSelect(irb.CreateICmpSLT(e, llvm::ConstantInt::get(eTy, 0)), irb.CreateNeg(e), e);
+				}
+				llvm::Value* c = isMax
+						? (sgn ? irb.CreateICmpSGT(e, acc) : irb.CreateICmpUGT(e, acc))
+						: (sgn ? irb.CreateICmpSLT(e, acc) : irb.CreateICmpULT(e, acc));
+				acc = irb.CreateSelect(c, e, acc);
+			}
+			res = sgn ? irb.CreateSExt(acc, i32) : irb.CreateZExt(acc, i32);
+			break;
+		}
+		default:
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+	}
+	storeRegister(ai->operands[0].reg, res, irb);
+}
+
+
 } // namespace capstone2llvmir
 } // namespace retdec
