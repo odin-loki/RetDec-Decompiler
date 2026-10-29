@@ -1046,6 +1046,16 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateAddis(cs_insn* i, cs_ppc* p
 	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	// ELFv2 global entry: `addis r2, r12, hi` runs with r12 holding this
+	// very address (the ABI requires it), so the TOC pointer is a constant.
+	// Without this r12 is an unknown input and every TOC-relative access
+	// (switch tables, globals) reads through garbage.
+	if (_origBasicMode == CS_MODE_64 && pi->op_count == 3
+			&& pi->operands[0].type == PPC_OP_REG && pi->operands[0].reg == PPC_REG_R2
+			&& pi->operands[1].type == PPC_OP_REG && pi->operands[1].reg == PPC_REG_R12)
+	{
+		op1 = llvm::ConstantInt::get(op1->getType(), i->address);
+	}
 	op2 = irb.CreateShl(op2, llvm::ConstantInt::get(op2->getType(), 16));
 	auto* add = irb.CreateAdd(op1, op2);
 	storeOp(pi->operands[0], add, irb);
