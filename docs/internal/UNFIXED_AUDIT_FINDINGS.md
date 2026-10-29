@@ -16,7 +16,7 @@ Verified against the tree or left open in the last batches of this file:
 | Item | Why it still stands |
 |------|---------------------|
 | ~~Native arm64 Mach-O → empty `.c`~~ | Closed: chained fixups and the exports trie are read (74e9d144) and AArch64 GPRs are recognised under capstone 6 (e0ec0d86); a fixup-chains arm64 sample decompiles to `uint64_t _add(uint64_t a1, uint64_t a2)` with its call sites. Corpus is still ELF. |
-| `DerefOpExpr` / `UnaryOpExpr::getType()` | Returns the operand's type (the pointer), not the pointee. Consumers tuned against that |
+| ~~`DerefOpExpr` / `UnaryOpExpr::getType()`~~ | Closed: `DerefOpExpr::getType()` returns the pointee (or array element); F1, DET-01 and CC-01 unchanged, see the section below |
 | `ctest-linux` / `ctest-windows` suite subset | Named targets only. `ctest-macos` runs `ctest` with no `-L` |
 | Pipeline stages marked hook/partial | [PIPELINE_REDESIGN_TODO.md](PIPELINE_REDESIGN_TODO.md) — not done |
 | Neural differential gate | `RETDEC_NEURAL_DIFF_GATE` warns and skips |
@@ -1640,6 +1640,17 @@ this: that one segfaults, and the test for it exits 139 without the fix.
 ## Found while fixing the reproducibility defects, and deliberately left alone
 
 ### `DerefOpExpr::getType()` returns the pointer's type, not the pointee's
+
+**Closed.** `DerefOpExpr` now overrides `getType()`: the pointee of a pointer
+operand, the element of an array operand, the operand's type otherwise. Measured
+against the bar below, same binary before and after, local corpus of 126:
+F1 0.1601 → 0.1601, DET-01 72/72 identical both times, CC-01 29/126 → 29/126
+with the same files failing on the same errors (local gcc 14 with
+`-fpermissive`; the local corpus does not reach CI's rate, so the comparison
+is relative). The only change in emitted C is 17 files losing redundant
+integer casts on stores through and returns of a dereference, such as
+`*(uint32_t *)p = (uint32_t)v;` becoming `*(uint32_t *)p = v;`. Unit tests:
+`tests/llvmir2hll/ir/deref_op_expr_tests.cpp`. The original entry follows.
 
 `src/llvmir2hll/ir/unary_op_expr.cpp:27`
 

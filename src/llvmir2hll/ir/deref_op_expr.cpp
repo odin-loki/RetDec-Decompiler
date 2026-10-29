@@ -6,6 +6,9 @@
 */
 
 #include "retdec/llvmir2hll/ir/deref_op_expr.h"
+#include "retdec/llvmir2hll/support/smart_ptr.h"
+#include "retdec/llvmir2hll/ir/array_type.h"
+#include "retdec/llvmir2hll/ir/pointer_type.h"
 #include "retdec/llvmir2hll/support/debug.h"
 #include "retdec/llvmir2hll/support/visitor.h"
 
@@ -42,6 +45,17 @@ ShPtr<Value> DerefOpExpr::clone() {
 * @par Preconditions
 *  - @a op is non-null
 */
+ShPtr<Type> DerefOpExpr::getType() const {
+	ShPtr<Type> opType(getOperand()->getType());
+	if (auto ptrType = cast<PointerType>(opType)) {
+		return ptrType->getContainedType();
+	}
+	if (auto arrType = cast<ArrayType>(opType)) {
+		return arrType->getContainedType();
+	}
+	return opType;
+}
+
 ShPtr<DerefOpExpr> DerefOpExpr::create(ShPtr<Expression> op) {
 	PRECONDITION_NON_NULL(op);
 

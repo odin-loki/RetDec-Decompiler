@@ -31,6 +31,10 @@ public:
 
 	virtual bool isEqualTo(ShPtr<Value> otherValue) const override;
 	virtual ShPtr<Value> clone() override;
+	/// The pointee of a pointer operand and the element of an array operand;
+	/// the operand's own type otherwise (an untyped operand, where there is
+	/// nothing better to say).
+	virtual ShPtr<Type> getType() const override;
 
 	/// @name Visitor Interface
 	/// @{

@@ -41,6 +41,7 @@ add_executable(tests-llvmir2hll
 	ir/const_int_tests.cpp
 	ir/const_string_tests.cpp
 	ir/const_symbol_tests.cpp
+	ir/deref_op_expr_tests.cpp
 	ir/expression_tests.cpp
 	ir/function_builder_tests.cpp
 	ir/function_tests.cpp
