@@ -1187,6 +1187,43 @@ void CHLLWriter::visit(ShPtr<CommaOpExpr> expr)
 
 void CHLLWriter::visit(ShPtr<BitCastExpr> expr)
 {
+	// A bitcast between a float and an integer reinterprets the bits; a C
+	// cast converts the value. `(uint64_t)d` of `bitcast double %d to i64`
+	// made ARM's vld1 struct copy read 0 for every word (audit funcs2 stc).
+	// Pun through a compound-literal union instead.
+	auto from = expr->getOperand()->getType();
+	auto to = expr->getType();
+	if ((isa<FloatType>(from) && isa<IntType>(to))
+			|| (isa<IntType>(from) && isa<FloatType>(to)))
+	{
+		out->punctuation('(');
+		out->punctuation('(');
+		out->keyword("union");
+		out->space();
+		out->punctuation('{');
+		out->space();
+		from->accept(this);
+		out->space();
+		out->memberId("from");
+		out->punctuation(';');
+		out->space();
+		to->accept(this);
+		out->space();
+		out->memberId("to");
+		out->punctuation(';');
+		out->space();
+		out->punctuation('}');
+		out->punctuation(')');
+		out->punctuation('{');
+		out->space();
+		expr->getOperand()->accept(this);
+		out->space();
+		out->punctuation('}');
+		out->punctuation(')');
+		out->operatorX(".");
+		out->memberId("to");
+		return;
+	}
 	emitCastInStandardWay(expr);
 }
 
