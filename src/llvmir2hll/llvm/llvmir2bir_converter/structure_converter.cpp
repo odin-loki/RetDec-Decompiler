@@ -34,6 +34,7 @@
 #include "retdec/llvmir2hll/ir/while_loop_stmt.h"
 #include "retdec/llvmir2hll/llvm/llvm_support.h"
 #include "retdec/llvmir2hll/llvm/llvmir2bir_converter/basic_block_converter.h"
+#include "retdec/llvmir2hll/llvm/llvmir2bir_converter/irreducible_cycle_splitter.h"
 #include "retdec/llvmir2hll/llvm/llvmir2bir_converter/labels_handler.h"
 #include "retdec/llvmir2hll/llvm/llvmir2bir_converter/llvm_value_converter.h"
 #include "retdec/llvmir2hll/llvm/llvmir2bir_converter/structure_converter.h"
@@ -72,6 +73,10 @@ const unsigned MAX_NODE_SPLITS = 64;
 /// controlled node splitting may clone.
 const unsigned MAX_SPLIT_WEIGHT = 16;
 
+/// LLVM instructions that may be copied to make one irreducible cycle
+/// reducible. Per function, at most half of its instructions are copied.
+const unsigned MAX_IRREDUCIBLE_COPY_PER_CYCLE = 96;
+
 /// If LLVM reports multiple exit blocks for this natural loop, attach a debug
 /// comment on the structured loop (framework Cat. 1.2).
 void attachMultiExitLoopComment(const ShPtr<Statement> &stmt, llvm::Loop *loop) {
@@ -109,6 +114,13 @@ StructureConverter::StructureConverter(llvm::Pass *basePass,
 */
 ShPtr<Statement> StructureConverter::convertFuncBody(llvm::Function &func) {
 	PRECONDITION(!func.isDeclaration(), "func cannot be a declaration");
+
+	// A cycle with several entry blocks is no LLVM loop at all, so it could
+	// only be structured with gotos. When the blocks between its entries are
+	// few, copy them so that one entry remains (gcc -O2/-O3 heapsort's
+	// sift-down loop is entered both at its test and in its middle).
+	splitIrreducibleCycles(func, MAX_IRREDUCIBLE_COPY_PER_CYCLE,
+		func.getInstructionCount() * 2 / 3);
 
 	// First the classic structuring, with one controlled node split. Only if
 	// that leaves gotos, structure the function again with repeated

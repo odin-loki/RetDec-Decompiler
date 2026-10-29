@@ -73,6 +73,7 @@ add_executable(tests-llvmir2hll
 	llvm/llvmir2bir_converter/llvm_value_converter_tests/llvm_instruction_converter_tests.cpp
 	llvm/llvmir2bir_converter/llvm_value_converter_tests/llvm_type_converter_tests.cpp
 	llvm/llvmir2bir_converter/llvm_value_converter_tests/tests_with_llvm_value_converter.cpp
+	llvm/llvmir2bir_converter/irreducible_cycle_splitter_tests.cpp
 	llvm/llvmir2bir_converter/structure_converter_tests.cpp
 	llvm/llvmir2bir_converter/variables_manager_tests.cpp
 	llvm/llvmir2bir_converter_tests/base_tests.cpp

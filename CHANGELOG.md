@@ -19,6 +19,14 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   small blocks inside the loop (which may end in break/continue) split,
   before falling back to gotos. knapsack_01 -O3 goes from 10 gotos to 0 and
   lcs_dp -O3 from 5 to 0; the corpus total from 62 to 47.
+- A cycle with more than one entry block (no LLVM loop, so it was only
+  structurable with gotos) is made reducible before structuring: the
+  blocks between its entries and one chosen header are copied for the
+  edges from outside, so the header is the only entry and the cycle
+  becomes a natural loop. At most 96 instructions per cycle and two thirds
+  of the function are copied, and only if the copied blocks are acyclic.
+  heapsort -O2 goes from 3 gotos to 1 (279 to 318 lines) and -O3 from 6 to
+  1 (304 to 350); the corpus total from 47 to 40.
 - BEQ-01 (`scripts/ci/check_behaviour_equivalence.py`) compiles the
   decompiled C of each `tests/algorithm_recovery/beq/*.c` entry function
   (gcc -O0/-O2/-O3), links it against the original driver, and compares

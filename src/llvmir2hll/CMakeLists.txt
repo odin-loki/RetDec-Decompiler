@@ -144,6 +144,7 @@ add_library(llvmir2hll STATIC
 	llvm/llvmir2bir_converter/llvm_instruction_converter.cpp
 	llvm/llvmir2bir_converter/llvm_type_converter.cpp
 	llvm/llvmir2bir_converter/llvm_value_converter.cpp
+	llvm/llvmir2bir_converter/irreducible_cycle_splitter.cpp
 	llvm/llvmir2bir_converter/structure_converter.cpp
 	llvm/llvmir2bir_converter/variables_manager.cpp
 	llvm/string_conversions.cpp
