@@ -12728,6 +12728,70 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VDWDUP_u16)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SQRSHR_right_rounds)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R1, 0xfffffff9},
+		{ARM_REG_R2, 2},
+	});
+
+	emulate_bin("51 ea 2d 2f");
+
+	EXPECT_EQ(0xfffffffeULL, getRegisterValueUnsigned(ARM_REG_R1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SQRSHR_left_saturates)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R1, 0x40000000},
+		{ARM_REG_R2, 0xfe},
+	});
+
+	emulate_bin("51 ea 2d 2f");
+
+	EXPECT_EQ(0x7fffffffULL, getRegisterValueUnsigned(ARM_REG_R1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UQRSHL_left)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R3, 0x3},
+		{ARM_REG_R4, 4},
+	});
+
+	emulate_bin("53 ea 0d 4f");
+
+	EXPECT_EQ(0x30ULL, getRegisterValueUnsigned(ARM_REG_R3));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UQRSHL_negative_rounds_right)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R3, 0x6},
+		{ARM_REG_R4, 0xff},
+	});
+
+	emulate_bin("53 ea 0d 4f");
+
+	EXPECT_EQ(0x3ULL, getRegisterValueUnsigned(ARM_REG_R3));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

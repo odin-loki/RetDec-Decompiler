@@ -9049,5 +9049,49 @@ void Capstone2LlvmIrTranslatorArm_impl::translateNeonFml(cs_insn* i, cs_arm* ai,
 	storeNeonVector(d, r, irb);
 }
 
+
+/**
+ * SQRSHR/UQRSHL (v8.1-M): 32-bit saturating rounding shift by the signed
+ * byte in Rm. SQRSHR shifts right (negative amounts shift left); UQRSHL
+ * shifts left (negative amounts shift right with rounding). The Q flag is
+ * not modelled.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateMveScalarRegShift(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	if (ai->op_count != 2 || ai->operands[0].type != ARM_OP_REG || ai->operands[1].type != ARM_OP_REG)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	bool sgn = armIsId(i, ARM_INS_SQRSHR);
+	auto* i32 = irb.getInt32Ty();
+	auto* i64 = irb.getInt64Ty();
+	auto c64 = [&](int64_t v) { return llvm::ConstantInt::getSigned(i64, v); };
+	auto* rda = loadRegister(ai->operands[0].reg, irb);
+	auto* x = sgn ? irb.CreateSExt(rda, i64) : irb.CreateZExt(rda, i64);
+	auto* amt = irb.CreateSExt(irb.CreateTrunc(loadRegister(ai->operands[1].reg, irb), irb.getInt8Ty()), i64);
+	// Right-shift amount (positive) in the instruction's own direction.
+	llvm::Value* rs = sgn ? amt : irb.CreateNeg(amt);
+	rs = irb.CreateSelect(irb.CreateICmpSGT(rs, c64(40)), c64(40), rs);
+	rs = irb.CreateSelect(irb.CreateICmpSLT(rs, c64(-33)), c64(-33), rs);
+	auto* pos = irb.CreateICmpSGT(rs, c64(0));
+	auto* sr = irb.CreateSelect(pos, rs, c64(1));
+	auto* rnd = irb.CreateShl(c64(1), irb.CreateSub(sr, c64(1)));
+	auto* biased = irb.CreateAdd(x, rnd);
+	llvm::Value* right = sgn ? irb.CreateAShr(biased, sr) : irb.CreateLShr(biased, sr);
+	auto* left = irb.CreateShl(x, irb.CreateSelect(pos, c64(0), irb.CreateNeg(rs)));
+	llvm::Value* r = irb.CreateSelect(pos, right, left);
+	if (sgn)
+	{
+		r = irb.CreateSelect(irb.CreateICmpSGT(r, c64(0x7fffffff)), c64(0x7fffffff), r);
+		r = irb.CreateSelect(irb.CreateICmpSLT(r, c64(-0x80000000LL)), c64(-0x80000000LL), r);
+	}
+	else
+	{
+		r = irb.CreateSelect(irb.CreateICmpUGT(r, c64(0xffffffff)), c64(0xffffffff), r);
+	}
+	storeRegister(ai->operands[0].reg, irb.CreateTrunc(r, i32), irb);
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec
