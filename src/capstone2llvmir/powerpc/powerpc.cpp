@@ -10858,5 +10858,272 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxBitFields(cs_insn* i, cs
 	}
 }
 
+
+/**
+ * Prefixed (ISA 3.1) VSX/FP loads and stores, VSX register-pair loads and
+ * stores, load/store rightmost element, load/store with length, LXVWSX and
+ * LXVKQ:
+ * PPC_INS_PLXV, PPC_INS_PSTXV, PPC_INS_PLFD, PPC_INS_PLFS, PPC_INS_PSTFD,
+ * PPC_INS_PSTFS, PPC_INS_PLXSD, PPC_INS_PLXSSP, PPC_INS_PSTXSD,
+ * PPC_INS_PSTXSSP, PPC_INS_PLXVP, PPC_INS_PSTXVP, PPC_INS_LXVP,
+ * PPC_INS_STXVP, PPC_INS_LXVPX, PPC_INS_STXVPX, PPC_INS_LXVR[BHWD]X,
+ * PPC_INS_STXVR[BHWD]X, PPC_INS_LXVL, PPC_INS_LXVLL, PPC_INS_STXVL,
+ * PPC_INS_STXVLL, PPC_INS_LXVWSX, PPC_INS_LXVKQ
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxMemMisc(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	if (pi->op_count < 2)
+	{
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+	auto* i8 = irb.getInt8Ty();
+	auto* i64 = irb.getInt64Ty();
+	auto* i128 = irb.getInt128Ty();
+	auto* dt = getDefaultType();
+	auto c64 = [&](uint64_t v) { return llvm::ConstantInt::get(i64, v); };
+
+	cs_ppc_op op0 = pi->operands[0];
+	if (op0.type == PPC_OP_REG && op0.reg >= PPC_REG_VF0 && op0.reg <= PPC_REG_VF31)
+	{
+		op0.reg = ppc_reg(PPC_REG_V0 + (op0.reg - PPC_REG_VF0));
+	}
+	auto vsr = [&](unsigned k) {
+		cs_ppc_op o = op0;
+		o.type = PPC_OP_REG;
+		o.reg = ppc_reg(k < 32 ? PPC_REG_VSL0 + k : PPC_REG_V0 + (k - 32));
+		return o;
+	};
+
+	// Effective address.
+	llvm::Value* ea = nullptr;
+	bool prefixed = false;
+	switch (i->id)
+	{
+		case PPC_INS_PLXV: case PPC_INS_PSTXV: case PPC_INS_PLFD: case PPC_INS_PLFS:
+		case PPC_INS_PSTFD: case PPC_INS_PSTFS: case PPC_INS_PLXSD: case PPC_INS_PLXSSP:
+		case PPC_INS_PSTXSD: case PPC_INS_PSTXSSP: case PPC_INS_PLXVP: case PPC_INS_PSTXVP:
+			prefixed = true;
+			break;
+		default:
+			break;
+	}
+	if (prefixed)
+	{
+		if (i->size < 8)
+		{
+			translatePseudoAsmGeneric(i, pi, irb);
+			return;
+		}
+		auto be32 = [&](unsigned o) {
+			return (uint32_t(i->bytes[o]) << 24) | (uint32_t(i->bytes[o + 1]) << 16)
+					| (uint32_t(i->bytes[o + 2]) << 8) | uint32_t(i->bytes[o + 3]);
+		};
+		uint32_t pfx = be32(0), sfx = be32(4);
+		int64_t d = (int64_t(pfx & 0x3ffff) << 16) | (sfx & 0xffff);
+		d = (d << 30) >> 30;
+		unsigned ra = (sfx >> 16) & 31;
+		if ((pfx >> 20) & 1)
+		{
+			ea = c64(i->address + d);
+		}
+		else
+		{
+			llvm::Value* base = ra ? irb.CreateZExtOrTrunc(loadRegister(PPC_REG_R0 + ra, irb), i64) : c64(0);
+			ea = irb.CreateAdd(base, c64(d));
+		}
+		ea = irb.CreateZExtOrTrunc(ea, dt);
+	}
+	else if (i->id != PPC_INS_LXVKQ)
+	{
+		if (pi->operands[1].type == PPC_OP_MEM)
+		{
+			ea = loadOp(pi->operands[1], irb, nullptr, true);
+		}
+		else
+		{
+			ea = loadIndexedEffectiveAddress(pi, irb);
+		}
+	}
+	auto off = [&](llvm::Value* a, uint64_t o) {
+		return o ? irb.CreateAdd(a, llvm::ConstantInt::get(a->getType(), o)) : a;
+	};
+	auto ld128 = [&](llvm::Value* a) {
+		auto* hi = loadIntPtr(irb, a, i64);
+		auto* lo = loadIntPtr(irb, off(a, 8), i64);
+		return irb.CreateOr(irb.CreateShl(irb.CreateZExt(hi, i128), 64), irb.CreateZExt(lo, i128));
+	};
+	auto st128 = [&](llvm::Value* v, llvm::Value* a) {
+		storeIntPtr(irb, irb.CreateTrunc(irb.CreateLShr(v, 64), i64), a, i64);
+		storeIntPtr(irb, irb.CreateTrunc(v, i64), off(a, 8), i64);
+	};
+	auto dw0 = [&](llvm::Value* dw) { return irb.CreateShl(irb.CreateZExt(dw, i128), 64); };
+	auto pairBase = [&]() -> unsigned {
+		uint32_t r = op0.reg;
+		if (r >= PPC_REG_VSRP0 && r <= PPC_REG_VSRP31)
+		{
+			return 2u * (r - PPC_REG_VSRP0);
+		}
+		throw GenericError("unexpected VSX pair register");
+	};
+
+	switch (i->id)
+	{
+		case PPC_INS_PLXV:
+			storeOpI128(op0, ld128(ea), irb);
+			return;
+		case PPC_INS_PSTXV:
+			st128(loadOpI128(op0, irb), ea);
+			return;
+		case PPC_INS_PLFD:
+			storeOp(op0, irb.CreateBitCast(loadIntPtr(irb, ea, i64), irb.getDoubleTy()), irb, eOpConv::FPCAST_OR_BITCAST);
+			return;
+		case PPC_INS_PLFS:
+		{
+			auto* f = irb.CreateBitCast(loadIntPtr(irb, ea, irb.getInt32Ty()), irb.getFloatTy());
+			storeOp(op0, irb.CreateFPExt(f, irb.getDoubleTy()), irb, eOpConv::FPCAST_OR_BITCAST);
+			return;
+		}
+		case PPC_INS_PSTFD:
+			storeIntPtr(irb, irb.CreateBitCast(loadOpDouble(op0, irb), i64), ea, i64);
+			return;
+		case PPC_INS_PSTFS:
+		{
+			auto* f = irb.CreateFPTrunc(loadOpDouble(op0, irb), irb.getFloatTy());
+			storeIntPtr(irb, irb.CreateBitCast(f, irb.getInt32Ty()), ea, irb.getInt32Ty());
+			return;
+		}
+		case PPC_INS_PLXSD:
+			storeOpI128(op0, dw0(loadIntPtr(irb, ea, i64)), irb);
+			return;
+		case PPC_INS_PLXSSP:
+		{
+			auto* f = irb.CreateBitCast(loadIntPtr(irb, ea, irb.getInt32Ty()), irb.getFloatTy());
+			storeOpI128(op0, dw0(irb.CreateBitCast(irb.CreateFPExt(f, irb.getDoubleTy()), i64)), irb);
+			return;
+		}
+		case PPC_INS_PSTXSD:
+			storeIntPtr(irb, irb.CreateTrunc(irb.CreateLShr(loadOpI128(op0, irb), 64), i64), ea, i64);
+			return;
+		case PPC_INS_PSTXSSP:
+		{
+			auto* d = irb.CreateBitCast(irb.CreateTrunc(irb.CreateLShr(loadOpI128(op0, irb), 64), i64), irb.getDoubleTy());
+			auto* f = irb.CreateFPTrunc(d, irb.getFloatTy());
+			storeIntPtr(irb, irb.CreateBitCast(f, irb.getInt32Ty()), ea, irb.getInt32Ty());
+			return;
+		}
+		case PPC_INS_PLXVP:
+		case PPC_INS_LXVP:
+		case PPC_INS_LXVPX:
+		{
+			unsigned k = pairBase();
+			auto a = vsr(k), b = vsr(k + 1);
+			auto* va = ld128(ea);
+			auto* vb = ld128(off(ea, 16));
+			storeOpI128(a, va, irb);
+			storeOpI128(b, vb, irb);
+			return;
+		}
+		case PPC_INS_PSTXVP:
+		case PPC_INS_STXVP:
+		case PPC_INS_STXVPX:
+		{
+			unsigned k = pairBase();
+			auto a = vsr(k), b = vsr(k + 1);
+			st128(loadOpI128(a, irb), ea);
+			st128(loadOpI128(b, irb), off(ea, 16));
+			return;
+		}
+		case PPC_INS_LXVRBX: case PPC_INS_LXVRHX: case PPC_INS_LXVRWX: case PPC_INS_LXVRDX:
+		case PPC_INS_STXVRBX: case PPC_INS_STXVRHX: case PPC_INS_STXVRWX: case PPC_INS_STXVRDX:
+		{
+			unsigned bits = 8;
+			switch (i->id)
+			{
+				case PPC_INS_LXVRHX: case PPC_INS_STXVRHX: bits = 16; break;
+				case PPC_INS_LXVRWX: case PPC_INS_STXVRWX: bits = 32; break;
+				case PPC_INS_LXVRDX: case PPC_INS_STXVRDX: bits = 64; break;
+				default: break;
+			}
+			auto* ty = irb.getIntNTy(bits);
+			bool load = i->id == PPC_INS_LXVRBX || i->id == PPC_INS_LXVRHX
+					|| i->id == PPC_INS_LXVRWX || i->id == PPC_INS_LXVRDX;
+			if (load)
+			{
+				storeOpI128(op0, irb.CreateZExt(loadIntPtr(irb, ea, ty), i128), irb);
+			}
+			else
+			{
+				storeIntPtr(irb, irb.CreateTrunc(loadOpI128(op0, irb), ty), ea, ty);
+			}
+			return;
+		}
+		case PPC_INS_LXVWSX:
+		{
+			auto* w = irb.CreateZExt(loadIntPtr(irb, ea, irb.getInt32Ty()), i128);
+			llvm::Value* r = w;
+			for (unsigned k = 1; k < 4; ++k)
+			{
+				r = irb.CreateOr(r, irb.CreateShl(w, 32 * k));
+			}
+			storeOpI128(op0, r, irb);
+			return;
+		}
+		case PPC_INS_LXVL: case PPC_INS_LXVLL: case PPC_INS_STXVL: case PPC_INS_STXVLL:
+		{
+			// Length is bits 0:7 of RB; bytes beyond it are zeroed (loads)
+			// or left untouched (stores).
+			cs_ppc_op& rbOp = pi->operands[pi->op_count - 1];
+			auto* rb = irb.CreateZExtOrTrunc(loadOp(rbOp, irb), i64);
+			auto* n = irb.CreateLShr(rb, 56);
+			bool load = i->id == PPC_INS_LXVL || i->id == PPC_INS_LXVLL;
+			if (load)
+			{
+				storeOpI128(op0, llvm::ConstantInt::get(i128, 0), irb);
+			}
+			auto* src = load ? nullptr : loadOpI128(op0, irb);
+			for (unsigned k = 0; k < 16; ++k)
+			{
+				llvm::IRBuilder<> body(generateIfThen(irb.CreateICmpUGT(n, c64(k)), irb));
+				unsigned sh = 8 * (15 - k);
+				auto* a = k ? body.CreateAdd(ea, llvm::ConstantInt::get(ea->getType(), k)) : ea;
+				if (load)
+				{
+					auto* b = body.CreateShl(body.CreateZExt(loadIntPtr(body, a, i8), i128), sh);
+					storeOpI128(op0, body.CreateOr(loadOpI128(op0, body), b), body);
+				}
+				else
+				{
+					storeIntPtr(body, body.CreateTrunc(body.CreateLShr(src, sh), i8), a, i8);
+				}
+			}
+			return;
+		}
+		case PPC_INS_LXVKQ:
+		{
+			unsigned uim = pi->operands[1].type == PPC_OP_IMM ? unsigned(pi->operands[1].imm) & 31 : 0;
+			static const uint64_t hiTab[10] = {
+				0, 0x3fff000000000000ULL, 0x4000000000000000ULL, 0x4000800000000000ULL,
+				0x4001000000000000ULL, 0x4001400000000000ULL, 0x4001800000000000ULL,
+				0x4001c00000000000ULL, 0x7fff000000000000ULL, 0x7fff800000000000ULL,
+			};
+			uint64_t hi = 0;
+			if (uim >= 1 && uim <= 9) hi = hiTab[uim];
+			else if (uim == 16) hi = 0x8000000000000000ULL;
+			else if (uim >= 17 && uim <= 24) hi = hiTab[uim - 16] | 0x8000000000000000ULL;
+			else
+			{
+				translatePseudoAsmGeneric(i, pi, irb);
+				return;
+			}
+			storeOpI128(op0, llvm::ConstantInt::get(i128, llvm::APInt(128, hi).shl(64)), irb);
+			return;
+		}
+		default:
+			translatePseudoAsmGeneric(i, pi, irb);
+			return;
+	}
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec
