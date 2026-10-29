@@ -3142,3 +3142,101 @@ TEST(IdiomDetectorTest, MaxOfACrossArraySumIsNotKnapsack)
 	// `best[j] = max(best[j], a[i] + v)`: no recurrence within one table.
 	EXPECT_FALSE(detects(*makeRelaxation(ssa::CmpPred::Slt, false), IdiomKind::Knapsack));
 }
+
+namespace {
+
+enum class MismatchArm { MaxOfNeighbours, OnePlusMin, Zero };
+
+ssa::ValueId loadFrom(ssa::SSAFunction& fn, ssa::BlockId b, ssa::ValueId addr)
+{
+	auto* ld = fn.addInstr(b, ssa::IrInstr::Op::Load);
+	ld->uses.push_back({addr, 0});
+	return defined(fn, ld);
+}
+
+ssa::ValueId cellOf(ssa::SSAFunction& fn, ssa::BlockId b, ssa::ValueId table)
+{
+	auto* shl = fn.addInstr(b, ssa::IrInstr::Op::Shl);
+	shl->uses.push_back({reg(fn, 64)->id, 0});
+	shl->uses.push_back({immValue(fn, 2), 1});
+	auto* add = fn.addInstr(b, ssa::IrInstr::Op::Add);
+	add->uses.push_back({defined(fn, shl), 0});
+	add->uses.push_back({table, 1});
+	return defined(fn, add);
+}
+
+/// `dp[i][j] = a[i-1] == b[j-1] ? dp[i-1][j-1] + 1 : <arm>`
+std::unique_ptr<ssa::SSAFunction> makeLcsStep(MismatchArm arm)
+{
+	auto fn = std::make_unique<ssa::SSAFunction>("lcs");
+	auto* entry = fn->addBlock("entry");
+	auto* head = fn->addBlock("head");
+	auto* eq = fn->addBlock("eq");
+	auto* ne = fn->addBlock("ne");
+	entry->succs = {head->id};
+	head->succs = {eq->id, ne->id};
+	eq->succs = {head->id};
+	ne->succs = {head->id};
+	for (int k = 0; k < 8; ++k) fn->addInstr(entry->id, ssa::IrInstr::Op::Assign);
+	fn->addInstr(entry->id, ssa::IrInstr::Op::Branch);
+	const auto table = reg(*fn, 64)->id;
+	auto* cmp = fn->addInstr(head->id, ssa::IrInstr::Op::Compare);
+	cmp->cmpPred = ssa::CmpPred::Eq;
+	cmp->uses.push_back({loadFrom(*fn, head->id, reg(*fn, 64)->id), 0});
+	cmp->uses.push_back({loadFrom(*fn, head->id, reg(*fn, 64)->id), 1});
+	auto* br = fn->addInstr(head->id, ssa::IrInstr::Op::CondBranch);
+	br->uses.push_back({defined(*fn, cmp), 0});
+
+	auto* inc = fn->addInstr(eq->id, ssa::IrInstr::Op::Add);
+	inc->uses.push_back({loadFrom(*fn, eq->id, cellOf(*fn, eq->id, table)), 0});
+	inc->uses.push_back({immValue(*fn, 1), 1});
+	auto* st1 = fn->addInstr(eq->id, ssa::IrInstr::Op::Store);
+	st1->uses.push_back({defined(*fn, inc), 0});
+	st1->uses.push_back({cellOf(*fn, eq->id, table), 1});
+	fn->addInstr(eq->id, ssa::IrInstr::Op::Branch);
+
+	ssa::ValueId v = immValue(*fn, 0);
+	if (arm != MismatchArm::Zero)
+	{
+		const auto up = loadFrom(*fn, ne->id, cellOf(*fn, ne->id, table));
+		const auto left = loadFrom(*fn, ne->id, cellOf(*fn, ne->id, table));
+		auto* c = fn->addInstr(ne->id, ssa::IrInstr::Op::Compare);
+		c->cmpPred = ssa::CmpPred::Sgt;
+		c->uses.push_back({up, 0});
+		c->uses.push_back({left, 1});
+		auto* sel = fn->addInstr(ne->id, ssa::IrInstr::Op::FlagRead);
+		sel->uses.push_back({defined(*fn, c), 0});
+		sel->uses.push_back({up, 1});
+		sel->uses.push_back({left, 2});
+		v = defined(*fn, sel);
+		if (arm == MismatchArm::OnePlusMin)
+		{
+			auto* add = fn->addInstr(ne->id, ssa::IrInstr::Op::Add);
+			add->uses.push_back({v, 0});
+			add->uses.push_back({immValue(*fn, 1), 1});
+			v = defined(*fn, add);
+		}
+	}
+	auto* st2 = fn->addInstr(ne->id, ssa::IrInstr::Op::Store);
+	st2->uses.push_back({v, 0});
+	st2->uses.push_back({cellOf(*fn, ne->id, table), 1});
+	fn->addInstr(ne->id, ssa::IrInstr::Op::Branch);
+	return fn;
+}
+
+} // namespace
+
+TEST(IdiomDetectorTest, MatchTakesDiagonalPlusOneElseMaxOfNeighboursIsLcs)
+{
+	EXPECT_TRUE(detects(*makeLcsStep(MismatchArm::MaxOfNeighbours), IdiomKind::Lcs));
+}
+
+TEST(IdiomDetectorTest, EditDistanceAddsOneAfterTheSelectAndIsNotLcs)
+{
+	EXPECT_FALSE(detects(*makeLcsStep(MismatchArm::OnePlusMin), IdiomKind::Lcs));
+}
+
+TEST(IdiomDetectorTest, LongestCommonSubstringResetsToZeroAndIsNotLcs)
+{
+	EXPECT_FALSE(detects(*makeLcsStep(MismatchArm::Zero), IdiomKind::Lcs));
+}

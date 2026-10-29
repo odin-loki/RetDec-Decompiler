@@ -1062,6 +1062,67 @@ std::vector<ssa::ValueId> tableBases(const ssa::SSAFunction& fn, ssa::ValueId ad
 	return out;
 }
 
+/// LCS's step: `dp = a[i] == b[j] ? diag + 1 : max(up, left)`.  In a loop a
+/// branch on the equality of two loaded characters leads one way to a store
+/// of `cell + 1` and the other to a store of a select between two cells, all
+/// three cells from one table.  Edit distance adds 1 after its select; the
+/// longest common substring stores 0, not a select.
+bool hasLcsStep(const ssa::SSAFunction& fn)
+{
+	const auto loadAddr = [&](ssa::ValueId v) -> ssa::ValueId {
+		const auto* d = defOf(fn, stripCasts(fn, v));
+		return d && d->op == ssa::IrInstr::Op::Load ? stripCasts(fn, operandAt(*d, 0)) : ssa::kInvalidValue;
+	};
+	const auto sharesTable = [&](ssa::ValueId a, ssa::ValueId b) {
+		const auto ba = tableBases(fn, a), bb = tableBases(fn, b);
+		for (ssa::ValueId x: ba)
+		{
+			const auto* xv = fn.value(x);
+			if (xv && xv->isStackSlot && ba.size() == 1) continue;
+			if (std::find(bb.begin(), bb.end(), x) != bb.end()) return true;
+		}
+		return false;
+	};
+	// One block's stored values of the two shapes.
+	const auto diagIn = [&](const ssa::BasicBlock& b) -> ssa::ValueId {
+		for (const auto* i: b.instrs)
+			if (i && i->op == ssa::IrInstr::Op::Store)
+				if (const auto* add = defOf(fn, stripCasts(fn, operandAt(*i, 0)));
+					add && add->op == ssa::IrInstr::Op::Add && immOperand(fn, *add, 1))
+					for (const auto& u: add->uses)
+						if (ssa::ValueId a = loadAddr(u.valueId); a != ssa::kInvalidValue) return a;
+		return ssa::kInvalidValue;
+	};
+	const auto maxIn = [&](const ssa::BasicBlock& b, ssa::ValueId diag) {
+		for (const auto* i: b.instrs)
+			if (i && i->op == ssa::IrInstr::Op::Store)
+				if (const auto* sel = defOf(fn, stripCasts(fn, operandAt(*i, 0)));
+					sel && sel->op == ssa::IrInstr::Op::FlagRead && sel->uses.size() == 3)
+				{
+					const ssa::ValueId x = loadAddr(operandAt(*sel, 1)), y = loadAddr(operandAt(*sel, 2));
+					if (x != ssa::kInvalidValue && y != ssa::kInvalidValue && x != y && sharesTable(x, diag)
+						&& sharesTable(y, diag))
+						return true;
+				}
+		return false;
+	};
+	for (const auto& pb: fn.blocks())
+	{
+		if (!pb || pb->instrs.empty() || pb->succs.size() != 2 || !ssa::blockOnCycle(fn, pb->id)) continue;
+		const auto* br = pb->instrs.back();
+		if (!br || br->op != ssa::IrInstr::Op::CondBranch) continue;
+		const auto* c = defOf(fn, operandAt(*br, 0));
+		if (!c || c->op != ssa::IrInstr::Op::Compare || c->cmpPred != ssa::CmpPred::Eq || immOperand(fn, *c, 0)) continue;
+		if (loadAddr(operandAt(*c, 0)) == ssa::kInvalidValue && loadAddr(operandAt(*c, 1)) == ssa::kInvalidValue) continue;
+		const auto* eq = fn.block(pb->succs[0]);
+		const auto* ne = fn.block(pb->succs[1]);
+		if (!eq || !ne) continue;
+		const ssa::ValueId diag = diagIn(*eq);
+		if (diag != ssa::kInvalidValue && maxIn(*ne, diag)) return true;
+	}
+	return false;
+}
+
 /// 0/1 knapsack's step `if (dp[c - w] + v > dp[c]) dp[c] = dp[c - w] + v`:
 /// a table cell keeps the larger of itself and another cell plus a loaded
 /// value.  Shortest-path relaxation has the same shape but keeps the smaller.
@@ -1371,7 +1432,7 @@ std::vector<IdiomResult> IdiomDetector::detect(const ssa::SSAFunction& fn) const
 	if (hasConversionChain(fn)) out.push_back(makeResult(IdiomKind::Conversion, 0.75f, "int_float_round_trips"));
 	if (hasFibonacciLoop(fn)) out.push_back(makeResult(IdiomKind::Fibonacci, 0.80f, "add_and_rotate_scalars"));
 	if (hasMaxRelaxation(fn)) out.push_back(makeResult(IdiomKind::Knapsack, 0.75f, "cell_keeps_max_of_cell_plus_value"));
-	// A6: LCS is still not assigned.
+	if (hasLcsStep(fn)) out.push_back(makeResult(IdiomKind::Lcs, 0.75f, "match_takes_diagonal_else_max_of_neighbours"));
 
 	out.erase(
 		std::remove_if(

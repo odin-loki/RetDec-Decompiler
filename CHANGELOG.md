@@ -8,6 +8,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- Idiom detector: LCS from its step (equal characters branch to a store of diag + 1, the other arm stores a select between two cells of the same table); edit distance and longest common substring are negatives. Fixes lcs_dp -O0/-O2/-O3.
+- Algorithm recovery summary (2026-10-30): full corpus macro-F1 0.3877 -> 0.7668, exact 37 -> 87 of 126, FP 0. New or fixed tonight: atomics kept through RDA (Lock), Conversion, separate chaining, BFS, LinearAlgebra, packed bubble swap, open addressing, ring buffer -O2/-O3, linked list, array stack, Knapsack, LCS. full_corpus baseline mean_f1 raised to 0.7011.
 - Idiom detector: Knapsack from a max-relaxation within one table (dp[c] = max(dp[c], dp[c-w] + v)), direction read from the SSA compare predicate; min-relaxation (Bellman-Ford, Dijkstra, Floyd-Warshall at -O0/-O2/-O3) and cross-array max are negatives. Fixes knapsack_01 -O0. Docs (CLAIMS C-A6, future_directions) updated.
 - Ring buffer detector: the lifter's sign-extend multiply (x * 2^32) no longer counts as an inline-hash multiplier; fixes ring_buffer -O2.
 - Baseline: full_corpus mean_f1 raised to 0.6614. A6 re-checked: Knapsack/LCS stay unassigned (their max-recurrence matches shortest-path relaxation except for the compare predicate, which SSA Compare does not carry, and -O2 rewrites both as pointer walks).

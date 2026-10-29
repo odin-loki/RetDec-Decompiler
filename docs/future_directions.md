@@ -90,8 +90,19 @@ Fibonacci and Knapsack now have structural detectors (audit A6 revisited):
 Fibonacci is an add-and-rotate of two scalars in a loop; Knapsack is a table
 cell that keeps the **max** of itself and another cell of the same table plus
 a loaded value, read from the compare predicate. Shortest-path relaxation has
-the same shape but keeps the min, and is a tested negative. LCS stays a corpus
-label only.
+the same shape but keeps the min, and is a tested negative. LCS is a branch on
+two equal characters into `diag + 1` on one side and a select between two
+cells of the same table on the other; edit distance (1 + min) and longest
+common substring (reset to 0) are tested negatives.
+
+**State, 2026-10-30.** Full corpus (126 binaries, gcc -O0/-O2/-O3): macro-F1
+0.7668, 87 exact, 0 false-positive labels on the negative corpus (was 0.3877,
+37 exact). Remaining misses are mostly at -O2/-O3 where the algorithm is
+constant-folded or inlined into a `printf` argument (memset/strlen/memcpy,
+bitcount, linked_list, stack_array, separate_chaining, conversion, float
+kernels), fully unrolled (bfs -O3), or vectorised (knapsack -O2/-O3).
+queue_array and ring_buffer have the same source shape but different ground
+truth labels (Queue/FIFO); no rule separates them without fitting the corpus.
 
 ---
 
