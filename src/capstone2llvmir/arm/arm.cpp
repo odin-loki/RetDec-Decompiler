@@ -8031,7 +8031,8 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMveVec(cs_insn* i, cs_arm* ai, 
 				"vrmulh", "vmaxa", "vmina", "vmladav", "vmladava", "vmladavx", "vmladavax", "vmlsdav", "vmlsdava",
 				"vmlsdavx", "vmlsdavax", "vmlav", "vmlava", "vqshrnb", "vqshrnt", "vqrshrnb", "vqrshrnt", "vqshrunb",
 				"vqshrunt", "vqrshrunb", "vqrshrunt", "vqdmullb", "vqdmullt", "vmlaldavx", "vmlaldavax", "vmlsldavx",
-				"vmlsldavax", "vrmlaldavhx", "vrmlaldavhax", "vrmlsldavhx", "vrmlsldavhax"};
+				"vmlsldavax", "vrmlaldavhx", "vrmlaldavhax", "vrmlsldavhx", "vrmlsldavhax", "vqdmladh", "vqdmladhx",
+				"vqrdmladh", "vqrdmladhx", "vqdmlsdh", "vqdmlsdhx", "vqrdmlsdh", "vqrdmlsdhx"};
 		bool isKnown = false, baseKnown = false;
 		for (auto* k : known) { isKnown |= op == k; baseKnown |= base == k; }
 		if (!isKnown && baseKnown) op = base;
@@ -8390,6 +8391,42 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMveVec(cs_insn* i, cs_arm* ai, 
 			e = irb.CreateAShr(e, lb);
 			e = irb.CreateSelect(irb.CreateICmpSGT(e, mx), mx, irb.CreateSelect(irb.CreateICmpSLT(e, mn), mn, e));
 			r = irb.CreateInsertElement(r, irb.CreateTrunc(e, et), uint64_t(k));
+		}
+		storeNeonVector(reg(0), r, irb);
+		return;
+	}
+
+	if (op.rfind("vqdmladh", 0) == 0 || op.rfind("vqrdmladh", 0) == 0 || op.rfind("vqdmlsdh", 0) == 0
+			|| op.rfind("vqrdmlsdh", 0) == 0)
+	{
+		// Dual multiply: pairs of lanes give n[e]*m[e] +/- n[e+1]*m[e+1] into the
+		// even lane, or (X) n[e+1]*m[e] +/- n[e]*m[e+1] into the odd lane. The sum is
+		// doubled, optionally rounded, saturated and its high half kept. The other
+		// lane of each pair is unchanged. The Q flag is not modelled.
+		if (ai->op_count != 3 || !isSigned || !isNeonRegister(reg(2))) { fallback(); return; }
+		bool rnd = op.compare(0, 4, "vqrd") == 0;
+		bool sub = op.find("sdh") != std::string::npos;
+		bool xch = op.back() == 'x';
+		auto* et = irb.getIntNTy(lb);
+		auto* wt = irb.getIntNTy(2 * lb + 4);
+		auto* d = loadNeonVector(reg(0), lb, false, irb);
+		auto* n = loadNeonVector(reg(1), lb, false, irb);
+		auto* mv = loadNeonVector(reg(2), lb, false, irb);
+		auto* mx = llvm::ConstantInt::get(wt, llvm::APInt::getSignedMaxValue(lb).sext(2 * lb + 4));
+		auto* mn = llvm::ConstantInt::get(wt, llvm::APInt::getSignedMinValue(lb).sext(2 * lb + 4));
+		auto el = [&](llvm::Value* v, unsigned k) { return irb.CreateSExt(irb.CreateExtractElement(v, uint64_t(k)), wt); };
+		llvm::Value* r = d;
+		for (unsigned e = 0; e + 1 < lanesOf(d); e += 2)
+		{
+			unsigned dst = xch ? e + 1 : e;
+			auto* p1 = irb.CreateMul(el(n, dst), el(mv, e));
+			auto* p2 = irb.CreateMul(el(n, xch ? e : e + 1), el(mv, e + 1));
+			llvm::Value* s = sub ? irb.CreateSub(p1, p2) : irb.CreateAdd(p1, p2);
+			s = irb.CreateShl(s, 1);
+			if (rnd) s = irb.CreateAdd(s, llvm::ConstantInt::get(wt, 1ull << (lb - 1)));
+			s = irb.CreateAShr(s, lb);
+			s = irb.CreateSelect(irb.CreateICmpSGT(s, mx), mx, irb.CreateSelect(irb.CreateICmpSLT(s, mn), mn, s));
+			r = irb.CreateInsertElement(r, irb.CreateTrunc(s, et), uint64_t(dst));
 		}
 		storeNeonVector(reg(0), r, irb);
 		return;
@@ -9132,6 +9169,61 @@ void Capstone2LlvmIrTranslatorArm_impl::translateExceptionReturn(cs_insn* i, cs_
 		storeRegister(rn, irb.CreateAdd(base, llvm::ConstantInt::getSigned(ty, wb)), irb);
 	}
 	generateReturnFunctionCall(irb, target);
+}
+
+/**
+ * SQRSHRL/UQRSHLL (v8.1-M): 64-bit saturating rounding shift of RdaHi:RdaLo
+ * by the signed byte in Rm, saturating to 48 or 64 bits. SQRSHRL shifts right
+ * (negative amounts shift left); UQRSHLL shifts left (negative amounts shift
+ * right with rounding). A 48-bit result is sign or zero extended. The Q flag
+ * is not modelled.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateMveLongRegShift(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	if (ai->op_count != 4 || ai->operands[0].type != ARM_OP_REG || ai->operands[1].type != ARM_OP_REG
+			|| ai->operands[2].type != ARM_OP_IMM || ai->operands[3].type != ARM_OP_REG
+			|| (ai->operands[2].imm != 48 && ai->operands[2].imm != 64))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	bool sgn = armIsId(i, ARM_INS_SQRSHRL);
+	unsigned satBits = unsigned(ai->operands[2].imm);
+	auto* i32 = irb.getInt32Ty();
+	auto* i64 = irb.getInt64Ty();
+	auto* i128 = irb.getIntNTy(128);
+	auto c = [&](int64_t v) { return llvm::ConstantInt::getSigned(i128, v); };
+	auto* lo = irb.CreateZExt(irb.CreateZExtOrTrunc(loadRegister(ai->operands[0].reg, irb), i32), i64);
+	auto* hi = irb.CreateZExt(irb.CreateZExtOrTrunc(loadRegister(ai->operands[1].reg, irb), i32), i64);
+	llvm::Value* v64 = irb.CreateOr(irb.CreateShl(hi, 32), lo);
+	auto* x = sgn ? irb.CreateSExt(v64, i128) : irb.CreateZExt(v64, i128);
+	auto* amt = irb.CreateSExt(irb.CreateTrunc(loadRegister(ai->operands[3].reg, irb), irb.getInt8Ty()), i128);
+	// Right-shift amount in the instruction's own direction, clamped so that
+	// larger shifts give the same result.
+	llvm::Value* rs = sgn ? amt : irb.CreateNeg(amt);
+	rs = irb.CreateSelect(irb.CreateICmpSGT(rs, c(66)), c(66), rs);
+	rs = irb.CreateSelect(irb.CreateICmpSLT(rs, c(-64)), c(-64), rs);
+	auto* pos = irb.CreateICmpSGT(rs, c(0));
+	auto* sr = irb.CreateSelect(pos, rs, c(1));
+	auto* biased = irb.CreateAdd(x, irb.CreateShl(c(1), irb.CreateSub(sr, c(1))));
+	llvm::Value* right = sgn ? irb.CreateAShr(biased, sr) : irb.CreateLShr(biased, sr);
+	auto* left = irb.CreateShl(x, irb.CreateSelect(pos, c(0), irb.CreateNeg(rs)));
+	llvm::Value* r = irb.CreateSelect(pos, right, left);
+	llvm::APInt mxv = sgn ? llvm::APInt::getSignedMaxValue(satBits).sext(128)
+			: llvm::APInt::getMaxValue(satBits).zext(128);
+	auto* mx = llvm::ConstantInt::get(i128, mxv);
+	if (sgn)
+	{
+		auto* mn = llvm::ConstantInt::get(i128, llvm::APInt::getSignedMinValue(satBits).sext(128));
+		r = irb.CreateSelect(irb.CreateICmpSGT(r, mx), mx, irb.CreateSelect(irb.CreateICmpSLT(r, mn), mn, r));
+	}
+	else
+	{
+		r = irb.CreateSelect(irb.CreateICmpUGT(r, mx), mx, r);
+	}
+	auto* r64 = irb.CreateTrunc(r, i64);
+	storeRegister(ai->operands[0].reg, irb.CreateTrunc(r64, i32), irb);
+	storeRegister(ai->operands[1].reg, irb.CreateTrunc(irb.CreateLShr(r64, 32), i32), irb);
 }
 
 } // namespace capstone2llvmir

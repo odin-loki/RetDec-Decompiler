@@ -12848,6 +12848,196 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_RFEDB_writeback)
 	});
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQDMLADH_s16)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x1111111111111111ULL)},
+		{ARM_REG_D1, armDBits(0x1111111111111111ULL)},
+		{ARM_REG_D2, armDBits(0x8000800020004000ULL)},
+		{ARM_REG_D3, armDBits(0x0004000300020001ULL)},
+		{ARM_REG_D4, armDBits(0x8000800040004000ULL)},
+		{ARM_REG_D5, armDBits(0x0400030002000100ULL)},
+	});
+
+	// vqdmladh.s16 q0, q1, q2
+	emulate_bin("12 ee 04 0e");
+
+	EXPECT_EQ(0x11117fff11113000ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x1111000011110000ULL, dBits(ARM_REG_D1));
+
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VQRDMLSDHX_s32)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x1111111122222222ULL)},
+		{ARM_REG_D1, armDBits(0x3333333344444444ULL)},
+		{ARM_REG_D2, armDBits(0x2000000040000000ULL)},
+		{ARM_REG_D3, armDBits(0x0000000300000000ULL)},
+		{ARM_REG_D4, armDBits(0x1000000040000000ULL)},
+		{ARM_REG_D5, armDBits(0x0000000580000000ULL)},
+	});
+
+	// vqrdmlsdhx.s32 q0, q1, q2
+	emulate_bin("22 fe 05 1e");
+
+	EXPECT_EQ(0x0800000022222222ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0xfffffffd44444444ULL, dBits(ARM_REG_D1));
+
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SQRSHRL_rounds_right)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0x8000000f},
+		{ARM_REG_R1, 0x1},
+		{ARM_REG_R2, 4},
+	});
+
+	// sqrshrl r0, r1, #64, r2
+	emulate_bin("51 ea 2d 21");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x18000001},
+		{ARM_REG_R1, 0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SQRSHRL_negative_saturates_64)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0},
+		{ARM_REG_R1, 0x40000000},
+		{ARM_REG_R2, 0xfffffffe},
+	});
+
+	// sqrshrl r0, r1, #64, r2 with r2 = -2
+	emulate_bin("51 ea 2d 21");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0xffffffff},
+		{ARM_REG_R1, 0x7fffffff},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SQRSHRL_saturates_48)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0xffff0000},
+		{ARM_REG_R1, 0xffffffff},
+		{ARM_REG_R2, 0xffffffe0},
+	});
+
+	// sqrshrl r0, r1, #48, r2 with r2 = -32
+	emulate_bin("51 ea ad 21");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0},
+		{ARM_REG_R1, 0xffff8000},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UQRSHLL_saturates_48)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0x10000},
+		{ARM_REG_R1, 0},
+		{ARM_REG_R2, 40},
+	});
+
+	// uqrshll r0, r1, #48, r2
+	emulate_bin("51 ea 8d 21");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0xffffffff},
+		{ARM_REG_R1, 0xffff},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UQRSHLL_in_range_and_negative)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0x10000},
+		{ARM_REG_R1, 0},
+		{ARM_REG_R2, 24},
+	});
+
+	// uqrshll r0, r1, #48, r2
+	emulate_bin("51 ea 8d 21");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0},
+		{ARM_REG_R1, 0x100},
+	});
+
+	setRegisters({
+		{ARM_REG_R0, 0x18},
+		{ARM_REG_R1, 0},
+		{ARM_REG_R2, 0xfffffffc},
+	});
+	emulate_bin("51 ea 8d 21");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 2},
+		{ARM_REG_R1, 0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_TT_is_pseudo_call_on_address)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R1, 0x20001000},
+	});
+
+	// tt r0, r1
+	emulate_bin("41 e8 00 f0");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, ANY},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_tt"), {0x20001000}},
+	});
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

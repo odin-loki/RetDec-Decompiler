@@ -256,6 +256,7 @@ class Capstone2LlvmIrTranslatorArm_impl :
 		void translateMveScalarShift(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateExceptionReturn(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateMveScalarRegShift(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateMveLongRegShift(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateMveVec(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 	void translateNeonDot(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateNeonFml(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
