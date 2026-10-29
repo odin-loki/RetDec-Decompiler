@@ -315,6 +315,9 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 
 		static constexpr uint32_t kFpscrReg = PPC_REG_ENDING + 1;
 		static constexpr uint32_t kVscrReg = PPC_REG_ENDING + 2;
+		static constexpr uint32_t kXerOvReg = PPC_REG_ENDING + 3;
+		static constexpr uint32_t kXerSoReg = PPC_REG_ENDING + 4;
+		llvm::Value* overflowOf(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 };
 
 } // namespace capstone2llvmir

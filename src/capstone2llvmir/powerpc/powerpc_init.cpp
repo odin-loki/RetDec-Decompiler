@@ -61,6 +61,8 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::initializeArchSpecific()
 			{PPC_REG_CR7UN, "cr7_so"},
 			{Capstone2LlvmIrTranslatorPowerpc_impl::kFpscrReg, "fpscr"},
 			{Capstone2LlvmIrTranslatorPowerpc_impl::kVscrReg, "vscr"},
+			{Capstone2LlvmIrTranslatorPowerpc_impl::kXerOvReg, "xer_ov"},
+			{Capstone2LlvmIrTranslatorPowerpc_impl::kXerSoReg, "xer_so"},
 	};
 
 	_reg2name = std::move(r2n);
@@ -373,6 +375,8 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::initializeRegTypeMap()
 			{PPC_REG_SPEFSCR, i32},
 			{Capstone2LlvmIrTranslatorPowerpc_impl::kFpscrReg, i32},
 			{Capstone2LlvmIrTranslatorPowerpc_impl::kVscrReg, i32},
+			{Capstone2LlvmIrTranslatorPowerpc_impl::kXerOvReg, i1},
+			{Capstone2LlvmIrTranslatorPowerpc_impl::kXerSoReg, i1},
 
 			//FP ounding Mode
 			{PPC_REG_RM, defTy},

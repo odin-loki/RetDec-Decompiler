@@ -2918,6 +2918,10 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateMfxer(cs_insn* i, cs_ppc* p
 
 	auto* ca = irb.CreateZExt(loadRegister(PPC_REG_CARRY, irb), getDefaultType());
 	auto* xer = irb.CreateShl(ca, llvm::ConstantInt::get(getDefaultType(), 29));
+	auto* ovb = irb.CreateZExt(loadRegister(kXerOvReg, irb), getDefaultType());
+	auto* sob = irb.CreateZExt(loadRegister(kXerSoReg, irb), getDefaultType());
+	xer = irb.CreateOr(xer, irb.CreateShl(ovb, llvm::ConstantInt::get(getDefaultType(), 30)));
+	xer = irb.CreateOr(xer, irb.CreateShl(sob, llvm::ConstantInt::get(getDefaultType(), 31)));
 	storeOp(pi->operands[0], xer, irb);
 }
 
@@ -2931,6 +2935,11 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateMtxer(cs_insn* i, cs_ppc* p
 	auto* v = loadOp(pi->operands[0], irb);
 	auto* bit = irb.CreateLShr(v, llvm::ConstantInt::get(v->getType(), 29));
 	storeRegister(PPC_REG_CARRY, irb.CreateTrunc(bit, irb.getInt1Ty()), irb);
+	auto bitAt = [&](unsigned n) {
+		return irb.CreateTrunc(irb.CreateLShr(v, llvm::ConstantInt::get(v->getType(), n)), irb.getInt1Ty());
+	};
+	storeRegister(kXerOvReg, bitAt(30), irb);
+	storeRegister(kXerSoReg, bitAt(31), irb);
 }
 
 /**
@@ -8759,6 +8768,8 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateTwin(cs_insn* i, cs_ppc* pi
 			return;
 	}
 	unsigned hid = i->id;
+	// Operands are read before the plain translator may overwrite RT.
+	auto* ov = overflowOf(i, pi, irb);
 	// Capstone 6 prints SUBF/SUBFC through their SUB/SUBC aliases, so the
 	// plain translators expect [RB, RA]; the OE forms list [RA, RB].
 	bool swap = (hid == PPC_INS_SUBFO || hid == PPC_INS_SUBFCO) && pi->op_count == 3;
@@ -8784,6 +8795,83 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateTwin(cs_insn* i, cs_ppc* pi
 	if (swap)
 	{
 		std::swap(pi->operands[1], pi->operands[2]);
+	}
+	if (ov)
+	{
+		storeRegister(kXerOvReg, ov, irb);
+		storeRegister(kXerSoReg, irb.CreateOr(loadRegister(kXerSoReg, irb), ov), irb);
+	}
+}
+
+/**
+ * XER[OV] of an OE=1 form, from its source operands. The carry-in forms
+ * (ADDE/ADDME/ADDZE/SUBFE/SUBFME/SUBFZE/DIVWE) return nullptr and leave
+ * OV/SO untouched.
+ */
+llvm::Value* Capstone2LlvmIrTranslatorPowerpc_impl::overflowOf(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	auto* dt = getDefaultType();
+	auto ld = [&](unsigned k, llvm::Type* t) {
+		return irb.CreateSExtOrTrunc(loadOp(pi->operands[k], irb), t);
+	};
+	auto neg = [&](llvm::Value* v) {
+		return irb.CreateICmpSLT(v, llvm::ConstantInt::get(v->getType(), 0));
+	};
+	auto mulOv = [&](llvm::Type* t) {
+		auto* w = irb.getIntNTy(2 * t->getIntegerBitWidth());
+		auto* p = irb.CreateMul(irb.CreateSExt(ld(1, t), w), irb.CreateSExt(ld(2, t), w));
+		return irb.CreateICmpNE(p, irb.CreateSExt(irb.CreateTrunc(p, t), w));
+	};
+	auto divOv = [&](llvm::Type* t, bool sgn) -> llvm::Value* {
+		auto* a = ld(1, t);
+		auto* b = ld(2, t);
+		llvm::Value* z = irb.CreateICmpEQ(b, llvm::ConstantInt::get(t, 0));
+		if (sgn)
+		{
+			auto bw = t->getIntegerBitWidth();
+			auto* mn = irb.CreateICmpEQ(a, llvm::ConstantInt::get(t, llvm::APInt::getSignedMinValue(bw)));
+			auto* m1 = irb.CreateICmpEQ(b, llvm::ConstantInt::getSigned(t, -1));
+			z = irb.CreateOr(z, irb.CreateAnd(mn, m1));
+		}
+		return z;
+	};
+	if (pi->op_count < 2)
+	{
+		return nullptr;
+	}
+	switch (i->id)
+	{
+		case PPC_INS_ADDO:
+		case PPC_INS_ADDCO:
+		{
+			if (pi->op_count != 3) return nullptr;
+			auto* a = ld(1, dt);
+			auto* b = ld(2, dt);
+			auto* r = irb.CreateAdd(a, b);
+			return neg(irb.CreateAnd(irb.CreateXor(a, r), irb.CreateXor(b, r)));
+		}
+		case PPC_INS_SUBFO:
+		case PPC_INS_SUBFCO:
+		{
+			if (pi->op_count != 3) return nullptr;
+			auto* a = ld(1, dt);
+			auto* b = ld(2, dt);
+			auto* r = irb.CreateSub(b, a);
+			return neg(irb.CreateAnd(irb.CreateXor(b, a), irb.CreateXor(b, r)));
+		}
+		case PPC_INS_NEGO:
+		{
+			auto bw = dt->getIntegerBitWidth();
+			return irb.CreateICmpEQ(ld(1, dt), llvm::ConstantInt::get(dt, llvm::APInt::getSignedMinValue(bw)));
+		}
+		case PPC_INS_MULLWO: return pi->op_count == 3 ? mulOv(irb.getInt32Ty()) : nullptr;
+		case PPC_INS_MULLDO: return pi->op_count == 3 ? mulOv(irb.getInt64Ty()) : nullptr;
+		case PPC_INS_DIVWO: return pi->op_count == 3 ? divOv(irb.getInt32Ty(), true) : nullptr;
+		case PPC_INS_DIVWUO: return pi->op_count == 3 ? divOv(irb.getInt32Ty(), false) : nullptr;
+		case PPC_INS_DIVDO: return pi->op_count == 3 ? divOv(irb.getInt64Ty(), true) : nullptr;
+		case PPC_INS_DIVDUO: return pi->op_count == 3 ? divOv(irb.getInt64Ty(), false) : nullptr;
+		default:
+			return nullptr;
 	}
 }
 

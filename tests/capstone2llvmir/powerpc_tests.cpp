@@ -4674,13 +4674,14 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MFXER_reads_the_carry)
 
 	setRegisters({
 		{PPC_REG_CARRY, true},
+		{PPC_REG_ENDING + 4, true},
 	});
 
 	emulate("mfxer 3");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_CARRY});
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_CARRY, PPC_REG_ENDING + 3, PPC_REG_ENDING + 4});
 	EXPECT_JUST_REGISTERS_STORED({
-		{PPC_REG_R3, 0x20000000},
+		{PPC_REG_R3, 0xa0000000},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();
@@ -4699,6 +4700,8 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MTXER_writes_the_carry)
 	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R3});
 	EXPECT_JUST_REGISTERS_STORED({
 		{PPC_REG_CARRY, true},
+		{PPC_REG_ENDING + 3, false},
+		{PPC_REG_ENDING + 4, true},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();
@@ -17181,6 +17184,8 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_ADDO_misc)
 	emulate_bin("7c 64 2e 14");
 
 	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_ENDING + 3, false},
+		{PPC_REG_ENDING + 4, false},
 		{PPC_REG_R3, 5},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
@@ -17198,6 +17203,8 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MULLWO_misc)
 	emulate_bin("7c 64 2d d6");
 
 	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_ENDING + 3, false},
+		{PPC_REG_ENDING + 4, false},
 		{PPC_REG_R3, 42},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
@@ -17215,6 +17222,8 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_DIVWO_misc)
 	emulate_bin("7c 64 2f d6");
 
 	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_ENDING + 3, false},
+		{PPC_REG_ENDING + 4, false},
 		{PPC_REG_R3, 7},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
@@ -17707,6 +17716,8 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_SUBFO_twin)
 	emulate_bin("7c 64 2c 50");
 
 	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_ENDING + 3, false},
+		{PPC_REG_ENDING + 4, false},
 		{PPC_REG_R3, 7},
 	});
 }
@@ -18144,6 +18155,40 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_DCBZ)
 		{0x10f8, 0x0_qw},
 	});
 	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_ADDO_sets_ov_and_so)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{PPC_REG_R4, 0x7fffffff},
+		{PPC_REG_R5, 1},
+	});
+
+	emulate_bin("7c 64 2e 14");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 0x80000000},
+		{PPC_REG_ENDING + 3, true},
+		{PPC_REG_ENDING + 4, true},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_DIVWO_by_zero_sets_ov)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{PPC_REG_R4, 7},
+		{PPC_REG_R5, 0},
+	});
+
+	emulate_bin("7c 64 2f d6");
+
+	EXPECT_EQ(getRegisterValueUnsigned(PPC_REG_ENDING + 3), 1u);
+	EXPECT_EQ(getRegisterValueUnsigned(PPC_REG_ENDING + 4), 1u);
 }
 
 } // namespace tests
