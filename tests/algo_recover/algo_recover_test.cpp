@@ -2177,3 +2177,24 @@ TEST(IdiomDetectorTest, RecursionOutsideAnyLoopIsNotDfs)
 	auto fn = makeRecursive(/*callInLoop=*/false);
 	EXPECT_FALSE(detects(*fn, IdiomKind::Dfs));
 }
+
+// -O2 quicksort loops around its first recursion in place of the second, so the
+// self-call is inside a loop -- but that loop swaps elements; a DFS never does.
+TEST(IdiomDetectorTest, RecursionInALoopThatSwapsElementsIsNotDfs)
+{
+	auto fn = makeRecursive(/*callInLoop=*/true);
+	auto* loop = fn->block(1);
+	for (int k = 0; k < 2; ++k)
+	{
+		ssa::IrValue* addr = fn->allocValue(ssa::ValueKind::VirtualReg);
+		ssa::IrValue* elem = fn->allocValue(ssa::ValueKind::VirtualReg);
+		ssa::IrInstr* ld = fn->addInstr(loop->id, ssa::IrInstr::Op::Load);
+		ld->uses.push_back({addr->id, 0});
+		ld->defValue = elem->id;
+		elem->defInstr = ld;
+		ssa::IrInstr* st = fn->addInstr(loop->id, ssa::IrInstr::Op::Store);
+		st->uses.push_back({elem->id, 0});
+		st->uses.push_back({fn->allocValue(ssa::ValueKind::VirtualReg)->id, 1});
+	}
+	EXPECT_FALSE(detects(*fn, IdiomKind::Dfs));
+}

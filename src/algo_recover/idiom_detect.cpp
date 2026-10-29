@@ -220,7 +220,11 @@ bool hasSelfCallInLoop(const ssa::SSAFunction& fn)
 
 bool hasDfsStructure(const ssa::SSAFunction& fn)
 {
-	return hasSelfCallInLoop(fn) && countOp(fn, ssa::IrInstr::Op::Store) >= 1 && countOp(fn, ssa::IrInstr::Op::Load) >= 2;
+	// A traversal marks nodes; it does not move elements.  Quicksort at -O2
+	// turns its second recursion into a loop around the first, putting a
+	// self-call inside a loop that swaps.
+	return hasSelfCallInLoop(fn) && countOp(fn, ssa::IrInstr::Op::Store) >= 1 && countOp(fn, ssa::IrInstr::Op::Load) >= 2
+		&& ssa::countElementMoves(fn) == 0;
 }
 
 IdiomResult makeResult(IdiomKind kind, float confidence, const std::string& detail)
