@@ -202,6 +202,55 @@ unsigned repStosWidth(const CallInst* call)
 	return 0;
 }
 
+/// Do two resolved values read the same thing (same value, or two loads of
+/// one register with nothing writing it in between)?
+bool sameValue(Value* a, Value* b)
+{
+	if (a == b) return true;
+	auto* la = dyn_cast_or_null<LoadInst>(a);
+	auto* lb = dyn_cast_or_null<LoadInst>(b);
+	if (!la || !lb || la->getParent() != lb->getParent()
+			|| la->getPointerOperand() != lb->getPointerOperand())
+		return false;
+	if (lb->comesBefore(la)) std::swap(la, lb);
+	for (auto* i = la->getNextNode(); i && i != lb; i = i->getNextNode())
+	{
+		if (auto* s = dyn_cast<StoreInst>(i); s && s->getPointerOperand() == la->getPointerOperand())
+			return false;
+		if (auto* c = dyn_cast<CallInst>(i))
+		{
+			auto* fn = c->getCalledFunction();
+			if (fn == nullptr || !(fn->isIntrinsic() || fn->getName().starts_with("__asm_"))) return false;
+		}
+	}
+	return true;
+}
+
+/// Constant value of a register operand, folding `xor r,r` zeroing idioms.
+ConstantInt* resolveConstInt(Value* v, int depth = 0)
+{
+	v = resolveLocally(v);
+	if (auto* c = dyn_cast_or_null<ConstantInt>(v)) return c;
+	auto* bo = dyn_cast_or_null<BinaryOperator>(v);
+	if (bo == nullptr || depth > 8) return nullptr;
+	auto op = bo->getOpcode();
+	if ((op == Instruction::Xor || op == Instruction::Sub)
+			&& sameValue(resolveLocally(bo->getOperand(0)), resolveLocally(bo->getOperand(1))))
+		return ConstantInt::get(cast<IntegerType>(bo->getType()), 0);
+	auto* a = resolveConstInt(bo->getOperand(0), depth + 1);
+	auto* b = resolveConstInt(bo->getOperand(1), depth + 1);
+	if (a == nullptr || b == nullptr) return nullptr;
+	unsigned bits = bo->getType()->getIntegerBitWidth();
+	APInt x = a->getValue().zextOrTrunc(bits), y = b->getValue().zextOrTrunc(bits);
+	switch (op)
+	{
+		case Instruction::And: return ConstantInt::get(bo->getContext(), x & y);
+		case Instruction::Or: return ConstantInt::get(bo->getContext(), x | y);
+		case Instruction::Xor: return ConstantInt::get(bo->getContext(), x ^ y);
+		default: return nullptr;
+	}
+}
+
 } // anonymous namespace
 
 /**
@@ -295,6 +344,50 @@ void StackAnalysis::mergeStoredOverLocals(llvm::Function& f)
 			a->eraseFromParent();
 		}
 	}
+}
+
+/**
+ * `rep stos` with a constant byte-uniform value and count over a local array
+ * is `memset`: emit `llvm.memset` so the output reads `memset(a, 0, 128)`
+ * instead of `__asm_rep_stosq_memset(&a, 0, 16)`.  The register updates the
+ * lifter emits after the call are left alone.  Run from
+ * retdec-stack-ptr-op-remove, after frame-pointer accesses are rebased onto
+ * the array: before that the array looks unread and the memset is dead.
+ */
+bool StackAnalysis::lowerRepStosToMemset(llvm::Function& f)
+{
+	if (f.isDeclaration()) return false;
+	const auto& dl = f.getParent()->getDataLayout();
+	bool changed = false;
+	std::vector<CallInst*> calls;
+	for (auto& bb : f)
+	for (auto& i : bb)
+		if (repStosWidth(dyn_cast<CallInst>(&i))) calls.push_back(cast<CallInst>(&i));
+	for (auto* call : calls)
+	{
+		unsigned w = repStosWidth(call);
+		auto* cnt = resolveConstInt(call->getArgOperand(2));
+		auto* val = resolveConstInt(call->getArgOperand(1));
+		Value* ptr = resolveLocally(call->getArgOperand(0));
+		if (cnt == nullptr || val == nullptr || ptr == nullptr
+				|| !ptr->getType()->isPointerTy())
+			continue;
+		APInt off(dl.getIndexTypeSizeInBits(ptr->getType()), 0);
+		auto* a = dyn_cast<AllocaInst>(
+				ptr->stripAndAccumulateConstantOffsets(dl, off, true));
+		if (a == nullptr || !a->isStaticAlloca() || off.isNegative()) continue;
+		uint64_t bytes = cnt->getZExtValue() * w;
+		uint64_t size = dl.getTypeAllocSize(a->getAllocatedType());
+		if (bytes == 0 || off.getZExtValue() + bytes > size) continue;
+		APInt v = val->getValue().zextOrTrunc(w * 8);
+		uint8_t b = v.trunc(8).getZExtValue();
+		if (v != APInt::getSplat(w * 8, APInt(8, b))) continue;
+		IRBuilder<> irb(call);
+		irb.CreateMemSet(ptr, irb.getInt8(b), bytes, MaybeAlign(1));
+		call->eraseFromParent();
+		changed = true;
+	}
+	return changed;
 }
 
 /**

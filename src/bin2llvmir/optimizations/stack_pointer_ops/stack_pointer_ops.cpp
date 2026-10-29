@@ -21,6 +21,7 @@
 #include "retdec/bin2llvmir/utils/llvm.h"
 #include "retdec/utils/string.h"
 #include "retdec/bin2llvmir/optimizations/stack_pointer_ops/stack_pointer_ops.h"
+#include "retdec/bin2llvmir/optimizations/stack/stack.h"
 #include "retdec/bin2llvmir/utils/debug.h"
 #include "capstone2llvmir/capstone6_compat.h"
 
@@ -71,6 +72,8 @@ bool StackPointerOpsRemove::run()
 	changed |= removeStackPointerStores();
 	changed |= removePreservationStores();
 	changed |= rebaseIntoLocalArrays();
+	for (auto& f : *_module)
+		changed |= StackAnalysis::lowerRepStosToMemset(f);
 
 	return changed;
 }

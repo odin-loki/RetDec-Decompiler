@@ -26,6 +26,7 @@ namespace bin2llvmir {
 class StackAnalysis : public llvm::ModulePass
 {
 	public:
+		static bool lowerRepStosToMemset(llvm::Function& f);
 		static char ID;
 		StackAnalysis();
 		virtual bool runOnModule(llvm::Module& m) override;
