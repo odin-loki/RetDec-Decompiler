@@ -12067,5 +12067,68 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxQuad(cs_insn* i, cs_ppc*
 	translatePseudoAsmGeneric(i, pi, irb);
 }
 
+
+/**
+ * PPC_INS_LQ, PPC_INS_LQARX, PPC_INS_STQ, PPC_INS_STQCX -- quadword load and
+ * store of an even/odd GPR pair. The even register holds the doubleword at
+ * the lower address (big-endian element order).
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateLoadStoreQuad(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	if (pi->op_count < 2 || pi->operands[0].type != PPC_OP_REG)
+	{
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+	auto toR = [](unsigned r) -> ppc_reg {
+		if (r >= PPC_REG_X0 && r <= PPC_REG_X31) return ppc_reg(PPC_REG_R0 + (r - PPC_REG_X0));
+		if (r >= PPC_REG_G8P0 && r <= PPC_REG_G8P0 + 15) return ppc_reg(PPC_REG_R0 + 2 * (r - PPC_REG_G8P0));
+		return ppc_reg(r);
+	};
+	for (unsigned k = 1; k < pi->op_count; ++k)
+	{
+		auto& op = pi->operands[k];
+		if (op.type == PPC_OP_REG) op.reg = toR(op.reg);
+		if (op.type == PPC_OP_MEM)
+		{
+			if (op.mem.base != PPC_REG_INVALID) op.mem.base = toR(op.mem.base);
+			if (op.mem.offset != PPC_REG_INVALID) op.mem.offset = toR(op.mem.offset);
+		}
+	}
+	unsigned rt = toR(pi->operands[0].reg);
+	if (rt < PPC_REG_R0 || rt > PPC_REG_R30)
+	{
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+	auto* i64 = irb.getInt64Ty();
+	auto* ea = loadIndexedEffectiveAddress(pi, irb);
+	auto* ea8 = irb.CreateAdd(ea, llvm::ConstantInt::get(ea->getType(), 8));
+	bool atomic = i->id == PPC_INS_LQARX || i->id == PPC_INS_STQCX;
+	if (i->id == PPC_INS_LQ || i->id == PPC_INS_LQARX)
+	{
+		auto* hi = loadIntPtr(irb, ea, i64);
+		auto* lo = loadIntPtr(irb, ea8, i64);
+		if (atomic)
+		{
+			hi->setAtomic(llvm::AtomicOrdering::Monotonic);
+			lo->setAtomic(llvm::AtomicOrdering::Monotonic);
+		}
+		storeRegister(rt, hi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		storeRegister(rt + 1, lo, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		return;
+	}
+	auto* hi = irb.CreateZExtOrTrunc(loadRegister(rt, irb), i64);
+	auto* lo = irb.CreateZExtOrTrunc(loadRegister(rt + 1, irb), i64);
+	auto* s0 = storeIntPtr(irb, hi, ea, i64);
+	auto* s1 = storeIntPtr(irb, lo, ea8, i64);
+	if (atomic)
+	{
+		s0->setAtomic(llvm::AtomicOrdering::Monotonic);
+		s1->setAtomic(llvm::AtomicOrdering::Monotonic);
+		storeRegister(PPC_REG_CR0EQ, irb.getInt1(true), irb);
+	}
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec
