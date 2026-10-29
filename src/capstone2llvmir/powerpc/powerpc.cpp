@@ -10443,5 +10443,137 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecBytePerm(cs_insn* i, cs_
 	}
 }
 
+
+/**
+ * PPC_INS_MTVSRBM, PPC_INS_MTVSRHM, PPC_INS_MTVSRWM, PPC_INS_MTVSRDM,
+ * PPC_INS_MTVSRQM, PPC_INS_MTVSRBMI, PPC_INS_VCNTMBB, PPC_INS_VCNTMBH,
+ * PPC_INS_VCNTMBW, PPC_INS_VCNTMBD, PPC_INS_VSTRIBL, PPC_INS_VSTRIBR,
+ * PPC_INS_VSTRIHL, PPC_INS_VSTRIHR
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecMaskOps(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
+	auto* i64 = irb.getInt64Ty();
+	auto* i128 = irb.getInt128Ty();
+	unsigned bits = 0;
+	switch (i->id)
+	{
+	case PPC_INS_MTVSRBM:
+	case PPC_INS_MTVSRBMI:
+	case PPC_INS_VCNTMBB:
+	case PPC_INS_VSTRIBL:
+	case PPC_INS_VSTRIBR:
+		bits = 8;
+		break;
+	case PPC_INS_MTVSRHM:
+	case PPC_INS_VCNTMBH:
+	case PPC_INS_VSTRIHL:
+	case PPC_INS_VSTRIHR:
+		bits = 16;
+		break;
+	case PPC_INS_MTVSRWM:
+	case PPC_INS_VCNTMBW:
+		bits = 32;
+		break;
+	case PPC_INS_MTVSRDM:
+	case PPC_INS_VCNTMBD:
+		bits = 64;
+		break;
+	case PPC_INS_MTVSRQM:
+		bits = 128;
+		break;
+	default:
+		throw GenericError("unhandled vector mask op");
+	}
+	unsigned n = 128u / bits;
+	auto* eTy = irb.getIntNTy(bits);
+	auto elem = [&](llvm::Value* v, unsigned idx) {
+		return irb.CreateTrunc(irb.CreateLShr(v, (n - 1u - idx) * bits), eTy);
+	};
+	auto place = [&](llvm::Value* acc, llvm::Value* e, unsigned idx) {
+		return irb.CreateOr(acc, irb.CreateShl(irb.CreateZExt(e, i128), (n - 1u - idx) * bits));
+	};
+	llvm::Value* r = llvm::ConstantInt::get(i128, 0);
+
+	switch (i->id)
+	{
+	case PPC_INS_MTVSRBM:
+	case PPC_INS_MTVSRHM:
+	case PPC_INS_MTVSRWM:
+	case PPC_INS_MTVSRDM:
+	case PPC_INS_MTVSRQM:
+	case PPC_INS_MTVSRBMI:
+	{
+		if (pi->op_count != 2)
+		{
+			throw GenericError("unexpected operand count");
+		}
+		llvm::Value* src = pi->operands[1].type == PPC_OP_IMM
+				? static_cast<llvm::Value*>(llvm::ConstantInt::get(i64, uint64_t(pi->operands[1].imm) & 0xffff))
+				: irb.CreateZExtOrTrunc(loadOp(pi->operands[1], irb), i64);
+		for (unsigned k = 0; k < n; ++k)
+		{
+			auto* bit = irb.CreateTrunc(irb.CreateLShr(src, n - 1u - k), irb.getInt1Ty());
+			r = place(r, irb.CreateSExt(bit, eTy), k);
+		}
+		storeOpI128(pi->operands[0], r, irb);
+		return;
+	}
+	case PPC_INS_VCNTMBB:
+	case PPC_INS_VCNTMBH:
+	case PPC_INS_VCNTMBW:
+	case PPC_INS_VCNTMBD:
+	{
+		if (pi->op_count != 3)
+		{
+			throw GenericError("unexpected operand count");
+		}
+		auto* v = loadOpI128(pi->operands[1], irb);
+		bool mp = pi->operands[2].type == PPC_OP_IMM && (pi->operands[2].imm & 1);
+		llvm::Value* cnt = llvm::ConstantInt::get(i64, 0);
+		for (unsigned k = 0; k < n; ++k)
+		{
+			auto* msb = irb.CreateICmpSLT(elem(v, k), llvm::ConstantInt::get(eTy, 0));
+			auto* hit = mp ? msb : irb.CreateNot(msb);
+			cnt = irb.CreateAdd(cnt, irb.CreateZExt(hit, i64));
+		}
+		// The count is left-justified: RT bits 0:7 / 0:6 / 0:5 / 0:4.
+		unsigned width = bits == 8 ? 8 : bits == 16 ? 7 : bits == 32 ? 6 : 5;
+		storeOp(pi->operands[0], irb.CreateShl(cnt, 64u - width), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		return;
+	}
+	default:
+		break;
+	}
+
+	// VSTRI*: copy elements up to the first zero element, clear the rest.
+	if (pi->op_count != 2)
+	{
+		throw GenericError("unexpected operand count");
+	}
+	bool fromRight = i->id == PPC_INS_VSTRIBR || i->id == PPC_INS_VSTRIHR;
+	auto* v = loadOpI128(pi->operands[1], irb);
+	llvm::Value* seen = irb.getFalse();
+	for (unsigned s = 0; s < n; ++s)
+	{
+		unsigned k = fromRight ? n - 1u - s : s;
+		auto* e = elem(v, k);
+		auto* isNull = irb.CreateICmpEQ(e, llvm::ConstantInt::get(eTy, 0));
+		r = place(r, irb.CreateSelect(seen, llvm::ConstantInt::get(eTy, 0), e), k);
+		seen = irb.CreateOr(seen, isNull);
+	}
+	storeOpI128(pi->operands[0], r, irb);
+	std::string mn = i->mnemonic;
+	if (!mn.empty() && mn.back() == '.')
+	{
+		uint32_t ltR = PPC_REG_CR0LT, gtR = PPC_REG_CR0GT, eqR = PPC_REG_CR0EQ, soR = PPC_REG_CR0UN;
+		crFieldRegisters(PPC_REG_CR6, ltR, gtR, eqR, soR);
+		storeRegister(ltR, irb.getFalse(), irb);
+		storeRegister(gtR, irb.getFalse(), irb);
+		storeRegister(eqR, seen, irb);
+		storeRegister(soR, irb.getFalse(), irb);
+	}
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec
