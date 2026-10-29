@@ -11,6 +11,8 @@
 
 #include "retdec/llvmir2hll/optimizer/optimizers/goto_cfg_optimizer.h"
 
+#include <set>
+
 #include "retdec/llvmir2hll/ir/assign_stmt.h"
 #include "retdec/llvmir2hll/ir/break_stmt.h"
 #include "retdec/llvmir2hll/ir/call_stmt.h"
@@ -22,6 +24,7 @@
 #include "retdec/llvmir2hll/ir/if_stmt.h"
 #include "retdec/llvmir2hll/ir/module.h"
 #include "retdec/llvmir2hll/ir/const_bool.h"
+#include "retdec/llvmir2hll/ir/const_int.h"
 #include "retdec/llvmir2hll/ir/return_stmt.h"
 #include "retdec/llvmir2hll/ir/switch_stmt.h"
 #include "retdec/llvmir2hll/ir/statement.h"
@@ -151,6 +154,53 @@ ShPtr<GotoStmt> trailingGoto(ShPtr<Statement> body, ShPtr<Statement>& prev)
 	return nullptr;
 }
 
+/// Adds every statement of the chain from @a stmt, nested ones included, to
+/// @a out.  @a single limits it to @a stmt and what it contains.
+void collectStmts(ShPtr<Statement> stmt, std::set<ShPtr<Statement>>& out,
+		bool single = false)
+{
+	for (int i = 0; stmt && i < 8192; ++i, stmt = single ? nullptr : stmt->getSuccessor())
+	{
+		if (!out.insert(stmt).second) return;
+		if (auto is = cast<IfStmt>(stmt))
+		{
+			for (auto ci = is->clause_begin(); ci != is->clause_end(); ++ci)
+				collectStmts(ci->second, out);
+			if (is->hasElseClause()) collectStmts(is->getElseClause(), out);
+		}
+		else if (auto ss = cast<SwitchStmt>(stmt))
+		{
+			for (auto ci = ss->clause_begin(); ci != ss->clause_end(); ++ci)
+				collectStmts(ci->second, out);
+		}
+		else if (auto wl = cast<WhileLoopStmt>(stmt))
+			collectStmts(wl->getBody(), out);
+		else if (auto fl = cast<ForLoopStmt>(stmt))
+			collectStmts(fl->getBody(), out);
+		else if (auto ul = cast<UForLoopStmt>(stmt))
+			collectStmts(ul->getBody(), out);
+	}
+}
+
+/// Whether some goto outside @a region (and not @a ignore) targets a
+/// statement inside it.  Moving such a region into a new loop or clause makes
+/// that goto jump into the middle of a compound statement, which later
+/// passes (variable definitions, copy propagation) do not model.
+bool isEnteredFromOutside(const std::set<ShPtr<Statement>>& region,
+		const std::set<ShPtr<Statement>>& allowed)
+{
+	for (auto &st: region)
+	{
+		for (auto pi = st->predecessor_begin(); pi != st->predecessor_end(); ++pi)
+		{
+			auto g = cast<GotoStmt>(*pi);
+			if (g && g->getTarget() == st && !region.count(g) && !allowed.count(g))
+				return true;
+		}
+	}
+	return false;
+}
+
 /// Pattern E: a clause of @a is ends with `goto T`, T a later sibling of
 /// @a is.  The statements between @a is and T run only when the other clause
 /// was taken, so they move to its end and the goto goes:
@@ -179,6 +229,10 @@ bool tryTrailingForwardGoto(const ShPtr<IfStmt>& is)
 			run = collectBetween(is->getSuccessor(), target);
 			if (run.empty()) continue;
 		}
+
+		// A goto from elsewhere into the run now enters a clause of `is`.
+		// That is what Pattern A has always produced, and the CFG builders
+		// model it; a jump into a loop body (Patterns F and G) is refused.
 
 		// Detach the run from the main chain.
 		if (!run.empty())
@@ -261,8 +315,25 @@ bool tryBackwardSiblingGoto(const ShPtr<Statement>& stmt)
 	if (target == stmt) return false;
 	auto run = collectBetween(target, stmt, 1024);
 	if (run.empty()) return false;
+	// Only a loop entered at its top reads as one: when the statement before
+	// L never falls through to it, every entry is a jump into the middle.
+	for (auto pi = target->predecessor_begin(); pi != target->predecessor_end(); ++pi)
+	{
+		auto p = *pi;
+		if (p->getSuccessor() == target && (isa<ReturnStmt>(p) || isa<BreakStmt>(p)
+				|| isa<ContinueStmt>(p) || isa<GotoStmt>(p)))
+			return false;
+	}
 	for (auto &s: run)
 		if (hasEscapingBreakOrContinue(s, false, /*single=*/true)) return false;
+
+	{
+		std::set<ShPtr<Statement>> region, none;
+		for (auto &r: run) collectStmts(r, region, /*single=*/true);
+		collectStmts(stmt, region, /*single=*/true);
+		region.erase(target); // L itself: a jump to it enters the loop at its top
+		if (isEnteredFromOutside(region, none)) return false;
+	}
 
 	auto after = stmt->getSuccessor();
 	auto loop = WhileLoopStmt::create(ConstBool::create(true),
@@ -287,6 +358,88 @@ bool tryBackwardSiblingGoto(const ShPtr<Statement>& stmt)
 	return true;
 }
 
+/// Whether @a cond is a constant true (a `while (true)` condition).
+bool isConstTrue(const ShPtr<Expression>& cond)
+{
+	if (auto cb = cast<ConstBool>(cond)) return cb->isTrue();
+	if (auto ci = cast<ConstInt>(cond)) return !ci->isZero();
+	return false;
+}
+
+/// Whether the chain from @a stmt holds a break bound outside it.  A
+/// continue inside a `while (true)` body binds to that loop, so only breaks
+/// count here.
+bool hasEscapingBreak(ShPtr<Statement> stmt, bool single = false)
+{
+	for (int i = 0; stmt && i < 4096; ++i, stmt = single ? nullptr : stmt->getSuccessor())
+	{
+		if (isa<BreakStmt>(stmt)) return true;
+		if (auto is = cast<IfStmt>(stmt))
+		{
+			for (auto ci = is->clause_begin(); ci != is->clause_end(); ++ci)
+				if (hasEscapingBreak(ci->second)) return true;
+			if (is->hasElseClause() && hasEscapingBreak(is->getElseClause()))
+				return true;
+		}
+		// Breaks in a nested switch or loop bind to it.
+	}
+	return false;
+}
+
+/// Pattern G: code after a `while (true)` loop that has no break is reached
+/// only by gotos; when it ends by jumping back to the loop's head it is the
+/// tail of the loop body, and moves there:
+///
+///     while (true) { L: S; }  R;  goto L;   =>  while (true) { L: S; [continue;] R; }
+///
+/// `continue;` goes in when S can fall off its end, which loops back to L
+/// and must keep doing so.
+bool tryTailBackIntoLoop(const ShPtr<WhileLoopStmt>& wl)
+{
+	if (!isConstTrue(wl->getCondition())) return false;
+	auto head = wl->getBody();
+	if (!head || hasEscapingBreak(head)) return false;
+
+	std::vector<ShPtr<Statement>> run;
+	ShPtr<GotoStmt> back;
+	for (auto s = wl->getSuccessor(); s && run.size() < 256; s = s->getSuccessor())
+	{
+		if (auto g = cast<GotoStmt>(s))
+		{
+			if (g->getTarget() == head || g->getTarget() == wl)
+			{
+				back = g;
+				break;
+			}
+		}
+		if (hasEscapingBreakOrContinue(s, false, /*single=*/true)) return false;
+		run.push_back(s);
+	}
+	if (!back || run.empty()) return false;
+	{
+		std::set<ShPtr<Statement>> region, allowed;
+		for (auto &r: run) collectStmts(r, region, /*single=*/true);
+		collectStmts(wl, allowed, /*single=*/true);
+		if (isEnteredFromOutside(region, allowed)) return false;
+	}
+
+	auto after = back->getSuccessor();
+	wl->setSuccessor(after);
+	back->setSuccessor(nullptr);
+	Statement::removeStatement(back);
+	run.back()->setSuccessor(nullptr);
+
+	auto last = Statement::getLastStatement(head);
+	if (!isa<GotoStmt>(last) && !isa<ReturnStmt>(last) && !isa<ContinueStmt>(last))
+	{
+		auto cont = ContinueStmt::create();
+		last->setSuccessor(cont);
+		last = cont;
+	}
+	last->setSuccessor(run.front());
+	return true;
+}
+
 /// One pass over the body of @a func.  Returns true if any change was made.
 /// @a loopExit is the statement that follows the enclosing loop (used to
 /// detect gotos that should become break statements — Pattern D).
@@ -294,8 +447,8 @@ bool onePass(ShPtr<Function> func)
 {
 	bool anyChange = false;
 
-	std::function<bool(ShPtr<Statement>, ShPtr<Statement>)> walk;
-	walk = [&](ShPtr<Statement> stmt, ShPtr<Statement> loopExit) -> bool {
+	std::function<bool(ShPtr<Statement>, ShPtr<Statement>, ShPtr<Statement>)> walk;
+	walk = [&](ShPtr<Statement> stmt, ShPtr<Statement> loopExit, ShPtr<Statement> loopHead) -> bool {
 		bool changed = false;
 		while (stmt)
 		{
@@ -309,8 +462,8 @@ bool onePass(ShPtr<Function> func)
 			{
 				// Recurse into branches first.
 				for (auto ci = is->clause_begin(); ci != is->clause_end(); ++ci)
-					changed |= walk(ci->second, loopExit);
-				if (is->hasElseClause()) changed |= walk(is->getElseClause(), loopExit);
+					changed |= walk(ci->second, loopExit, loopHead);
+				if (is->hasElseClause()) changed |= walk(is->getElseClause(), loopExit, loopHead);
 
 				// Now try Pattern A on this if-stmt.
 				if (!is->hasElseClause() && !is->hasElseIfClauses())
@@ -380,6 +533,21 @@ bool onePass(ShPtr<Function> func)
 					continue;
 				}
 
+				// --- Pattern C: goto to the head of the enclosing
+				// while (true) -> continue ---
+				if (target && loopHead && !gs->isGotoTarget()
+						&& (target == loopHead
+							|| target == cast<WhileLoopStmt>(loopHead)->getBody()))
+				{
+					auto cont = ContinueStmt::create();
+					gs->prependStatement(cont);
+					Statement::removeStatement(gs);
+					changed = true;
+					anyChange = true;
+					stmt = cont->getSuccessor();
+					continue;
+				}
+
 				// --- Pattern B: unconditional goto to immediate successor ---
 				if (target && gs->getSuccessor() == target)
 				{
@@ -399,11 +567,17 @@ bool onePass(ShPtr<Function> func)
 			// Pass the statement after the loop as the new loopExit.
 			else if (auto wl = cast<WhileLoopStmt>(stmt))
 			{
-				changed |= walk(wl->getBody(), wl->getSuccessor());
+				if (tryTailBackIntoLoop(wl))
+				{
+					anyChange = true;
+					return true;
+				}
+				changed |= walk(wl->getBody(), wl->getSuccessor(),
+					isConstTrue(wl->getCondition()) ? ShPtr<Statement>(wl) : nullptr);
 			}
 			else if (auto fl = cast<ForLoopStmt>(stmt))
 			{
-				changed |= walk(fl->getBody(), fl->getSuccessor());
+				changed |= walk(fl->getBody(), fl->getSuccessor(), nullptr);
 			}
 
 			stmt = stmt->getSuccessor();
@@ -411,7 +585,7 @@ bool onePass(ShPtr<Function> func)
 		return changed;
 	};
 
-	return walk(func->getBody(), nullptr);
+	return walk(func->getBody(), nullptr, nullptr);
 }
 
 } // anonymous namespace

@@ -12,6 +12,7 @@
 #include "llvmir2hll/ir/tests_with_module.h"
 #include "retdec/llvmir2hll/ir/assign_stmt.h"
 #include "retdec/llvmir2hll/ir/break_stmt.h"
+#include "retdec/llvmir2hll/ir/const_bool.h"
 #include "retdec/llvmir2hll/ir/const_int.h"
 #include "retdec/llvmir2hll/ir/continue_stmt.h"
 #include "retdec/llvmir2hll/ir/empty_stmt.h"
@@ -629,13 +630,66 @@ TEST_F(GotoCFGOptimizerTests, PatternF_NotAppliedWhenTheRunHasAnEscapingBreak)
 	auto gotoL = GotoStmt::create(assignA);
 	auto is = IfStmt::create(varA, gotoL);
 	inner->setSuccessor(is);
-	auto outer = WhileLoopStmt::create(ConstInt::create(llvm::APInt(1, 1)), assignA);
+	// A non-constant condition, so the goto is not a `continue` either.
+	auto outer = WhileLoopStmt::create(varA, assignA);
 	testFunc->setBody(outer);
 
 	Optimizer::optimize<GotoCFGOptimizer>(module);
 
 	EXPECT_EQ(assignA, outer->getBody());
 	EXPECT_TRUE(isa<GotoStmt>(is->getFirstIfBody()));
+}
+
+
+// Pattern G:  while (true) { a = 1; if (a) goto T; }  T: b = 2;  goto <loop head>;
+//          => while (true) { a = 1; if (!a) { continue; } b = 2; }
+TEST_F(GotoCFGOptimizerTests, PatternG_TailEndingInAJumpToTheLoopHeadMovesIntoTheLoop)
+{
+	auto varA = Variable::create("a", IntType::create(32));
+	auto varB = Variable::create("b", IntType::create(32));
+	testFunc->addLocalVar(varA);
+	testFunc->addLocalVar(varB);
+	auto assignB = AssignStmt::create(varB, ConstInt::create(llvm::APInt(32, 2)));
+	auto assignA = AssignStmt::create(varA, ConstInt::create(llvm::APInt(32, 1)));
+	auto inner = IfStmt::create(varA, GotoStmt::create(assignB));
+	assignA->setSuccessor(inner);
+	auto loop = WhileLoopStmt::create(ConstBool::create(true), assignA, assignB);
+	auto back = GotoStmt::create(assignA);
+	assignB->setSuccessor(back);
+	testFunc->setBody(loop);
+
+	Optimizer::optimize<GotoCFGOptimizer>(module);
+
+	ASSERT_EQ(loop, testFunc->getBody());
+	EXPECT_FALSE(loop->hasSuccessor());
+	// The continue and `if (a) goto T` then fold (Pattern A) into
+	// `if (!a) { continue; }`, leaving b = 2 as the body's tail.
+	EXPECT_EQ(assignB, inner->getSuccessor());
+	EXPECT_TRUE(isa<ContinueStmt>(inner->getFirstIfBody())) << inner->getFirstIfBody();
+	EXPECT_FALSE(assignB->hasSuccessor());
+	EXPECT_FALSE(assignA->isGotoTarget());
+}
+
+// Pattern F is refused when a goto from outside enters the would-be loop
+// body in its middle: the later passes do not model a jump into a loop.
+TEST_F(GotoCFGOptimizerTests, PatternF_NotAppliedWhenTheRunIsEnteredFromOutside)
+{
+	auto varA = Variable::create("a", IntType::create(32));
+	auto varB = Variable::create("b", IntType::create(32));
+	testFunc->addLocalVar(varA);
+	testFunc->addLocalVar(varB);
+	auto assignA = AssignStmt::create(varA, ConstInt::create(llvm::APInt(32, 1)));
+	auto assignB = AssignStmt::create(varB, ConstInt::create(llvm::APInt(32, 2)));
+	assignA->setSuccessor(assignB);
+	auto is = IfStmt::create(varA, GotoStmt::create(assignA));
+	assignB->setSuccessor(is);
+	auto entry = IfStmt::create(varB, GotoStmt::create(assignB), assignA);
+	testFunc->setBody(entry);
+
+	Optimizer::optimize<GotoCFGOptimizer>(module);
+
+	EXPECT_FALSE(isa<WhileLoopStmt>(entry->getSuccessor()))
+		<< entry->getSuccessor();
 }
 
 } // namespace tests
