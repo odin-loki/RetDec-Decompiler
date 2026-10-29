@@ -512,7 +512,7 @@ TEST_F(ConversionTests, BytesToBitsRefusesALengthWhoseBitCountDoesNotFit)
 // The rate is machine-dependent and this runs far fewer iterations than the
 // measurement did, so it is not a threshold: what it pins is that the encoder
 // holds no shared state at all, which is what txt::byteToHex gives it.
-TEST(ConversionTests, BytesToHexStringIsThreadSafe)
+TEST_F(ConversionTests, BytesToHexStringIsThreadSafe)
 {
 	constexpr int kIterations = 20000;
 	std::atomic<int> mismatches{0};
@@ -543,7 +543,7 @@ TEST(ConversionTests, BytesToHexStringIsThreadSafe)
 }
 
 // And the single-threaded contract the loop has to keep while it does that.
-TEST(ConversionTests, BytesToHexStringRendersEveryByte)
+TEST_F(ConversionTests, BytesToHexStringRendersEveryByte)
 {
 	std::vector<std::uint8_t> all(256);
 	for (int i = 0; i < 256; ++i)

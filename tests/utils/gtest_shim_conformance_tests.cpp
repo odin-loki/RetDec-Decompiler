@@ -125,8 +125,8 @@ TEST(GtestShimConformance, NearComparisonsFailOnNaN)
 {
 	const double nan = std::numeric_limits<double>::quiet_NaN();
 
-	EXPECT_NONFATAL_FAILURE(EXPECT_NEAR(nan, 1.0, 0.5), "not a number");
-	EXPECT_NONFATAL_FAILURE(EXPECT_NEAR(1.0, nan, 0.5), "not a number");
+	EXPECT_NONFATAL_FAILURE(EXPECT_NEAR(nan, 1.0, 0.5), "evaluates to nan");
+	EXPECT_NONFATAL_FAILURE(EXPECT_NEAR(1.0, nan, 0.5), "evaluates to nan");
 
 	// And the ordinary contract still holds.
 	EXPECT_NEAR(1.0, 1.4, 0.5);

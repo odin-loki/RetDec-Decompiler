@@ -585,7 +585,7 @@ TEST_F(GpuScannerTests, SlashedJumpNibblesAreDontCares)
 // which is why the constant and the predicate live in the shared prologue
 // rather than beside the kernel -- so the host can ask the question the device
 // answers, and a test can ask it here.
-TEST(GpuScannerTests, PatternsTooLongForSharedMemoryDoNotTakeTheKernelPath)
+TEST_F(GpuScannerTests, PatternsTooLongForSharedMemoryDoNotTakeTheKernelPath)
 {
 	// Written against the literal 4096 rather than against kMaxPatternNibs.
 	// Phrasing the bounds in terms of the constant makes the test move with it:
@@ -612,7 +612,7 @@ TEST(GpuScannerTests, PatternsTooLongForSharedMemoryDoNotTakeTheKernelPath)
 // The routing measures the pattern the kernel is actually given, which is the
 // string truncated at ';' -- not the raw one. A pattern that is over-long only
 // because of what follows the separator still belongs on the GPU.
-TEST(GpuScannerTests, TheLengthThatDecidesTheRouteIsTheOneTheKernelSees)
+TEST_F(GpuScannerTests, TheLengthThatDecidesTheRouteIsTheOneTheKernelSees)
 {
 	const std::string tail(8192, 'f');
 
