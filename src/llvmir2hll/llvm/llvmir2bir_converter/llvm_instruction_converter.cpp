@@ -581,6 +581,10 @@ ShPtr<Expression> LLVMInstructionConverter::visitInstruction(llvm::Instruction &
 	llvm_unreachable("unsupported LLVM instruction");
 }
 
+namespace {
+bool matchSignExtendedHalf(llvm::User &inst, llvm::Value *&t);
+} // anonymous namespace
+
 /**
 * @brief Converts the given LLVM binary operation @a inst with opcode @a opcode
 *        into an expression in BIR.
@@ -590,6 +594,14 @@ ShPtr<Expression> LLVMInstructionConverter::visitInstruction(llvm::Instruction &
 */
 ShPtr<Expression> LLVMInstructionConverter::convertBinaryOpToExpression(
 		llvm::User &inst, unsigned opcode) {
+	llvm::Value *half = nullptr;
+	if (opcode == llvm::Instruction::Add && matchSignExtendedHalf(inst, half)) {
+		return ExtCastExpr::create(
+			getConverter()->convertValueToExpression(half),
+			getConverter()->convertType(inst.getType()),
+			ExtCastExpr::Variant::SExt);
+	}
+
 	auto op1 = getConverter()->convertValueToExpression(inst.getOperand(0));
 	auto op2 = getConverter()->convertValueToExpression(inst.getOperand(1));
 
@@ -752,6 +764,53 @@ bool matchSignedLessThanConstFlags(llvm::Value *x, llvm::Value *&a,
 				c = llvm::ConstantInt::get(n->getContext(), -n->getValue());
 				return true;
 			}
+		}
+	}
+	return false;
+}
+
+/**
+* @brief Recognizes `(zext(ashr(t, 31)) << 32) + r`, `t = trunc nuw r to i32`.
+*
+* That is how a lifted `cdq` builds `edx:eax` for `idiv`. Because the @c nuw
+* trunc proves the upper half of @c r is zero, the sum is `sext(t)`. On
+* success, @a t is set.
+*/
+bool matchSignExtendedHalf(llvm::User &inst, llvm::Value *&t) {
+	auto *add = llvm::dyn_cast<llvm::BinaryOperator>(&inst);
+	if (!add || add->getOpcode() != llvm::Instruction::Add ||
+			!add->getType()->isIntegerTy(64)) {
+		return false;
+	}
+	for (int i = 0; i < 2; ++i) {
+		llvm::Value *hi = add->getOperand(i);
+		llvm::Value *r = add->getOperand(1 - i);
+		auto *m = llvm::dyn_cast<llvm::BinaryOperator>(hi);
+		if (!m || m->getNumOperands() != 2) {
+			continue;
+		}
+		auto *k = llvm::dyn_cast<llvm::ConstantInt>(m->getOperand(1));
+		bool shifted = k && (
+			(m->getOpcode() == llvm::Instruction::Mul &&
+				k->getValue() == (uint64_t(1) << 32)) ||
+			(m->getOpcode() == llvm::Instruction::Shl && k->getValue() == 32));
+		if (!shifted) {
+			continue;
+		}
+		auto *z = llvm::dyn_cast<llvm::ZExtInst>(m->getOperand(0));
+		if (!z || !z->getSrcTy()->isIntegerTy(32)) {
+			continue;
+		}
+		auto *sign = llvm::dyn_cast<llvm::BinaryOperator>(z->getOperand(0));
+		if (!sign || sign->getOpcode() != llvm::Instruction::AShr) {
+			continue;
+		}
+		auto *amount = llvm::dyn_cast<llvm::ConstantInt>(sign->getOperand(1));
+		auto *tr = llvm::dyn_cast<llvm::TruncInst>(sign->getOperand(0));
+		if (amount && amount->getValue() == 31 && tr &&
+				tr->hasNoUnsignedWrap() && tr->getOperand(0) == r) {
+			t = tr;
+			return true;
 		}
 	}
 	return false;

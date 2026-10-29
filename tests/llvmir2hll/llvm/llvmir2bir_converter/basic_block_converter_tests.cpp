@@ -18,6 +18,7 @@
 #include "retdec/llvmir2hll/ir/call_stmt.h"
 #include "retdec/llvmir2hll/ir/const_int.h"
 #include "retdec/llvmir2hll/ir/empty_stmt.h"
+#include "retdec/llvmir2hll/ir/ext_cast_expr.h"
 #include "retdec/llvmir2hll/ir/function.h"
 #include "retdec/llvmir2hll/ir/int_type.h"
 #include "retdec/llvmir2hll/ir/lt_op_expr.h"
@@ -87,6 +88,51 @@ SignedLessThanFlagIdiomIsConvertedToAPlainComparison) {
 	ASSERT_TRUE(a && b);
 	EXPECT_EQ("a", a->getName());
 	EXPECT_EQ("b", b->getName());
+}
+
+// A lifted `cdq` building edx:eax: `(sext(eax) >> 31 << 32) + rax` with the
+// upper half of rax known zero is just `(int64_t)(int32_t)rax`.
+TEST_F(BasicBlockConverterTests,
+CdqSignExtensionOfAZeroExtendedHalfBecomesASignExtension) {
+	auto module = convertLLVMIR2BIR(R"(
+		define i64 @function(i64 %r) {
+			%t = trunc nuw i64 %r to i32
+			%s = ashr i32 %t, 31
+			%z = zext i32 %s to i64
+			%m = mul i64 %z, 4294967296
+			%x = add i64 %m, %r
+			ret i64 %x
+		}
+	)");
+
+	auto f = module->getFuncByName("function");
+	ASSERT_TRUE(f);
+	auto ret = cast<ReturnStmt>(skipEmptyStmts(f->getBody()));
+	ASSERT_TRUE(ret);
+	auto ext = cast<ExtCastExpr>(ret->getRetVal());
+	ASSERT_TRUE(ext) << ret->getRetVal();
+	EXPECT_EQ(ExtCastExpr::Variant::SExt, ext->getVariant());
+}
+
+// Without `nuw` the upper half of %r may be set; the sum must stay.
+TEST_F(BasicBlockConverterTests,
+CdqShapeWithoutAKnownZeroUpperHalfIsKept) {
+	auto module = convertLLVMIR2BIR(R"(
+		define i64 @function(i64 %r) {
+			%t = trunc i64 %r to i32
+			%s = ashr i32 %t, 31
+			%z = zext i32 %s to i64
+			%m = mul i64 %z, 4294967296
+			%x = add i64 %m, %r
+			ret i64 %x
+		}
+	)");
+
+	auto f = module->getFuncByName("function");
+	ASSERT_TRUE(f);
+	auto ret = cast<ReturnStmt>(skipEmptyStmts(f->getBody()));
+	ASSERT_TRUE(ret);
+	EXPECT_FALSE(isa<ExtCastExpr>(ret->getRetVal())) << ret->getRetVal();
 }
 
 // InstCombine's form of the idiom for `a <s 7`.
