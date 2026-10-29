@@ -264,6 +264,7 @@ class Capstone2LlvmIrTranslatorArm_impl :
 	void translateArmMiscFp(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 	void translateMveMisc(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateMvePred(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateVscclrm(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateMveReduce(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateClrm(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateLongShift(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);

@@ -12636,6 +12636,25 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VDOT_bf16)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSCCLRM_zeroes_list)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x1234567812345678ULL)},
+		{ARM_REG_D1, armDBits(0x1234567812345678ULL)},
+		{ARM_REG_D2, armDBits(0x55ULL)},
+	});
+
+	emulate_bin("9f ec 04 0b");
+
+	EXPECT_EQ(0x0ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0ULL, dBits(ARM_REG_D1));
+	EXPECT_EQ(0x55ULL, dBits(ARM_REG_D2));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VADCI_i32_carry_chain)
 {
 	ONLY_MODE_THUMB;

@@ -8976,6 +8976,29 @@ void Capstone2LlvmIrTranslatorArm_impl::translateNeonBf16(cs_insn* i, cs_arm* ai
 
 
 /**
+ * VSCCLRM: zero every listed S/D register and VPR (Security Extension
+ * register-list clear before a non-secure call/return).
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateVscclrm(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	for (unsigned k = 0; k < ai->op_count; ++k)
+	{
+		auto& o = ai->operands[k];
+		if (o.type != ARM_OP_REG || getRegister(o.reg) == nullptr)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+	}
+	for (unsigned k = 0; k < ai->op_count; ++k)
+	{
+		auto r = ai->operands[k].reg;
+		storeRegister(r, llvm::Constant::getNullValue(getRegisterType(r)), irb);
+	}
+}
+
+
+/**
  * MVE predication: VPR.P0 is modelled as a 16-bit byte mask in ARM_REG_VPR.
  * VCTP, VPNOT and the VPT compare write it and VPSEL reads it. The VPT/VPST
  * mask fields and the predication of the instructions inside a VPT block
