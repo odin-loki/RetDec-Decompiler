@@ -282,12 +282,6 @@ bool ProviderInitialization::runOnModule(Module& m)
 		c->getConfig().parameters.setEntryPoint(ep);
 	}
 
-	if (f->getFileFormat()->getTargetArchitecture() == fileformat::Architecture::MIPS
-			&& f->getFileFormat()->getWordLength() == 64)
-	{
-		throw std::runtime_error("Unsupported target format and architecture combination");
-	}
-
 	// Run cpdetect and set info to config.
 	// TODO: we could probably be using cpdetect results.
 	//
