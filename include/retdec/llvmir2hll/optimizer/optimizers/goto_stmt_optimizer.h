@@ -31,6 +31,7 @@ private:
 
 	virtual void runOnFunction(ShPtr<Function> func) override;
 
+	bool tryDropFallThroughGoto(ShPtr<GotoStmt> stmt);
 	bool tryBreakOutOfLoop(ShPtr<GotoStmt> stmt);
 	bool tryCopyReturningTail(ShPtr<GotoStmt> stmt);
 

@@ -18,6 +18,7 @@
 #include "retdec/llvmir2hll/ir/while_loop_stmt.h"
 #include "retdec/llvmir2hll/ir/continue_stmt.h"
 #include "retdec/llvmir2hll/ir/function.h"
+#include "retdec/llvmir2hll/ir/empty_stmt.h"
 #include "retdec/llvmir2hll/ir/goto_stmt.h"
 #include "retdec/llvmir2hll/ir/int_type.h"
 #include "retdec/llvmir2hll/ir/module.h"
@@ -315,6 +316,40 @@ LabelThatNoGotoNamesIsDroppedOnTheLastRun) {
 
 	Optimizer::optimize<GotoStmtOptimizer>(module, true);
 	EXPECT_FALSE(target->hasLabel());
+}
+
+TEST_F(GotoStmtOptimizerTests,
+GotoAtTheEndOfAnIfToTheStatementAfterTheIfIsDropped) {
+	// if (a) { a = 1; goto L; } L: a = 3;  ==>  if (a) { a = 1; } a = 3;
+	ShPtr<Variable> varA(Variable::create("a", IntType::create(32)));
+	testFunc->addLocalVar(varA);
+	auto target = AssignStmt::create(varA, ConstInt::create(3, 32));
+	target->setLabel("L");
+	auto gotoL = GotoStmt::create(target);
+	auto body = AssignStmt::create(varA, ConstInt::create(1, 32), gotoL);
+	auto ifStmt = IfStmt::create(varA, body, target);
+	testFunc->setBody(ifStmt);
+
+	Optimizer::optimize<GotoStmtOptimizer>(module, true);
+	auto after = body->getSuccessor();
+	EXPECT_TRUE(!after || isa<EmptyStmt>(after));
+	EXPECT_FALSE(target->hasLabel());
+}
+
+TEST_F(GotoStmtOptimizerTests,
+GotoAtTheEndOfAnIfPastTheNextStatementIsKept) {
+	ShPtr<Variable> varA(Variable::create("a", IntType::create(32)));
+	testFunc->addLocalVar(varA);
+	auto target = AssignStmt::create(varA, ConstInt::create(3, 32));
+	target->setLabel("L");
+	auto between = AssignStmt::create(varA, ConstInt::create(2, 32), target);
+	auto gotoL = GotoStmt::create(target);
+	auto body = AssignStmt::create(varA, ConstInt::create(1, 32), gotoL);
+	auto ifStmt = IfStmt::create(varA, body, between);
+	testFunc->setBody(ifStmt);
+
+	Optimizer::optimize<GotoStmtOptimizer>(module, true);
+	EXPECT_EQ(gotoL, body->getSuccessor());
 }
 
 } // namespace tests

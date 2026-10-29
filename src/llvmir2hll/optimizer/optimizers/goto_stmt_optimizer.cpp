@@ -198,6 +198,39 @@ bool GotoStmtOptimizer::tryCopyReturningTail(ShPtr<GotoStmt> stmt) {
 	return true;
 }
 
+/// `if (c) { ...; goto L; } L: ...`: a goto in tail position of if
+/// statements whose next statement is its target falls through anyway.
+bool GotoStmtOptimizer::tryDropFallThroughGoto(ShPtr<GotoStmt> stmt) {
+	auto target = stmt->getTarget();
+	if (!target) {
+		return false;
+	}
+	ShPtr<Statement> s = stmt;
+	while (!s->getSuccessor()) {
+		auto p = s->getParent();
+		if (!p || !isa<IfStmt>(p)) {
+			return false;
+		}
+		s = p;
+	}
+	if (s == ShPtr<Statement>(stmt)) {
+		return false; // A plain `goto L; L:` is someone else's job.
+	}
+	auto next = s->getSuccessor();
+	while (next && next != target && isa<EmptyStmt>(next) &&
+			!next->hasLabel() && !next->isGotoTarget()) {
+		next = next->getSuccessor();
+	}
+	if (next != target) {
+		return false;
+	}
+	// An empty statement in its place: the goto may be all a branch holds.
+	target->removeObserver(stmt);
+	target->removePredecessor(stmt);
+	Statement::replaceStatement(stmt, EmptyStmt::create());
+	return true;
+}
+
 bool GotoStmtOptimizer::tryBreakOutOfLoop(ShPtr<GotoStmt> stmt) {
 	auto target = stmt->getTarget();
 	auto loop = cast<WhileLoopStmt>(innermostBreakScope(stmt));
@@ -336,7 +369,8 @@ void GotoStmtOptimizer::visit(ShPtr<GotoStmt> stmt) {
 		return;
 	}
 
-	if (breakOutOfLoops && !tryBreakOutOfLoop(stmt)) {
+	if (breakOutOfLoops && !tryDropFallThroughGoto(stmt) &&
+			!tryBreakOutOfLoop(stmt)) {
 		tryCopyReturningTail(stmt);
 	}
 }
