@@ -122,6 +122,7 @@ private:
 	llvm::BasicBlock* getBasicBlockBeforeAddress(common::Address a);
 	llvm::BasicBlock* getBasicBlockAfterAddress(common::Address a);
 	llvm::BasicBlock* getBasicBlockContainingAddress(common::Address a);
+	void seedPpc64ElfV1Toc(common::Address a, llvm::BasicBlock* bb);
 	llvm::BasicBlock* createBasicBlock(common::Address a, llvm::Function* f, llvm::BasicBlock* insertAfter = nullptr);
 	void addBasicBlock(common::Address a, llvm::BasicBlock* b);
 

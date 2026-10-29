@@ -145,12 +145,63 @@ llvm::Function* Decoder::createFunction(common::Address a, bool declaration)
 
 	if (!declaration && known)
 	{
-		createBasicBlock(a, f);
+		auto* bb = createBasicBlock(a, f);
+		seedPpc64ElfV1Toc(a, bb);
 	}
 
 	addFunction(a, f);
 
 	return f;
+}
+
+/**
+ * ppc64 ELFv1: callers load r2 from the callee's .opd descriptor before the
+ * call, so inside the function r2 is the TOC base, a link-time constant.
+ * Without it every TOC-relative load (globals, switch tables) reads through
+ * an unknown register.  Seed r2 at entry from the descriptor whose entry is
+ * @a a, or .got + 0x8000 when the descriptor's TOC is filled by relocation.
+ */
+void Decoder::seedPpc64ElfV1Toc(common::Address a, llvm::BasicBlock* bb)
+{
+	auto& arch = _config->getConfig().architecture;
+	if (bb == nullptr || !arch.isPpc() || arch.getBitSize() != 64)
+	{
+		return;
+	}
+	auto* ff = _image->getFileFormat();
+	const auto* opd = ff ? ff->getSection(".opd") : nullptr;
+	if (opd == nullptr)
+	{
+		return;
+	}
+	auto* img = _image->getImage();
+	std::uint64_t toc = 0;
+	for (auto o = opd->getAddress(); o + 16 <= opd->getEndAddress(); o += 24)
+	{
+		std::uint64_t entry = 0;
+		std::uint64_t t = 0;
+		if (img->getWord(o, entry) && entry == a && img->getWord(o + 8, t))
+		{
+			toc = t;
+			break;
+		}
+	}
+	if (toc == 0)
+	{
+		const auto* got = ff->getSection(".got");
+		if (got == nullptr)
+		{
+			return;
+		}
+		toc = got->getAddress() + 0x8000;
+	}
+	auto* r2 = _abi->getRegister(PPC_REG_R2);
+	if (r2 == nullptr)
+	{
+		return;
+	}
+	llvm::IRBuilder<> irb(bb, bb->begin());
+	irb.CreateStore(llvm::ConstantInt::get(r2->getValueType(), toc), r2);
 }
 
 void Decoder::addFunction(common::Address a, llvm::Function* f)
