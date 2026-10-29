@@ -236,7 +236,11 @@ void ConstantsAnalysis::checkForGlobalInInstruction(
 	}
 
 	auto* gv = dyn_cast<GlobalVariable>(root.value);
-	if (isa<LoadInst>(inst) && gv && root.ops.size() <= 1)
+	// A register global here is the register's value on entry, not its
+	// address: `mov %rdi,%rdx; movzbl (%rdx),%edi` reads through rdi's value,
+	// and replacing the pointer with @rdi read the register instead.
+	if (isa<LoadInst>(inst) && gv && root.ops.size() <= 1
+			&& !(_abi && _abi->isRegister(gv)))
 	{
 		auto* conv = IrModifier::convertConstantToType(gv, val->getType());
 		_toRemove.insert(val);
