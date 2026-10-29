@@ -28,6 +28,7 @@
 #include "retdec/llvmir2hll/ir/void_type.h"
 #include "retdec/llvmir2hll/obtainer/call_info_obtainers/optim_call_info_obtainer.h"
 #include "retdec/llvmir2hll/optimizer/optimizers/copy_propagation_optimizer.h"
+#include "retdec/llvmir2hll/optimizer/optimizers/copy_propagation_optimizer_ext.h"
 #include "retdec/llvmir2hll/support/types.h"
 
 #include "retdec/llvmir2hll/hll/bir_writer.h"
@@ -1196,6 +1197,166 @@ TEST_F(CopyPropagationOptimizerTests, CallIsPropagatedAcrossAnIfThatDoesNotTouch
 
 	EXPECT_TRUE(isa<CallExpr>(callG->getArg(1))) << "the extended walk stopped propagating across an if that touches "
 													"nothing it cares about";
+}
+
+/// The example the upstream guard was written for: moving f() past another
+/// call swaps two side effects, and that holds when the other call is only
+/// declared (external), not just when it is defined in the module.
+TEST_F(CopyPropagationOptimizerTests, CallIsNotPropagatedAcrossAnExternalCall)
+{
+	// t = f(); h(); g(t);
+	ShPtr<Variable> varT(Variable::create("t", IntType::create(32)));
+	testFunc->addLocalVar(varT);
+
+	ShPtr<Function> funcF(FunctionBuilder("f").withRetType(IntType::create(32)).build());
+	ShPtr<Function> funcG(FunctionBuilder("g").withRetType(IntType::create(32)).build());
+	ShPtr<Function> funcH(FunctionBuilder("h").withRetType(IntType::create(32)).build());
+	module->addFunc(funcF);
+	module->addFunc(funcG);
+	module->addFunc(funcH);
+
+	ShPtr<CallExpr> callF(CallExpr::create(funcF->getAsVar()));
+	ShPtr<AssignStmt> assignT(AssignStmt::create(varT, callF));
+	ShPtr<CallStmt> callHStmt(CallStmt::create(CallExpr::create(funcH->getAsVar())));
+	ShPtr<CallExpr> callG(CallExpr::create(funcG->getAsVar(), ExprVector{varT}));
+	ShPtr<CallStmt> callGStmt(CallStmt::create(callG));
+
+	assignT->setSuccessor(callHStmt);
+	callHStmt->setSuccessor(callGStmt);
+	testFunc->setBody(assignT);
+
+	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
+	Optimizer::optimize<CopyPropagationOptimizer>(module, va, OptimCallInfoObtainer::create());
+
+	EXPECT_EQ(varT, callG->getArg(1)) << "f() was moved after h(); the two calls now run in the wrong order";
+}
+
+/// An intervening write to a variable the call reads changes the call's
+/// argument once the call is moved below it.
+TEST_F(CopyPropagationOptimizerTests, CallIsNotPropagatedAcrossAWriteToItsArgument)
+{
+	// t = f(x); x = 1; g(t);
+	ShPtr<Variable> varT(Variable::create("t", IntType::create(32)));
+	ShPtr<Variable> varX(Variable::create("x", IntType::create(32)));
+	testFunc->addLocalVar(varT);
+	testFunc->addLocalVar(varX);
+
+	ShPtr<Function> funcF(FunctionBuilder("f").withRetType(IntType::create(32)).build());
+	ShPtr<Function> funcG(FunctionBuilder("g").withRetType(IntType::create(32)).build());
+	module->addFunc(funcF);
+	module->addFunc(funcG);
+
+	ShPtr<CallExpr> callF(CallExpr::create(funcF->getAsVar(), ExprVector{varX}));
+	ShPtr<AssignStmt> assignT(AssignStmt::create(varT, callF));
+	ShPtr<AssignStmt> assignX(AssignStmt::create(varX, ConstInt::create(1, 32)));
+	ShPtr<CallExpr> callG(CallExpr::create(funcG->getAsVar(), ExprVector{varT}));
+	ShPtr<CallStmt> callGStmt(CallStmt::create(callG));
+
+	assignT->setSuccessor(assignX);
+	assignX->setSuccessor(callGStmt);
+	testFunc->setBody(assignT);
+
+	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
+
+	// Asked directly: the optimizer would first delete the dead `x = 1` and
+	// then legitimately propagate, which hides what the guard decides.
+	EXPECT_FALSE(canPropagateThroughStmts(assignT, varT, callGStmt, module, va))
+		<< "f(x) may not move below x = 1; it would see the new x";
+}
+
+/// A write to a global may be observed by the callee, which could read it.
+TEST_F(CopyPropagationOptimizerTests, CallIsNotPropagatedAcrossAWriteToAGlobal)
+{
+	// t = f(); gl = 1; g(t);
+	ShPtr<Variable> varT(Variable::create("t", IntType::create(32)));
+	ShPtr<Variable> varGl(Variable::create("gl", IntType::create(32)));
+	testFunc->addLocalVar(varT);
+	module->addGlobalVar(varGl);
+
+	ShPtr<Function> funcF(FunctionBuilder("f").withRetType(IntType::create(32)).build());
+	ShPtr<Function> funcG(FunctionBuilder("g").withRetType(IntType::create(32)).build());
+	module->addFunc(funcF);
+	module->addFunc(funcG);
+
+	ShPtr<CallExpr> callF(CallExpr::create(funcF->getAsVar()));
+	ShPtr<AssignStmt> assignT(AssignStmt::create(varT, callF));
+	ShPtr<AssignStmt> assignGl(AssignStmt::create(varGl, ConstInt::create(1, 32)));
+	ShPtr<CallExpr> callG(CallExpr::create(funcG->getAsVar(), ExprVector{varT}));
+	ShPtr<CallStmt> callGStmt(CallStmt::create(callG));
+
+	assignT->setSuccessor(assignGl);
+	assignGl->setSuccessor(callGStmt);
+	testFunc->setBody(assignT);
+
+	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
+	Optimizer::optimize<CopyPropagationOptimizer>(module, va, OptimCallInfoObtainer::create());
+
+	EXPECT_EQ(varT, callG->getArg(1)) << "f() was moved below a global store it may read";
+}
+
+/// Value analysis of an if covers only its condition; a call inside the body
+/// must still stop the move.
+TEST_F(CopyPropagationOptimizerTests, CallIsNotPropagatedAcrossAnIfWhoseBodyCalls)
+{
+	// t = f(); if (c) { h(); } g(t);
+	ShPtr<Variable> varT(Variable::create("t", IntType::create(32)));
+	ShPtr<Variable> varC(Variable::create("c", IntType::create(32)));
+	testFunc->addLocalVar(varT);
+	testFunc->addLocalVar(varC);
+
+	ShPtr<Function> funcF(FunctionBuilder("f").withRetType(IntType::create(32)).build());
+	ShPtr<Function> funcG(FunctionBuilder("g").withRetType(IntType::create(32)).build());
+	ShPtr<Function> funcH(FunctionBuilder("h").withRetType(IntType::create(32)).build());
+	module->addFunc(funcF);
+	module->addFunc(funcG);
+	module->addFunc(funcH);
+
+	ShPtr<CallExpr> callF(CallExpr::create(funcF->getAsVar()));
+	ShPtr<AssignStmt> assignT(AssignStmt::create(varT, callF));
+	ShPtr<CallStmt> callHStmt(CallStmt::create(CallExpr::create(funcH->getAsVar())));
+	ShPtr<IfStmt> ifStmt(IfStmt::create(varC, callHStmt));
+	ShPtr<CallExpr> callG(CallExpr::create(funcG->getAsVar(), ExprVector{varT}));
+	ShPtr<CallStmt> callGStmt(CallStmt::create(callG));
+
+	assignT->setSuccessor(ifStmt);
+	ifStmt->setSuccessor(callGStmt);
+	testFunc->setBody(assignT);
+
+	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
+	Optimizer::optimize<CopyPropagationOptimizer>(module, va, OptimCallInfoObtainer::create());
+
+	EXPECT_EQ(varT, callG->getArg(1)) << "f() was moved past an if whose body calls h()";
+}
+
+/// A local nobody can point to is invisible to the callee, so a write to it
+/// does not block the move.
+TEST_F(CopyPropagationOptimizerTests, CallIsPropagatedAcrossAWriteToAnUnrelatedLocal)
+{
+	// t = f(); u = 1; g(t);
+	ShPtr<Variable> varT(Variable::create("t", IntType::create(32)));
+	ShPtr<Variable> varU(Variable::create("u", IntType::create(32)));
+	testFunc->addLocalVar(varT);
+	testFunc->addLocalVar(varU);
+
+	ShPtr<Function> funcF(FunctionBuilder("f").withRetType(IntType::create(32)).build());
+	ShPtr<Function> funcG(FunctionBuilder("g").withRetType(IntType::create(32)).build());
+	module->addFunc(funcF);
+	module->addFunc(funcG);
+
+	ShPtr<CallExpr> callF(CallExpr::create(funcF->getAsVar()));
+	ShPtr<AssignStmt> assignT(AssignStmt::create(varT, callF));
+	ShPtr<AssignStmt> assignU(AssignStmt::create(varU, ConstInt::create(1, 32)));
+	ShPtr<CallExpr> callG(CallExpr::create(funcG->getAsVar(), ExprVector{varT}));
+	ShPtr<CallStmt> callGStmt(CallStmt::create(callG));
+
+	assignT->setSuccessor(assignU);
+	assignU->setSuccessor(callGStmt);
+	testFunc->setBody(assignT);
+
+	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
+	Optimizer::optimize<CopyPropagationOptimizer>(module, va, OptimCallInfoObtainer::create());
+
+	EXPECT_TRUE(isa<CallExpr>(callG->getArg(1))) << "a write to an unrelated local stopped the propagation";
 }
 
 } // namespace tests

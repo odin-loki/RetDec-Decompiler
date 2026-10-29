@@ -11,15 +11,11 @@
 *   //      statements between stmt and use.
 *
 * This extension implements the missing case: allow copy propagation of a
-* function-call result across intervening statements, provided:
-*
-*   1. The LHS variable is not read or written by any intervening statement.
-*   2. No intervening statement calls a function that could modify the LHS
-*      variable through aliasing (conservative: skip if any user-defined
-*      function call intervenes and the LHS variable is a global or pointer).
-*   3. The LHS variable appears exactly once in the use statement.
-*   4. The call result (RHS) does not involve any variable that could be
-*      modified by intervening statements.
+* function-call result across intervening statements, provided every
+* intervening statement is "transparent" to the call (see isTransparentFor()):
+* a call-free, memory-access-free assignment that touches neither the LHS
+* variable nor anything the call could observe, and the LHS variable appears
+* exactly once in the use statement.
 *
 * Usage: call canPropagateThroughStmts() from CopyPropagationOptimizer
 * before the `if (stmtSucc != use) return;` guard, and skip that guard
@@ -28,8 +24,11 @@
 
 #include "retdec/llvmir2hll/ir/assign_stmt.h"
 #include "retdec/llvmir2hll/ir/call_expr.h"
+#include "retdec/llvmir2hll/ir/empty_stmt.h"
+#include "retdec/llvmir2hll/ir/var_def_stmt.h"
 #include "retdec/llvmir2hll/ir/expression.h"
 #include "retdec/llvmir2hll/ir/function.h"
+#include "retdec/llvmir2hll/ir/if_stmt.h"
 #include "retdec/llvmir2hll/ir/module.h"
 #include "retdec/llvmir2hll/ir/statement.h"
 #include "retdec/llvmir2hll/ir/variable.h"
@@ -40,51 +39,91 @@ namespace retdec {
 namespace llvmir2hll {
 
 /**
- * Returns true if @a var is written (defined) in @a stmt.
- * A write means @a stmt is an AssignStmt whose LHS is @a var, or a
- * VarDefStmt defining @a var.
+ * Returns true if the effects summarised by @a data cannot interact with the
+ * call in `lhsVar = <call>` (whose own effects are @a stmtData) when the call
+ * is moved past them.
+ *
+ * That requires no call of any kind (external calls have side effects too,
+ * and their order relative to the moved call would swap); no dereference,
+ * array, or struct access (the call may read the memory such an access
+ * writes); no access to @a lhsVar; and no write to a variable the call
+ * statement reads, to a global, or to a variable a pointer may hold the
+ * address of (the callee could read any of those).
  */
-static bool isWrittenIn(ShPtr<Variable> var, ShPtr<Statement> stmt) {
-    if (!stmt) return false;
-    if (auto assign = cast<AssignStmt>(stmt)) {
-        if (auto lhsVar = cast<Variable>(assign->getLhs())) {
-            if (lhsVar == var) return true;
-        }
-    }
-    return false;
+static bool effectsAreIndependent(ShPtr<ValueData> data,
+		ShPtr<Variable> lhsVar, ShPtr<ValueData> stmtData,
+		ShPtr<Module> module, ShPtr<ValueAnalysis> va) {
+	if (!data) return false;
+	if (data->hasCalls() || data->hasDerefs() || data->hasArrayAccesses() ||
+			data->hasStructAccesses()) {
+		return false;
+	}
+	if (data->isDirAccessed(lhsVar)) return false;
+	for (auto it = data->dir_written_begin(); it != data->dir_written_end(); ++it) {
+		const auto &var = *it;
+		if (stmtData->isDirRead(var)) return false;
+		if (module && module->isGlobalVar(var)) return false;
+		if (va->mayBePointed(var)) return false;
+	}
+	return true;
+}
+
+static bool isTransparentFor(ShPtr<Statement> cur, ShPtr<Variable> lhsVar,
+		ShPtr<ValueData> stmtData, ShPtr<Module> module,
+		ShPtr<ValueAnalysis> va, unsigned depth);
+
+/**
+ * Returns true if every statement in the chain starting at @a first is
+ * transparent (see isTransparentFor()).
+ */
+static bool isTransparentChain(ShPtr<Statement> first, ShPtr<Variable> lhsVar,
+		ShPtr<ValueData> stmtData, ShPtr<Module> module,
+		ShPtr<ValueAnalysis> va, unsigned depth) {
+	for (auto cur = first; cur; cur = cur->getSuccessor()) {
+		if (!isTransparentFor(cur, lhsVar, stmtData, module, va, depth)) {
+			return false;
+		}
+	}
+	return true;
 }
 
 /**
- * Returns true if @a var appears as a direct read in the value-analysis
- * data for @a stmt (i.e. the variable is used in @a stmt's RHS or anywhere
- * in a call's arguments).
+ * Returns true if `lhsVar = <call>` may be moved past @a cur without changing
+ * what the call computes, whether it runs, or the order of side effects.
+ *
+ * Plain assignments, variable definitions, and empty statements qualify when
+ * their effects are independent of the call. An @c if qualifies when its
+ * conditions do and every statement in its clauses does, recursively.
+ * Anything else -- loops, switches, returns, breaks, gotos -- is rejected:
+ * value analysis of a compound statement covers only its head, and a jump
+ * could skip the use and with it the moved call.
  */
-static bool isReadIn(ShPtr<Variable> var, ShPtr<Statement> stmt,
-                      ShPtr<ValueAnalysis> va) {
-    if (!stmt || !va) return false;
-    auto data = va->getValueData(stmt);
-    if (!data) return false;
-    return data->getDirNumOfUses(var) > 0;
-}
-
-/**
- * Returns true if @a stmt contains a call to a user-defined (non-declaration)
- * function — a conservative indicator that globals/pointers may be modified.
- */
-static bool hasUserDefinedCall(ShPtr<Statement> stmt,
-                                ShPtr<Module> module,
-                                ShPtr<ValueAnalysis> va) {
-    if (!stmt || !va) return false;
-    auto data = va->getValueData(stmt);
-    if (!data) return false;
-    for (auto it = data->call_begin(); it != data->call_end(); ++it) {
-        auto call = *it;
-        if (auto varExpr = cast<Variable>(call->getCalledExpr())) {
-            auto fnc = module->getFuncByName(varExpr->getName());
-            if (fnc && !fnc->isDeclaration()) return true;
-        }
-    }
-    return false;
+static bool isTransparentFor(ShPtr<Statement> cur, ShPtr<Variable> lhsVar,
+		ShPtr<ValueData> stmtData, ShPtr<Module> module,
+		ShPtr<ValueAnalysis> va, unsigned depth) {
+	const unsigned MAX_DEPTH = 4;
+	if (isa<EmptyStmt>(cur)) return true;
+	if (isa<AssignStmt>(cur) || isa<VarDefStmt>(cur)) {
+		return effectsAreIndependent(va->getValueData(cur), lhsVar, stmtData,
+			module, va);
+	}
+	if (auto ifStmt = cast<IfStmt>(cur)) {
+		if (depth >= MAX_DEPTH) return false;
+		for (auto it = ifStmt->clause_begin(); it != ifStmt->clause_end(); ++it) {
+			if (!effectsAreIndependent(va->getValueData(it->first), lhsVar,
+					stmtData, module, va)) {
+				return false;
+			}
+			if (!isTransparentChain(it->second, lhsVar, stmtData, module, va,
+					depth + 1)) {
+				return false;
+			}
+		}
+		return !ifStmt->hasElseClause() ||
+			isTransparentChain(ifStmt->getElseClause(), lhsVar, stmtData,
+				module, va, depth + 1);
+	}
+	return false;
 }
 
 /**
@@ -95,7 +134,7 @@ static bool hasUserDefinedCall(ShPtr<Statement> stmt,
  * @param stmt   The assignment statement `lhsVar = callRhs`.
  * @param lhsVar The variable being propagated.
  * @param use    The statement that uses @a lhsVar.
- * @param module The module (for function lookups).
+ * @param module The module (for global-variable lookups).
  * @param va     Value analysis.
  *
  * @return true if it is safe to propagate.
@@ -105,36 +144,28 @@ bool canPropagateThroughStmts(ShPtr<Statement> stmt,
                                ShPtr<Statement> use,
                                ShPtr<Module> module,
                                ShPtr<ValueAnalysis> va) {
-    if (!stmt || !lhsVar || !use) return false;
+	if (!stmt || !lhsVar || !use || !va) return false;
+	auto stmtData = va->getValueData(stmt);
+	if (!stmtData) return false;
 
-    // Walk from stmt's successor to use, checking each intervening statement.
-    ShPtr<Statement> cur = stmt->getSuccessor();
-    unsigned steps = 0;
-    const unsigned MAX_STEPS = 16; // Don't walk too far.
+	// Walk from stmt's successor to use, checking each intervening statement.
+	ShPtr<Statement> cur = stmt->getSuccessor();
+	unsigned steps = 0;
+	const unsigned MAX_STEPS = 16; // Don't walk too far.
 
-    while (cur && cur != use && steps < MAX_STEPS) {
-        // If lhsVar is written or read by an intervening statement, bail.
-        if (isWrittenIn(lhsVar, cur)) return false;
-        if (isReadIn(lhsVar, cur, va)) return false;
+	while (cur && cur != use && steps < MAX_STEPS) {
+		if (!isTransparentFor(cur, lhsVar, stmtData, module, va, 0)) return false;
+		cur = cur->getSuccessor();
+		++steps;
+	}
 
-        // If there's a user-defined function call, be conservative:
-        // it might modify globals or pointer targets.
-        // We only allow external (declared-only) calls to pass through.
-        if (hasUserDefinedCall(cur, module, va)) return false;
+	// Did we actually reach `use`?
+	if (cur != use) return false;
 
-        cur = cur->getSuccessor();
-        ++steps;
-    }
-
-    // Did we actually reach `use`?
-    if (cur != use) return false;
-
-    // Verify: lhsVar used exactly once in use (same guard as original code).
-    auto useData = va->getValueData(use);
-    if (!useData) return false;
-    if (useData->getDirNumOfUses(lhsVar) != 1) return false;
-
-    return true;
+	// Verify: lhsVar used exactly once in use (same guard as original code).
+	auto useData = va->getValueData(use);
+	if (!useData) return false;
+	return useData->getDirNumOfUses(lhsVar) == 1;
 }
 
 } // namespace llvmir2hll
