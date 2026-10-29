@@ -11,7 +11,11 @@
 #include "retdec/llvmir2hll/optimizer/optimizers/goto_stmt_optimizer.h"
 #include "retdec/llvmir2hll/ir/assign_stmt.h"
 #include "retdec/llvmir2hll/ir/break_stmt.h"
+#include "retdec/llvmir2hll/ir/const_bool.h"
 #include "retdec/llvmir2hll/ir/const_int.h"
+#include "retdec/llvmir2hll/ir/if_stmt.h"
+#include "retdec/llvmir2hll/ir/not_op_expr.h"
+#include "retdec/llvmir2hll/ir/while_loop_stmt.h"
 #include "retdec/llvmir2hll/ir/continue_stmt.h"
 #include "retdec/llvmir2hll/ir/function.h"
 #include "retdec/llvmir2hll/ir/goto_stmt.h"
@@ -145,6 +149,92 @@ Goto2Continue) {
 	ASSERT_TRUE(outAssignA) << "expected AssignStmt, got " << outContinueStmt1->getSuccessor();
 	ShPtr<ContinueStmt> outContinueStmt2(cast<ContinueStmt>(outAssignA->getSuccessor()));
 	ASSERT_TRUE(outContinueStmt2) << "expected ContinueStmt, got" << outAssignA->getSuccessor();
+}
+
+// while (a) { if (b) goto L; a = 1; }  b = 2;  L: a = 3;
+// ==>
+// while (true) { if (!a) { b = 2; break; } if (b) break; a = 1; }  a = 3;
+TEST_F(GotoStmtOptimizerTests,
+GotoPastLoopExitCodeBecomesBreak) {
+	ShPtr<Variable> varA(Variable::create("a", IntType::create(32)));
+	ShPtr<Variable> varB(Variable::create("b", IntType::create(32)));
+	testFunc->addLocalVar(varA);
+	testFunc->addLocalVar(varB);
+	auto target = AssignStmt::create(varA, ConstInt::create(3, 32));
+	target->setLabel("L");
+	auto exitCode = AssignStmt::create(varB, ConstInt::create(2, 32), target);
+	auto gotoStmt = GotoStmt::create(target);
+	auto inLoop = AssignStmt::create(varA, ConstInt::create(1, 32));
+	auto ifGoto = IfStmt::create(varB, gotoStmt, inLoop);
+	auto loop = WhileLoopStmt::create(varA, ifGoto, exitCode);
+	testFunc->setBody(loop);
+
+	Optimizer::optimize<GotoStmtOptimizer>(module, true);
+
+	ASSERT_EQ(loop, testFunc->getBody());
+	auto cond = cast<ConstBool>(loop->getCondition());
+	ASSERT_TRUE(cond && cond->getValue()) << "expected while (true)";
+	EXPECT_EQ(target, loop->getSuccessor());
+	EXPECT_FALSE(target->hasLabel());
+	auto exitIf = cast<IfStmt>(loop->getBody());
+	ASSERT_TRUE(exitIf);
+	EXPECT_TRUE(isa<NotOpExpr>(exitIf->getFirstIfCond()));
+	EXPECT_EQ(exitCode, exitIf->getFirstIfBody());
+	EXPECT_TRUE(isa<BreakStmt>(exitCode->getSuccessor()));
+	EXPECT_EQ(ifGoto, exitIf->getSuccessor());
+	EXPECT_TRUE(isa<BreakStmt>(ifGoto->getFirstIfBody()));
+}
+
+TEST_F(GotoStmtOptimizerTests,
+GotoRightAfterLoopBecomesPlainBreak) {
+	ShPtr<Variable> varA(Variable::create("a", IntType::create(32)));
+	testFunc->addLocalVar(varA);
+	auto target = AssignStmt::create(varA, ConstInt::create(3, 32));
+	target->setLabel("L");
+	auto gotoStmt = GotoStmt::create(target);
+	auto ifGoto = IfStmt::create(varA, gotoStmt);
+	auto loop = WhileLoopStmt::create(varA, ifGoto, target);
+	testFunc->setBody(loop);
+
+	Optimizer::optimize<GotoStmtOptimizer>(module, true);
+
+	EXPECT_EQ(varA, loop->getCondition()) << "the condition must stay";
+	EXPECT_TRUE(isa<BreakStmt>(ifGoto->getFirstIfBody()));
+	EXPECT_FALSE(target->hasLabel());
+}
+
+// A goto in an inner loop leaves both loops; a break would leave one.
+TEST_F(GotoStmtOptimizerTests,
+GotoFromNestedLoopIsKept) {
+	ShPtr<Variable> varA(Variable::create("a", IntType::create(32)));
+	testFunc->addLocalVar(varA);
+	auto target = AssignStmt::create(varA, ConstInt::create(3, 32));
+	target->setLabel("L");
+	auto gotoStmt = GotoStmt::create(target);
+	auto inner = WhileLoopStmt::create(varA, gotoStmt);
+	auto loop = WhileLoopStmt::create(varA, inner, target);
+	testFunc->setBody(loop);
+
+	Optimizer::optimize<GotoStmtOptimizer>(module, true);
+
+	EXPECT_EQ(gotoStmt, inner->getBody());
+	EXPECT_TRUE(target->hasLabel());
+}
+
+// Without the flag (early runs) loops are not rewritten.
+TEST_F(GotoStmtOptimizerTests,
+GotoPastLoopIsKeptByDefault) {
+	ShPtr<Variable> varA(Variable::create("a", IntType::create(32)));
+	testFunc->addLocalVar(varA);
+	auto target = AssignStmt::create(varA, ConstInt::create(3, 32));
+	target->setLabel("L");
+	auto gotoStmt = GotoStmt::create(target);
+	auto loop = WhileLoopStmt::create(varA, gotoStmt, target);
+	testFunc->setBody(loop);
+
+	Optimizer::optimize<GotoStmtOptimizer>(module);
+
+	EXPECT_EQ(gotoStmt, loop->getBody());
 }
 
 } // namespace tests

@@ -304,7 +304,7 @@ void OptimizerManager::optimize(ShPtr<Module> m)
 	run<EmptyStmtOptimizer>(m);
 	run<UnknownTypeInferrer>(m);
 	run<GotoCFGOptimizer>(m);
-	run<GotoStmtOptimizer>(m);
+	run<GotoStmtOptimizer>(m, /*breakOutOfLoops=*/true);
 
 	// SimplifyArithmExprOptimizer should be run at the end to produce the most
 	// readable output.

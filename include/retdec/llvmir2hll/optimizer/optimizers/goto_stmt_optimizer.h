@@ -16,7 +16,9 @@ namespace llvmir2hll {
 
 class GotoStmtOptimizer final: public FuncOptimizer {
 public:
-	GotoStmtOptimizer(ShPtr<Module> module);
+	/// @a breakOutOfLoops also turns gotos past a loop's exit code into
+	/// breaks; only for the last run, after loops have their final shape.
+	GotoStmtOptimizer(ShPtr<Module> module, bool breakOutOfLoops = false);
 
 	virtual std::string getId() const override { return "GotoStmt"; }
 
@@ -26,6 +28,10 @@ private:
 	using OrderedAllVisitor::visit;
 	virtual void visit(ShPtr<GotoStmt> stmt) override;
 	/// @}
+
+	bool tryBreakOutOfLoop(ShPtr<GotoStmt> stmt);
+
+	bool breakOutOfLoops = false;
 };
 
 } // namespace llvmir2hll
