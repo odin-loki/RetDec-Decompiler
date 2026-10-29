@@ -353,6 +353,13 @@ std::unique_ptr<ssa::SSAModule> buildSsaModule(const llvm::Module& m)
 			{
 				const llvm::Value* op = li->getOperand(i);
 				if (isNonValueOperand(op)) continue;
+				// Integer casts are not translated, so a use of one would name
+				// a value nothing defines and cut the def-use chain -- `icmp
+				// (trunc (add (load slot) 1)), n` would lose its load. Look
+				// through them to the value they resize.
+				while (llvm::isa<llvm::TruncInst>(op) || llvm::isa<llvm::ZExtInst>(op)
+					   || llvm::isa<llvm::SExtInst>(op))
+					op = llvm::cast<llvm::Instruction>(op)->getOperand(0);
 
 				ssa::ValueId id = ssa::kInvalidValue;
 				if (const auto* c = llvm::dyn_cast<llvm::ConstantInt>(op))
