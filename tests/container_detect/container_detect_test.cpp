@@ -2025,3 +2025,18 @@ TEST(RingBufferDetectorTest, OneWrappedCursorInARegisterIsAProbe)
 	addWrappedIncrement(*fn, 8);
 	EXPECT_TRUE(RingBufferDetector().detect(*fn).emittedType.empty());
 }
+
+// At -O2 the lifter sign-extends an index as `x * 2^32 >> 32` and tests a
+// signed bound with an xor; together they looked like an inline hash
+// (xor + mul) and vetoed the ring.  A real multiplier still does.
+TEST(RingBufferDetectorTest, SignExtendMultiplyIsNotAHashMultiplier)
+{
+	for (uint64_t k: {1ULL << 32, 0x01000193ULL})
+	{
+		auto fn = makeFunc("main", {ssa::IrInstr::Op::Load, ssa::IrInstr::Op::Store, ssa::IrInstr::Op::Compare, ssa::IrInstr::Op::Xor});
+		addWrappedIncrement(*fn, 8);
+		addWrappedIncrement(*fn, 8);
+		addImmInstr(*fn, ssa::IrInstr::Op::Mul, k);
+		EXPECT_EQ(RingBufferDetector().detect(*fn).emittedType.empty(), k != (1ULL << 32)) << k;
+	}
+}

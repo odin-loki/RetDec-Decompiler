@@ -162,6 +162,18 @@ static bool hasModuloIndex(const ssa::SSAFunction& fn)
 	return false;
 }
 
+static bool isSignExtendMul(const ssa::SSAFunction& fn, const ssa::IrInstr& instr)
+{
+	for (const auto& use: instr.uses)
+	{
+		const auto* val = fn.value(use.valueId);
+		if (val && val->kind == ssa::ValueKind::Immediate
+			&& (val->imm == (1ULL << 32) || val->imm == (1ULL << 48) || val->imm == (1ULL << 56)))
+			return true;
+	}
+	return false;
+}
+
 static bool hasInlineHash(const ssa::SSAFunction& fn)
 {
 	bool hasXor = false, hasMul = false;
@@ -173,7 +185,9 @@ static bool hasInlineHash(const ssa::SSAFunction& fn)
 		{
 			if (!instr) continue;
 			if (instr->op == ssa::IrInstr::Op::Xor) hasXor = true;
-			if (instr->op == ssa::IrInstr::Op::Mul) hasMul = true;
+			// `x * 2^32` then `ashr 32` is how the lifter sign-extends a
+			// 32-bit index, not a hash multiplier.
+			if (instr->op == ssa::IrInstr::Op::Mul && !isSignExtendMul(fn, *instr)) hasMul = true;
 		}
 	}
 	return hasXor && hasMul;

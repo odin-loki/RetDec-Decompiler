@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- Ring buffer detector: the lifter's sign-extend multiply (x * 2^32) no longer counts as an inline-hash multiplier; fixes ring_buffer -O2.
 - Baseline: full_corpus mean_f1 raised to 0.6614. A6 re-checked: Knapsack/LCS stay unassigned (their max-recurrence matches shortest-path relaxation except for the compare predicate, which SSA Compare does not carry, and -O2 rewrites both as pointer walks).
 - Idiom detector: array stack push/pop (memory counter written back as top±1 with stk[top] stored or stk[top-1] loaded, small loop-free functions) exports Stack/LIFO. Fixes stack_array -O0.
 - Idiom detector: node head insert onto a caller-provided head (Node** parameter) exports LinkedList; SSA values now mark function parameters (IrValue::isArgument). Fixes linked_list -O0.
