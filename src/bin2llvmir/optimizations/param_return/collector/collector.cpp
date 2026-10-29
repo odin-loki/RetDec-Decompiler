@@ -5,7 +5,10 @@
 * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
+#include <algorithm>
 #include <memory>
+#include <set>
+#include <vector>
 #include <queue>
 
 #include <llvm/IR/CFG.h>
@@ -53,6 +56,63 @@ void Collector::collectCallRets(CallEntry* ce) const
 	ce->setRetLoads(std::move(foundLoads));
 }
 
+namespace {
+
+/**
+ * Returns @c true if the value of @a ptr read by @a l can come straight from
+ * the function's entry, i.e. some path from the entry block to @a l stores
+ * nothing to @a ptr. A loop that redefines the register (for example a
+ * self tail call that GCC turned into a jump back to the top) gives the load
+ * a reaching definition on the back edge, but the first iteration still reads
+ * the caller's value, so the register is an argument.
+ */
+bool readsEntryValue(LoadInst* l, Value* ptr)
+{
+	auto storesTo = [ptr](const Instruction& I) {
+		auto* s = dyn_cast<StoreInst>(&I);
+		return s && s->getPointerOperand() == ptr;
+	};
+
+	auto* bb = l->getParent();
+	for (auto it = bb->begin(); &*it != l; ++it)
+	{
+		if (storesTo(*it))
+		{
+			return false;
+		}
+	}
+
+	auto& entry = bb->getParent()->getEntryBlock();
+	if (bb == &entry)
+	{
+		return true;
+	}
+
+	std::set<BasicBlock*> seen;
+	std::vector<BasicBlock*> work(pred_begin(bb), pred_end(bb));
+	while (!work.empty())
+	{
+		auto* b = work.back();
+		work.pop_back();
+		if (!seen.insert(b).second)
+		{
+			continue;
+		}
+		if (std::any_of(b->begin(), b->end(), storesTo))
+		{
+			continue;
+		}
+		if (b == &entry)
+		{
+			return true;
+		}
+		work.insert(work.end(), pred_begin(b), pred_end(b));
+	}
+	return false;
+}
+
+} // anonymous namespace
+
 void Collector::collectDefArgs(DataFlowEntry* dataflow) const
 {
 	if (!dataflow->hasDefinition())
@@ -79,7 +139,9 @@ void Collector::collectDefArgs(DataFlowEntry* dataflow) const
 				continue;
 			}
 
-			if ((use->defs.empty() || use->isUndef())
+			if ((use->defs.empty() || use->isUndef()
+						|| (_abi->isGeneralPurposeRegister(ptr)
+							&& readsEntryValue(l, ptr)))
 					&& added.find(ptr) == added.end())
 			{
 				dataflow->addArg(ptr);
