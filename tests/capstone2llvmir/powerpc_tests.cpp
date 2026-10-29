@@ -17950,6 +17950,79 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_EFDNEG)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MFVSRD)
+{
+	ONLY_MODE_64;
+
+	setV(PPC_REG_V2, 0x1122334455667788ULL, 0x99aabbccddeeff00ULL);
+	emulate_bin("7c 43 00 67");
+	EXPECT_EQ(0x1122334455667788ULL, getRegisterValueUnsigned(PPC_REG_R3));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MFVSRWZ)
+{
+	ONLY_MODE_64;
+
+	setV(PPC_REG_V2, 0x1122334455667788ULL, 0x99aabbccddeeff00ULL);
+	emulate_bin("7c 43 00 e7");
+	EXPECT_EQ(0x55667788ULL, getRegisterValueUnsigned(PPC_REG_R3));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MFVSRLD)
+{
+	ONLY_MODE_64;
+
+	setV(PPC_REG_V2, 0x1122334455667788ULL, 0x99aabbccddeeff00ULL);
+	emulate_bin("7c 43 02 67");
+	EXPECT_EQ(0x99aabbccddeeff00ULL, getRegisterValueUnsigned(PPC_REG_R3));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MTVSRWA)
+{
+	ONLY_MODE_64;
+
+	setRegisters({{PPC_REG_R3, 0x80000001ULL}, {PPC_REG_R4, 0x1234ULL}});
+	emulate_bin("7c 43 01 a7");
+	EXPECT_EQ(0xffffffff80000001ULL, vHigh(PPC_REG_V2));
+	EXPECT_EQ(0x0ULL, vLow(PPC_REG_V2));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MTVSRDD)
+{
+	ONLY_MODE_64;
+
+	setRegisters({{PPC_REG_R3, 0x80000001ULL}, {PPC_REG_R4, 0x1234ULL}});
+	emulate_bin("7c 43 23 67");
+	EXPECT_EQ(0x80000001ULL, vHigh(PPC_REG_V2));
+	EXPECT_EQ(0x1234ULL, vLow(PPC_REG_V2));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MTVSRWS)
+{
+	ONLY_MODE_64;
+
+	setRegisters({{PPC_REG_R3, 0x80000001ULL}, {PPC_REG_R4, 0x1234ULL}});
+	emulate_bin("7c 43 03 27");
+	EXPECT_EQ(0x8000000180000001ULL, vHigh(PPC_REG_V2));
+	EXPECT_EQ(0x8000000180000001ULL, vLow(PPC_REG_V2));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MFFPRD)
+{
+	ONLY_MODE_64;
+
+	setRegisters({{PPC_REG_F1, 1.5_f64}});
+	emulate_bin("7c 23 00 66");
+	EXPECT_EQ(0x3ff8000000000000ULL, getRegisterValueUnsigned(PPC_REG_R3));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

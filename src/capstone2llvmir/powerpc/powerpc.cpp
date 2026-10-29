@@ -9546,5 +9546,80 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateSpeDouble(cs_insn* i, cs_pp
 }
 
 
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxGprMove(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	// Moves between GPRs and VSRs; doubleword 0 is the high half of the 128-bit value.
+	auto* i64 = irb.getInt64Ty();
+	auto* i128 = irb.getInt128Ty();
+	if (pi->op_count < 2)
+	{
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+	for (unsigned k = 0; k < pi->op_count; ++k)
+	{
+		if (pi->operands[k].type == PPC_OP_REG)
+		{
+			auto r = pi->operands[k].reg;
+			if (r >= PPC_REG_VF0 && r <= PPC_REG_VF31)
+			{
+				r = ppc_reg(PPC_REG_V0 + (r - PPC_REG_VF0));
+			}
+			pi->operands[k].reg = ppc_reg(canonicalRegister(r));
+		}
+	}
+	auto gpr = [&](unsigned k) -> llvm::Value* {
+		auto& o = pi->operands[k];
+		if (o.type == PPC_OP_REG && (o.reg == PPC_REG_R0 || o.reg == PPC_REG_X0) && i->id == PPC_INS_MTVSRDD && k == 1)
+		{
+			return llvm::ConstantInt::get(i64, 0);
+		}
+		return irb.CreateZExtOrTrunc(loadOp(o, irb), i64);
+	};
+	auto pack = [&](llvm::Value* hi, llvm::Value* lo) {
+		return irb.CreateOr(irb.CreateShl(irb.CreateZExt(hi, i128), 64), irb.CreateZExt(lo, i128));
+	};
+	auto toGpr = [&](llvm::Value* v) {
+		storeOp(pi->operands[0], irb.CreateZExtOrTrunc(v, getDefaultType()), irb);
+	};
+	switch (i->id)
+	{
+	case PPC_INS_MFVSRD:
+		toGpr(irb.CreateTrunc(irb.CreateLShr(loadOpI128(pi->operands[1], irb), 64), i64));
+		return;
+	case PPC_INS_MFVSRWZ:
+		toGpr(irb.CreateZExt(irb.CreateTrunc(irb.CreateLShr(loadOpI128(pi->operands[1], irb), 64), irb.getInt32Ty()), i64));
+		return;
+	case PPC_INS_MFVSRLD:
+		toGpr(irb.CreateTrunc(loadOpI128(pi->operands[1], irb), i64));
+		return;
+	case PPC_INS_MTVSRD:
+		storeOpI128(pi->operands[0], pack(gpr(1), llvm::ConstantInt::get(i64, 0)), irb);
+		return;
+	case PPC_INS_MTVSRWZ:
+		storeOpI128(pi->operands[0], pack(irb.CreateAnd(gpr(1), 0xffffffffull), llvm::ConstantInt::get(i64, 0)), irb);
+		return;
+	case PPC_INS_MTVSRWA:
+		storeOpI128(pi->operands[0], pack(irb.CreateSExt(irb.CreateTrunc(gpr(1), irb.getInt32Ty()), i64),
+				llvm::ConstantInt::get(i64, 0)), irb);
+		return;
+	case PPC_INS_MTVSRDD:
+		if (pi->op_count < 3) break;
+		storeOpI128(pi->operands[0], pack(gpr(1), gpr(2)), irb);
+		return;
+	case PPC_INS_MTVSRWS:
+	{
+		auto* w = irb.CreateAnd(gpr(1), 0xffffffffull);
+		auto* d = irb.CreateOr(irb.CreateShl(w, 32), w);
+		storeOpI128(pi->operands[0], pack(d, d), irb);
+		return;
+	}
+	default:
+		break;
+	}
+	translatePseudoAsmGeneric(i, pi, irb);
+}
+
+
 } // namespace capstone2llvmir
 } // namespace retdec
