@@ -4159,6 +4159,18 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNop(cs_insn* i, cs_arm64* ai,
 }
 
 /**
+ * ARM64_INS_WFI, ARM64_INS_WFE, ARM64_INS_SEV, ARM64_INS_SEVL
+ *
+ * Hints that park the core or signal another one. They change no register
+ * or memory, but a reader of the output needs to see them, so each becomes
+ * an opaque call named after the instruction.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateHintCall(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	translatePseudoAsmGeneric(i, ai, irb);
+}
+
+/**
  * ARM64_INS_DMB, ARM64_INS_DSB, ARM64_INS_ISB
  * Memory / instruction barriers → LLVM fence. ISB has no I-cache model;
  * it is lowered as seq_cst like DMB/DSB.

@@ -515,6 +515,40 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_BTI_is_nothing)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_YIELD_is_nothing)
+{
+	// yield
+	emulate_bin("3f 20 03 d5");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SEV_keeps_its_call)
+{
+	// sev
+	emulate_bin("9f 20 03 d5");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_sev"), {}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_WFI_keeps_its_call)
+{
+	// wfi. Capstone 6 decodes it as HINT, which alone translates to nothing.
+	emulate_bin("7f 20 03 d5");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_wfi"), {}},
+	});
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_PACIASP_AUTIASP_are_the_identity)
 {
 	// The pair is what a prologue and epilogue carry, and modelling each as
