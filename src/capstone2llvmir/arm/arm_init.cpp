@@ -487,6 +487,7 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorArm_impl::*)(cs_insn* i, cs
 		{ARM_INS_WLS, &Capstone2LlvmIrTranslatorArm_impl::translateLowOverheadLoop},
 		{ARM_INS_LE, &Capstone2LlvmIrTranslatorArm_impl::translateLowOverheadLoop},
 		{ARM_INS_LCTP, &Capstone2LlvmIrTranslatorArm_impl::translateLowOverheadLoop},
+		{ARM_INS_CLRM, &Capstone2LlvmIrTranslatorArm_impl::translateClrm},
 		{ARM_INS_UQSHL, &Capstone2LlvmIrTranslatorArm_impl::translateMveScalarShift},
 		{ARM_INS_SQSHL, &Capstone2LlvmIrTranslatorArm_impl::translateMveScalarShift},
 		{ARM_INS_URSHR, &Capstone2LlvmIrTranslatorArm_impl::translateMveScalarShift},

@@ -7825,5 +7825,34 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMveScalarShift(cs_insn* i, cs_a
 	}
 }
 
+/**
+ * ARM_INS_CLRM (v8.1-M): zero every listed register. APSR in the list
+ * clears the condition flags.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateClrm(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	if (ai->op_count == 0)
+	{
+		throwUnexpectedOperands(i);
+	}
+	for (unsigned k = 0; k < ai->op_count; ++k)
+	{
+		cs_arm_op& op = ai->operands[k];
+		if (op.type != ARM_OP_REG)
+		{
+			throwUnexpectedOperands(i);
+		}
+		if (op.reg == ARM_REG_APSR)
+		{
+			for (auto f : {ARM_REG_CPSR_N, ARM_REG_CPSR_Z, ARM_REG_CPSR_C, ARM_REG_CPSR_V})
+			{
+				storeRegister(f, irb.getFalse(), irb);
+			}
+			continue;
+		}
+		storeRegister(op.reg, irb.getInt32(0), irb);
+	}
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec

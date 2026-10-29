@@ -8496,6 +8496,33 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SRSHRL_by_32)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_CLRM_zeroes_list_and_flags)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 1},
+		{ARM_REG_R1, 2},
+		{ARM_REG_LR, 3},
+	});
+
+	// clrm {r0, r1, lr, apsr}
+	emulate_bin("9f e8 03 c0");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0},
+		{ARM_REG_R1, 0},
+		{ARM_REG_LR, 0},
+		{ARM_REG_CPSR_N, false},
+		{ARM_REG_CPSR_Z, false},
+		{ARM_REG_CPSR_C, false},
+		{ARM_REG_CPSR_V, false},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_TBB)
 {
 	ONLY_MODE_THUMB;
