@@ -29,6 +29,8 @@ private:
 	virtual void visit(ShPtr<GotoStmt> stmt) override;
 	/// @}
 
+	virtual void runOnFunction(ShPtr<Function> func) override;
+
 	bool tryBreakOutOfLoop(ShPtr<GotoStmt> stmt);
 	bool tryCopyReturningTail(ShPtr<GotoStmt> stmt);
 

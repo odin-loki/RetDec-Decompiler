@@ -114,6 +114,23 @@ std::vector<ShPtr<Statement>> shortReturningTail(ShPtr<Statement> target) {
 	return {};
 }
 
+/// Drops gotos that are no longer in the function from @a target's
+/// predecessors, so it stops counting as a goto target.
+void forgetDeadGotos(const ShPtr<Statement> &target,
+		const std::set<ShPtr<GotoStmt>> &live) {
+	std::vector<ShPtr<Statement>> dead;
+	for (auto i = target->predecessor_begin(); i != target->predecessor_end(); ++i) {
+		if (auto g = cast<GotoStmt>(*i)) {
+			if (!live.count(g)) {
+				dead.push_back(g);
+			}
+		}
+	}
+	for (auto &g : dead) {
+		target->removePredecessor(g);
+	}
+}
+
 } // anonymous namespace
 
 /**
@@ -175,6 +192,7 @@ bool GotoStmtOptimizer::tryCopyReturningTail(ShPtr<GotoStmt> stmt) {
 		stillTargeted = stillTargeted || g->getTarget() == target;
 	}
 	if (!stillTargeted) {
+		forgetDeadGotos(target, live);
 		target->removeLabel();
 	}
 	return true;
@@ -237,6 +255,7 @@ bool GotoStmtOptimizer::tryBreakOutOfLoop(ShPtr<GotoStmt> stmt) {
 		Statement::replaceStatement(g, BreakStmt::create(g->getAddress()));
 	}
 	// Every live goto to the target is gone now.
+	forgetDeadGotos(target, {});
 	target->removeLabel();
 	return true;
 }
@@ -253,6 +272,34 @@ GotoStmtOptimizer::GotoStmtOptimizer(ShPtr<Module> module, bool breakOutOfLoops)
 	FuncOptimizer(module), breakOutOfLoops(breakOutOfLoops) {
 		PRECONDITION_NON_NULL(module);
 	}
+
+/**
+* @brief Optimizes @a func, then, on the last run, drops labels that no goto
+*        in the function names any more.
+*
+* Earlier passes remove gotos without telling their targets, and the C writer
+* emits a label for every statement that still counts as a goto target.
+*/
+void GotoStmtOptimizer::runOnFunction(ShPtr<Function> func) {
+	FuncOptimizer::runOnFunction(func);
+	if (!breakOutOfLoops || !func->getBody()) {
+		return;
+	}
+
+	std::set<ShPtr<GotoStmt>> live;
+	std::set<ShPtr<Statement>> all;
+	collectGotos(func->getBody(), live, all);
+	std::set<ShPtr<Statement>> targeted;
+	for (const auto &g : live) {
+		targeted.insert(g->getTarget());
+	}
+	for (const auto &stmt : all) {
+		if (!targeted.count(stmt) && (stmt->isGotoTarget() || stmt->hasLabel())) {
+			forgetDeadGotos(stmt, live);
+			stmt->removeLabel();
+		}
+	}
+}
 
 /**
 * @brief Optimize goto statement.

@@ -301,6 +301,22 @@ TailEndingInGotoToReturnIsCopiedWithTheReturn) {
 	EXPECT_TRUE(isa<ReturnStmt>(copy->getSuccessor()));
 }
 
+TEST_F(GotoStmtOptimizerTests,
+LabelThatNoGotoNamesIsDroppedOnTheLastRun) {
+	ShPtr<Variable> varA(Variable::create("a", IntType::create(32)));
+	testFunc->addLocalVar(varA);
+	auto target = AssignStmt::create(varA, ConstInt::create(3, 32));
+	target->setLabel("L");
+	auto first = AssignStmt::create(varA, ConstInt::create(1, 32), target);
+	testFunc->setBody(first);
+
+	Optimizer::optimize<GotoStmtOptimizer>(module);
+	EXPECT_TRUE(target->hasLabel()) << "early runs leave labels alone";
+
+	Optimizer::optimize<GotoStmtOptimizer>(module, true);
+	EXPECT_FALSE(target->hasLabel());
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec
