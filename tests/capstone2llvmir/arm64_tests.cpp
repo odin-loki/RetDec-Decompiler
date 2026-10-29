@@ -725,6 +725,161 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_STLLR_stores_doubleword)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SHA512H_emits_crypto_intrinsic)
+{
+	auto* f = translate(utils::hexStringToBytes("20 80 62 ce")); // sha512h q0, q1, v2.2d
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("llvm.aarch64.crypto.sha512h"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_sha512h"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SHA512SU0_emits_crypto_intrinsic)
+{
+	auto* f = translate(utils::hexStringToBytes("20 80 c0 ce")); // sha512su0 v0.2d, v1.2d
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("llvm.aarch64.crypto.sha512su0"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_sha512su0"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SM3SS1_emits_crypto_intrinsic)
+{
+	auto* f = translate(utils::hexStringToBytes("20 0c 42 ce")); // sm3ss1 v0.4s, v1.4s, v2.4s, v3.4s
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("llvm.aarch64.crypto.sm3ss1"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_sm3ss1"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SM4E_emits_crypto_intrinsic)
+{
+	auto* f = translate(utils::hexStringToBytes("20 84 c0 ce")); // sm4e v0.4s, v1.4s
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("llvm.aarch64.crypto.sm4e"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_sm4e"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SM4EKEY_emits_crypto_intrinsic)
+{
+	auto* f = translate(utils::hexStringToBytes("20 c8 62 ce")); // sm4ekey v0.4s, v1.4s, v2.4s
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("llvm.aarch64.crypto.sm4ekey"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_sm4ekey"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_HLT)
+{
+	emulate_bin("20 00 40 d4"); // hlt #1
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_hlt"), {1}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_HVC)
+{
+	emulate_bin("42 00 00 d4"); // hvc #2
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_hvc"), {2}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SMC)
+{
+	emulate_bin("63 00 00 d4"); // smc #3
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_smc"), {3}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UDF)
+{
+	emulate_bin("04 00 00 00"); // udf #4
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_udf"), {4}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SWPP)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0x00ff},
+		{ARM64_REG_X1, 0xf000},
+		{ARM64_REG_X2, 0x3000},
+	});
+	setMemory({
+		{0x3000, 0x0f0f_qw},
+		{0x3008, 0x1111_qw},
+	});
+
+	emulate_bin("40 80 21 19"); // swpp x0, x1, [x2]
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0x0f0f},
+		{ARM64_REG_X1, 0x1111},
+	});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x3000, 0x00ff_qw},
+		{0x3008, 0xf000_qw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LDCLRP)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0x00ff},
+		{ARM64_REG_X1, 0xf000},
+		{ARM64_REG_X2, 0x3000},
+	});
+	setMemory({
+		{0x3000, 0x0f0f_qw},
+		{0x3008, 0x1111_qw},
+	});
+
+	emulate_bin("40 10 21 19"); // ldclrp x0, x1, [x2]
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0x0f0f},
+		{ARM64_REG_X1, 0x1111},
+	});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x3000, 0x0f00_qw},
+		{0x3008, 0x0111_qw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LDSETPA)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0x00ff},
+		{ARM64_REG_X1, 0xf000},
+		{ARM64_REG_X2, 0x3000},
+	});
+	setMemory({
+		{0x3000, 0x0f0f_qw},
+		{0x3008, 0x1111_qw},
+	});
+
+	emulate_bin("40 30 a1 19"); // ldsetpa x0, x1, [x2]
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0x0f0f},
+		{ARM64_REG_X1, 0x1111},
+	});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x3000, 0x0fff_qw},
+		{0x3008, 0xf111_qw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CFINV)
 {
 	setRegisters({

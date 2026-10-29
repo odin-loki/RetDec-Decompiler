@@ -7406,6 +7406,53 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateCrypto(cs_insn* i, cs_arm64* 
 
 	switch (i->id)
 	{
+	case ARM64_INS_SHA512H:
+	case ARM64_INS_SHA512H2:
+	case ARM64_INS_SHA512SU0:
+	case ARM64_INS_SHA512SU1:
+	case ARM64_INS_SM3PARTW1:
+	case ARM64_INS_SM3PARTW2:
+	case ARM64_INS_SM3SS1:
+	case ARM64_INS_SM4E:
+	case ARM64_INS_SM4EKEY:
+	{
+		auto* v2i64 = llvm::FixedVectorType::get(irb.getInt64Ty(), 2);
+		bool sha = i->id == ARM64_INS_SHA512H || i->id == ARM64_INS_SHA512H2
+				|| i->id == ARM64_INS_SHA512SU0 || i->id == ARM64_INS_SHA512SU1;
+		llvm::FixedVectorType* vt = sha ? v2i64 : v4i32;
+		llvm::Intrinsic::ID iid;
+		bool acc = true; // Vd is also an input.
+		switch (i->id)
+		{
+		case ARM64_INS_SHA512H: iid = llvm::Intrinsic::aarch64_crypto_sha512h; break;
+		case ARM64_INS_SHA512H2: iid = llvm::Intrinsic::aarch64_crypto_sha512h2; break;
+		case ARM64_INS_SHA512SU0: iid = llvm::Intrinsic::aarch64_crypto_sha512su0; break;
+		case ARM64_INS_SHA512SU1: iid = llvm::Intrinsic::aarch64_crypto_sha512su1; break;
+		case ARM64_INS_SM3PARTW1: iid = llvm::Intrinsic::aarch64_crypto_sm3partw1; break;
+		case ARM64_INS_SM3PARTW2: iid = llvm::Intrinsic::aarch64_crypto_sm3partw2; break;
+		case ARM64_INS_SM3SS1: iid = llvm::Intrinsic::aarch64_crypto_sm3ss1; acc = false; break;
+		case ARM64_INS_SM4E: iid = llvm::Intrinsic::aarch64_crypto_sm4e; break;
+		default: iid = llvm::Intrinsic::aarch64_crypto_sm4ekey; acc = false; break;
+		}
+		std::vector<llvm::Value*> args;
+		for (unsigned k = acc ? 0 : 1; k < ai->op_count; ++k)
+		{
+			if (ai->operands[k].type != ARM64_OP_REG)
+			{
+				translatePseudoAsmGeneric(i, ai, irb);
+				return;
+			}
+			args.push_back(loadAsFixedVec(ai->operands[k].reg, vt, irb));
+		}
+		auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, iid);
+		if (f->getFunctionType()->getNumParams() != args.size())
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		storeQ(ai->operands[0].reg, irb.CreateCall(f, args));
+		return;
+	}
 	case ARM64_INS_AESE:
 	case ARM64_INS_AESD:
 	{
@@ -9620,6 +9667,61 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateArm64Misc(cs_insn* i, cs_arm6
 		default:
 			translatePseudoAsmGeneric(i, ai, irb);
 			return;
+	}
+}
+
+
+/**
+ * FEAT_LSE128 pair atomics SWPP, LDCLRP and LDSETP (all orderings). The
+ * 128-bit memory value is Xt2:Xt1; the old value comes back in the same
+ * registers. Lifted as a plain read-modify-write bracketed by fences for the
+ * acquire / release forms.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateLse128(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	uint32_t w = i->bytes[0] | (i->bytes[1] << 8) | (i->bytes[2] << 16)
+			| (uint32_t(i->bytes[3]) << 24);
+	auto xreg = [](unsigned n) -> uint32_t {
+		return n == 29 ? ARM64_REG_X29 : n == 30 ? ARM64_REG_X30 : ARM64_REG_X0 + n;
+	};
+	unsigned rt = w & 31, rn = (w >> 5) & 31, rt2 = (w >> 16) & 31;
+	bool acq = (w >> 23) & 1, rel = (w >> 22) & 1;
+	if (rt == 31 || rt2 == 31)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	auto* i64 = irb.getInt64Ty();
+	if (rel)
+	{
+		irb.CreateFence(llvm::AtomicOrdering::Release);
+	}
+	auto* addr = loadRegister(rn == 31 ? uint32_t(ARM64_REG_SP) : xreg(rn), irb);
+	auto* addrHi = irb.CreateAdd(addr, llvm::ConstantInt::get(addr->getType(), 8));
+	auto* oldLo = loadIntPtr(irb, addr, i64);
+	auto* oldHi = loadIntPtr(irb, addrHi, i64);
+	auto* lo = loadRegister(xreg(rt), irb);
+	auto* hi = loadRegister(xreg(rt2), irb);
+	llvm::Value* nLo = lo;
+	llvm::Value* nHi = hi;
+	std::string name = i->mnemonic;
+	if (name.rfind("ldclrp", 0) == 0)
+	{
+		nLo = irb.CreateAnd(oldLo, irb.CreateNot(lo));
+		nHi = irb.CreateAnd(oldHi, irb.CreateNot(hi));
+	}
+	else if (name.rfind("ldsetp", 0) == 0)
+	{
+		nLo = irb.CreateOr(oldLo, lo);
+		nHi = irb.CreateOr(oldHi, hi);
+	}
+	storeIntPtr(irb, nLo, addr, i64);
+	storeIntPtr(irb, nHi, addrHi, i64);
+	storeRegister(xreg(rt), oldLo, irb);
+	storeRegister(xreg(rt2), oldHi, irb);
+	if (acq)
+	{
+		irb.CreateFence(llvm::AtomicOrdering::Acquire);
 	}
 }
 
