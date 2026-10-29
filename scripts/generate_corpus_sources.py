@@ -138,7 +138,7 @@ int main(void) {
     return 0;
 }
 """),
-    ("queue_array", ["Queue", "FIFO"], """
+    ("queue_array", ["Queue", "FIFO", "RingBuffer", "CircularBuffer"], """
 #include <stdio.h>
 #define N 16
 static int q[N], head, tail, count;
@@ -385,7 +385,7 @@ int main(void) {
     return 0;
 }
 """),
-    ("pthread_mutex", ["Mutex", "Concurrency", "Pthread"], """
+    ("pthread_mutex", ["Mutex", "Concurrency", "Pthread", "Thread"], """
 #include <stdio.h>
 #ifdef __linux__
 #include <pthread.h>
