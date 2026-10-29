@@ -7817,7 +7817,10 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SDIV_r_r_r)
 		{ARM_REG_R2, 4},
 	});
 
-	emulate("sdiv r0, r1, r2");
+	// Keystone 0.9.2 rejects the integer divides as a missing CPU feature in
+	// both modes, so the encoding goes in directly: A32 0xE710F211, T32
+	// 0xFB91F0F2.
+	emulate_bin(GetParam() == CS_MODE_THUMB ? "91 fb f2 f0" : "11 f2 10 e7");
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
 	EXPECT_JUST_REGISTERS_STORED({
@@ -7836,7 +7839,10 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SDIV_by_zero_is_zero)
 		{ARM_REG_R2, 0},
 	});
 
-	emulate("sdiv r0, r1, r2");
+	// Keystone 0.9.2 rejects the integer divides as a missing CPU feature in
+	// both modes, so the encoding goes in directly: A32 0xE710F211, T32
+	// 0xFB91F0F2.
+	emulate_bin(GetParam() == CS_MODE_THUMB ? "91 fb f2 f0" : "11 f2 10 e7");
 
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM_REG_R0, 0},
@@ -7853,7 +7859,10 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SDIV_int_min_over_minus_one)
 		{ARM_REG_R2, 0xffffffff},
 	});
 
-	emulate("sdiv r0, r1, r2");
+	// Keystone 0.9.2 rejects the integer divides as a missing CPU feature in
+	// both modes, so the encoding goes in directly: A32 0xE710F211, T32
+	// 0xFB91F0F2.
+	emulate_bin(GetParam() == CS_MODE_THUMB ? "91 fb f2 f0" : "11 f2 10 e7");
 
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM_REG_R0, 0x80000000},
@@ -7870,7 +7879,8 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UDIV_r_r_r)
 		{ARM_REG_R2, 4},
 	});
 
-	emulate("udiv r0, r1, r2");
+	// A32 0xE730F211, T32 0xFBB1F0F2; keystone cannot assemble either.
+	emulate_bin(GetParam() == CS_MODE_THUMB ? "b1 fb f2 f0" : "11 f2 30 e7");
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
 	EXPECT_JUST_REGISTERS_STORED({
