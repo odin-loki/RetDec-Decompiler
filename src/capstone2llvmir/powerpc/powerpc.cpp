@@ -8734,11 +8734,23 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateTwin(cs_insn* i, cs_ppc* pi
 		case PPC_INS_DIVDUO: sid = PPC_INS_DIVDU; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateDivw; break;
 		case PPC_INS_DIVWEO: sid = PPC_INS_DIVWE; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translatePpcMisc; break;
 		case PPC_INS_DIVWEUO: sid = PPC_INS_DIVWEU; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translatePpcMisc; break;
+		case PPC_INS_SUBFO: sid = PPC_INS_SUBF; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateSubf; break;
+		case PPC_INS_SUBFCO: sid = PPC_INS_SUBFC; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateSubfc; break;
+		case PPC_INS_SUBFEO: sid = PPC_INS_SUBFE; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateSubfe; break;
+		case PPC_INS_SUBFMEO: sid = PPC_INS_SUBFME; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateSubfme; break;
+		case PPC_INS_SUBFZEO: sid = PPC_INS_SUBFZE; fn = &Capstone2LlvmIrTranslatorPowerpc_impl::translateSubfze; break;
 		default:
 			translatePseudoAsmGeneric(i, pi, irb);
 			return;
 	}
 	unsigned hid = i->id;
+	// Capstone 6 prints SUBF/SUBFC through their SUB/SUBC aliases, so the
+	// plain translators expect [RB, RA]; the OE forms list [RA, RB].
+	bool swap = (hid == PPC_INS_SUBFO || hid == PPC_INS_SUBFCO) && pi->op_count == 3;
+	if (swap)
+	{
+		std::swap(pi->operands[1], pi->operands[2]);
+	}
 	i->id = sid;
 	try
 	{
@@ -8747,9 +8759,17 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateTwin(cs_insn* i, cs_ppc* pi
 	catch (...)
 	{
 		i->id = hid;
+		if (swap)
+		{
+			std::swap(pi->operands[1], pi->operands[2]);
+		}
 		throw;
 	}
 	i->id = hid;
+	if (swap)
+	{
+		std::swap(pi->operands[1], pi->operands[2]);
+	}
 }
 
 /**
@@ -9290,6 +9310,38 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecLane(cs_insn* i, cs_ppc*
 		res = irb.CreateOr(res, irb.CreateShl(irb.CreateZExt(r, i128), sh));
 	}
 	storeOpI128(pi->operands[0], res, irb);
+}
+
+
+/**
+ * TW/TWI/TD/TDI/TRAP: the trap is a call of a pseudo function guarded by the
+ * TO-encoded comparison (decoded from the raw word, since Capstone folds the
+ * TO field into extended mnemonics).
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateTrap(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	uint32_t w = (uint32_t(i->bytes[0]) << 24) | (uint32_t(i->bytes[1]) << 16)
+			| (uint32_t(i->bytes[2]) << 8) | uint32_t(i->bytes[3]);
+	unsigned op = w >> 26;
+	unsigned to = (w >> 21) & 31, ra = (w >> 16) & 31, rb = (w >> 11) & 31;
+	bool imm = op == 2 || op == 3;
+	bool word = op == 3 || (op == 31 && ((w >> 1) & 0x3ff) == 4);
+	auto* ty = word ? irb.getInt32Ty() : irb.getInt64Ty();
+	auto ld = [&](unsigned r) {
+		return irb.CreateZExtOrTrunc(loadRegister(PPC_REG_R0 + r, irb), ty);
+	};
+	auto* a = ld(ra);
+	llvm::Value* b = imm ? llvm::ConstantInt::getSigned(ty, int16_t(w & 0xffff)) : ld(rb);
+	llvm::Value* cond = irb.getFalse();
+	if (to & 16) cond = irb.CreateOr(cond, irb.CreateICmpSLT(a, b));
+	if (to & 8) cond = irb.CreateOr(cond, irb.CreateICmpSGT(a, b));
+	if (to & 4) cond = irb.CreateOr(cond, irb.CreateICmpEQ(a, b));
+	if (to & 2) cond = irb.CreateOr(cond, irb.CreateICmpULT(a, b));
+	if (to & 1) cond = irb.CreateOr(cond, irb.CreateICmpUGT(a, b));
+	(void)pi;
+	llvm::IRBuilder<> body(generateIfThen(cond, irb));
+	auto* fnc = getPseudoAsmFunction(i, irb.getVoidTy(), llvm::ArrayRef<llvm::Type*>{});
+	body.CreateCall(fnc);
 }
 
 

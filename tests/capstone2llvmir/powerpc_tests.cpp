@@ -17631,6 +17631,86 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VDIVUD_lane)
 	EXPECT_EQ(0x7ULL, vLow(PPC_REG_V2));
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_TW_taken)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R3, 7},
+		{PPC_REG_R4, 7},
+	});
+
+	emulate_bin("7c 83 20 08");
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_tweq"), {}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_TWI_not_taken)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R3, 9},
+	});
+
+	emulate_bin("0e 03 00 05");
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_TDI_taken)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R3, 0},
+	});
+
+	emulate_bin("09 03 ff ff");
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_tdgti"), {}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_TRAP)
+{
+	ONLY_MODE_64;
+
+
+	emulate_bin("7f e0 00 08");
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_trap"), {}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_SUBFO_twin)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R4, 3},
+		{PPC_REG_R5, 10},
+	});
+
+	emulate_bin("7c 64 2c 50");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 7},
+	});
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
