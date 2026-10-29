@@ -13190,6 +13190,36 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_TT_is_pseudo_call_on_address)
 	});
 }
 
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VBRSR_reverses_low_bits)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R2, 4},
+		{ARM_REG_D2, armDBits(0x0101010101010101ULL)},
+		{ARM_REG_D3, armDBits(0x0303030303030303ULL)},
+	});
+
+	// vbrsr.8 q0, q1, r2
+	emulate_bin("03 fe 62 1e");
+
+	EXPECT_EQ(0x0808080808080808ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0c0c0c0c0c0c0c0cULL, dBits(ARM_REG_D1));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_TT_is_opaque_call)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	// tt r0, r1
+	emulate_bin("41 e8 00 f0");
+
+	EXPECT_NE(nullptr, _module.getFunction("__asm_tt"));
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

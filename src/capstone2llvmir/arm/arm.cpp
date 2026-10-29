@@ -31,7 +31,9 @@ namespace {
 // see both.
 bool armIsId(const cs_insn* i, unsigned id)
 {
-	return i->id == id || (i->is_alias && static_cast<unsigned>(i->alias_id) == id);
+	// BXJ is BX on every core without a Jazelle accelerator (all v7+).
+	return i->id == id || (i->is_alias && static_cast<unsigned>(i->alias_id) == id)
+			|| (id == ARM_INS_BX && i->id == ARM_INS_BXJ);
 }
 
 bool armCcUncond(const cs_arm* ai)
@@ -8390,6 +8392,35 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMveVec(cs_insn* i, cs_arm* ai, 
 		return;
 	}
 
+	if ((op == "vqrdmlah" || op == "vqrdmlsh") && ai->op_count == 3 && isNeonRegister(reg(2)) && lb >= 16)
+	{
+		// Advanced SIMD (v8.1): d = sat((d << esize) +/- 2*n*m + round) >> esize,
+		// with m a vector or one indexed lane of it. The Q flag is not modelled.
+		bool sub = op == "vqrdmlsh";
+		auto* et = irb.getIntNTy(lb);
+		auto* wt = irb.getIntNTy(2 * lb + 2);
+		auto* d = loadNeonVector(reg(0), lb, false, irb);
+		auto* a = loadNeonVector(reg(1), lb, false, irb);
+		auto* mv = loadNeonVector(reg(2), lb, false, irb);
+		int vi = ai->operands[2].vector_index;
+		auto* mx = llvm::ConstantInt::get(wt, llvm::APInt::getSignedMaxValue(lb).sext(2 * lb + 2));
+		auto* mn = llvm::ConstantInt::get(wt, llvm::APInt::getSignedMinValue(lb).sext(2 * lb + 2));
+		llvm::Value* r = d;
+		for (unsigned k = 0; k < lanesOf(d); ++k)
+		{
+			auto* x = irb.CreateSExt(irb.CreateExtractElement(d, uint64_t(k)), wt);
+			auto* y = irb.CreateSExt(irb.CreateExtractElement(a, uint64_t(k)), wt);
+			auto* z = irb.CreateSExt(irb.CreateExtractElement(mv, uint64_t(vi >= 0 ? unsigned(vi) : k)), wt);
+			llvm::Value* p = irb.CreateShl(irb.CreateMul(y, z), 1);
+			llvm::Value* e = sub ? irb.CreateSub(irb.CreateShl(x, lb), p) : irb.CreateAdd(irb.CreateShl(x, lb), p);
+			e = irb.CreateAShr(irb.CreateAdd(e, llvm::ConstantInt::get(wt, 1ull << (lb - 1))), lb);
+			e = irb.CreateSelect(irb.CreateICmpSGT(e, mx), mx, irb.CreateSelect(irb.CreateICmpSLT(e, mn), mn, e));
+			r = irb.CreateInsertElement(r, irb.CreateTrunc(e, et), uint64_t(k));
+		}
+		storeNeonVector(reg(0), r, irb);
+		return;
+	}
+
 	if (op == "vqrdmlah" || op == "vqdmlah" || op == "vqrdmlash" || op == "vqdmlash")
 	{
 		if (ai->op_count != 3 || lb > 32 || isNeonRegister(reg(2))) { fallback(); return; }
@@ -9358,6 +9389,53 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMveLongRegShift(cs_insn* i, cs_
 	auto* r64 = irb.CreateTrunc(r, i64);
 	storeRegister(ai->operands[0].reg, irb.CreateTrunc(r64, i32), irb);
 	storeRegister(ai->operands[1].reg, irb.CreateTrunc(irb.CreateLShr(r64, 32), i32), irb);
+}
+
+
+/**
+ * Coprocessor, custom-datapath (CDE), TrustZone test-target, PAC, debug,
+ * lazy-FP-state and exception-return instructions: the state they touch is
+ * outside the modelled registers, so they lift as opaque calls over the
+ * named operands.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateArmOpaque(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	translatePseudoAsmGeneric(i, ai, irb);
+}
+
+/**
+ * MVE VBRSR: each lane becomes its bottom Rm[7:0] bits reversed (all of the
+ * lane when Rm >= esize, zero when Rm == 0).
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateVbrsr(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	const char* dt = std::strchr(i->mnemonic, '.');
+	unsigned lb = dt ? unsigned(std::atoi(dt + 1)) : 0;
+	if (ai->op_count != 3 || (lb != 8 && lb != 16 && lb != 32))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	auto* et = irb.getIntNTy(lb);
+	auto* q = loadNeonVector(ai->operands[1].reg, lb, false, irb);
+	unsigned n = llvm::cast<llvm::FixedVectorType>(q->getType())->getNumElements();
+	auto* vt = q->getType();
+	llvm::Value* rm = irb.CreateAnd(irb.CreateZExtOrTrunc(loadRegister(ai->operands[2].reg, irb), irb.getInt32Ty()), 0xff);
+	llvm::Value* cnt = irb.CreateSelect(irb.CreateICmpUGT(rm, irb.getInt32(lb)), irb.getInt32(lb), rm);
+	llvm::Value* sh = irb.CreateTrunc(irb.CreateSub(irb.getInt32(lb), cnt), et);
+	// Spelled out: the interpreter cannot evaluate a vector llvm.bitreverse.
+	llvm::Value* rev = llvm::Constant::getNullValue(vt);
+	for (unsigned b = 0; b < lb; ++b)
+	{
+		auto* bit = irb.CreateAnd(irb.CreateLShr(q, irb.CreateVectorSplat(n, llvm::ConstantInt::get(et, b))),
+				irb.CreateVectorSplat(n, llvm::ConstantInt::get(et, 1)));
+		rev = irb.CreateOr(rev, irb.CreateShl(bit, irb.CreateVectorSplat(n, llvm::ConstantInt::get(et, lb - 1 - b))));
+	}
+	// lshr by esize is poison, so zero is selected explicitly.
+	llvm::Value* shv = irb.CreateVectorSplat(n, irb.CreateSelect(irb.CreateICmpEQ(cnt, irb.getInt32(0)), llvm::ConstantInt::get(et, 0), sh));
+	llvm::Value* r = irb.CreateLShr(rev, shv);
+	r = irb.CreateSelect(irb.CreateICmpEQ(cnt, irb.getInt32(0)), llvm::Constant::getNullValue(vt), r);
+	storeNeonVector(ai->operands[0].reg, r, irb);
 }
 
 } // namespace capstone2llvmir
