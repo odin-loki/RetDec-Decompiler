@@ -6830,13 +6830,19 @@ void Capstone2LlvmIrTranslatorMips_impl::translateLoadMemory(cs_insn* i, cs_mips
 
 	switch (i->id)
 	{
+		case MIPS_INS_LBE:
 		case MIPS_INS_LB: ty = irb.getInt8Ty(); ct = eOpConv::SEXT_TRUNC_OR_BITCAST; break;
 		case MIPS_INS_LBU:
+		case MIPS_INS_LBUE:
 		case MIPS_INS_LBU16: ty = irb.getInt8Ty(); ct = eOpConv::ZEXT_TRUNC_OR_BITCAST; break;
+		case MIPS_INS_LHE:
 		case MIPS_INS_LH: ty = irb.getInt16Ty(); ct = eOpConv::SEXT_TRUNC_OR_BITCAST; break;
 		case MIPS_INS_LHU:
+		case MIPS_INS_LHUE:
 		case MIPS_INS_LHU16: ty = irb.getInt16Ty(); ct = eOpConv::ZEXT_TRUNC_OR_BITCAST; break;
 		case MIPS_INS_LW:
+		case MIPS_INS_LWE:
+		case MIPS_INS_LLE:
 		case MIPS_INS_LW16:
 		case MIPS_INS_LL: ty = irb.getInt32Ty(); ct = eOpConv::SEXT_TRUNC_OR_BITCAST; break;
 		case MIPS_INS_LWU: ty = irb.getInt32Ty(); ct = eOpConv::ZEXT_TRUNC_OR_BITCAST; break;
@@ -6857,7 +6863,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateLoadMemory(cs_insn* i, cs_mips
 	}
 
 	op1 = loadOp(mi->operands[1], irb, ty);
-	if (i->id == MIPS_INS_LL || i->id == MIPS_INS_LLD)
+	if (i->id == MIPS_INS_LL || i->id == MIPS_INS_LLE || i->id == MIPS_INS_LLD)
 	{
 		if (auto* ld = llvm::dyn_cast<llvm::LoadInst>(op1))
 		{
@@ -6881,10 +6887,14 @@ void Capstone2LlvmIrTranslatorMips_impl::translateStoreMemory(cs_insn* i, cs_mip
 	switch (i->id)
 	{
 		case MIPS_INS_SB:
+		case MIPS_INS_SBE:
 		case MIPS_INS_SB16: ty = irb.getInt8Ty(); break;
 		case MIPS_INS_SH:
+		case MIPS_INS_SHE:
 		case MIPS_INS_SH16: ty = irb.getInt16Ty(); break;
 		case MIPS_INS_SW:
+		case MIPS_INS_SWE:
+		case MIPS_INS_SCE:
 		case MIPS_INS_SW16:
 		case MIPS_INS_SC: ty = irb.getInt32Ty(); break;
 		case MIPS_INS_SD:

@@ -11862,6 +11862,48 @@ TEST_P(Capstone2LlvmIrTranslatorMipsOcteon64Tests, MIPS_INS_CINS32)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LBE_bin)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_3, 0x1000},
+	});
+	setMemory({
+		{0x1004, 0x80_b},
+	});
+
+	emulate_bin("2c 02 62 7c"); // lbe $2, 4($3)
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0xffffff80},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1004});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SWE_bin)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_2, 0x12345678},
+		{MIPS_REG_3, 0x1000},
+	});
+
+	emulate_bin("1f 02 62 7c"); // swe $2, 4($3)
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1004, 0x12345678_dw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
