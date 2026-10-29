@@ -7078,8 +7078,28 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateCoreV(cs_insn* i, cs_riscv* r
 		if (ri->op_count < 3) { fallback(); return; }
 		b = ldo(2);
 	}
+	if ((op == "extract" || op == "extractu" || op == "insert") && ri->operands[2].type == RISCV_OP_IMM)
+	{
+		unsigned li = unsigned(ri->operands[2].imm) & (n - 1);
+		auto* x = lane(a, li);
+		if (op == "insert")
+		{
+			auto* d = ldo(0);
+			uint64_t lm = ((1ull << eb) - 1) << (li * eb);
+			auto* nv = irb.CreateShl(irb.CreateZExt(irb.CreateTrunc(a, et), i32), li * eb);
+			r = irb.CreateOr(irb.CreateAnd(d, c32(~lm & 0xffffffffull)), nv);
+		}
+		else
+		{
+			r = op == "extract" ? irb.CreateSExt(x, i32) : irb.CreateZExt(x, i32);
+		}
+		storeRegister(ri->operands[0].reg, irb.CreateSExtOrTrunc(r, xt), irb);
+		return;
+	}
+	bool sdot = op == "sdotup" || op == "sdotusp" || op == "sdotsp";
+	if (sdot) op = op.substr(1);
 	bool dot = op == "dotup" || op == "dotusp" || op == "dotsp";
-	llvm::Value* acc = c32(0);
+	llvm::Value* acc = sdot ? ldo(0) : c32(0);
 	r = c32(0);
 	for (unsigned k = 0; k < n; ++k)
 	{

@@ -6332,6 +6332,114 @@ TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_SHUFFLE2_B)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_EXTRACT_H)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X11, 0x80011234},
+	});
+
+	emulate_bin("7b 85 05 ba");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0xffff8001},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_EXTRACTU_B)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X11, 0xab0000},
+	});
+
+	emulate_bin("7b b5 15 b8");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0xab},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_INSERT_B)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X10, 0x11223344},
+		{RISCV_REG_X11, 0x55},
+	});
+
+	emulate_bin("7b d5 15 ba");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0x55223344},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_SDOTSP_H)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X10, 0xa},
+		{RISCV_REG_X11, 0xffff0002},
+		{RISCV_REG_X12, 0x30004},
+	});
+
+	emulate_bin("7b 85 c5 a8");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0xf},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_SDOTUP_SC_B)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X10, 0x1},
+		{RISCV_REG_X11, 0x1020304},
+		{RISCV_REG_X12, 0x2},
+	});
+
+	emulate_bin("7b d5 c5 98");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0x15},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_SDOTUSP_SCI_B)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_X10, 0x64},
+		{RISCV_REG_X11, 0x1020304},
+	});
+
+	emulate_bin("7b f5 f5 a3");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 0x5a},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
