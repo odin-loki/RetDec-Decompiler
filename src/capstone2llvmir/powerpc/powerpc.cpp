@@ -9063,5 +9063,235 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translatePpcRaw(cs_insn* i, cs_ppc* 
 }
 
 
+/**
+ * Power ISA 3.0/3.1 VMX/VSX integer additions, lifted lane by lane on the
+ * 128-bit register value (lane 0 is the most significant, big-endian).
+ * Record forms do not update CR6 (consistent with translateVecCmp).
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecLane(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	if (pi->op_count < 2)
+	{
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+	auto* i128 = irb.getInt128Ty();
+	auto c128 = [&](uint64_t v) { return llvm::ConstantInt::get(i128, v); };
+	unsigned id = i->id;
+	bool unary = false;
+	unsigned w = 32;
+	enum K { ABSD, NEG, CTZ, DIVS, DIVU, MODS, MODU, MULL, MULHS, MULHU, EXTS, CMPNE, CMPNEZ,
+		MULEO, Q, BR, EXPAND, PRTY, CMPGTQ } k;
+	unsigned extFrom = 0;
+	bool odd = false, sgn = false;
+	switch (id)
+	{
+		case PPC_INS_VABSDUB: k = ABSD; w = 8; break;
+		case PPC_INS_VABSDUH: k = ABSD; w = 16; break;
+		case PPC_INS_VABSDUW: k = ABSD; w = 32; break;
+		case PPC_INS_VNEGW: k = NEG; unary = true; w = 32; break;
+		case PPC_INS_VNEGD: k = NEG; unary = true; w = 64; break;
+		case PPC_INS_VCTZB: k = CTZ; unary = true; w = 8; break;
+		case PPC_INS_VCTZH: k = CTZ; unary = true; w = 16; break;
+		case PPC_INS_VCTZW: k = CTZ; unary = true; w = 32; break;
+		case PPC_INS_VCTZD: k = CTZ; unary = true; w = 64; break;
+		case PPC_INS_VDIVSW: k = DIVS; w = 32; break;
+		case PPC_INS_VDIVUW: k = DIVU; w = 32; break;
+		case PPC_INS_VDIVSD: k = DIVS; w = 64; break;
+		case PPC_INS_VDIVUD: k = DIVU; w = 64; break;
+		case PPC_INS_VDIVSQ: k = DIVS; w = 128; break;
+		case PPC_INS_VDIVUQ: k = DIVU; w = 128; break;
+		case PPC_INS_VMODSW: k = MODS; w = 32; break;
+		case PPC_INS_VMODUW: k = MODU; w = 32; break;
+		case PPC_INS_VMODSD: k = MODS; w = 64; break;
+		case PPC_INS_VMODUD: k = MODU; w = 64; break;
+		case PPC_INS_VMODSQ: k = MODS; w = 128; break;
+		case PPC_INS_VMODUQ: k = MODU; w = 128; break;
+		case PPC_INS_VMULLD: k = MULL; w = 64; break;
+		case PPC_INS_VMULHSW: k = MULHS; w = 32; break;
+		case PPC_INS_VMULHUW: k = MULHU; w = 32; break;
+		case PPC_INS_VMULHSD: k = MULHS; w = 64; break;
+		case PPC_INS_VMULHUD: k = MULHU; w = 64; break;
+		case PPC_INS_VEXTSB2W: k = EXTS; unary = true; w = 32; extFrom = 8; break;
+		case PPC_INS_VEXTSH2W: k = EXTS; unary = true; w = 32; extFrom = 16; break;
+		case PPC_INS_VEXTSB2D: k = EXTS; unary = true; w = 64; extFrom = 8; break;
+		case PPC_INS_VEXTSH2D: k = EXTS; unary = true; w = 64; extFrom = 16; break;
+		case PPC_INS_VEXTSW2D: k = EXTS; unary = true; w = 64; extFrom = 32; break;
+		case PPC_INS_VEXTSD2Q: k = EXTS; unary = true; w = 128; extFrom = 64; break;
+		case PPC_INS_VCMPNEB: k = CMPNE; w = 8; break;
+		case PPC_INS_VCMPNEH: k = CMPNE; w = 16; break;
+		case PPC_INS_VCMPNEW: k = CMPNE; w = 32; break;
+		case PPC_INS_VCMPNEZB: k = CMPNEZ; w = 8; break;
+		case PPC_INS_VCMPNEZH: k = CMPNEZ; w = 16; break;
+		case PPC_INS_VCMPNEZW: k = CMPNEZ; w = 32; break;
+		case PPC_INS_VCMPGTSQ: k = CMPGTQ; w = 128; sgn = true; break;
+		case PPC_INS_VCMPGTUQ: k = CMPGTQ; w = 128; break;
+		case PPC_INS_VMULESD: k = MULEO; sgn = true; break;
+		case PPC_INS_VMULEUD: k = MULEO; break;
+		case PPC_INS_VMULOSD: k = MULEO; sgn = true; odd = true; break;
+		case PPC_INS_VMULOUD: k = MULEO; odd = true; break;
+		case PPC_INS_VADDUQM: case PPC_INS_VSUBUQM: case PPC_INS_VADDCUQ: case PPC_INS_VSUBCUQ:
+		case PPC_INS_VADDEUQM: case PPC_INS_VSUBEUQM: case PPC_INS_VADDECUQ: case PPC_INS_VSUBECUQ:
+		case PPC_INS_VRLQ: case PPC_INS_VSLQ: case PPC_INS_VSRQ: case PPC_INS_VSRAQ:
+			k = Q; w = 128; break;
+		case PPC_INS_XXBRH: k = BR; unary = true; w = 16; break;
+		case PPC_INS_XXBRW: k = BR; unary = true; w = 32; break;
+		case PPC_INS_XXBRD: k = BR; unary = true; w = 64; break;
+		case PPC_INS_XXBRQ: k = BR; unary = true; w = 128; break;
+		case PPC_INS_VEXPANDBM: k = EXPAND; unary = true; w = 8; break;
+		case PPC_INS_VEXPANDHM: k = EXPAND; unary = true; w = 16; break;
+		case PPC_INS_VEXPANDWM: k = EXPAND; unary = true; w = 32; break;
+		case PPC_INS_VEXPANDDM: k = EXPAND; unary = true; w = 64; break;
+		case PPC_INS_VEXPANDQM: k = EXPAND; unary = true; w = 128; break;
+		case PPC_INS_VPRTYBW: k = PRTY; unary = true; w = 32; break;
+		case PPC_INS_VPRTYBD: k = PRTY; unary = true; w = 64; break;
+		case PPC_INS_VPRTYBQ: k = PRTY; unary = true; w = 128; break;
+		default:
+			translatePseudoAsmGeneric(i, pi, irb);
+			return;
+	}
+	if (!unary && pi->op_count < 3)
+	{
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+	auto* a = loadOpI128(pi->operands[1], irb);
+	llvm::Value* b = unary ? nullptr : loadOpI128(pi->operands[2], irb);
+	llvm::Value* res = nullptr;
+
+	if (k == Q)
+	{
+		auto* one = c128(1);
+		llvm::Value* c = (pi->op_count >= 4 && pi->operands[3].type == PPC_OP_REG)
+				? irb.CreateAnd(loadOpI128(pi->operands[3], irb), one) : c128(0);
+		auto* nb = irb.CreateNot(b);
+		auto* sh = irb.CreateAnd(irb.CreateLShr(b, 64), c128(127));
+		auto carry = [&](llvm::Value* x, llvm::Value* y, llvm::Value* ci) {
+			auto* s1 = irb.CreateAdd(x, y);
+			auto* c1 = irb.CreateICmpULT(s1, x);
+			auto* s2 = irb.CreateAdd(s1, ci);
+			auto* c2 = irb.CreateICmpULT(s2, s1);
+			return irb.CreateZExt(irb.CreateOr(c1, c2), i128);
+		};
+		switch (id)
+		{
+			case PPC_INS_VADDUQM: res = irb.CreateAdd(a, b); break;
+			case PPC_INS_VSUBUQM: res = irb.CreateSub(a, b); break;
+			case PPC_INS_VADDCUQ: res = carry(a, b, c128(0)); break;
+			case PPC_INS_VSUBCUQ: res = carry(a, nb, one); break;
+			case PPC_INS_VADDEUQM: res = irb.CreateAdd(irb.CreateAdd(a, b), c); break;
+			case PPC_INS_VSUBEUQM: res = irb.CreateAdd(irb.CreateAdd(a, nb), c); break;
+			case PPC_INS_VADDECUQ: res = carry(a, b, c); break;
+			case PPC_INS_VSUBECUQ: res = carry(a, nb, c); break;
+			case PPC_INS_VSLQ: res = irb.CreateShl(a, sh); break;
+			case PPC_INS_VSRQ: res = irb.CreateLShr(a, sh); break;
+			case PPC_INS_VSRAQ: res = irb.CreateAShr(a, sh); break;
+			case PPC_INS_VRLQ:
+			{
+				auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::fshl, i128);
+				res = irb.CreateCall(f, {a, a, sh});
+				break;
+			}
+			default: break;
+		}
+		storeOpI128(pi->operands[0], res, irb);
+		return;
+	}
+	if (k == MULEO)
+	{
+		auto* i64 = irb.getInt64Ty();
+		unsigned s = odd ? 0 : 64;
+		auto ext = [&](llvm::Value* v) {
+			auto* t = irb.CreateTrunc(irb.CreateLShr(v, s), i64);
+			return sgn ? irb.CreateSExt(t, i128) : irb.CreateZExt(t, i128);
+		};
+		storeOpI128(pi->operands[0], irb.CreateMul(ext(a), ext(b)), irb);
+		return;
+	}
+
+	auto* lt = irb.getIntNTy(w);
+	auto* wt = irb.getIntNTy(2 * w);
+	auto cl = [&](uint64_t v) { return llvm::ConstantInt::get(lt, v); };
+	unsigned n = 128 / w;
+	res = c128(0);
+	for (unsigned l = 0; l < n; ++l)
+	{
+		unsigned sh = (n - 1 - l) * w;
+		auto lane = [&](llvm::Value* v) { return irb.CreateTrunc(irb.CreateLShr(v, sh), lt); };
+		auto* x = lane(a);
+		llvm::Value* y = b ? lane(b) : nullptr;
+		llvm::Value* r = nullptr;
+		switch (k)
+		{
+			case ABSD:
+				r = irb.CreateSelect(irb.CreateICmpUGT(x, y), irb.CreateSub(x, y), irb.CreateSub(y, x));
+				break;
+			case NEG: r = irb.CreateNeg(x); break;
+			case CTZ:
+			{
+				auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::cttz, lt);
+				r = irb.CreateCall(f, {x, irb.getFalse()});
+				break;
+			}
+			case DIVS: case DIVU: case MODS: case MODU:
+			{
+				auto* z = irb.CreateICmpEQ(y, cl(0));
+				auto* d = irb.CreateSelect(z, cl(1), y);
+				if (k == DIVS || k == MODS)
+				{
+					// Avoid the INT_MIN / -1 overflow trap; the ISA leaves it undefined.
+					auto* ovf = irb.CreateAnd(
+							irb.CreateICmpEQ(x, llvm::ConstantInt::get(lt, llvm::APInt::getSignedMinValue(w))),
+							irb.CreateICmpEQ(y, llvm::ConstantInt::get(lt, llvm::APInt::getAllOnes(w))));
+					d = irb.CreateSelect(ovf, cl(1), d);
+				}
+				r = k == DIVS ? irb.CreateSDiv(x, d) : k == DIVU ? irb.CreateUDiv(x, d)
+						: k == MODS ? irb.CreateSRem(x, d) : irb.CreateURem(x, d);
+				break;
+			}
+			case MULL: r = irb.CreateMul(x, y); break;
+			case MULHS: case MULHU:
+			{
+				auto e = [&](llvm::Value* v) { return k == MULHS ? irb.CreateSExt(v, wt) : irb.CreateZExt(v, wt); };
+				r = irb.CreateTrunc(irb.CreateLShr(irb.CreateMul(e(x), e(y)), w), lt);
+				break;
+			}
+			case EXTS: r = irb.CreateSExt(irb.CreateTrunc(x, irb.getIntNTy(extFrom)), lt); break;
+			case CMPNE:
+				r = irb.CreateSExt(irb.CreateICmpNE(x, y), lt);
+				break;
+			case CMPNEZ:
+				r = irb.CreateSExt(irb.CreateOr(irb.CreateICmpNE(x, y),
+						irb.CreateOr(irb.CreateICmpEQ(x, cl(0)), irb.CreateICmpEQ(y, cl(0)))), lt);
+				break;
+			case CMPGTQ:
+				r = irb.CreateSExt(sgn ? irb.CreateICmpSGT(x, y) : irb.CreateICmpUGT(x, y), lt);
+				break;
+			case BR:
+			{
+				r = cl(0);
+				for (unsigned bi = 0; bi < w / 8; ++bi)
+				{
+					auto* by = irb.CreateAnd(irb.CreateLShr(x, 8 * bi), cl(0xff));
+					r = irb.CreateOr(r, irb.CreateShl(by, w - 8 - 8 * bi));
+				}
+				break;
+			}
+			case EXPAND: r = irb.CreateAShr(x, w - 1); break;
+			case PRTY:
+			{
+				r = cl(0);
+				for (unsigned bi = 0; bi < w / 8; ++bi)
+					r = irb.CreateXor(r, irb.CreateAnd(irb.CreateLShr(x, 8 * bi), cl(1)));
+				break;
+			}
+			default: break;
+		}
+		res = irb.CreateOr(res, irb.CreateShl(irb.CreateZExt(r, i128), sh));
+	}
+	storeOpI128(pi->operands[0], res, irb);
+}
+
+
 } // namespace capstone2llvmir
 } // namespace retdec

@@ -17466,6 +17466,171 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_BPERMD_raw)
 	});
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VABSDUW_lane)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0x500000001ULL, 0xffffffff00000010ULL);
+	setV(PPC_REG_V4, 0x300000004ULL, 0x100000020ULL);
+
+	emulate_bin("10 43 24 83");
+
+	EXPECT_EQ(0x200000003ULL, vHigh(PPC_REG_V2));
+	EXPECT_EQ(0xfffffffe00000010ULL, vLow(PPC_REG_V2));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VNEGW_lane)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V4, 0x300000004ULL, 0x100000020ULL);
+
+	emulate_bin("10 46 26 02");
+
+	EXPECT_EQ(0xfffffffdfffffffcULL, vHigh(PPC_REG_V2));
+	EXPECT_EQ(0xffffffffffffffe0ULL, vLow(PPC_REG_V2));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VMODSW_lane)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0x500000001ULL, 0xffffffff00000010ULL);
+	setV(PPC_REG_V4, 0x300000004ULL, 0x100000020ULL);
+
+	emulate_bin("10 43 27 8b");
+
+	EXPECT_EQ(0x200000001ULL, vHigh(PPC_REG_V2));
+	EXPECT_EQ(0x10ULL, vLow(PPC_REG_V2));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VEXTSB2W_lane)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V4, 0xff00000080ULL, 0x7f00000001ULL);
+
+	emulate_bin("10 50 26 02");
+
+	EXPECT_EQ(0xffffffffffffff80ULL, vHigh(PPC_REG_V2));
+	EXPECT_EQ(0x7f00000001ULL, vLow(PPC_REG_V2));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VCMPNEW_lane)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0x500000001ULL, 0xffffffff00000010ULL);
+	setV(PPC_REG_V4, 0x500000004ULL, 0xffffffff00000020ULL);
+
+	emulate_bin("10 43 20 87");
+
+	EXPECT_EQ(0xffffffffULL, vHigh(PPC_REG_V2));
+	EXPECT_EQ(0xffffffffULL, vLow(PPC_REG_V2));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VADDUQM_lane)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0x500000001ULL, 0xffffffff00000010ULL);
+	setV(PPC_REG_V4, 0x300000004ULL, 0x100000020ULL);
+
+	emulate_bin("10 43 21 00");
+
+	EXPECT_EQ(0x800000006ULL, vHigh(PPC_REG_V2));
+	EXPECT_EQ(0x30ULL, vLow(PPC_REG_V2));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VADDCUQ_lane)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setV(PPC_REG_V4, 0x0ULL, 0x1ULL);
+
+	emulate_bin("10 43 21 40");
+
+	EXPECT_EQ(0x0ULL, vHigh(PPC_REG_V2));
+	EXPECT_EQ(0x1ULL, vLow(PPC_REG_V2));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VSRAQ_lane)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0x8000000000000000ULL, 0x0ULL);
+	setV(PPC_REG_V4, 0x4ULL, 0x0ULL);
+
+	emulate_bin("10 43 23 05");
+
+	EXPECT_EQ(0xf800000000000000ULL, vHigh(PPC_REG_V2));
+	EXPECT_EQ(0x0ULL, vLow(PPC_REG_V2));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VMULEUD_lane)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0x500000001ULL, 0xffffffff00000010ULL);
+	setV(PPC_REG_V4, 0x300000004ULL, 0x100000020ULL);
+
+	emulate_bin("10 43 22 c8");
+
+	EXPECT_EQ(0xfULL, vHigh(PPC_REG_V2));
+	EXPECT_EQ(0x1700000004ULL, vLow(PPC_REG_V2));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XXBRW_lane)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V4, 0x102030405060708ULL, 0x90a0b0c0d0e0f10ULL);
+
+	emulate_bin("f0 4f 27 6f");
+
+	EXPECT_EQ(0x403020108070605ULL, vHigh(PPC_REG_V2));
+	EXPECT_EQ(0xc0b0a09100f0e0dULL, vLow(PPC_REG_V2));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VEXPANDWM_lane)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V4, 0x8000000000000000ULL, 0xffffffffULL);
+
+	emulate_bin("10 42 26 42");
+
+	EXPECT_EQ(0xffffffff00000000ULL, vHigh(PPC_REG_V2));
+	EXPECT_EQ(0xffffffffULL, vLow(PPC_REG_V2));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VCTZD_lane)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V4, 0x10ULL, 0x0ULL);
+
+	emulate_bin("10 5f 26 02");
+
+	EXPECT_EQ(0x4ULL, vHigh(PPC_REG_V2));
+	EXPECT_EQ(0x40ULL, vLow(PPC_REG_V2));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VDIVUD_lane)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0x64ULL, 0x7ULL);
+	setV(PPC_REG_V4, 0x7ULL, 0x0ULL);
+
+	emulate_bin("10 43 20 cb");
+
+	EXPECT_EQ(0xeULL, vHigh(PPC_REG_V2));
+	// Division by zero is undefined; the lifter divides by 1 instead.
+	EXPECT_EQ(0x7ULL, vLow(PPC_REG_V2));
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

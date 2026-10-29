@@ -206,6 +206,7 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		void translateTwin(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translatePpcMisc(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translatePpcRaw(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateVecLane(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateNor(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateNot(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateOr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
