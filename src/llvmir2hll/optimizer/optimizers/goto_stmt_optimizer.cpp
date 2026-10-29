@@ -26,6 +26,9 @@
 #include "retdec/llvmir2hll/ir/return_stmt.h"
 #include "retdec/llvmir2hll/optimizer/optimizers/goto_stmt_optimizer.h"
 #include "retdec/llvmir2hll/support/debug.h"
+#include "retdec/llvmir2hll/utils/ir.h"
+#include "retdec/llvmir2hll/ir/variable.h"
+#include "retdec/llvmir2hll/ir/int_type.h"
 #include "retdec/llvmir2hll/support/expression_negater.h"
 
 namespace retdec {
@@ -242,6 +245,56 @@ bool GotoStmtOptimizer::tryDropFallThroughGoto(ShPtr<GotoStmt> stmt) {
 	return true;
 }
 
+/// A goto from inside nested loops (or switches) to the statement after one
+/// of the outer ones: a flag carries the break out level by level.
+///
+///   while (a) { while (b) { goto L; } S; } L:
+///
+///   ==>
+///
+///   brk = false;
+///   while (a) { while (b) { brk = true; break; } if (brk) break; S; }
+bool GotoStmtOptimizer::tryBreakOutOfNestedLoops(ShPtr<GotoStmt> stmt) {
+	auto target = stmt->getTarget();
+	if (!target) {
+		return false;
+	}
+
+	std::vector<ShPtr<Statement>> scopes;
+	for (auto p = stmt->getParent(); p; p = p->getParent()) {
+		if (isLoopOrSwitch(p)) {
+			scopes.push_back(p);
+		}
+	}
+	std::size_t k = 1;
+	for (; k < scopes.size(); ++k) {
+		auto next = scopes[k]->getSuccessor();
+		while (next && next != target && isa<EmptyStmt>(next) &&
+				!next->hasLabel() && !next->isGotoTarget()) {
+			next = next->getSuccessor();
+		}
+		if (next == target) {
+			break;
+		}
+	}
+	if (k >= scopes.size()) {
+		return false;
+	}
+
+	auto flag = Variable::create("brk" + std::to_string(++flagCount),
+		IntType::create(1));
+	addLocalVarToFunc(flag, currFunc);
+
+	scopes[k]->prependStatement(AssignStmt::create(flag, ConstBool::create(false)));
+	for (std::size_t i = 0; i < k; ++i) {
+		scopes[i]->appendStatement(
+			IfStmt::create(flag, BreakStmt::create()));
+	}
+	Statement::replaceStatement(stmt,
+		AssignStmt::create(flag, ConstBool::create(true), BreakStmt::create()));
+	return true;
+}
+
 bool GotoStmtOptimizer::tryBreakOutOfLoop(ShPtr<GotoStmt> stmt) {
 	auto target = stmt->getTarget();
 	auto loop = cast<WhileLoopStmt>(innermostBreakScope(stmt));
@@ -393,7 +446,7 @@ void GotoStmtOptimizer::visit(ShPtr<GotoStmt> stmt) {
 	}
 
 	if (breakOutOfLoops && !tryDropFallThroughGoto(stmt) &&
-			!tryBreakOutOfLoop(stmt)) {
+			!tryBreakOutOfLoop(stmt) && !tryBreakOutOfNestedLoops(stmt)) {
 		tryCopyReturningTail(stmt);
 	}
 }

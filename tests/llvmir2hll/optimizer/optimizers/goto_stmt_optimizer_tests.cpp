@@ -206,7 +206,7 @@ GotoRightAfterLoopBecomesPlainBreak) {
 
 // A goto in an inner loop leaves both loops; a break would leave one.
 TEST_F(GotoStmtOptimizerTests,
-GotoFromNestedLoopIsKept) {
+GotoFromNestedLoopBecomesAFlaggedBreak) {
 	ShPtr<Variable> varA(Variable::create("a", IntType::create(32)));
 	testFunc->addLocalVar(varA);
 	auto target = AssignStmt::create(varA, ConstInt::create(3, 32));
@@ -218,8 +218,16 @@ GotoFromNestedLoopIsKept) {
 
 	Optimizer::optimize<GotoStmtOptimizer>(module, true);
 
-	EXPECT_EQ(gotoStmt, inner->getBody());
-	EXPECT_TRUE(target->hasLabel());
+	// while (a) { while (a) { brk = true; break; } if (brk) break; } a = 3;
+	auto set = cast<AssignStmt>(inner->getBody());
+	ASSERT_TRUE(set);
+	EXPECT_TRUE(isa<BreakStmt>(set->getSuccessor()));
+	auto check = cast<IfStmt>(inner->getSuccessor());
+	ASSERT_TRUE(check);
+	EXPECT_TRUE(isa<BreakStmt>(check->getFirstIfBody()));
+	EXPECT_TRUE(isa<AssignStmt>(loop->getUniquePredecessor()) ||
+		loop->hasPredecessors()) << "the flag is cleared before the outer loop";
+	EXPECT_FALSE(target->hasLabel());
 }
 
 // Without the flag (early runs) loops are not rewritten.
