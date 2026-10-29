@@ -8703,9 +8703,9 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCMP_s_s_gt)
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_S1, ARM64_REG_S2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM64_REG_CPSR_N, true},
+		{ARM64_REG_CPSR_N, false},
 		{ARM64_REG_CPSR_Z, false},
-		{ARM64_REG_CPSR_C, false},
+		{ARM64_REG_CPSR_C, true},
 		{ARM64_REG_CPSR_V, false},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
@@ -8723,9 +8723,9 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCMP_s_s_lt)
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_S1, ARM64_REG_S2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM64_REG_CPSR_N, false},
+		{ARM64_REG_CPSR_N, true},
 		{ARM64_REG_CPSR_Z, false},
-		{ARM64_REG_CPSR_C, true},
+		{ARM64_REG_CPSR_C, false},
 		{ARM64_REG_CPSR_V, false},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
@@ -8763,9 +8763,9 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCMP_d_d_gt)
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_D1, ARM64_REG_D2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM64_REG_CPSR_N, true},
+		{ARM64_REG_CPSR_N, false},
 		{ARM64_REG_CPSR_Z, false},
-		{ARM64_REG_CPSR_C, false},
+		{ARM64_REG_CPSR_C, true},
 		{ARM64_REG_CPSR_V, false},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
@@ -8783,9 +8783,9 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCMP_d_d_lt)
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_D1, ARM64_REG_D2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM64_REG_CPSR_N, false},
+		{ARM64_REG_CPSR_N, true},
 		{ARM64_REG_CPSR_Z, false},
-		{ARM64_REG_CPSR_C, true},
+		{ARM64_REG_CPSR_C, false},
 		{ARM64_REG_CPSR_V, false},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
@@ -8830,9 +8830,9 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCCMP_s_s_f_true)
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_S1, ARM64_REG_S2, ARM64_REG_CPSR_C, ARM64_REG_CPSR_Z});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM64_REG_CPSR_N, true},
+		{ARM64_REG_CPSR_N, false},
 		{ARM64_REG_CPSR_Z, false},
-		{ARM64_REG_CPSR_C, false},
+		{ARM64_REG_CPSR_C, true},
 		{ARM64_REG_CPSR_V, false},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
@@ -8872,9 +8872,9 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCCMP_d_d_f_false)
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_D1, ARM64_REG_D2, ARM64_REG_CPSR_C});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM64_REG_CPSR_N, true},
+		{ARM64_REG_CPSR_N, false},
 		{ARM64_REG_CPSR_Z, false},
-		{ARM64_REG_CPSR_C, false},
+		{ARM64_REG_CPSR_C, true},
 		{ARM64_REG_CPSR_V, false},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
@@ -8920,9 +8920,9 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCCMPE_s_s_f_true)
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_S1, ARM64_REG_S2, ARM64_REG_CPSR_C, ARM64_REG_CPSR_Z});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM64_REG_CPSR_N, true},
+		{ARM64_REG_CPSR_N, false},
 		{ARM64_REG_CPSR_Z, false},
-		{ARM64_REG_CPSR_C, false},
+		{ARM64_REG_CPSR_C, true},
 		{ARM64_REG_CPSR_V, false},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
@@ -9028,6 +9028,55 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCVT_d_s)
 //
 // ARM64_INS_SCVTF
 //
+
+// Fixed-point forms: #fbits fraction bits (aarch64 -O1 f_u2f).
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UCVTF_s_w_fbits)
+{
+	setRegisters({
+		{ARM64_REG_W1, 0xffffffff},
+	});
+
+	emulate("ucvtf s0, w1, #2");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_W1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_S0, static_cast<float>(4294967295.0 / 4.0)},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SCVTF_d_x_fbits)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0xfffffffffffffff4},
+	});
+
+	emulate("scvtf d0, x1, #3");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_X1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_D0, static_cast<double>(-1.5)},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FCVTZS_w_d_fbits)
+{
+	setRegisters({
+		{ARM64_REG_D1, static_cast<double>(-1.75)},
+	});
+
+	emulate("fcvtzs w0, d1, #4");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_D1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_W0, 0xffffffe4},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
 
 TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SCVTF_s_w)
 {

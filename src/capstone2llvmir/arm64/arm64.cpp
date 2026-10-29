@@ -6267,8 +6267,10 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFCCmp(cs_insn* i, cs_arm64* a
 	storeRegister(ARM64_REG_CPSR_C, bodyIf.getTrue(), bodyIf);
 	storeRegister(ARM64_REG_CPSR_V, bodyIf.getFalse(), bodyIf);
 
-	// ELSE IF op1 < op2
-	auto* fcmpOgt = bodyElse.CreateFCmpOGT(op0, op1);
+	// ELSE IF op1 < op2: N=1 (NZCV 1000). This was OGT, which gave the
+	// "less" flags to a greater operand and vice versa, so every ordered
+	// fcmp/fccmp condition read its operands reversed (FPCompare, ARM ARM).
+	auto* fcmpOgt = bodyElse.CreateFCmpOLT(op0, op1);
 	auto irbP1 = generateIfThenElse(fcmpOgt, bodyElse);
 	llvm::IRBuilder<> bodyIf1(irbP1.first);
 	llvm::IRBuilder<> bodyElse1(irbP1.second);
@@ -6278,8 +6280,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFCCmp(cs_insn* i, cs_arm64* a
 	storeRegister(ARM64_REG_CPSR_C, bodyIf1.getFalse(), bodyIf1);
 	storeRegister(ARM64_REG_CPSR_V, bodyIf1.getFalse(), bodyIf1);
 
-	// ELSE IF op1 > op2
-	auto* fcmpOlt = bodyElse1.CreateFCmpOLT(op0, op1);
+	// ELSE IF op1 > op2: C=1 (NZCV 0010).
+	auto* fcmpOlt = bodyElse1.CreateFCmpOGT(op0, op1);
 	auto irbP2 = generateIfThenElse(fcmpOlt, bodyElse1);
 	llvm::IRBuilder<> bodyIf2(irbP2.first);
 	llvm::IRBuilder<> bodyElse2(irbP2.second);
@@ -6327,8 +6329,10 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFCmp(cs_insn* i, cs_arm64* ai
 	storeRegister(ARM64_REG_CPSR_C, bodyIf.getTrue(), bodyIf);
 	storeRegister(ARM64_REG_CPSR_V, bodyIf.getFalse(), bodyIf);
 
-	// ELSE IF op1 < op2
-	auto* fcmpOgt = bodyElse.CreateFCmpOGT(op0, op1);
+	// ELSE IF op1 < op2: N=1 (NZCV 1000). This was OGT, which gave the
+	// "less" flags to a greater operand and vice versa, so every ordered
+	// fcmp/fccmp condition read its operands reversed (FPCompare, ARM ARM).
+	auto* fcmpOgt = bodyElse.CreateFCmpOLT(op0, op1);
 	auto irbP1 = generateIfThenElse(fcmpOgt, bodyElse);
 	llvm::IRBuilder<> bodyIf1(irbP1.first);
 	llvm::IRBuilder<> bodyElse1(irbP1.second);
@@ -6338,8 +6342,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFCmp(cs_insn* i, cs_arm64* ai
 	storeRegister(ARM64_REG_CPSR_C, bodyIf1.getFalse(), bodyIf1);
 	storeRegister(ARM64_REG_CPSR_V, bodyIf1.getFalse(), bodyIf1);
 
-	// ELSE IF op1 > op2
-	auto* fcmpOlt = bodyElse1.CreateFCmpOLT(op0, op1);
+	// ELSE IF op1 > op2: C=1 (NZCV 0010).
+	auto* fcmpOlt = bodyElse1.CreateFCmpOGT(op0, op1);
 	auto irbP2 = generateIfThenElse(fcmpOlt, bodyElse1);
 	llvm::IRBuilder<> bodyIf2(irbP2.first);
 	llvm::IRBuilder<> bodyElse2(irbP2.second);
@@ -6388,6 +6392,30 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFCvt(cs_insn* i, cs_arm64* ai
  */
 void Capstone2LlvmIrTranslatorArm64_impl::translateFCvtf(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {
+	// Fixed-point form `ucvtf s0, w8, #fbits`: the integer has fbits
+	// fraction bits, so the result is the conversion divided by 2^fbits
+	// (exact: a power of two). It fell to an __asm_ucvtf() call before
+	// (aarch64 -O1 f_u2f: `(float)(x >> 8) * 0.25f`).
+	if (ai->op_count == 3
+			&& ai->operands[0].type == ARM64_OP_REG
+			&& ai->operands[1].type == ARM64_OP_REG
+			&& ai->operands[2].type == ARM64_OP_IMM
+			&& ai->operands[0].vas == ARM64_VAS_INVALID
+			&& ai->operands[1].vas == ARM64_VAS_INVALID)
+	{
+		auto* src = loadOp(ai->operands[1], irb);
+		auto* fpTy = getRegisterType(ai->operands[0].reg);
+		if (src->getType()->isIntegerTy() && fpTy->isFloatingPointTy())
+		{
+			auto* conv = i->id == ARM64_INS_UCVTF
+					? irb.CreateUIToFP(src, fpTy)
+					: irb.CreateSIToFP(src, fpTy);
+			auto* scale = llvm::ConstantFP::get(fpTy,
+					std::ldexp(1.0, static_cast<int>(ai->operands[2].imm)));
+			storeOp(ai->operands[0], irb.CreateFDiv(conv, scale), irb);
+			return;
+		}
+	}
 	EXPECT_IS_BINARY(i, ai, irb);
 
 	op1 = loadOpBinaryOp1(ai, irb);
@@ -6469,6 +6497,26 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::generateFpToIntSaturating(
 
 void Capstone2LlvmIrTranslatorArm64_impl::translateFCvtz(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {
+	// Fixed-point form `fcvtzs w0, s0, #fbits`: scale by 2^fbits first.
+	if (ai->op_count == 3
+			&& ai->operands[0].type == ARM64_OP_REG
+			&& ai->operands[1].type == ARM64_OP_REG
+			&& ai->operands[2].type == ARM64_OP_IMM
+			&& ai->operands[0].vas == ARM64_VAS_INVALID
+			&& ai->operands[1].vas == ARM64_VAS_INVALID)
+	{
+		auto* src = loadOp(ai->operands[1], irb);
+		auto* intTy = getRegisterType(ai->operands[0].reg);
+		if (src->getType()->isFloatingPointTy() && intTy->isIntegerTy())
+		{
+			auto* scale = llvm::ConstantFP::get(src->getType(),
+					std::ldexp(1.0, static_cast<int>(ai->operands[2].imm)));
+			auto* v = generateFpToIntSaturating(irb.CreateFMul(src, scale),
+					intTy, i->id == ARM64_INS_FCVTZS, irb);
+			storeOp(ai->operands[0], v, irb);
+			return;
+		}
+	}
 	EXPECT_IS_BINARY(i, ai, irb);
 
 	op1 = loadOp(ai->operands[1], irb);
