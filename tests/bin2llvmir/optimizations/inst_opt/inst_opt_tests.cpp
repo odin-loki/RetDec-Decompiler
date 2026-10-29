@@ -1047,6 +1047,36 @@ TEST_F(OptimizeTests, castSequenceKeepsADoubleFloatDoubleRoundTrip)
 	EXPECT_FALSE(ret);
 }
 
+// An int<->FP conversion inside a float-to-float chain is not a
+// reinterpretation (N64 mips `mtc1; cvt.s.w` lost its sitofp).
+TEST_F(OptimizeTests, castSequenceKeepsASIToFPInsideAFloatChain)
+{
+	parseInput(R"(
+		define double @fnc(double %x) {
+			%a = fptrunc double %x to float
+			%b = bitcast float %a to i32
+			%c = sitofp i32 %b to float
+			%d = fpext float %c to double
+			ret double %d
+		}
+	)");
+	auto* i = getInstructionByName("d");
+
+	bool ret = inst_opt::optimize(i);
+
+	std::string exp = R"(
+		define double @fnc(double %x) {
+			%a = fptrunc double %x to float
+			%b = bitcast float %a to i32
+			%c = sitofp i32 %b to float
+			%d = fpext float %c to double
+			ret double %d
+		}
+	)";
+	checkModuleAgainstExpectedIr(exp);
+	EXPECT_FALSE(ret);
+}
+
 // Widening and narrowing back is the identity, so this one still collapses.
 TEST_F(OptimizeTests, castSequenceCollapsesAFloatDoubleFloatRoundTrip)
 {

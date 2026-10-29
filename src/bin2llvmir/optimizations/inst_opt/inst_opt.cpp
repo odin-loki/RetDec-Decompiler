@@ -590,6 +590,12 @@ bool castChainPreservesValue(llvm::CastInst* cast1, llvm::CastInst* cast2, const
 		return false; // a type we cannot size; do not guess
 	}
 
+	if (llvm::isa<llvm::SIToFPInst>(cast2) || llvm::isa<llvm::UIToFPInst>(cast2)
+			|| llvm::isa<llvm::FPToSIInst>(cast2) || llvm::isa<llvm::FPToUIInst>(cast2))
+	{
+		return false; // a conversion, see below
+	}
+
 	// Walk the operand chain from cast2 back down to cast1, looking at every
 	// intermediate type the value was forced through.
 	llvm::Value* v = cast2->getOperand(0);
@@ -599,6 +605,19 @@ bool castChainPreservesValue(llvm::CastInst* cast1, llvm::CastInst* cast2, const
 		if (c == nullptr)
 		{
 			return false; // cast1 was never reached: not one chain
+		}
+		// An int<->FP conversion is not a reinterpretation at any width:
+		// `fptrunc / bitcast to i32 / sitofp` (N64 mips cvt.s.w) has float
+		// ends and lost the conversion entirely when collapsed.
+		switch (c->getOpcode())
+		{
+			case llvm::Instruction::SIToFP:
+			case llvm::Instruction::UIToFP:
+			case llvm::Instruction::FPToSI:
+			case llvm::Instruction::FPToUI:
+				return false;
+			default:
+				break;
 		}
 		unsigned bits = informationBits(c->getDestTy(), dl);
 		if (bits == 0 || bits < floor)
