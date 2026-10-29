@@ -28,6 +28,7 @@
   "lcs_dp-gcc-O2",
   "lcs_dp-gcc-O3",
   "mergesort-gcc-O0",
-  "mergesort-gcc-O2"
+  "mergesort-gcc-O2",
+  "mergesort-gcc-O3"
  ]
 }
