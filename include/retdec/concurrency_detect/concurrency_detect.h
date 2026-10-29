@@ -206,6 +206,7 @@ struct AtomicInfo {
     uint64_t    address     = 0;    ///< instruction address
     uint64_t    varAddr     = 0;    ///< address of the atomic variable
     std::string varName;
+    bool        fromInstruction = false; ///< a locked instruction, not a named call
 };
 
 struct CondVarInfo {

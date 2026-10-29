@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- Atomic instructions found in the SSA are exported as structural evidence (evidence:atomic_instruction) instead of symbol-name evidence, so lock-free counters are labelled Atomic/Concurrency.
 - Fixed a miscompile: bin2llvmir's dead-instruction cleanup erased atomic read-modify-writes (e.g. `lock add [m], 1`) once their unused flag computations were removed, so atomic counters vanished from the output.
 - DFS detection now requires the function to read non-stack memory, so recursive Fibonacci (e.g. in the cross-arch audit binaries) is no longer labelled DFS.
 - Algorithm recovery recognises floating-point numeric kernels: dot product, matrix multiply, mean/variance statistics and Newton-Raphson iteration. The SSA now marks floating-point instructions, sees through value bitcasts and carries float constants as immediates (analysis cache version 6).

@@ -49,11 +49,14 @@ void appendDetection(SemanticDetectionMap& map, const std::string& fnName, commo
 
 void collectConcurrencyDetections(const concurrency_detect::ConcurrencyModel& cm, SemanticDetectionMap& map)
 {
-	auto addFn = [&](const std::string& fnName, const std::string& label, float confidence, const std::string& extra) {
-		// A call into an imported threading API is structural evidence; a
-		// function that only shares such a name is not.
-		std::string detail =
-			cm.importedApiCallers.count(fnName) ? "evidence:imported_api" : "evidence:symbol_name";
+	auto addFn = [&](const std::string& fnName, const std::string& label, float confidence, const std::string& extra,
+					 bool instruction = false) {
+		// A call into an imported threading API is structural evidence, and
+		// so is an atomic instruction; a function that only shares such a
+		// name is not.
+		std::string detail = instruction ? "evidence:atomic_instruction"
+							 : cm.importedApiCallers.count(fnName) ? "evidence:imported_api"
+																   : "evidence:symbol_name";
 		if (!extra.empty())
 		{
 			detail += " ";
@@ -74,7 +77,7 @@ void collectConcurrencyDetections(const concurrency_detect::ConcurrencyModel& cm
 	}
 	for (const auto& a: cm.atomics)
 	{
-		addFn(a.funcName, "atomic", 0.70f, a.varName);
+		addFn(a.funcName, "atomic", 0.70f, a.varName, a.fromInstruction);
 	}
 	for (const auto& c: cm.condVars)
 	{

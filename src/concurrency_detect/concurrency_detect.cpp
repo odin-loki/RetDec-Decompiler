@@ -39,6 +39,7 @@ struct AtomicEntry
 	uint64_t address = 0;
 	uint64_t varAddr = 0;
 	std::string varName;
+	bool fromInstruction = false; ///< an atomic instruction, not a named call
 };
 
 /// Extract all direct-call entries from a real SSA basic block.
@@ -200,6 +201,7 @@ std::vector<AtomicEntry> extractAtomics(const retdec::ssa::BasicBlock& blk)
 			ae.op = "atomicrmw";
 			ae.order = "seq_cst";
 			ae.address = instr->vma;
+			ae.fromInstruction = true;
 			result.push_back(ae);
 			continue;
 		}
@@ -845,6 +847,7 @@ void AtomicDetector::analyseFunction(const ssa::SSAFunction& fn, ConcurrencyMode
 			info.varName = ae.varName;
 			info.op = parseOp(ae.op);
 			info.order = parseOrder(ae.order);
+			info.fromInstruction = ae.fromInstruction;
 			out.atomics.push_back(info);
 			if (!out.isMT && info.op != AtomicOp::Unknown) out.isMT = true;
 		}

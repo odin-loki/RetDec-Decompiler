@@ -425,6 +425,24 @@ TEST(AtomicDetector, DetectsIRAtomicRMW) {
 	EXPECT_TRUE(model.isMT);
 }
 
+// A locked instruction (`lock add [m], 1`) is structural evidence; a call
+// to an atomic builtin is matched by its name.
+TEST(AtomicDetector, MarksLockedInstructionsAsInstructionEvidence) {
+	auto fn = std::make_unique<retdec::ssa::SSAFunction>("counter");
+	auto* b = fn->addBlock("entry");
+	fn->addInstr(b->id, retdec::ssa::IrInstr::Op::Lock);
+	auto named = makeFnWithCalls("named", {{"__atomic_fetch_add", 0x22000}});
+
+	ConcurrencyModel model;
+	AtomicDetector det;
+	det.analyseFunction(*fn, model);
+	det.analyseFunction(*named, model);
+
+	ASSERT_EQ(model.atomics.size(), 2u);
+	EXPECT_TRUE(model.atomics[0].fromInstruction);
+	EXPECT_FALSE(model.atomics[1].fromInstruction);
+}
+
 TEST(AtomicDetector, DetectsIRCmpxchg) {
 	auto fn = makeFnWithCalls("cas_fn", {
 			{"__atomic_compare_exchange", 0x21000},
