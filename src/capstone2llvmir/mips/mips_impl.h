@@ -336,6 +336,7 @@ class Capstone2LlvmIrTranslatorMips_impl :
 		void translateSyscall(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateXor(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateCrc32(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
+		void translatePairedSingle(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 
 		/// Capstone 6 leaves MIPS32r2 / MIPS64r2 off for CS_MODE_MIPS32 and
 		/// CS_MODE_MIPS64. OR the revision bit in for one disassembly, then

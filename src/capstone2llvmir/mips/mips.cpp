@@ -9505,5 +9505,152 @@ void Capstone2LlvmIrTranslatorMips_impl::translateTrap(cs_insn* i, cs_mips* mi, 
 }
 
 
+
+/**
+ * Paired-single (and MIPS-3D) operations: a 64-bit FPR holds two singles,
+ * PU in bits 63..32 and PL in bits 31..0.
+ * MIPS_INS_ADD_PS, MIPS_INS_SUB_PS, MIPS_INS_MUL_PS, MIPS_INS_ADDR_PS,
+ * MIPS_INS_MULR_PS, MIPS_INS_PLL_PS, MIPS_INS_PLU_PS, MIPS_INS_PUL_PS,
+ * MIPS_INS_PUU_PS, MIPS_INS_CVT_PS_S, MIPS_INS_CVT_S_PL, MIPS_INS_CVT_S_PU,
+ * MIPS_INS_CVT_PS_PW, MIPS_INS_CVT_PW_PS
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translatePairedSingle(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	if (mi->op_count < 2 || mi->op_count > 3)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+	for (unsigned k = 0; k < mi->op_count; ++k)
+	{
+		if (mi->operands[k].type != MIPS_OP_REG)
+		{
+			translatePseudoAsmGeneric(i, mi, irb);
+			return;
+		}
+	}
+	auto* i32 = irb.getInt32Ty();
+	auto* i64 = irb.getInt64Ty();
+	auto* f32 = irb.getFloatTy();
+	auto bits = [&](unsigned k) -> llvm::Value* {
+		auto* v = loadRegister(canonicalizeMipsReg(mi->operands[k].reg), irb);
+		if (v->getType()->isDoubleTy()) return irb.CreateBitCast(v, i64);
+		if (v->getType()->isFloatTy()) return irb.CreateZExt(irb.CreateBitCast(v, i32), i64);
+		return irb.CreateZExtOrTrunc(v, i64);
+	};
+	auto pu = [&](llvm::Value* b) { return irb.CreateTrunc(irb.CreateLShr(b, 32), i32); };
+	auto pl = [&](llvm::Value* b) { return irb.CreateTrunc(b, i32); };
+	auto asF = [&](llvm::Value* w) { return irb.CreateBitCast(w, f32); };
+	auto asW = [&](llvm::Value* f) { return irb.CreateBitCast(f, i32); };
+	auto pack = [&](llvm::Value* hi, llvm::Value* lo) {
+		return irb.CreateOr(irb.CreateShl(irb.CreateZExt(hi, i64), 32), irb.CreateZExt(lo, i64));
+	};
+	auto store = [&](llvm::Value* b64) {
+		auto* rt = getRegisterType(canonicalizeMipsReg(mi->operands[0].reg));
+		llvm::Value* v = b64;
+		if (rt->isDoubleTy()) v = irb.CreateBitCast(b64, rt);
+		else if (rt->isFloatTy()) v = irb.CreateBitCast(irb.CreateTrunc(b64, i32), rt);
+		else v = irb.CreateZExtOrTrunc(b64, rt);
+		storeRegister(canonicalizeMipsReg(mi->operands[0].reg), v, irb);
+	};
+	auto fbin = [&](llvm::Value* a, llvm::Value* b) -> llvm::Value* {
+		switch (i->id)
+		{
+			case MIPS_INS_SUB_PS: return irb.CreateFSub(a, b);
+			case MIPS_INS_MUL_PS:
+			case MIPS_INS_MULR_PS: return irb.CreateFMul(a, b);
+			default: return irb.CreateFAdd(a, b);
+		}
+	};
+
+	switch (i->id)
+	{
+		case MIPS_INS_ADD_PS:
+		case MIPS_INS_SUB_PS:
+		case MIPS_INS_MUL_PS:
+		{
+			if (mi->op_count != 3) break;
+			auto* a = bits(1);
+			auto* b = bits(2);
+			store(pack(asW(fbin(asF(pu(a)), asF(pu(b)))), asW(fbin(asF(pl(a)), asF(pl(b))))));
+			return;
+		}
+		case MIPS_INS_ADDR_PS:
+		case MIPS_INS_MULR_PS:
+		{
+			// Reduction: PL = fs.PU op fs.PL, PU = ft.PU op ft.PL.
+			if (mi->op_count != 3) break;
+			auto* a = bits(1);
+			auto* b = bits(2);
+			store(pack(asW(fbin(asF(pu(b)), asF(pl(b)))), asW(fbin(asF(pu(a)), asF(pl(a))))));
+			return;
+		}
+		case MIPS_INS_PLL_PS:
+		case MIPS_INS_PLU_PS:
+		case MIPS_INS_PUL_PS:
+		case MIPS_INS_PUU_PS:
+		{
+			if (mi->op_count != 3) break;
+			auto* a = bits(1);
+			auto* b = bits(2);
+			bool hiFromU = i->id == MIPS_INS_PUL_PS || i->id == MIPS_INS_PUU_PS;
+			bool loFromU = i->id == MIPS_INS_PLU_PS || i->id == MIPS_INS_PUU_PS;
+			store(pack(hiFromU ? pu(a) : pl(a), loFromU ? pu(b) : pl(b)));
+			return;
+		}
+		case MIPS_INS_CVT_PS_S:
+		{
+			// Sources are singles; this model keeps a single as its numeric
+			// value in the register, so narrow it to float.
+			if (mi->op_count != 3) break;
+			auto single = [&](unsigned k) -> llvm::Value* {
+				auto* v = loadRegister(canonicalizeMipsReg(mi->operands[k].reg), irb);
+				if (v->getType()->isFloatingPointTy()) return asW(irb.CreateFPTrunc(v, f32));
+				return irb.CreateTrunc(v, i32);
+			};
+			store(pack(single(1), single(2)));
+			return;
+		}
+		case MIPS_INS_CVT_S_PL:
+		case MIPS_INS_CVT_S_PU:
+		{
+			if (mi->op_count != 2) break;
+			auto* a = bits(1);
+			auto* f = asF(i->id == MIPS_INS_CVT_S_PU ? pu(a) : pl(a));
+			auto* rt = getRegisterType(canonicalizeMipsReg(mi->operands[0].reg));
+			storeRegister(canonicalizeMipsReg(mi->operands[0].reg), rt->isDoubleTy() ? irb.CreateFPExt(f, rt) : f, irb,
+					eOpConv::FPCAST_OR_BITCAST);
+			return;
+		}
+		case MIPS_INS_CVT_PS_PW:
+		{
+			if (mi->op_count != 2) break;
+			auto* a = bits(1);
+			store(pack(asW(irb.CreateSIToFP(pu(a), f32)), asW(irb.CreateSIToFP(pl(a), f32))));
+			return;
+		}
+		case MIPS_INS_CVT_PW_PS:
+		{
+			if (mi->op_count != 2) break;
+			auto* a = bits(1);
+			auto cvt = [&](llvm::Value* w) {
+				// FCSR.RM (nearest even by default); an invalid conversion
+				// gives the legacy default 2^31-1.
+				auto* f = asF(w);
+				auto* r = irb.CreateCall(
+						llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::roundeven, {f32}), {f});
+				auto* ok = irb.CreateAnd(irb.CreateFCmpOGE(r, llvm::ConstantFP::get(f32, -2147483648.0)),
+						irb.CreateFCmpOLT(r, llvm::ConstantFP::get(f32, 2147483648.0)));
+				auto* safe = irb.CreateSelect(ok, r, llvm::ConstantFP::get(f32, 0.0));
+				return irb.CreateSelect(ok, irb.CreateFPToSI(safe, i32), llvm::ConstantInt::get(i32, 0x7fffffff));
+			};
+			store(pack(cvt(pu(a)), cvt(pl(a))));
+			return;
+		}
+		default: break;
+	}
+	translatePseudoAsmGeneric(i, mi, irb);
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec

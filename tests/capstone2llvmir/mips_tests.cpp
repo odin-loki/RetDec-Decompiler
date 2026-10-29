@@ -11961,6 +11961,108 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MUL_PH)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+static double mipsPsDouble(uint64_t bits)
+{
+	double d = 0;
+	std::memcpy(&d, &bits, sizeof d);
+	return d;
+}
+
+static uint64_t mipsPsBits(double d)
+{
+	uint64_t bits = 0;
+	std::memcpy(&bits, &d, sizeof bits);
+	return bits;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ADD_PS)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_F4, mipsPsDouble(0x3f80000040000000ULL)},
+		{MIPS_REG_F6, mipsPsDouble(0x4040000040800000ULL)},
+	});
+	emulate_bin("80 20 c6 46"); // add.ps $f2, $f4, $f6
+
+	EXPECT_EQ(0x4080000040c00000ULL, mipsPsBits(getRegisterValueDouble(MIPS_REG_F2))) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MUL_PS)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_F4, mipsPsDouble(0x3f80000040000000ULL)},
+		{MIPS_REG_F6, mipsPsDouble(0x4040000040800000ULL)},
+	});
+	emulate_bin("82 20 c6 46"); // mul.ps $f2, $f4, $f6
+
+	EXPECT_EQ(0x4040000041000000ULL, mipsPsBits(getRegisterValueDouble(MIPS_REG_F2))) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_PLL_PS)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_F4, mipsPsDouble(0x3f80000040000000ULL)},
+		{MIPS_REG_F6, mipsPsDouble(0x4040000040800000ULL)},
+	});
+	emulate_bin("ac 20 c6 46"); // pll.ps $f2, $f4, $f6
+
+	EXPECT_EQ(0x4000000040800000ULL, mipsPsBits(getRegisterValueDouble(MIPS_REG_F2))) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CVT_S_PL)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_F4, mipsPsDouble(0x3f80000040000000ULL)},
+	});
+	emulate_bin("a8 20 c0 46"); // cvt.s.pl $f2, $f4
+
+	EXPECT_DOUBLE_EQ(2.0, getRegisterValueDouble(MIPS_REG_F2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CVT_PS_PW)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_F4, mipsPsDouble(0x00000003fffffffeULL)},
+	});
+	emulate_bin("a6 20 80 46"); // cvt.ps.pw $f2, $f4
+
+	EXPECT_EQ(0x40400000c0000000ULL, mipsPsBits(getRegisterValueDouble(MIPS_REG_F2))) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CVT_PW_PS)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_F4, mipsPsDouble(0x40400000c0200000ULL)},
+	});
+	emulate_bin("a4 20 c0 46"); // cvt.pw.ps $f2, $f4
+
+	EXPECT_EQ(0x00000003fffffffeULL, mipsPsBits(getRegisterValueDouble(MIPS_REG_F2))) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CVT_PS_S)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_F4, 1.5},
+		{MIPS_REG_F6, -2.0},
+	});
+	emulate_bin("a6 20 06 46"); // cvt.ps.s $f2, $f4, $f6
+
+	EXPECT_EQ(0x3fc00000c0000000ULL, mipsPsBits(getRegisterValueDouble(MIPS_REG_F2))) << dumpFunction(_function);
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
