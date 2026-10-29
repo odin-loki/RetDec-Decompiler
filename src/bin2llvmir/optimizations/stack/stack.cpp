@@ -5,7 +5,10 @@
 * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
+#include <regex>
+
 #include <llvm/IR/Constants.h>
+#include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Instructions.h>
@@ -127,7 +130,99 @@ bool StackAnalysis::run()
 
 	IrModifier::eraseUnusedInstructionsRecursive(_toRemove);
 
+	for (auto& f : *_module)
+	{
+		mergeWalkedLocals(f);
+	}
+
 	return false;
+}
+
+
+namespace {
+
+std::optional<int> stackOffsetOf(Config* config, AllocaInst* a)
+{
+	if (auto o = config->getStackVariableOffset(a)) return o;
+	static const std::regex re("^stack_var_(-?[0-9]+)(\\.typed[0-9]*)?$");
+	std::smatch m;
+	std::string n = a->getName().str();
+	if (std::regex_match(n, m, re)) return std::stoi(m[1].str());
+	return std::nullopt;
+}
+
+
+} // anonymous namespace
+
+/**
+ * Local slots one pointer walks across are one array, not separate variables.
+ *
+ * `lea 0x8(%rsp),%rax ... addsd (%rax),%xmm1; add $0x10,%rax; cmp %rax,%rcx`
+ * reads `double a[5]` at rsp..rsp+0x28 through a pointer, but every constant
+ * offset becomes its own alloca.  LLVM then sees the `movaps` that wrote
+ * a[0..1] go to an alloca nothing loads from and deletes it -- the array's
+ * initial values vanished from float_mean_variance -O2.  When addresses of
+ * negative-offset slots are taken and a slot between them is only written, put
+ * every local slot between the lowest and highest such address into one
+ * frame object, so the stores and the walked loads alias again.
+ */
+void StackAnalysis::mergeWalkedLocals(llvm::Function& f)
+{
+	if (f.isDeclaration()) return;
+	const auto& dl = _module->getDataLayout();
+	std::vector<std::pair<AllocaInst*, int>> slots;
+	std::optional<int> lo, hi;
+	for (auto& i : f.getEntryBlock())
+	{
+		auto* a = dyn_cast<AllocaInst>(&i);
+		if (a == nullptr || !a->isStaticAlloca()) continue;
+		auto o = stackOffsetOf(_config, a);
+		if (!o.has_value() || *o >= 0) continue;
+		slots.push_back({a, *o});
+		bool walked = false;
+		for (auto* u : a->users())
+			if (isa<PtrToIntInst>(u)) walked = true;
+		if (!walked) continue;
+		lo = lo ? std::min(*lo, *o) : *o;
+		hi = hi ? std::max(*hi, *o) : *o;
+	}
+	if (!lo || *lo == *hi) return;
+
+	std::vector<std::pair<AllocaInst*, int>> members;
+	int end = *hi;
+	for (auto& [a, o] : slots)
+	{
+		if (o < *lo || o > *hi) continue;
+		members.push_back({a, o});
+		end = std::max<int>(end, o + int(dl.getTypeAllocSize(a->getAllocatedType())));
+	}
+	if (members.size() < 2) return;
+	// Only when some slot in the range is written but never read directly:
+	// that write is reachable only through the taken addresses.
+	bool writeOnly = false;
+	for (auto& [a, o] : members)
+	{
+		bool st = false, other = false;
+		for (auto* u : a->users())
+		{
+			if (auto* si = dyn_cast<StoreInst>(u); si && si->getPointerOperand() == a) st = true;
+			else other = true;
+		}
+		if (st && !other) writeOnly = true;
+	}
+	if (!writeOnly) return;
+
+	IRBuilder<> irb(&*f.getEntryBlock().getFirstInsertionPt());
+	auto* frameTy = ArrayType::get(irb.getInt8Ty(), end - *lo);
+	auto* frame = irb.CreateAlloca(frameTy, nullptr, "stack_frame_" + std::to_string(-*lo));
+	frame->setAlignment(Align(16));
+	for (auto& [a, o] : members)
+	{
+		irb.SetInsertPoint(a);
+		auto* gep = irb.CreateConstInBoundsGEP2_32(frameTy, frame, 0, o - *lo, a->getName());
+		a->replaceAllUsesWith(gep);
+		a->eraseFromParent();
+	}
 }
 
 void StackAnalysis::handleInstruction(

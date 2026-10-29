@@ -36,6 +36,7 @@ class StackAnalysis : public llvm::ModulePass
 
 	private:
 		bool run();
+		void mergeWalkedLocals(llvm::Function& f);
 		void handleInstruction(
 				ReachingDefinitionsAnalysis& RDA,
 				llvm::Instruction* inst,

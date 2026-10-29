@@ -591,6 +591,14 @@ bool ValueProtect::protectStack()
 			// Right now, ww protect all allocas, not only stacks.
 			if (auto* a = dyn_cast<AllocaInst>(&i))
 			{
+				// A merged local frame (retdec-stack) is address-taken, so
+				// LLVM cannot fold its loads; protecting it would copy an
+				// opaque [N x i8] into it byte by byte.
+				if (a->getAllocatedType()->isArrayTy()
+						&& a->getName().starts_with("stack_frame_"))
+				{
+					continue;
+				}
 				protectValue(a, a->getAllocatedType(), a->getNextNode());
 				changed = true;
 			}
