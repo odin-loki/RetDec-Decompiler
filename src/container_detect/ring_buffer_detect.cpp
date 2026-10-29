@@ -87,6 +87,51 @@ static bool isWrapInstr(const ssa::SSAFunction& fn, const ssa::IrInstr& instr)
 	return false;
 }
 
+// `(i + 1) % N` / `(i + 1) & (N - 1)`, casts looked through.
+static bool isWrappedIncrement(const ssa::SSAFunction& fn, const ssa::IrInstr& instr)
+{
+	if (!isWrapInstr(fn, instr)) return false;
+	for (const auto& use: instr.uses)
+	{
+		if (use.operandIndex != 0) continue;
+		const auto* v = fn.value(use.valueId);
+		for (int hop = 0; v && v->defInstr && hop < 4; ++hop)
+		{
+			const auto* d = v->defInstr;
+			if (d->op == ssa::IrInstr::Op::Assign && d->uses.size() == 1)
+			{
+				v = fn.value(d->uses[0].valueId);
+				continue;
+			}
+			if (d->op != ssa::IrInstr::Op::Add) break;
+			for (const auto& u: d->uses)
+			{
+				const auto* c = fn.value(u.valueId);
+				if (c && c->kind == ssa::ValueKind::Immediate && c->imm == 1) return true;
+			}
+			break;
+		}
+	}
+	return false;
+}
+
+// When the ring lives in a local (inlined into its caller at -O2), head and
+// tail stay in registers, so nothing is persisted; but a ring still advances
+// two indices -- the write and the read cursor -- each as `(i + 1) % N`.
+// A linear probe advances one.
+static bool hasTwoWrappedCursors(const ssa::SSAFunction& fn)
+{
+	int n = 0;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* instr: blk->instrs)
+			if (instr && isWrappedIncrement(fn, *instr)) ++n;
+	}
+	return n >= 2;
+}
+
 static bool hasModuloIndex(const ssa::SSAFunction& fn)
 {
 	for (uint32_t b = 0; b < fn.blockCount(); ++b)
@@ -148,7 +193,7 @@ ContainerResult RingBufferDetector::detect(const ssa::SSAFunction& fn) const
 
 	// A wrap index that is only used, never kept, is an array index or a
 	// probe, not a ring; see hasPersistedWrap.
-	if (!hasPersistedWrap(fn)) return result;
+	if (!hasPersistedWrap(fn) && !hasTwoWrappedCursors(fn)) return result;
 	if (!mod || loads < 1 || stores < 1 || hasInlineHash(fn)) return result;
 
 	// Graded, not pinned. The floor used to be 0.35 + 0.25 + 0.25 = 0.85 the

@@ -1989,3 +1989,39 @@ TEST(ContainerKindNames, AnUnrecognisedNameIsUnknownNotAGuess)
 	EXPECT_EQ(ContainerKind::Unknown, containerKindFromName("Vector"));
 	EXPECT_EQ(ContainerKind::Unknown, containerKindFromName(""));
 }
+
+// `i = (i + 1) % cap` with i kept in a register.
+static void addWrappedIncrement(ssa::SSAFunction& fn, uint64_t cap)
+{
+	auto* i = fn.allocValue(ssa::ValueKind::VirtualReg);
+	auto* one = fn.allocValue(ssa::ValueKind::Immediate);
+	one->imm = 1;
+	auto* add = fn.addInstr(fn.block(0)->id, ssa::IrInstr::Op::Add);
+	add->uses.push_back({i->id, 0});
+	add->uses.push_back({one->id, 1});
+	auto* sum = fn.allocValue(ssa::ValueKind::VirtualReg);
+	add->defValue = sum->id;
+	sum->defInstr = add;
+	auto* n = fn.allocValue(ssa::ValueKind::Immediate);
+	n->imm = cap;
+	auto* rem = fn.addInstr(fn.block(0)->id, ssa::IrInstr::Op::Rem);
+	rem->uses.push_back({sum->id, 0});
+	rem->uses.push_back({n->id, 1});
+}
+
+// Inlined into its caller, a local ring keeps head and tail in registers, so
+// nothing is persisted -- but both cursors still advance as `(i + 1) % N`.
+TEST(RingBufferDetectorTest, TwoWrappedCursorsInRegistersAreARing)
+{
+	auto fn = makeFunc("main", {ssa::IrInstr::Op::Load, ssa::IrInstr::Op::Store, ssa::IrInstr::Op::Compare});
+	addWrappedIncrement(*fn, 8);
+	addWrappedIncrement(*fn, 8);
+	EXPECT_EQ(RingBufferDetector().detect(*fn).emittedType, "ring_buffer");
+}
+
+TEST(RingBufferDetectorTest, OneWrappedCursorInARegisterIsAProbe)
+{
+	auto fn = makeFunc("probe", {ssa::IrInstr::Op::Load, ssa::IrInstr::Op::Store, ssa::IrInstr::Op::Compare});
+	addWrappedIncrement(*fn, 8);
+	EXPECT_TRUE(RingBufferDetector().detect(*fn).emittedType.empty());
+}
