@@ -1442,6 +1442,82 @@ TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_C_FLW)
 // RISCV_INS_AMOADD_W  amoadd.w a0, a1, (a2)   bytes 2f 25 b6 00
 //
 
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_AMOCAS_W_match)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_A0, 10},
+		{RISCV_REG_A1, 99},
+		{RISCV_REG_A2, 0x1000},
+	});
+	setMemory({
+		{0x1000, 10_dw},
+	});
+
+	emulate_bin("2f 25 b6 2e");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A0, RISCV_REG_A1, RISCV_REG_A2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 10},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 99_dw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_AMOCAS_W_mismatch)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_A0, 7},
+		{RISCV_REG_A1, 99},
+		{RISCV_REG_A2, 0x1000},
+	});
+	setMemory({
+		{0x1000, 10_dw},
+	});
+
+	emulate_bin("2f 25 b6 28");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A0, RISCV_REG_A1, RISCV_REG_A2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 10},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_AMOCAS_D_match)
+{
+	ONLY_MODE_RV64;
+
+	setRegisters({
+		{RISCV_REG_A0, 10},
+		{RISCV_REG_A1, 99},
+		{RISCV_REG_A2, 0x1000},
+	});
+	setMemory({
+		{0x1000, 10_qw},
+	});
+
+	emulate_bin("2f 35 b6 28");
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_A0, RISCV_REG_A1, RISCV_REG_A2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_A0, 10},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 99_qw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_AMOADD_W)
 {
 	ALL_MODES;

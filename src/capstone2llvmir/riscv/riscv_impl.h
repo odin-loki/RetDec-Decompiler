@@ -186,6 +186,7 @@ class Capstone2LlvmIrTranslatorRiscv_impl :
 		void translateFclass(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateFmv(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateAmo(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
+		void translateAmocas(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateLr(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateSc(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);
 		void translateCsr(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb);

@@ -2543,6 +2543,60 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateAmo(cs_insn* i, cs_riscv* ri,
 }
 
 /**
+ * Zacas AMOCAS.W/D: compare-and-swap. rd holds the expected value on entry
+ * and the old memory value on exit; rs2 is what gets stored on a match.
+ * Capstone orders the operands rd, (rs1), rs2, as for the other AMOs.
+ * AMOCAS.Q works on register pairs and stays a named call.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateAmocas(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, ri, irb);
+
+	llvm::Type* elem = nullptr;
+	auto success = llvm::AtomicOrdering::Monotonic;
+	auto failure = llvm::AtomicOrdering::Monotonic;
+	switch (i->id)
+	{
+		case RISCV_INS_AMOCAS_W: elem = irb.getInt32Ty(); break;
+		case RISCV_INS_AMOCAS_D: elem = irb.getInt64Ty(); break;
+		case RISCV_INS_AMOCAS_W_AQ:
+		case RISCV_INS_AMOCAS_D_AQ:
+			elem = i->id == RISCV_INS_AMOCAS_W_AQ ? irb.getInt32Ty() : irb.getInt64Ty();
+			success = failure = llvm::AtomicOrdering::Acquire;
+			break;
+		case RISCV_INS_AMOCAS_W_RL:
+		case RISCV_INS_AMOCAS_D_RL:
+			elem = i->id == RISCV_INS_AMOCAS_W_RL ? irb.getInt32Ty() : irb.getInt64Ty();
+			success = llvm::AtomicOrdering::Release;
+			break;
+		case RISCV_INS_AMOCAS_W_AQRL:
+		case RISCV_INS_AMOCAS_D_AQRL:
+			elem = i->id == RISCV_INS_AMOCAS_W_AQRL ? irb.getInt32Ty() : irb.getInt64Ty();
+			success = failure = llvm::AtomicOrdering::SequentiallyConsistent;
+			break;
+		default:
+			translatePseudoAsmGeneric(i, ri, irb);
+			return;
+	}
+	if (elem->getIntegerBitWidth() == 64 && !isXlen64())
+	{
+		// RV32 AMOCAS.D takes register pairs, like AMOCAS.Q on RV64.
+		translatePseudoAsmGeneric(i, ri, irb);
+		return;
+	}
+
+	auto* addr = amoAddress(ri->operands[1], irb);
+	auto* expected = generateTypeConversion(irb, loadOp(ri->operands[0], irb), elem,
+			eOpConv::SEXT_TRUNC_OR_BITCAST);
+	auto* desired = generateTypeConversion(irb, loadOp(ri->operands[2], irb), elem,
+			eOpConv::SEXT_TRUNC_OR_BITCAST);
+	auto* ptr = intToPtr(irb, addr, elem);
+	auto* cx = irb.CreateAtomicCmpXchg(ptr, expected, desired, llvm::MaybeAlign(), success, failure);
+	attachPointeeType(cx, elem);
+	storeOp(ri->operands[0], irb.CreateExtractValue(cx, 0), irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+}
+
+/**
  * LR.W/D: atomic load. No exclusive-monitor model (same as ARM LDXR).
  */
 void Capstone2LlvmIrTranslatorRiscv_impl::translateLr(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
