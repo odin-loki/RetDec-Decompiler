@@ -1350,6 +1350,33 @@ TEST(InsertionSortDetectorTest, AStepOfOneStaysInsertionSort)
 	EXPECT_EQ(r.algorithm, SortAlgorithm::InsertionSort);
 }
 
+// The lifter writes `--j` as `j + -1` (here the 32-bit -1).
+TEST(InsertionSortDetectorTest, ADecrementWrittenAsAnAddIsStillFound)
+{
+	auto fn = makeFunc(
+		"addminus",
+		{ssa::IrInstr::Op::Add,
+		 ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::Store,
+		 ssa::IrInstr::Op::CondBranch},
+		3);
+	addNestedLoop(*fn);
+	addElementMove(*fn);
+	InsertionSortDetector det;
+	EXPECT_LT(det.detect(*fn).confidence, 0.40f) << "no decrement yet";
+	ssa::BlockId onCycle = 0;
+	for (uint32_t b = 0; b < fn->blockCount(); ++b)
+		if (ssa::blockOnCycle(*fn, b)) onCycle = b;
+	auto* dec = fn->addInstr(onCycle, ssa::IrInstr::Op::Add);
+	auto* minusOne = fn->allocValue(ssa::ValueKind::Immediate);
+	minusOne->imm = 0xffffffffu;
+	dec->uses.push_back({minusOne->id, 1});
+	auto r = det.detect(*fn);
+	EXPECT_GE(r.confidence, 0.40f);
+	EXPECT_EQ(r.algorithm, SortAlgorithm::InsertionSort);
+}
+
 // ─── ElementTypeRecoverer tests ───────────────────────────────────────────────
 
 TEST(ElementTypeRecovererTest, NoCompareReturnsUnknown)

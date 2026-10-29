@@ -1,3 +1,5 @@
+#include <cstdio>
+#include <cstdlib>
 /**
  * @file src/sort_detect/partition_detect.cpp
  * @brief Partition loop fingerprint analysis.
@@ -81,6 +83,35 @@ static int countAdds(const ssa::SSAFunction& fn)
 static int countSubs(const ssa::SSAFunction& fn)
 {
 	return countOp(fn, ssa::IrInstr::Op::Sub);
+}
+
+// Subs, plus adds of a negative immediate inside a loop: the lifter writes
+// `--j` as `j + -1`. Outside a loop that is only a bound such as `n - 1`.
+static int countDecrements(const ssa::SSAFunction& fn)
+{
+	int n = countSubs(fn);
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk || !ssa::blockOnCycle(fn, b)) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i || i->op != ssa::IrInstr::Op::Add) continue;
+			for (const auto& u: i->uses)
+			{
+				const auto* v = fn.value(u.valueId);
+				// Negative as a 64- or a 32-bit value.
+				if (v && v->kind == ssa::ValueKind::Immediate
+						&& ((static_cast<int64_t>(v->imm) < 0 && static_cast<int64_t>(v->imm) > -16)
+							|| (v->imm >= 0xfffffff0ull && v->imm <= 0xffffffffull)))
+				{
+					++n;
+					break;
+				}
+			}
+		}
+	}
+	return n;
 }
 
 // Count phi nodes in the function.
@@ -417,7 +448,7 @@ bool InsertionSortFingerprint::hasBackwardShiftLoop(const ssa::SSAFunction& fn) 
 	//  - Typically 3-6 basic blocks.
 	// Two compares: inner shift test plus the outer insertion bound.
 	// One compare is an atoi/parse loop (B9 atoi_hex_table O2).
-	return countSubs(fn) >= 1 && countCompares(fn) >= 2 && countStores(fn) >= 1 && fn.blockCount() >= 3
+	return countDecrements(fn) >= 1 && countCompares(fn) >= 2 && countStores(fn) >= 1 && fn.blockCount() >= 3
 		&& hasElementMove(fn)
 		&& ssa::hasNestedLoop(fn);
 }
@@ -465,6 +496,8 @@ InsertionSortEvidence InsertionSortFingerprint::analyse(const ssa::SSAFunction& 
 {
 	InsertionSortEvidence ev;
 	ev.found = hasBackwardShiftLoop(fn);
+	if (std::getenv("RETDEC_SORT_DIAG"))
+		std::fprintf(stderr, "INS %s subs=%d/%d cmps=%d stores=%d blocks=%u move=%d nested=%d\n", fn.name().c_str(), countSubs(fn), countDecrements(fn), countCompares(fn), countStores(fn), fn.blockCount(), hasElementMove(fn), ssa::hasNestedLoop(fn));
 	if (ev.found)
 	{
 		// The shape hasBackwardShiftLoop() accepts is also a plain backwards
