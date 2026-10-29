@@ -86,8 +86,12 @@ arithmetic. Match against descriptors with confidence thresholds.
 | GCD (Euclidean / binary) | Repeated modulo or subtract | Research |
 | FFT (Cooley-Tukey) | Bit-reversal; butterfly loops | Research |
 
-Knapsack, LCS, and Fibonacci are **corpus labels only** (audit A6). No
-structural detector assigns those kinds.
+Fibonacci and Knapsack now have structural detectors (audit A6 revisited):
+Fibonacci is an add-and-rotate of two scalars in a loop; Knapsack is a table
+cell that keeps the **max** of itself and another cell of the same table plus
+a loaded value, read from the compare predicate. Shortest-path relaxation has
+the same shape but keeps the min, and is a tested negative. LCS stays a corpus
+label only.
 
 ---
 

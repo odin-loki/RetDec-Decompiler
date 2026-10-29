@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- Idiom detector: Knapsack from a max-relaxation within one table (dp[c] = max(dp[c], dp[c-w] + v)), direction read from the SSA compare predicate; min-relaxation (Bellman-Ford, Dijkstra, Floyd-Warshall at -O0/-O2/-O3) and cross-array max are negatives. Fixes knapsack_01 -O0. Docs (CLAIMS C-A6, future_directions) updated.
 - Ring buffer detector: the lifter's sign-extend multiply (x * 2^32) no longer counts as an inline-hash multiplier; fixes ring_buffer -O2.
 - Baseline: full_corpus mean_f1 raised to 0.6614. A6 re-checked: Knapsack/LCS stay unassigned (their max-recurrence matches shortest-path relaxation except for the compare predicate, which SSA Compare does not carry, and -O2 rewrites both as pointer walks).
 - Idiom detector: array stack push/pop (memory counter written back as top±1 with stk[top] stored or stk[top-1] loaded, small loop-free functions) exports Stack/LIFO. Fixes stack_array -O0.

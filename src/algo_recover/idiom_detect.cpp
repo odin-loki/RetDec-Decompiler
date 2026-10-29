@@ -958,6 +958,141 @@ bool hasArrayStackStep(const ssa::SSAFunction& fn)
 	return false;
 }
 
+/// For `cmp(a, b)` true, is operand 0 the larger?  Unknown predicate: -1.
+int lhsLargerWhenTrue(ssa::CmpPred p)
+{
+	using C = ssa::CmpPred;
+	switch (p)
+	{
+	case C::Sgt: case C::Sge: case C::Ugt: case C::Uge: case C::Fgt: case C::Fge: return 1;
+	case C::Slt: case C::Sle: case C::Ult: case C::Ule: case C::Flt: case C::Fle: return 0;
+	default: return -1;
+	}
+}
+
+/// Does `cell = chosen` keep the larger of `chosen` and `cell`'s old value?
+/// `cmp` compares the two; `whenTrue` says whether the write happens (or the
+/// select picks `chosen`) when the compare is true.  1 = max, 0 = min,
+/// -1 = not a max/min of those two.
+int keepsLarger(const ssa::SSAFunction& fn, const ssa::IrInstr& cmp, ssa::ValueId chosen, bool whenTrue)
+{
+	const int lhsLarger = lhsLargerWhenTrue(cmp.cmpPred);
+	if (lhsLarger < 0) return -1;
+	int side = -1;
+	for (const auto& u: cmp.uses)
+		if (stripCasts(fn, u.valueId) == chosen && u.operandIndex <= 1) side = u.operandIndex;
+	if (side < 0) return -1;
+	// chosen is the larger exactly when (side is the larger side under a true
+	// compare) matches whenTrue.
+	const bool chosenLargerWhenTrue = (side == 0) == (lhsLarger == 1);
+	return chosenLargerWhenTrue == whenTrue ? 1 : 0;
+}
+
+/// Every conditional or selected write `cell = v` in a loop where `v` is
+/// compared against `cell`'s current (loaded) value: calls f(v, isMax).
+template <typename F>
+void forEachGuardedCellUpdate(const ssa::SSAFunction& fn, F&& f)
+{
+	for (const auto& blk: fn.blocks())
+	{
+		if (!blk || !ssa::blockOnCycle(fn, blk->id)) continue;
+		for (const auto* st: blk->instrs)
+		{
+			if (!st || st->op != ssa::IrInstr::Op::Store || addrOnStack(fn, *st)) continue;
+			const ssa::ValueId cell = stripCasts(fn, operandAt(*st, 1));
+			const ssa::ValueId val = stripCasts(fn, operandAt(*st, 0));
+			const auto isOldValue = [&](ssa::ValueId v) {
+				const auto* ld = defOf(fn, stripCasts(fn, v));
+				return ld && ld->op == ssa::IrInstr::Op::Load && stripCasts(fn, operandAt(*ld, 0)) == cell;
+			};
+			const auto comparesWithCell = [&](const ssa::IrInstr& c) {
+				bool old = false;
+				for (const auto& u: c.uses) old = old || isOldValue(u.valueId);
+				return old;
+			};
+			// Select form: `cell = cmp ? x : y`.
+			if (const auto* sel = defOf(fn, val); sel && sel->op == ssa::IrInstr::Op::FlagRead && sel->uses.size() == 3)
+			{
+				const auto* c = defOf(fn, operandAt(*sel, 0));
+				if (c && c->op == ssa::IrInstr::Op::Compare && comparesWithCell(*c))
+					for (int k: {1, 2})
+					{
+						const ssa::ValueId v = stripCasts(fn, operandAt(*sel, k));
+						if (isOldValue(v)) continue;
+						const int m = keepsLarger(fn, *c, v, k == 1);
+						if (m >= 0) f(v, cell, m == 1);
+					}
+				continue;
+			}
+			// Branch form: a predecessor ends in `br cmp, ...` into this block.
+			for (const auto& pb: fn.blocks())
+			{
+				if (!pb || pb->instrs.empty()) continue;
+				const auto* br = pb->instrs.back();
+				if (!br || br->op != ssa::IrInstr::Op::CondBranch || pb->succs.size() != 2) continue;
+				if (pb->succs[0] != blk->id && pb->succs[1] != blk->id) continue;
+				const auto* c = defOf(fn, operandAt(*br, 0));
+				if (!c || c->op != ssa::IrInstr::Op::Compare || !comparesWithCell(*c)) continue;
+				const int m = keepsLarger(fn, *c, val, pb->succs[0] == blk->id);
+				if (m >= 0) f(val, cell, m == 1);
+			}
+		}
+	}
+}
+
+/// The address itself and, through `+`, its unscaled non-constant terms --
+/// the array an element address is taken from.
+std::vector<ssa::ValueId> tableBases(const ssa::SSAFunction& fn, ssa::ValueId addr)
+{
+	std::vector<ssa::ValueId> out{addr};
+	for (size_t k = 0; k < out.size() && k < 8; ++k)
+	{
+		const auto* d = defOf(fn, out[k]);
+		if (!d || d->op != ssa::IrInstr::Op::Add) continue;
+		for (const auto& u: d->uses)
+		{
+			const ssa::ValueId t = stripCasts(fn, u.valueId);
+			const auto* tv = fn.value(t);
+			if (!tv || tv->kind == ssa::ValueKind::Immediate) continue;
+			const auto* td = defOf(fn, t);
+			if (td && (td->op == ssa::IrInstr::Op::Shl || td->op == ssa::IrInstr::Op::Mul)) continue;
+			if (std::find(out.begin(), out.end(), t) == out.end()) out.push_back(t);
+		}
+	}
+	return out;
+}
+
+/// 0/1 knapsack's step `if (dp[c - w] + v > dp[c]) dp[c] = dp[c - w] + v`:
+/// a table cell keeps the larger of itself and another cell plus a loaded
+/// value.  Shortest-path relaxation has the same shape but keeps the smaller.
+bool hasMaxRelaxation(const ssa::SSAFunction& fn)
+{
+	bool found = false;
+	forEachGuardedCellUpdate(fn, [&](ssa::ValueId v, ssa::ValueId cell, bool isMax) {
+		if (!isMax) return;
+		const auto* add = defOf(fn, v);
+		if (!add || add->op != ssa::IrInstr::Op::Add || add->isFloat) return;
+		int loads = 0, sameTable = 0;
+		const auto cellBases = tableBases(fn, cell);
+		for (const auto& u: add->uses)
+			if (const auto* d = defOf(fn, stripCasts(fn, u.valueId)); d && d->op == ssa::IrInstr::Op::Load)
+			{
+				++loads;
+				for (ssa::ValueId b: tableBases(fn, stripCasts(fn, operandAt(*d, 0))))
+					if (std::find(cellBases.begin(), cellBases.end(), b) != cellBases.end())
+					{
+						++sameTable;
+						break;
+					}
+			}
+		// The other cell comes from the same table (`dp[c - w]`); a max of
+		// two different arrays' sum (`best[j] = max(best[j], a[i] + a[j])`)
+		// is not a recurrence.
+		if (loads == 2 && sameTable == 1) found = true;
+	});
+	return found;
+}
+
 /// BFS's inner step: `if (!vis[v]) { vis[v] = 1; q[tail++] = v; }`.  In one
 /// loop block a flag tested against zero is set to 1 and a value is appended
 /// to an indexed slot.
@@ -1235,7 +1370,8 @@ std::vector<IdiomResult> IdiomDetector::detect(const ssa::SSAFunction& fn) const
 	if (hasVisitThenEnqueue(fn)) out.push_back(makeResult(IdiomKind::Bfs, 0.80f, "mark_visited_then_enqueue"));
 	if (hasConversionChain(fn)) out.push_back(makeResult(IdiomKind::Conversion, 0.75f, "int_float_round_trips"));
 	if (hasFibonacciLoop(fn)) out.push_back(makeResult(IdiomKind::Fibonacci, 0.80f, "add_and_rotate_scalars"));
-	// A6: do not assign Knapsack or Lcs.
+	if (hasMaxRelaxation(fn)) out.push_back(makeResult(IdiomKind::Knapsack, 0.75f, "cell_keeps_max_of_cell_plus_value"));
+	// A6: LCS is still not assigned.
 
 	out.erase(
 		std::remove_if(

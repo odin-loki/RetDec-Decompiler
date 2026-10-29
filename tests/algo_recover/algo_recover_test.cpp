@@ -1855,7 +1855,7 @@ TEST(IdiomDetectorTest, FirLikeLoopDoesNotAssignAtoiStrlenDfsVarint)
 	}
 }
 
-TEST(IdiomDetectorTest, NeverAssignsFibonacciLcsKnapsack)
+TEST(IdiomDetectorTest, NeverAssignsFibonacciLcsKnapsackFromALookalike)
 {
 	IdiomDetector det;
 	auto fn = makeFunc(
@@ -3084,4 +3084,61 @@ TEST(IdiomDetectorTest, DroppingTopAndLoadingThereIsAStackPop)
 TEST(IdiomDetectorTest, AWrappedCursorIsAQueueNotAStack)
 {
 	EXPECT_FALSE(detects(*makeStackStep(StackStep::WrappedPush), IdiomKind::Stack));
+}
+
+namespace {
+
+/// `dp[c] = cmp(dp[c], other[k] + v) ? ... : ...` as a select.
+std::unique_ptr<ssa::SSAFunction> makeRelaxation(ssa::CmpPred pred, bool sameTable)
+{
+	auto fn = makeLoop();
+	const auto table = reg(*fn, 64)->id;
+	const auto cell = binop(*fn, ssa::IrInstr::Op::Add,
+		binop(*fn, ssa::IrInstr::Op::Shl, reg(*fn, 64)->id, immValue(*fn, 2)), table);
+	auto* ldOld = fn->addInstr(1, ssa::IrInstr::Op::Load);
+	ldOld->uses.push_back({cell, 0});
+	const auto old = defined(*fn, ldOld);
+	const auto other = binop(*fn, ssa::IrInstr::Op::Add,
+		binop(*fn, ssa::IrInstr::Op::Shl, reg(*fn, 64)->id, immValue(*fn, 2)),
+		sameTable ? table : reg(*fn, 64)->id);
+	auto* ldOther = fn->addInstr(1, ssa::IrInstr::Op::Load);
+	ldOther->uses.push_back({other, 0});
+	auto* ldVal = fn->addInstr(1, ssa::IrInstr::Op::Load);
+	ldVal->uses.push_back({reg(*fn, 64)->id, 0});
+	const auto cand = binop(*fn, ssa::IrInstr::Op::Add, defined(*fn, ldOther), defined(*fn, ldVal));
+	auto* cmp = fn->addInstr(1, ssa::IrInstr::Op::Compare);
+	cmp->cmpPred = pred;
+	cmp->uses.push_back({old, 0});
+	cmp->uses.push_back({cand, 1});
+	auto* sel = fn->addInstr(1, ssa::IrInstr::Op::FlagRead);
+	sel->uses.push_back({defined(*fn, cmp), 0});
+	sel->uses.push_back({cand, 1});
+	sel->uses.push_back({old, 2});
+	auto* st = fn->addInstr(1, ssa::IrInstr::Op::Store);
+	st->uses.push_back({defined(*fn, sel), 0});
+	st->uses.push_back({cell, 1});
+	pad(*fn);
+	fn->addInstr(1, ssa::IrInstr::Op::CondBranch);
+	fn->addInstr(1, ssa::IrInstr::Op::CondBranch);
+	return fn;
+}
+
+} // namespace
+
+TEST(IdiomDetectorTest, CellKeepingTheMaxOfAnotherCellPlusValueIsKnapsack)
+{
+	// `if (dp[c] < dp[c - w] + v) dp[c] = dp[c - w] + v`
+	EXPECT_TRUE(detects(*makeRelaxation(ssa::CmpPred::Slt, true), IdiomKind::Knapsack));
+}
+
+TEST(IdiomDetectorTest, ShortestPathRelaxationKeepsTheMinAndIsNotKnapsack)
+{
+	// `if (dist[v] > dist[u] + w) dist[v] = dist[u] + w`
+	EXPECT_FALSE(detects(*makeRelaxation(ssa::CmpPred::Sgt, true), IdiomKind::Knapsack));
+}
+
+TEST(IdiomDetectorTest, MaxOfACrossArraySumIsNotKnapsack)
+{
+	// `best[j] = max(best[j], a[i] + v)`: no recurrence within one table.
+	EXPECT_FALSE(detects(*makeRelaxation(ssa::CmpPred::Slt, false), IdiomKind::Knapsack));
 }
