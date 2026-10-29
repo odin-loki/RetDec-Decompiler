@@ -257,6 +257,7 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		void translateVecShift128(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateXxpermdi(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateXxspltw(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+	void translateVsxPermMisc(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateLoadFloatAsInt(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateStoreFloatAsInt(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateVsxMove(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);

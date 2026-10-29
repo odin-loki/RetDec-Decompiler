@@ -1760,6 +1760,16 @@ Capstone2LlvmIrTranslatorPowerpc_impl::_i2fm =
 		{PPC_INS_XXPERMDI, &Capstone2LlvmIrTranslatorPowerpc_impl::translateXxpermdi},
 		{PPC_INS_XXSEL, &Capstone2LlvmIrTranslatorPowerpc_impl::translateVecSel},
 		{PPC_INS_XXSLDWI, &Capstone2LlvmIrTranslatorPowerpc_impl::translateXxPerm},
+		{PPC_INS_XXPERM, &Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxPermMisc},
+		{PPC_INS_XXPERMR, &Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxPermMisc},
+		{PPC_INS_XXBLENDVB, &Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxPermMisc},
+		{PPC_INS_XXBLENDVH, &Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxPermMisc},
+		{PPC_INS_XXBLENDVW, &Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxPermMisc},
+		{PPC_INS_XXBLENDVD, &Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxPermMisc},
+		{PPC_INS_XXSPLTIB, &Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxPermMisc},
+		{PPC_INS_XXSPLTIW, &Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxPermMisc},
+		{PPC_INS_XXSPLTIDP, &Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxPermMisc},
+		{PPC_INS_XXSPLTI32DX, &Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxPermMisc},
 		{PPC_INS_XXSPLTW, &Capstone2LlvmIrTranslatorPowerpc_impl::translateXxspltw},
 
 		// extra & alias instructions

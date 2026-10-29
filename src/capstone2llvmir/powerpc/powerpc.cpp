@@ -5,6 +5,7 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <cstring>
 #include <climits>
 #include <cmath>
 #include <cstdint>
@@ -9620,6 +9621,104 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxGprMove(cs_insn* i, cs_p
 	translatePseudoAsmGeneric(i, pi, irb);
 }
 
+
+
+/**
+ * VSX permute/blend/splat-immediate ops: XXPERM, XXPERMR, XXBLENDV{B,H,W,D},
+ * XXSPLTIB, XXSPLTIW, XXSPLTIDP and XXSPLTI32DX.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateVsxPermMisc(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	auto* i128 = irb.getInt128Ty();
+	auto imm = [&](unsigned k) { return static_cast<uint64_t>(pi->operands[k].imm); };
+	auto c128 = [&](uint64_t hi, uint64_t lo) {
+		return llvm::ConstantInt::get(i128, (llvm::APInt(128, hi).shl(64)) | llvm::APInt(128, lo));
+	};
+	switch (i->id)
+	{
+		case PPC_INS_XXPERM:
+		case PPC_INS_XXPERMR:
+		{
+			EXPECT_IS_TERNARY(i, pi, irb);
+			bool rev = i->id == PPC_INS_XXPERMR;
+			auto* t = loadOpI128(pi->operands[0], irb);
+			auto* a = loadOpI128(pi->operands[1], irb);
+			auto* c = loadOpI128(pi->operands[2], irb);
+			auto* i256 = irb.getIntNTy(256);
+			auto* concat = irb.CreateOr(irb.CreateShl(irb.CreateZExt(a, i256), 128), irb.CreateZExt(t, i256));
+			llvm::Value* result = llvm::ConstantInt::get(i128, 0);
+			for (unsigned lane = 0; lane < 16; ++lane)
+			{
+				unsigned place = (15u - lane) * 8u;
+				auto* cbyte = irb.CreateTrunc(irb.CreateLShr(c, llvm::ConstantInt::get(i128, place)), irb.getInt8Ty());
+				auto* idx = irb.CreateZExt(irb.CreateAnd(cbyte, irb.getInt8(31)), irb.getInt32Ty());
+				if (rev)
+				{
+					idx = irb.CreateSub(irb.getInt32(31), idx);
+				}
+				auto* fromRight = irb.CreateMul(irb.CreateSub(irb.getInt32(31), idx), irb.getInt32(8));
+				auto* byte = irb.CreateTrunc(irb.CreateLShr(concat, irb.CreateZExt(fromRight, i256)), irb.getInt8Ty());
+				result = irb.CreateOr(result, irb.CreateShl(irb.CreateZExt(byte, i128), place));
+			}
+			storeOpI128(pi->operands[0], result, irb);
+			return;
+		}
+		case PPC_INS_XXBLENDVB:
+		case PPC_INS_XXBLENDVH:
+		case PPC_INS_XXBLENDVW:
+		case PPC_INS_XXBLENDVD:
+		{
+			EXPECT_IS_QUATERNARY(i, pi, irb);
+			unsigned lb = i->id == PPC_INS_XXBLENDVB ? 8 : i->id == PPC_INS_XXBLENDVH ? 16 : i->id == PPC_INS_XXBLENDVW ? 32 : 64;
+			auto* a = loadOpI128(pi->operands[1], irb);
+			auto* b = loadOpI128(pi->operands[2], irb);
+			auto* c = loadOpI128(pi->operands[3], irb);
+			// Build a full-lane mask by arithmetic-shifting each lane's sign bit.
+			auto* vt = llvm::FixedVectorType::get(irb.getIntNTy(lb), 128 / lb);
+			auto* m = irb.CreateBitCast(irb.CreateAShr(irb.CreateBitCast(c, vt),
+					llvm::ConstantInt::get(vt, lb - 1)), i128);
+			storeOpI128(pi->operands[0], irb.CreateOr(irb.CreateAnd(a, irb.CreateNot(m)), irb.CreateAnd(b, m)), irb);
+			return;
+		}
+		case PPC_INS_XXSPLTIB:
+		{
+			uint64_t v = (imm(1) & 0xff) * 0x0101010101010101ULL;
+			storeOpI128(pi->operands[0], c128(v, v), irb);
+			return;
+		}
+		case PPC_INS_XXSPLTIW:
+		{
+			uint64_t v = (imm(1) & 0xffffffffULL) * 0x0000000100000001ULL;
+			storeOpI128(pi->operands[0], c128(v, v), irb);
+			return;
+		}
+		case PPC_INS_XXSPLTIDP:
+		{
+			uint32_t w = static_cast<uint32_t>(imm(1));
+			float f;
+			std::memcpy(&f, &w, 4);
+			double d = f;
+			uint64_t v;
+			std::memcpy(&v, &d, 8);
+			storeOpI128(pi->operands[0], c128(v, v), irb);
+			return;
+		}
+		case PPC_INS_XXSPLTI32DX:
+		{
+			unsigned ix = imm(1) & 1u;
+			uint64_t w = imm(2) & 0xffffffffULL;
+			uint64_t keepMask = ix ? 0xffffffff00000000ULL : 0x00000000ffffffffULL;
+			uint64_t put = ix ? w : (w << 32);
+			auto* t = loadOpI128(pi->operands[0], irb);
+			auto* r = irb.CreateOr(irb.CreateAnd(t, c128(keepMask, keepMask)), c128(put, put));
+			storeOpI128(pi->operands[0], r, irb);
+			return;
+		}
+		default:
+			translatePseudoAsmGeneric(i, pi, irb);
+			return;
+	}
+}
 
 } // namespace capstone2llvmir
 } // namespace retdec
