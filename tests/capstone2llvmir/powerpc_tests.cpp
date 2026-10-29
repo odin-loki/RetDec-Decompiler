@@ -19975,6 +19975,42 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XVTSTDCSP)
 	EXPECT_EQ(0x0ULL, vLow(PPC_REG_VSL1)) << dumpFunction(_function);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FTDIV)
+{
+	ALL_MODES;
+
+	setRegisters({{PPC_REG_F2, 4.0_f64}, {PPC_REG_F3, 0.0_f64}});
+	emulate_bin("fc 82 19 00"); // ftdiv cr1, f2, f3
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(PPC_REG_CR1EQ));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FTSQRT)
+{
+	ALL_MODES;
+
+	setRegisters({{PPC_REG_F2, 4.0_f64}});
+	emulate_bin("fc 80 11 40"); // ftsqrt cr1, f2
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(PPC_REG_CR1EQ));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FCTIDU)
+{
+	ALL_MODES;
+
+	setRegisters({{PPC_REG_F2, 2.5_f64}});
+	emulate_bin("fc 20 17 5c"); // fctidu f1, f2
+	EXPECT_EQ(2ULL, ppcDoubleRegBits(getRegisterValueDouble(PPC_REG_F1))) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FCTIWU_saturates_negative)
+{
+	ALL_MODES;
+
+	setRegisters({{PPC_REG_F2, -7.0}});
+	emulate_bin("fc 20 11 1c"); // fctiwu f1, f2
+	EXPECT_EQ(0ULL, ppcDoubleRegBits(getRegisterValueDouble(PPC_REG_F1))) << dumpFunction(_function);
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

@@ -2052,6 +2052,8 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateFpUnary(cs_insn* i, cs_ppc*
 	case PPC_INS_FCTIW:
 	case PPC_INS_FCTIWZ:
 	case PPC_INS_FCTIWUZ:
+	case PPC_INS_FCTIWU:
+	case PPC_INS_FCTIDU:
 	case PPC_INS_FCTID:
 	case PPC_INS_FCTIDZ:
 	case PPC_INS_FCTIDUZ:
@@ -2063,13 +2065,16 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateFpUnary(cs_insn* i, cs_ppc*
 		// The Z forms truncate. The other two round by FPSCR[RN], which is
 		// not modelled; round-to-nearest-even is its reset value and what
 		// every ABI leaves it at.
-		if (i->id == PPC_INS_FCTIW || i->id == PPC_INS_FCTID)
+		if (i->id == PPC_INS_FCTIW || i->id == PPC_INS_FCTID || i->id == PPC_INS_FCTIWU
+				|| i->id == PPC_INS_FCTIDU)
 		{
 			op1 = fpIntrinsic(irb, llvm::Intrinsic::roundeven, {op1});
 		}
 		bool wide = (i->id == PPC_INS_FCTID || i->id == PPC_INS_FCTIDZ || i->id == PPC_INS_FCTIDUZ
+				|| i->id == PPC_INS_FCTIDU
 				|| i->id == PPC_INS_XSCVDPSXDS || i->id == PPC_INS_XSCVDPUXDS);
-		bool uns = (i->id == PPC_INS_FCTIWUZ || i->id == PPC_INS_FCTIDUZ
+		bool uns = (i->id == PPC_INS_FCTIWUZ || i->id == PPC_INS_FCTIDUZ || i->id == PPC_INS_FCTIWU
+				|| i->id == PPC_INS_FCTIDU
 				|| i->id == PPC_INS_XSCVDPUXDS || i->id == PPC_INS_XSCVDPUXWS);
 		auto* ity = wide ? irb.getInt64Ty() : irb.getInt32Ty();
 		llvm::Value* val = generateFpToIntBounded(op1, ity, !uns, irb);
@@ -8564,10 +8569,12 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecFpTest(
 	}
 
 	const bool isDiv = (i->id == PPC_INS_XVTDIVDP || i->id == PPC_INS_XVTDIVSP
-			|| i->id == PPC_INS_XSTDIVDP);
+			|| i->id == PPC_INS_XSTDIVDP || i->id == PPC_INS_FTDIV);
 	const bool isDp = (i->id == PPC_INS_XVTDIVDP || i->id == PPC_INS_XVTSQRTDP
-			|| i->id == PPC_INS_XSTDIVDP || i->id == PPC_INS_XSTSQRTDP);
-	const bool isScalar = (i->id == PPC_INS_XSTDIVDP || i->id == PPC_INS_XSTSQRTDP);
+			|| i->id == PPC_INS_XSTDIVDP || i->id == PPC_INS_XSTSQRTDP || i->id == PPC_INS_FTDIV
+			|| i->id == PPC_INS_FTSQRT);
+	const bool isScalar = (i->id == PPC_INS_XSTDIVDP || i->id == PPC_INS_XSTSQRTDP
+			|| i->id == PPC_INS_FTDIV || i->id == PPC_INS_FTSQRT);
 	if (isDiv && vb == nullptr)
 	{
 		throwUnexpectedOperands(i);
