@@ -294,7 +294,7 @@ std::unique_ptr<ssa::SSAModule> buildSsaModule(const llvm::Module& m)
 		// Arguments are definitions too: without them the first use of a
 		// parameter resolves to nothing.
 		for (const llvm::Argument& arg: lf.args())
-			valueIdFor(arg, ssa::ValueKind::VirtualReg);
+			fn->value(valueIdFor(arg, ssa::ValueKind::VirtualReg))->isArgument = true;
 
 		for (const llvm::BasicBlock& lb: lf)
 			for (const llvm::Instruction& li: lb)

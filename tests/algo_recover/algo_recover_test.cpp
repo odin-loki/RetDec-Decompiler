@@ -2822,7 +2822,7 @@ ssa::ValueId defined(ssa::SSAFunction& fn, ssa::IrInstr* i)
 
 /// e = malloc(24); e->next = slot; slot = e; with `slot` either
 /// `table[h * 8]` or a fixed head.
-std::unique_ptr<ssa::SSAFunction> makeHeadInsert(bool indexed)
+std::unique_ptr<ssa::SSAFunction> makeHeadInsert(bool indexed, bool argHead = false)
 {
 	auto fn = std::make_unique<ssa::SSAFunction>("put");
 	fn->addBlock("entry");
@@ -2830,6 +2830,7 @@ std::unique_ptr<ssa::SSAFunction> makeHeadInsert(bool indexed)
 	call->calleeName = "malloc";
 	const auto node = defined(*fn, call);
 	ssa::ValueId slot = reg(*fn, 64)->id;
+	fn->value(slot)->isArgument = argHead;
 	if (indexed)
 	{
 		auto* mul = fn->addInstr(0, ssa::IrInstr::Op::Mul);
@@ -3003,4 +3004,16 @@ TEST(IdiomDetectorTest, ProbeWithoutAKeyCompareIsNotOpenAddressing)
 TEST(IdiomDetectorTest, The32BitWrapIsNotATableSize)
 {
 	EXPECT_FALSE(detects(*makeProbe(1ULL << 32, true), IdiomKind::HashTableOpenAddressing));
+}
+
+TEST(IdiomDetectorTest, NewNodePushedOntoACallersHeadIsALinkedList)
+{
+	// `void push(Node** h, int v) { n = malloc(); n->next = *h; *h = n; }`
+	EXPECT_TRUE(detects(*makeHeadInsert(false, /*argHead=*/true), IdiomKind::LinkedList));
+}
+
+TEST(IdiomDetectorTest, NewNodePushedOntoAGlobalHeadIsNotClaimed)
+{
+	// With the bucket hash folded away, `table[k] = n` is a global head too.
+	EXPECT_FALSE(detects(*makeHeadInsert(false, /*argHead=*/false), IdiomKind::LinkedList));
 }

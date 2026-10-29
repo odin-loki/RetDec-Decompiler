@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- Idiom detector: node head insert onto a caller-provided head (Node** parameter) exports LinkedList; SSA values now mark function parameters (IrValue::isArgument). Fixes linked_list -O0.
 - Ring buffer detector: two register-held wrapped cursors ((i+1)%N twice) count as a ring when nothing is persisted; fixes ring_buffer -O3.
 - Idiom detector: open-addressing probe (wrapped slot occupancy test + strcmp/memcmp key compare) exports HashTable/OpenAddressing; fixes hash_table -O2/-O3.
 - Bubble sort detection accepts the -O2 packed adjacent swap (a 64-bit word of two ints written back with its halves exchanged).

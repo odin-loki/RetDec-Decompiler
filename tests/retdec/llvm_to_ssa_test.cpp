@@ -676,3 +676,37 @@ entry:
 	EXPECT_EQ(products, 1);
 	EXPECT_EQ(halves, 1);
 }
+
+// A parameter and a global both arrive without a definition; only the
+// parameter is marked, so a detector can tell `Node** head` from `g_head`.
+TEST(LlvmToSsa, ParametersAreMarkedAndGlobalsAreNot)
+{
+	static const char* kIR = R"(
+@g = global i64 0
+define void @push(ptr %h, i64 %n) {
+entry:
+  store i64 %n, ptr %h
+  store i64 %n, ptr @g
+  ret void
+}
+)";
+	llvm::LLVMContext ctx;
+	auto module = parseIR(ctx, kIR);
+	ASSERT_NE(module, nullptr);
+	auto ssaMod = buildSsaModule(*module);
+	const auto* fn = findFn(*ssaMod, "push");
+	ASSERT_NE(fn, nullptr);
+	int args = 0, globals = 0;
+	for (const auto* i: fn->block(0)->instrs)
+	{
+		if (!i || i->op != IrInstr::Op::Store) continue;
+		for (const auto& u: i->uses)
+		{
+			const auto* v = fn->value(u.valueId);
+			if (!v || u.operandIndex != 1) continue;
+			(v->isArgument ? args : globals)++;
+		}
+	}
+	EXPECT_EQ(args, 1);
+	EXPECT_EQ(globals, 1);
+}

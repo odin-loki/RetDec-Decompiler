@@ -204,6 +204,10 @@ struct IrValue
 	/// is a spill, not a write to the data the function works on.
 	bool isStackSlot = false;
 
+	/// A parameter of the function. Lets a detector tell memory the caller
+	/// handed in (`Node** head`) from a global, which also has no definition.
+	bool isArgument = false;
+
 	// For FlagBundle: which flags are defined by the producing instruction
 	uint8_t definedFlags = 0; ///< bitmask of FlagBit
 

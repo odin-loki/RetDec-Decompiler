@@ -846,7 +846,18 @@ bool isIndexedSlot(const ssa::SSAFunction& fn, ssa::ValueId id)
 /// Insert at the head of a hashed bucket's chain:
 ///   e = malloc(..); e->next = table[i]; table[i] = e;
 /// A plain linked-list push uses one fixed head, not an indexed slot.
-bool hasBucketHeadInsert(const ssa::SSAFunction& fn)
+/// A head the caller handed in: a parameter, or one spilled and reloaded.
+bool isCallerHead(const ssa::SSAFunction& fn, ssa::ValueId id)
+{
+	const auto* v = fn.value(id);
+	if (v && v->isArgument) return true;
+	const auto* d = defOf(fn, id);
+	return d && d->op == ssa::IrInstr::Op::Load && addrOnStack(fn, *d);
+}
+
+/// `n = malloc(); n->next = *head; *head = n;`.  With `indexed` the head is
+/// a table slot (separate chaining); without, a plain list head.
+bool hasHeadInsert(const ssa::SSAFunction& fn, bool indexed)
 {
 	std::vector<ssa::ValueId> nodes;
 	std::vector<const ssa::IrInstr*> loads, stores;
@@ -867,7 +878,10 @@ bool hasBucketHeadInsert(const ssa::SSAFunction& fn)
 		for (const auto* ld: loads)
 		{
 			const ssa::ValueId slot = stripCasts(fn, operandAt(*ld, 0));
-			if (ld->defValue == ssa::kInvalidValue || !isIndexedSlot(fn, slot)) continue;
+			if (ld->defValue == ssa::kInvalidValue || isIndexedSlot(fn, slot) != indexed) continue;
+			// A head at a global (`g = n`) is as likely a folded bucket as a
+			// list; a list the caller owns comes in by pointer (`Node** h`).
+			if (!indexed && !isCallerHead(fn, slot)) continue;
 			bool linked = false, published = false;
 			for (const auto* st: stores)
 			{
@@ -1091,8 +1105,10 @@ std::vector<IdiomResult> IdiomDetector::detect(const ssa::SSAFunction& fn) const
 {
 	std::vector<IdiomResult> out;
 	// Straight-line and tiny, so it runs before the size preflight.
-	if (hasBucketHeadInsert(fn))
+	if (hasHeadInsert(fn, true))
 		out.push_back(makeResult(IdiomKind::HashTableChaining, 0.80f, "bucket_head_insert"));
+	else if (hasHeadInsert(fn, false))
+		out.push_back(makeResult(IdiomKind::LinkedList, 0.80f, "node_head_insert"));
 	if (!passesPreflight(fn)) return out;
 
 	if (hasDigitLoop(fn))
