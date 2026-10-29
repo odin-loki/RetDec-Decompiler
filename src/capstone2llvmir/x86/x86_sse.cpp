@@ -9428,7 +9428,10 @@ void Capstone2LlvmIrTranslatorX86_impl::translateMmxCvt(
  */
 void Capstone2LlvmIrTranslatorX86_impl::translateAvx512BitOps(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
 {
-	enum Kind { POPCNT, ROT_IMM, ROT_VAR, SHD_IMM, SHD_VAR, TERN };
+	enum Kind { POPCNT, ROT_IMM, ROT_VAR, SHD_IMM, SHD_VAR, TERN, PERM, MADD52, DOT };
+	bool hi = false;
+	bool sat = false;
+	bool words = false;
 	Kind kind = POPCNT;
 	unsigned eb = 32;
 	bool right = false;
@@ -9460,6 +9463,14 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvx512BitOps(cs_insn* i, cs_x86
 	case X86_INS_VPSHRDVQ: kind = SHD_VAR; eb = 64; right = true; break;
 	case X86_INS_VPTERNLOGD: kind = TERN; break;
 	case X86_INS_VPTERNLOGQ: kind = TERN; eb = 64; break;
+	case X86_INS_VPERMB: kind = PERM; eb = 8; break;
+	case X86_INS_VPERMW: kind = PERM; eb = 16; break;
+	case X86_INS_VPMADD52LUQ: kind = MADD52; eb = 64; break;
+	case X86_INS_VPMADD52HUQ: kind = MADD52; eb = 64; hi = true; break;
+	case X86_INS_VPDPBUSD: kind = DOT; break;
+	case X86_INS_VPDPBUSDS: kind = DOT; sat = true; break;
+	case X86_INS_VPDPWSSD: kind = DOT; words = true; break;
+	case X86_INS_VPDPWSSDS: kind = DOT; words = true; sat = true; break;
 	default:
 		translatePseudoAsmGeneric(i, xi, irb);
 		return;
@@ -9471,7 +9482,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvx512BitOps(cs_insn* i, cs_x86
 	case POPCNT: want = 2; break;
 	case ROT_IMM: case ROT_VAR: want = 3; break;
 	case SHD_IMM: case TERN: want = 4; break;
-	case SHD_VAR: want = 3; break;
+	case SHD_VAR: case PERM: case MADD52: case DOT: want = 3; break;
 	}
 	bool bcast = false;
 	for (unsigned k = 0; k < xi->op_count; ++k)
@@ -9516,7 +9527,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvx512BitOps(cs_insn* i, cs_x86
 		return irb.CreateOr(irb.CreateShl(hi, c), irb.CreateLShr(irb.CreateLShr(lo, one), inv));
 	};
 	llvm::Value* v[3] = {nullptr, nullptr, nullptr};
-	unsigned first = (kind == SHD_VAR || kind == TERN) ? 0 : 1;
+	unsigned first = (kind == SHD_VAR || kind == TERN || kind == MADD52 || kind == DOT) ? 0 : 1;
 	unsigned last = kind == POPCNT || kind == ROT_IMM ? 1 : 2;
 	for (unsigned k = first; k <= last; ++k)
 	{
@@ -9560,6 +9571,48 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvx512BitOps(cs_insn* i, cs_x86
 						(k & 1) ? e[2] : irb.CreateNot(e[2]));
 				r = irb.CreateOr(r, t);
 			}
+			break;
+		}
+		case PERM:
+		{
+			// Index operand is op1, table op2; only the low log2(n) bits count.
+			auto* idx = irb.CreateAnd(e[1], llvm::ConstantInt::get(elemTy, n - 1));
+			r = irb.CreateExtractElement(v[2], irb.CreateZExt(idx, irb.getInt32Ty()));
+			break;
+		}
+		case MADD52:
+		{
+			auto* i128 = irb.getInt128Ty();
+			auto* m52 = llvm::ConstantInt::get(i128, (uint64_t(1) << 52) - 1);
+			auto* p = irb.CreateMul(
+					irb.CreateAnd(irb.CreateZExt(e[1], i128), m52),
+					irb.CreateAnd(irb.CreateZExt(e[2], i128), m52));
+			p = hi ? irb.CreateLShr(p, 52) : irb.CreateAnd(p, m52);
+			r = irb.CreateAdd(e[0], irb.CreateTrunc(p, elemTy));
+			break;
+		}
+		case DOT:
+		{
+			auto* i64 = irb.getInt64Ty();
+			unsigned pb = words ? 16 : 8;
+			auto* pty = irb.getIntNTy(pb);
+			llvm::Value* sum = irb.CreateSExt(e[0], i64);
+			for (unsigned j = 0; j < 32 / pb; ++j)
+			{
+				auto part = [&](llvm::Value* x, bool sgn) {
+					auto* t = irb.CreateTrunc(irb.CreateLShr(x, j * pb), pty);
+					return sgn ? irb.CreateSExt(t, i64) : irb.CreateZExt(t, i64);
+				};
+				sum = irb.CreateAdd(sum, irb.CreateMul(part(e[1], words), part(e[2], true)));
+			}
+			if (sat)
+			{
+				auto* mx = llvm::ConstantInt::get(i64, 0x7fffffff);
+				auto* mn = llvm::ConstantInt::getSigned(i64, -0x80000000ll);
+				sum = irb.CreateSelect(irb.CreateICmpSGT(sum, mx), mx, sum);
+				sum = irb.CreateSelect(irb.CreateICmpSLT(sum, mn), mn, sum);
+			}
+			r = irb.CreateTrunc(sum, elemTy);
 			break;
 		}
 		}

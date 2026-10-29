@@ -23414,6 +23414,89 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPSHLDVD_funnels_left_by_lane)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPERMW_xmm)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0x0002000300000001);
+	setXmm(X86_REG_XMM2, 0, 0x4444333322221111);
+
+	emulate_bin("62 f2 f5 08 8d c2"); // vpermw xmm0, xmm1, xmm2
+
+	EXPECT_EQ(0x3333444411112222ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPMADD52LUQ_xmm)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0, 1);
+	setXmm(X86_REG_XMM1, 0, 3);
+	setXmm(X86_REG_XMM2, 0, 5);
+
+	emulate_bin("62 f2 f5 08 b4 c2"); // vpmadd52luq xmm0, xmm1, xmm2
+
+	EXPECT_EQ(16ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPMADD52HUQ_xmm)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0, 0);
+	setXmm(X86_REG_XMM1, 0, 0x8000000000000);
+	setXmm(X86_REG_XMM2, 0, 4);
+
+	emulate_bin("62 f2 f5 08 b5 c2"); // vpmadd52huq xmm0, xmm1, xmm2
+
+	EXPECT_EQ(2ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPDPBUSD_xmm)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0, 10);
+	setXmm(X86_REG_XMM1, 0, 0x01020304);
+	setXmm(X86_REG_XMM2, 0, 0xff010101);
+
+	emulate_bin("62 f2 75 08 50 c2"); // vpdpbusd xmm0, xmm1, xmm2
+
+	EXPECT_EQ(18ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPDPBUSDS_saturates)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0, 0x7fffffff);
+	setXmm(X86_REG_XMM1, 0, 1);
+	setXmm(X86_REG_XMM2, 0, 1);
+
+	emulate_bin("62 f2 75 08 51 c2"); // vpdpbusds xmm0, xmm1, xmm2
+
+	EXPECT_EQ(0x7fffffffULL, xmmLow(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPDPWSSD_xmm)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0, 0);
+	setXmm(X86_REG_XMM1, 0, 0xfffe0003);
+	setXmm(X86_REG_XMM2, 0, 0x00020004);
+
+	emulate_bin("62 f2 75 08 52 c2"); // vpdpwssd xmm0, xmm1, xmm2
+
+	EXPECT_EQ(8ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPTERNLOGD_xor3)
 {
 	ONLY_MODE_64;
