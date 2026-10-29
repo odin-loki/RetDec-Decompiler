@@ -1953,6 +1953,9 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateFpLoad(cs_insn* i, cs_riscv* 
 		case RISCV_INS_C_FLDSP:
 			ty = irb.getDoubleTy();
 			break;
+		case RISCV_INS_FLH:
+			ty = irb.getHalfTy();
+			break;
 		default:
 			throw GenericError("Unhandled insn ID in translateFpLoad().");
 	}
@@ -1999,6 +2002,9 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateFpStore(cs_insn* i, cs_riscv*
 		case RISCV_INS_C_FSD:
 		case RISCV_INS_C_FSDSP:
 			ty = irb.getDoubleTy();
+			break;
+		case RISCV_INS_FSH:
+			ty = irb.getHalfTy();
 			break;
 		default:
 			throw GenericError("Unhandled insn ID in translateFpStore().");
@@ -6471,6 +6477,117 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateFli(cs_insn* i, cs_riscv* ri,
 		v = llvm::ConstantFP::get(irb.getDoubleTy(), ri->operands[1].dimm);
 	}
 	storeOp(ri->operands[0], v, irb, eOpConv::FPCAST_OR_BITCAST);
+}
+
+
+/**
+ * Zfh half-precision scalar ops. The F registers already hold every
+ * precision widened, so an H op is lifted exactly like its S twin (the
+ * instruction id is swapped while the S translator runs). Half rounding of
+ * the result is not modelled. FLH/FSH (in the FP load/store translators)
+ * and the FMV/FCVT bit moves below are the only places a real half appears.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateZfh(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	// Capstone names the half views F*_H, which have no register globals;
+	// they alias the same F registers as the F*_F single views.
+	for (unsigned k = 0; k < ri->op_count; ++k)
+	{
+		auto& o = ri->operands[k];
+		if (o.type == RISCV_OP_REG && o.reg >= RISCV_REG_F0_H && o.reg <= RISCV_REG_F31_H)
+		{
+			o.reg = o.reg - RISCV_REG_F0_H + RISCV_REG_F0_F;
+		}
+	}
+	auto* half = irb.getHalfTy();
+	switch (i->id)
+	{
+		case RISCV_INS_FMV_X_H:
+		{
+			auto* f = loadOp(ri->operands[1], irb);
+			auto* h = irb.CreateBitCast(irb.CreateFPCast(f, half), irb.getInt16Ty());
+			storeOp(ri->operands[0], irb.CreateSExt(h, getDefaultType()), irb);
+			return;
+		}
+		case RISCV_INS_FMV_H_X:
+		{
+			auto* x = loadOp(ri->operands[1], irb);
+			auto* h = irb.CreateBitCast(irb.CreateTrunc(x, irb.getInt16Ty()), half);
+			storeOp(ri->operands[0], h, irb, eOpConv::FPCAST_OR_BITCAST);
+			return;
+		}
+		case RISCV_INS_FCVT_S_H:
+		case RISCV_INS_FCVT_H_S:
+		{
+			auto* f = loadOp(ri->operands[1], irb);
+			auto* t = i->id == RISCV_INS_FCVT_H_S ? half : irb.getFloatTy();
+			storeOp(ri->operands[0], irb.CreateFPCast(f, t), irb, eOpConv::FPCAST_OR_BITCAST);
+			return;
+		}
+		case RISCV_INS_FLH:
+			translateFpLoad(i, ri, irb);
+			return;
+		case RISCV_INS_FSH:
+			translateFpStore(i, ri, irb);
+			return;
+		default:
+			break;
+	}
+	unsigned sid = 0;
+	void (Capstone2LlvmIrTranslatorRiscv_impl::*fn)(cs_insn*, cs_riscv*, llvm::IRBuilder<>&) = nullptr;
+	switch (i->id)
+	{
+		case RISCV_INS_FADD_H: sid = RISCV_INS_FADD_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFpArith; break;
+		case RISCV_INS_FSUB_H: sid = RISCV_INS_FSUB_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFpArith; break;
+		case RISCV_INS_FMUL_H: sid = RISCV_INS_FMUL_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFpArith; break;
+		case RISCV_INS_FDIV_H: sid = RISCV_INS_FDIV_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFpArith; break;
+		case RISCV_INS_FSQRT_H: sid = RISCV_INS_FSQRT_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFsqrt; break;
+		case RISCV_INS_FMIN_H: sid = RISCV_INS_FMIN_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFminMax; break;
+		case RISCV_INS_FMAX_H: sid = RISCV_INS_FMAX_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFminMax; break;
+		case RISCV_INS_FMINM_H: sid = RISCV_INS_FMINM_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFminMax; break;
+		case RISCV_INS_FMAXM_H: sid = RISCV_INS_FMAXM_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFminMax; break;
+		case RISCV_INS_FMADD_H: sid = RISCV_INS_FMADD_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFpFma; break;
+		case RISCV_INS_FMSUB_H: sid = RISCV_INS_FMSUB_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFpFma; break;
+		case RISCV_INS_FNMADD_H: sid = RISCV_INS_FNMADD_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFpFma; break;
+		case RISCV_INS_FNMSUB_H: sid = RISCV_INS_FNMSUB_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFpFma; break;
+		case RISCV_INS_FEQ_H: sid = RISCV_INS_FEQ_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFcmp; break;
+		case RISCV_INS_FLT_H: sid = RISCV_INS_FLT_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFcmp; break;
+		case RISCV_INS_FLE_H: sid = RISCV_INS_FLE_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFcmp; break;
+		case RISCV_INS_FLTQ_H: sid = RISCV_INS_FLTQ_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFcmp; break;
+		case RISCV_INS_FLEQ_H: sid = RISCV_INS_FLEQ_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFcmp; break;
+		case RISCV_INS_FSGNJ_H: sid = RISCV_INS_FSGNJ_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFsgnj; break;
+		case RISCV_INS_FSGNJN_H: sid = RISCV_INS_FSGNJN_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFsgnj; break;
+		case RISCV_INS_FSGNJX_H: sid = RISCV_INS_FSGNJX_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFsgnj; break;
+		case RISCV_INS_FCLASS_H: sid = RISCV_INS_FCLASS_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFclass; break;
+		case RISCV_INS_FROUND_H: sid = RISCV_INS_FROUND_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFround; break;
+		case RISCV_INS_FROUNDNX_H: sid = RISCV_INS_FROUNDNX_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFround; break;
+		case RISCV_INS_FLI_H: sid = RISCV_INS_FLI_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFli; break;
+		case RISCV_INS_FCVT_W_H: sid = RISCV_INS_FCVT_W_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFcvt; break;
+		case RISCV_INS_FCVT_WU_H: sid = RISCV_INS_FCVT_WU_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFcvt; break;
+		case RISCV_INS_FCVT_L_H: sid = RISCV_INS_FCVT_L_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFcvt; break;
+		case RISCV_INS_FCVT_LU_H: sid = RISCV_INS_FCVT_LU_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFcvt; break;
+		case RISCV_INS_FCVT_H_W: sid = RISCV_INS_FCVT_S_W; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFcvt; break;
+		case RISCV_INS_FCVT_H_WU: sid = RISCV_INS_FCVT_S_WU; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFcvt; break;
+		case RISCV_INS_FCVT_H_L: sid = RISCV_INS_FCVT_S_L; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFcvt; break;
+		case RISCV_INS_FCVT_H_LU: sid = RISCV_INS_FCVT_S_LU; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFcvt; break;
+		case RISCV_INS_FCVT_D_H: sid = RISCV_INS_FCVT_D_S; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFcvt; break;
+		case RISCV_INS_FCVT_H_D: sid = RISCV_INS_FCVT_S_D; fn = &Capstone2LlvmIrTranslatorRiscv_impl::translateFcvt; break;
+		default:
+			translatePseudoAsmGeneric(i, ri, irb);
+			return;
+	}
+	unsigned hid = i->id;
+	i->id = sid;
+	try
+	{
+		(this->*fn)(i, ri, irb);
+	}
+	catch (...)
+	{
+		i->id = hid;
+		throw;
+	}
+	i->id = hid;
 }
 
 

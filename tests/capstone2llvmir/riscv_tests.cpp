@@ -1350,6 +1350,58 @@ TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_DIV)
 // RISCV_INS_FADD_S  fadd.s fa0, fa1, fa2   bytes 53 85 c5 00
 //
 
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_FADD_H)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_F11_32, 1.5_f32},
+		{RISCV_REG_F12_32, 2.25_f32},
+	});
+
+	emulate_bin("53 85 c5 04"); // fadd.h fa0, fa1, fa2
+
+	EXPECT_JUST_REGISTERS_LOADED({RISCV_REG_F11_32, RISCV_REG_F12_32});
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_F10_32, 3.75_f32},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_FEQ_H)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_F11_32, 2.5_f32},
+		{RISCV_REG_F12_32, 2.5_f32},
+	});
+
+	emulate_bin("53 a5 c5 a4"); // feq.h a0, fa1, fa2
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{RISCV_REG_X10, 1},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_FLH_FMV_X_H_no_pseudo)
+{
+	ALL_MODES;
+
+	// flh fa0, 0(a0) ; fmv.x.h a0, fa2
+	auto* f = translate(utils::hexStringToBytes("07 15 05 00 53 05 06 e4"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_flh"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_fmv.x.h"));
+	bool sawHalf = false;
+	for (auto& bb : *f)
+		for (auto& in : bb)
+			sawHalf |= in.getType()->isHalfTy();
+	EXPECT_TRUE(sawHalf);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_FADD_S)
 {
 	ALL_MODES;
