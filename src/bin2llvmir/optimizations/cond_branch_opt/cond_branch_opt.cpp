@@ -314,18 +314,33 @@ bool CondBranchOpt::transformConditionSub(
 	{
 		llvm_utils::setPointeeTypeMetadata(subL, ptee);
 	}
-	auto* conv = IrModifier::convertValueToType(testedL, subL->getType(), br);
+	Value* conv = IrModifier::convertValueToType(testedL, subL->getType(), br);
 
 	if (!conv->getType()->isIntegerTy() || !subL->getType()->isIntegerTy())
 	{
 		return false;
 	}
 
+	// The symbolic tree looks through truncations, so the operands found can
+	// be the full registers behind a narrower compare (`cmp %ecx, %edx` gives
+	// the 64-bit rdx and rcx).  Compare at the width the instruction did:
+	// a signed compare of zero-extended 32-bit values never sees a negative.
+	Type* width = isa<CmpInst>(binOp)
+			? binOp->getOperand(0)->getType()
+			: binOp->getType();
+	Value* rhs = subL;
+	if (width->isIntegerTy()
+			&& width->getIntegerBitWidth() < conv->getType()->getIntegerBitWidth())
+	{
+		conv = new TruncInst(conv, width, "", br);
+		rhs = new TruncInst(rhs, width, "", br);
+	}
+
 	auto* newCond = new ICmpInst(
 			br,
 			predicate,
 			conv,
-			subL);
+			rhs);
 
 	LOG << "---" << llvmObjToString(br) << std::endl;
 
