@@ -398,6 +398,18 @@ const char* libcHeaderForName(const std::string& name)
 	{
 		return "ctype.h";
 	}
+	static const char* const kMath[] = {"fma", "fmaf", "sqrt", "sqrtf", "fabs", "fabsf", "floor", "floorf",
+		"ceil", "ceilf", "trunc", "truncf", "round", "roundf", "rint", "rintf", "nearbyint", "nearbyintf",
+		"fmin", "fminf", "fmax", "fmaxf", "copysign", "copysignf", "fmod", "fmodf", "pow", "powf", "exp",
+		"expf", "exp2", "exp2f", "log", "logf", "log2", "log2f", "log10", "log10f", "sin", "sinf", "cos",
+		"cosf", "tan", "tanf", "atan", "atanf", "atan2", "atan2f", "lrint", "llrint", "lround", "llround"};
+	for (const char* m : kMath)
+	{
+		if (name == m)
+		{
+			return "math.h";
+		}
+	}
 	return nullptr;
 }
 

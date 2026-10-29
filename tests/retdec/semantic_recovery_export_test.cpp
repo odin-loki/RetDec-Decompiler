@@ -196,6 +196,38 @@ TEST(BuildableSidecars, WritesHeaderStubsAndBuildable)
 	fs::remove(buildable);
 }
 
+TEST(BuildableSidecars, MathLibraryCallsAreNotStubbedAsIntVoid)
+{
+	EmitBuildableEnvGuard guard;
+	setEmitBuildableEnv("1");
+
+	const fs::path dir = fs::temp_directory_path();
+	const fs::path outC = dir / "retdec_buildable_math.c";
+	const std::string original =
+		"#include <math.h>\n"
+		"double f(double a, double b) {\n"
+		"    return fma(a, b, sqrt(a));\n"
+		"}\n";
+	writeAll(outC, original);
+	maybeWriteBuildableSidecars(outC.string(), original);
+
+	const fs::path header = dir / "retdec_buildable_math.h";
+	const fs::path stubs = dir / "retdec_buildable_math_stubs.c";
+	const fs::path buildable = dir / "retdec_buildable_math.buildable.c";
+	ASSERT_TRUE(fs::exists(header));
+	const std::string h = readAll(header);
+	EXPECT_EQ(h.find("int fma(void);"), std::string::npos);
+	EXPECT_EQ(h.find("int sqrt(void);"), std::string::npos);
+	const std::string b = readAll(buildable);
+	EXPECT_EQ(b.find("#define fma("), std::string::npos);
+	EXPECT_NE(b.find("#include <math.h>"), std::string::npos);
+
+	fs::remove(outC);
+	fs::remove(header);
+	fs::remove(stubs);
+	fs::remove(buildable);
+}
+
 TEST(BuildableSidecars, DoesNotAddMainWhenPresent)
 {
 	EmitBuildableEnvGuard guard;
