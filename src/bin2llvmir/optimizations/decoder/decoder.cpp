@@ -824,7 +824,20 @@ bool Decoder::getJumpTargetsFromInstruction(
 			}
 			else if (tFnc && tBbN && tBbN->getParent() == pCall->getFunction())
 			{
-				transformToCondCall(pCall, pCall->getOperand(0), tFnc, tBbN);
+				auto* cc = transformToCondCall(pCall, pCall->getOperand(0), tFnc, tBbN);
+				// ARM `bne.w f` (no link) is a conditional tail call: the
+				// taken path returns, it does not continue at the next insn
+				// (f_even/f_odd under `itt ne`).  ppc uses the same pseudo
+				// for linked `bcl`, so limit this to ARM.
+				if (_config->getConfig().architecture.isArm32OrThumb())
+				{
+					auto* t = cc->getParent()->getTerminator();
+					llvm::ReturnInst::Create(
+						cc->getModule()->getContext(),
+						llvm::UndefValue::get(cc->getFunction()->getReturnType()),
+						t);
+					t->eraseFromParent();
+				}
 			}
 			else if (
 				tBb && tBbN && tBb->getParent() != pCall->getFunction() && tBbN->getParent() == pCall->getFunction())
