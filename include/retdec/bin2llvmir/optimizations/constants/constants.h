@@ -44,6 +44,7 @@ class ConstantsAnalysis : public llvm::ModulePass
 		void widenNarrowConstantLoads();
 		void foldUnwrittenMxcsr();
 		void widenIndexedGlobals();
+		bool isObjectAddress(uint64_t addr) const;
 		void checkForGlobalInInstruction(
 				ReachingDefinitionsAnalysis& RDA,
 				llvm::Instruction* inst,

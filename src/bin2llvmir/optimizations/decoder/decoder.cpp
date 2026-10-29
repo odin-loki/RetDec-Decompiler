@@ -586,6 +586,31 @@ bool Decoder::getJumpTargetsFromInstruction(
 			}
 		}
 
+		// ppc64 ELFv1: a `bl` that lands on an .opd descriptor (lld links
+		// direct calls of ELFv1 objects this way) calls the descriptor's
+		// entry point.  Otherwise the call targets a data "function".
+		if (t && _config->getConfig().architecture.isPpc()
+				&& _config->getConfig().architecture.getBitSize() == 64)
+		{
+			auto* ff = _image->getFileFormat();
+			const auto* opd = ff ? ff->getSection(".opd") : nullptr;
+			std::uint64_t entry = 0;
+			if (opd && t >= opd->getAddress() && t + 8 <= opd->getEndAddress())
+			{
+				_image->getImage()->getWord(t, entry);
+				// A PIE fills the descriptor with an R_PPC64_RELATIVE.
+				for (const auto* rt : entry ? std::vector<fileformat::RelocationTable*>{} : ff->getRelocationTables())
+					for (const auto& r : *rt)
+						if (r.getAddress() == t && r.getAddend())
+							entry = r.getAddend();
+				auto* seg = entry ? _image->getImage()->getSegmentFromAddress(entry) : nullptr;
+				if (seg && seg->getSecSeg() && seg->getSecSeg()->isSomeCode())
+				{
+					t = entry;
+				}
+			}
+		}
+
 		if (t || (t == 0 && AsmInstruction(_module, 0)))
 		{
 			// TODO: found in x86 macho:

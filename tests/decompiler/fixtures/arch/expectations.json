@@ -32,5 +32,12 @@
     "int main(int argc, char ** argv)",
     "0x55555556",
     "!function_"
+  ],
+  "xarch-powerpc64-pie": [
+    "uint32_t g1[16] = {3, 1, 4, 1, 5,",
+    "> 1000 ?",
+    "f_rec((",
+    "!function_",
+    "!&g3"
   ]
 }

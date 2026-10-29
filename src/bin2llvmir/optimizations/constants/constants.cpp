@@ -164,6 +164,59 @@ void ConstantsAnalysis::widenIndexedGlobals()
 		}
 		if (!indexed) continue;
 		uint64_t es = dl.getTypeAllocSize(et);
+		// The first access can type the table wider than its elements (a
+		// 64-bit register holding the base).  Emitting `int g[16]` as
+		// `uint64_t g[8]` is harmless on a little-endian image but swaps
+		// word pairs of a big-endian one when the C runs on a LE host, so
+		// use the narrowest width the indexed accesses actually read.
+		{
+			uint64_t minW = 0;
+			std::vector<std::pair<Value*, int>> q;
+			std::set<Value*> seen;
+			for (auto* u : gv->users())
+				if (auto* ce = dyn_cast<ConstantExpr>(u))
+					if (ce->getOpcode() == Instruction::PtrToInt)
+						for (auto* uu : ce->users()) q.emplace_back(uu, 0);
+			while (!q.empty())
+			{
+				auto [v, d] = q.back();
+				q.pop_back();
+				if (d > 6 || !seen.insert(v).second) continue;
+				if (auto* ld = dyn_cast<LoadInst>(v))
+				{
+					if (ld->getType()->isIntegerTy())
+					{
+						uint64_t w = dl.getTypeStoreSize(ld->getType());
+						minW = minW ? std::min(minW, w) : w;
+					}
+					continue;
+				}
+				if (auto* st = dyn_cast<StoreInst>(v))
+				{
+					// The base parked in a register: follow that register's
+					// reads in the same function.
+					auto* reg = dyn_cast<GlobalVariable>(st->getPointerOperand());
+					if (reg && _abi && _abi->isRegister(reg))
+						for (auto* ru : reg->users())
+							if (auto* rl = dyn_cast<LoadInst>(ru))
+								if (rl->getFunction() == st->getFunction())
+									for (auto* uu : rl->users()) q.emplace_back(uu, d + 1);
+					continue;
+				}
+				auto* in = dyn_cast<Instruction>(v);
+				if (!in) continue;
+				switch (in->getOpcode())
+				{
+					case Instruction::Add: case Instruction::Sub:
+					case Instruction::Or: case Instruction::IntToPtr:
+					case Instruction::BitCast: case Instruction::GetElementPtr:
+						for (auto* uu : in->users()) q.emplace_back(uu, d + 1);
+						break;
+					default: break;
+				}
+			}
+			if (minW && minW < es && es % minW == 0) es = minW;
+		}
 		uint64_t size = 0;
 		// Several symbols can share an address (labels, mapping symbols):
 		// take the largest object size among them.
@@ -289,6 +342,31 @@ void ConstantsAnalysis::widenNarrowConstantLoads()
 	}
 }
 
+/**
+ * A compared constant is an address only if it lands in a section that holds
+ * program objects.  A PIE linked at base 0 maps its headers, .dynsym and
+ * .rela.dyn at low addresses, so `cmpwi r5, 1000` would otherwise compare
+ * against `&g_0x3e8`, which is a real address in the recompiled C.
+ */
+bool ConstantsAnalysis::isObjectAddress(uint64_t addr) const
+{
+	auto* ff = _image->getFileFormat();
+	auto* sec = ff ? ff->getSectionFromAddress(addr) : nullptr;
+	if (sec == nullptr)
+	{
+		return false;
+	}
+	const std::string& n = sec->getName();
+	for (const char* p : {".rel", ".dyn", ".interp", ".gnu", ".note", ".hash", ".eh_frame"})
+	{
+		if (n.rfind(p, 0) == 0)
+		{
+			return false;
+		}
+	}
+	return sec->isSomeData() || sec->isBss() || sec->isSomeCode();
+}
+
 void ConstantsAnalysis::checkForGlobalInInstruction(
 		ReachingDefinitionsAnalysis& RDA,
 		Instruction* inst,
@@ -309,14 +387,19 @@ void ConstantsAnalysis::checkForGlobalInInstruction(
 	if (max && maxC && maxC->getValue().getActiveBits() <= 64 && maxC->getZExtValue() != 0)
 	if (userI || max == &root)
 	if (_image->getImage()->hasDataOnAddress(maxC->getZExtValue()))
+	if (!isa_and_nonnull<CmpInst>(userI) || isObjectAddress(maxC->getZExtValue()))
 	{
 		IrModifier irm(_module, _config);
 		// Stage 20: Width-seeded — use load/store width for global pointee type
 		Type* widthSeed = nullptr;
 		if (max == &root && isa<LoadInst>(inst))
 			widthSeed = inst->getType();  // load result type
-		else if (isa<StoreInst>(inst))
+		else if (isa<StoreInst>(inst) && !storeValue)
 			widthSeed = val->getType();   // stored value type
+		// A stored *value* that is an address (`addi r4, r2, off` kept in a
+		// register) says nothing about the pointee width; seeding with the
+		// register width typed int tables as i64 and, on big-endian images,
+		// paired their elements in the wrong order on a little-endian host.
 		auto* ngv = irm.getGlobalVariable(
 				_image,
 				_dbgf,
