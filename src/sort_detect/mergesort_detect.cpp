@@ -89,6 +89,11 @@ static float scoreRecursion(const ssa::SSAFunction& fn)
 {
 	RecursiveHalvingFingerprint rhf;
 	auto ev = rhf.analyse(fn);
+	// Two recursive calls split at a computed midpoint ((lo + hi) >> 1) are
+	// the mergesort skeleton on their own; at -O0 the merge loop is usually a
+	// separate function, so this function has no merge loop to add.
+	// Quicksort recurses on a pivot index instead, which needs no shift.
+	if (ev.selfCallCount >= 2 && countOp(fn, ssa::IrInstr::Op::Shr) >= 1) return 0.55f;
 	if (ev.selfCallCount >= 2) return 0.40f;
 	if (ev.selfCallCount == 1) return 0.15f;
 	return 0.0f;
