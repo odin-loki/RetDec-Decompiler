@@ -1,6 +1,6 @@
 {
   "baseline_tag": "baseline-algorithm-recovery",
-  "updated_at": "2026-10-29T15:20:41Z",
+  "updated_at": "2026-10-29T16:00:41Z",
   "metrics": {
     "ci_core": {
       "binaries": 9,
@@ -11,8 +11,8 @@
     "full_corpus": {
       "binaries": 126,
       "min_decompiled": 126,
-      "mean_f1": 0.38835978835978835,
-      "mean_f1_raw": 0.38835978835978835
+      "mean_f1": 0.5555555555555556,
+      "mean_f1_raw": 0.5555555555555556
     }
   },
   "thresholds": {
