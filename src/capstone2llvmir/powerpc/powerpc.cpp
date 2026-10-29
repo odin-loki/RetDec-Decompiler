@@ -604,8 +604,8 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::storeCrX(
 	auto* lt = s ? irb.CreateICmpSLT(op0, op1) : irb.CreateICmpULT(op0, op1);
 	auto* gt = s ? irb.CreateICmpSGT(op0, op1) : irb.CreateICmpUGT(op0, op1);
 	auto* eq = irb.CreateICmpEQ(op0, op1);
-	// PPC_REG_CRx_SO is a copy of XER, which we do not have.
-	auto* so = zero;
+	// The fourth bit of an integer compare is a copy of XER[SO].
+	auto* so = loadRegister(kXerSoReg, irb);
 
 	uint32_t ltR = PPC_REG_CR0LT;
 	uint32_t gtR = PPC_REG_CR0GT;

@@ -5475,7 +5475,7 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CMPD_lt)
 
 	emulate("cmpd 0, 1"); // cr0 is default
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1, PPC_REG_ENDING + 4});
 	EXPECT_JUST_REGISTERS_STORED({
 		{PPC_REG_CR0LT, true},
 		{PPC_REG_CR0GT, false},
@@ -5497,7 +5497,7 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CMPD_gt)
 
 	emulate("cmpd cr0, 0, 1");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1, PPC_REG_ENDING + 4});
 	EXPECT_JUST_REGISTERS_STORED({
 		{PPC_REG_CR0LT, false},
 		{PPC_REG_CR0GT, true},
@@ -5519,7 +5519,7 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CMPD_eq)
 
 	emulate("cmpd cr0, 0, 1");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1, PPC_REG_ENDING + 4});
 	EXPECT_JUST_REGISTERS_STORED({
 		{PPC_REG_CR0LT, false},
 		{PPC_REG_CR0GT, false},
@@ -5541,7 +5541,7 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CMPD_lt_sign_32)
 
 	emulate("cmpd cr0, 0, 1");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1, PPC_REG_ENDING + 4});
 	EXPECT_JUST_REGISTERS_STORED({
 		{PPC_REG_CR0LT, true},
 		{PPC_REG_CR0GT, false},
@@ -5563,7 +5563,7 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CMPD_lt_sign_64)
 
 	emulate("cmpd cr0, 0, 1");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1, PPC_REG_ENDING + 4});
 	EXPECT_JUST_REGISTERS_STORED({
 		{PPC_REG_CR0LT, true},
 		{PPC_REG_CR0GT, false},
@@ -5585,7 +5585,7 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CMPD_lt_cr7)
 
 	emulate("cmpd cr7, 0, 1");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1, PPC_REG_ENDING + 4});
 	EXPECT_JUST_REGISTERS_STORED({
 		{PPC_REG_CR7LT, true},
 		{PPC_REG_CR7GT, false},
@@ -5610,7 +5610,7 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CMPDI_lt_cr7)
 
 	emulate("cmpdi cr7, 0, 0x2222");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0});
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_ENDING + 4});
 	EXPECT_JUST_REGISTERS_STORED({
 		{PPC_REG_CR7LT, true},
 		{PPC_REG_CR7GT, false},
@@ -5636,7 +5636,7 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CMPW_lt_cr7)
 
 	emulate("cmpw cr7, 0, 1");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1, PPC_REG_ENDING + 4});
 	EXPECT_JUST_REGISTERS_STORED({
 		{PPC_REG_CR7LT, true},
 		{PPC_REG_CR7GT, false},
@@ -5658,7 +5658,7 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CMPW_lt_cr7_64_trunc)
 
 	emulate("cmpw cr7, 0, 1");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1, PPC_REG_ENDING + 4});
 	EXPECT_JUST_REGISTERS_STORED({
 		{PPC_REG_CR7LT, true},
 		{PPC_REG_CR7GT, false},
@@ -5683,7 +5683,7 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CMPWI_lt_cr7)
 
 	emulate("cmpwi cr7, 0, 0x2222");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0});
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_ENDING + 4});
 	EXPECT_JUST_REGISTERS_STORED({
 		{PPC_REG_CR7LT, true},
 		{PPC_REG_CR7GT, false},
@@ -5705,7 +5705,7 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CMPI_word)
 
 	emulate("cmpi cr7, 0, 0, 0x2222");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0});
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_ENDING + 4});
 	EXPECT_JUST_REGISTERS_STORED({
 		{PPC_REG_CR7LT, true},
 		{PPC_REG_CR7GT, false},
@@ -5726,7 +5726,7 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CMPLI_word)
 
 	emulate("cmpli cr5, 0, 0, 0");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0});
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_ENDING + 4});
 	EXPECT_JUST_REGISTERS_STORED({
 		{PPC_REG_CR5LT, false},
 		{PPC_REG_CR5GT, true},
@@ -5752,7 +5752,7 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CMPLD_gt_unsign_32)
 
 	emulate("cmpld cr5, 0, 1");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1, PPC_REG_ENDING + 4});
 	EXPECT_JUST_REGISTERS_STORED({
 		{PPC_REG_CR5LT, false},
 		{PPC_REG_CR5GT, true},
@@ -5777,7 +5777,7 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CMPLDI_gt_unsign_32)
 
 	emulate("cmpldi cr5, 0, 0x0");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0});
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_ENDING + 4});
 	EXPECT_JUST_REGISTERS_STORED({
 		{PPC_REG_CR5LT, false},
 		{PPC_REG_CR5GT, true},
@@ -5803,7 +5803,7 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CMPLW_gt_unsign_32)
 
 	emulate("cmplw cr5, 0, 1");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1, PPC_REG_ENDING + 4});
 	EXPECT_JUST_REGISTERS_STORED({
 		{PPC_REG_CR5LT, false},
 		{PPC_REG_CR5GT, true},
@@ -5825,7 +5825,7 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CMPLW_eq_unsign_64)
 
 	emulate("cmplw cr5, 0, 1");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1, PPC_REG_ENDING + 4});
 	EXPECT_JUST_REGISTERS_STORED({
 		{PPC_REG_CR5LT, false},
 		{PPC_REG_CR5GT, false},
@@ -5850,7 +5850,7 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CMPLWI_gt_unsign_32)
 
 	emulate("cmplwi cr5, 0, 0x0");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0});
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_ENDING + 4});
 	EXPECT_JUST_REGISTERS_STORED({
 		{PPC_REG_CR5LT, false},
 		{PPC_REG_CR5GT, true},
@@ -18435,6 +18435,26 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VEXTDUBVLX)
 
 	EXPECT_EQ(0x11ULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
 	EXPECT_EQ(0x0ULL, vLow(PPC_REG_V2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CMPD_so_from_xer)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R0, 0x2222},
+		{PPC_REG_R1, 0x2222},
+		{PPC_REG_ENDING + 4, true},
+	});
+
+	emulate("cmpd 0, 1");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_CR0LT, false},
+		{PPC_REG_CR0GT, false},
+		{PPC_REG_CR0EQ, true},
+		{PPC_REG_CR0UN, true},
+	});
 }
 
 } // namespace tests
