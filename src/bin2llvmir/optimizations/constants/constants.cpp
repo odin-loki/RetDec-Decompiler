@@ -386,6 +386,25 @@ bool ConstantsAnalysis::isObjectAddress(uint64_t addr) const
 	return sec->isSomeData() || sec->isBss() || sec->isSomeCode();
 }
 
+/**
+ * A constant that is a multiplier, divisor, shift amount or mask is never an
+ * address, even when it happens to fall inside a mapped segment: ppc64 PIE
+ * maps its headers at 0, so `mulli r5, r5, 977` became `r5 * &g3`.
+ */
+static bool isNonAddressOperandUse(Instruction* userI)
+{
+	if (userI == nullptr) return false;
+	switch (userI->getOpcode())
+	{
+		case Instruction::Mul: case Instruction::UDiv: case Instruction::SDiv:
+		case Instruction::URem: case Instruction::SRem: case Instruction::Shl:
+		case Instruction::LShr: case Instruction::AShr: case Instruction::And:
+			return true;
+		default:
+			return false;
+	}
+}
+
 void ConstantsAnalysis::checkForGlobalInInstruction(
 		ReachingDefinitionsAnalysis& RDA,
 		Instruction* inst,
@@ -407,6 +426,7 @@ void ConstantsAnalysis::checkForGlobalInInstruction(
 	if (userI || max == &root)
 	if (_image->getImage()->hasDataOnAddress(maxC->getZExtValue()))
 	if (!isa_and_nonnull<CmpInst>(userI) || isObjectAddress(maxC->getZExtValue()))
+	if (!isNonAddressOperandUse(userI))
 	{
 		IrModifier irm(_module, _config);
 		// Stage 20: Width-seeded — use load/store width for global pointee type
