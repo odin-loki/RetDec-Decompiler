@@ -170,8 +170,12 @@ target_include_directories(tests-llvmir2hll
 		${RETDEC_TESTS_DIR}
 )
 
+# Sub-optimizers and other factory-registered objects are reachable only
+# through their static registrars; without whole-archive the linker drops
+# the ones no test names (Pow2, Mba, Bitfield), and the optimizer silently
+# runs without them. retdec-decompiler links the library the same way.
 target_link_libraries(tests-llvmir2hll
-	retdec::llvmir2hll
+	"$<LINK_LIBRARY:WHOLE_ARCHIVE,retdec::llvmir2hll>"
 	retdec::utils
 	retdec::deps::gmock_main
 )
