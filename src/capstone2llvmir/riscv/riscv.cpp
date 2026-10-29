@@ -7728,7 +7728,9 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateVendorDot(
 }
 
 /**
- * Custom-coprocessor (SiFive VCIX) and shadow-stack-pointer reads: the
+ * Custom-coprocessor (SiFive VCIX), SiFive 4x8x4/4x4x4 matrix tiles and
+ * FP-to-int8 clip ops (their layout depends on VLEN and LMUL), and
+ * shadow-stack-pointer reads: the
  * effect is implementation-defined, so they lift as opaque calls that read
  * and write the named operands.
  */

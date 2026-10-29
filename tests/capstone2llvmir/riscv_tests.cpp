@@ -6782,6 +6782,17 @@ TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_SF_VC_V_VV_lifted)
 	EXPECT_NE(std::string::npos, ir.find("call")) << ir;
 }
 
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_SF_VQMACC_4X8X4_opaque)
+{
+	ALL_MODES;
+	_translator->modifyExtraMode(static_cast<cs_mode>(_translator->getExtraMode() | CS_MODE_RISCV_SIFIVE));
+	auto* f = translate({0x5b, 0x24, 0xc2, 0xf6});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("__asm_")) << ir;
+	EXPECT_NE(std::string::npos, ir.find("call")) << ir;
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
