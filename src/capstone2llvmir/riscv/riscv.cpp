@@ -377,6 +377,12 @@ Capstone2LlvmIrTranslatorRiscv_impl::Capstone2LlvmIrTranslatorRiscv_impl(
 				basic,
 				static_cast<cs_mode>(
 						static_cast<unsigned>(extra)
+						// G = IMAFD: Capstone 6 gates F/D and A behind
+						// their own mode bits, so without them every
+						// float or atomic instruction failed to decode
+						// and the decoder slid through it a byte at a time.
+						| static_cast<unsigned>(CS_MODE_RISCV_FD)
+						| static_cast<unsigned>(CS_MODE_RISCV_A)
 						| static_cast<unsigned>(CS_MODE_RISCV_V)
 						| static_cast<unsigned>(CS_MODE_RISCV_ZBA)
 						| static_cast<unsigned>(CS_MODE_RISCV_ZBB)
