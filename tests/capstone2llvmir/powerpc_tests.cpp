@@ -20412,6 +20412,16 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VNCIPHER)
 	EXPECT_FALSE(hasAsmCall(f)) << dumpFunction(f);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MFTB_MFMSR_and_XXSETACCZ_are_opaque_calls)
+{
+	ALL_MODES;
+
+	// mftb 3; mfmsr 3; xxsetaccz 0 (some modes decode mftb as mfspr)
+	auto* f = translate(utils::hexStringToBytes("7c 6c 42 a6 7c 60 00 a6 7c 03 01 62"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(nullptr, _module.getFunction("__asm_mfmsr"));
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
