@@ -8429,6 +8429,33 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMveMisc(cs_insn* i, cs_arm* ai,
 	auto* ty = getDefaultType();
 	unsigned n = 128 / lb;
 
+	if ((op == "vadc" || op == "vadci" || op == "vsbc" || op == "vsbci") && lb == 32 && ai->op_count == 3)
+	{
+		// Whole-vector add/subtract with carry through FPSCR.C (bit 29).
+		bool sub = op[1] == 's';
+		bool init = op.size() == 5;
+		auto* fpscr = loadRegister(ARM_REG_FPSCR_NZCV, irb);
+		llvm::Value* c = init ? llvm::ConstantInt::get(irb.getInt64Ty(), sub ? 1 : 0)
+				: irb.CreateZExt(irb.CreateAnd(irb.CreateLShr(fpscr, 29), irb.getInt32(1)), irb.getInt64Ty());
+		auto* a = loadNeonVector(ai->operands[1].reg, 32, false, irb);
+		auto* b = loadNeonVector(ai->operands[2].reg, 32, false, irb);
+		llvm::Value* r = llvm::UndefValue::get(llvm::FixedVectorType::get(irb.getInt32Ty(), 4));
+		for (unsigned k = 0; k < 4; ++k)
+		{
+			auto* x = irb.CreateZExt(irb.CreateExtractElement(a, k), irb.getInt64Ty());
+			llvm::Value* y = irb.CreateExtractElement(b, k);
+			if (sub) y = irb.CreateNot(y);
+			auto* sum = irb.CreateAdd(irb.CreateAdd(x, irb.CreateZExt(y, irb.getInt64Ty())), c);
+			r = irb.CreateInsertElement(r, irb.CreateTrunc(sum, irb.getInt32Ty()), k);
+			c = irb.CreateLShr(sum, 32);
+		}
+		storeNeonVector(ai->operands[0].reg, r, irb);
+		auto* cbit = irb.CreateShl(irb.CreateTrunc(c, irb.getInt32Ty()), 29);
+		auto* nf = irb.CreateOr(irb.CreateAnd(fpscr, irb.getInt32(~(1u << 29))), cbit);
+		storeRegister(ARM_REG_FPSCR_NZCV, nf, irb);
+		return;
+	}
+
 	if ((op.size() == 5 && (op.compare(0, 4, "vldr") == 0 || op.compare(0, 4, "vstr") == 0)))
 	{
 		bool load = op[1] == 'l';
