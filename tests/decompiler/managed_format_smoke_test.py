@@ -34,6 +34,10 @@ def repo_root_from_argv() -> Path:
 
 
 def compile_python_pyc(src: Path, dest: Path) -> bool:
+    # The fixture is committed; only build it when missing so the run does
+    # not rewrite a tracked file with the local Python's bytecode.
+    if dest.is_file() and dest.stat().st_size > 0:
+        return True
     if not src.is_file():
         return False
     import py_compile
