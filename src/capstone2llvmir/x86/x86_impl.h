@@ -480,6 +480,7 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		void translateCvtSd2Si(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateCvtDq2Ps(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateCvtPs2Dq(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateMmxCvt(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateCvtPd2Dq(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSseRcpRsqrt(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translatePadlock(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);

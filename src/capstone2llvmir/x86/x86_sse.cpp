@@ -9342,5 +9342,80 @@ void Capstone2LlvmIrTranslatorX86_impl::translateRdrand(cs_insn* i, cs_x86* xi, 
 	storeRegister(X86_REG_CF, irb.getTrue(), irb);
 }
 
+/**
+ * The MMX <-> SSE conversions: CVTPI2PD, CVTPI2PS, CVTPS2PI, CVTTPS2PI,
+ * CVTPD2PI, CVTTPD2PI. An MMX register is a plain i64 here, so these are
+ * the two-lane cases of the SSE packed conversions. Like CVTPS2DQ, the
+ * non-T forms round to nearest even and out-of-range lanes give the
+ * integer indefinite. CVTPI2PS keeps the upper half of the destination.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateMmxCvt(
+        cs_insn* i, cs_x86* xi, IRBuilder<>& irb) {
+    EXPECT_IS_BINARY(i, xi, irb);
+    Value* src = loadOp(xi->operands[1], irb);
+    if (src == nullptr || !src->getType()->isIntegerTy())
+    {
+        translatePseudoAsmGeneric(i, xi, irb);
+        return;
+    }
+    auto* i32 = irb.getInt32Ty();
+    auto* i64 = irb.getInt64Ty();
+    auto* i128 = irb.getInt128Ty();
+    switch (i->id)
+    {
+        case X86_INS_CVTPI2PD:
+        case X86_INS_CVTPI2PS:
+        {
+            bool dbl = i->id == X86_INS_CVTPI2PD;
+            Value* bits = irb.CreateZExtOrTrunc(src, i64);
+            Value* lanes = irb.CreateBitCast(bits, vecType(i32, 2));
+            Type* fty = dbl ? irb.getDoubleTy() : irb.getFloatTy();
+            Value* f = irb.CreateSIToFP(lanes, vecType(fty, 2));
+            if (dbl)
+            {
+                storeOp(xi->operands[0], irb.CreateBitCast(f, i128), irb, eOpConv::NOTHING);
+                return;
+            }
+            Value* lo = irb.CreateZExt(irb.CreateBitCast(f, i64), i128);
+            Value* dst = toI128(loadOp(xi->operands[0], irb), irb);
+            Value* hiMask = irb.CreateShl(
+                    irb.CreateZExt(ConstantInt::get(i64, ~uint64_t(0)), i128),
+                    ConstantInt::get(i128, 64));
+            storeOp(xi->operands[0], irb.CreateOr(irb.CreateAnd(dst, hiMask), lo), irb, eOpConv::NOTHING);
+            return;
+        }
+        case X86_INS_CVTPS2PI:
+        case X86_INS_CVTTPS2PI:
+        case X86_INS_CVTPD2PI:
+        case X86_INS_CVTTPD2PI:
+        {
+            bool dbl = i->id == X86_INS_CVTPD2PI || i->id == X86_INS_CVTTPD2PI;
+            bool trunc = i->id == X86_INS_CVTTPS2PI || i->id == X86_INS_CVTTPD2PI;
+            Type* fty = dbl ? irb.getDoubleTy() : irb.getFloatTy();
+            Value* bits = irb.CreateZExtOrTrunc(src, dbl ? i128 : i64);
+            Value* v = irb.CreateBitCast(bits, vecType(fty, 2));
+            Value* packed = ConstantInt::get(i64, 0);
+            for (unsigned lane = 0; lane < 2; ++lane)
+            {
+                Value* e = irb.CreateExtractElement(v, (uint64_t)lane);
+                if (!trunc)
+                {
+                    e = irb.CreateUnaryIntrinsic(Intrinsic::roundeven, e);
+                }
+                Value* w = irb.CreateZExt(generateFpToSiDefined(e, i32, irb), i64);
+                if (lane)
+                {
+                    w = irb.CreateShl(w, ConstantInt::get(i64, 32));
+                }
+                packed = irb.CreateOr(packed, w);
+            }
+            storeOp(xi->operands[0], packed, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+            return;
+        }
+        default:
+            throw GenericError("Unhandled insn ID in translateMmxCvt().");
+    }
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec
