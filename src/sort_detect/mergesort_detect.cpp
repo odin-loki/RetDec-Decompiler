@@ -61,7 +61,8 @@ static bool hasMergeLoop(const ssa::SSAFunction& fn)
 	int cmps = countOp(fn, ssa::IrInstr::Op::Compare);
 	int cbs = countOp(fn, ssa::IrInstr::Op::CondBranch);
 	// ...and to be a loop: heapify has the same opcodes and no cycle.
-	return loads >= 2 && cmps >= 1 && cbs >= 2 && ssa::hasCycle(fn);
+	// ...and to move elements: a DFS loop stores only a visited flag.
+	return loads >= 2 && cmps >= 1 && cbs >= 2 && ssa::hasCycle(fn) && ssa::countElementMoves(fn) >= 1;
 }
 
 // Detect auxiliary buffer allocation: a call to malloc/calloc/alloca/new

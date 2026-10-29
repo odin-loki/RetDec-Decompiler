@@ -523,6 +523,34 @@ std::vector<uint8_t> reachWithout(const SSAFunction& fn, BlockId from, BlockId s
 
 } // anonymous namespace
 
+int countElementMoves(const SSAFunction& fn)
+{
+	auto stackAddr = [&](const IrInstr& i) {
+		const uint32_t idx = i.op == IrInstr::Op::Store ? 1 : 0;
+		for (const auto& u: i.uses)
+			if (u.operandIndex == idx)
+				if (const auto* a = fn.value(u.valueId); a && a->isStackSlot) return true;
+		return false;
+	};
+	int moves = 0;
+	for (const auto& blk: fn.blocks())
+	{
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i || i->op != IrInstr::Op::Store || stackAddr(*i)) continue;
+			for (const auto& u: i->uses)
+			{
+				if (u.operandIndex != 0) continue;
+				const auto* v = fn.value(u.valueId);
+				const auto* ld = v ? v->defInstr : nullptr;
+				if (ld && ld->op == IrInstr::Op::Load && !stackAddr(*ld)) ++moves;
+			}
+		}
+	}
+	return moves;
+}
+
 bool hasNestedLoop(const SSAFunction& fn)
 {
 	const auto edges = retreatingEdges(fn);

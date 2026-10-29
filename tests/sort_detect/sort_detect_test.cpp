@@ -960,6 +960,40 @@ TEST(QuicksortDetectorTest, PartitionWithSelfCallIsQuicksort)
 	auto fn = makeFunc(
 		"qsort_rec",
 		{ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::Load,
+		 ssa::IrInstr::Op::Load,
+		 ssa::IrInstr::Op::Store,
+		 ssa::IrInstr::Op::Store,
+		 ssa::IrInstr::Op::Add,
+		 ssa::IrInstr::Op::Sub,
+		 ssa::IrInstr::Op::CondBranch,
+		 ssa::IrInstr::Op::CondBranch},
+		/*extraBlocks=*/3);
+	addPhi(*fn, 0);
+	addPhi(*fn, 1);
+	auto* call = fn->addInstr(fn->block(fn->entryId())->id, ssa::IrInstr::Op::Call);
+	call->calleeName = "qsort_rec";
+	wireSwap(*fn, *fn->block(0));
+	// The partition loop.
+	fn->block(0)->succs.push_back(1);
+	fn->block(1)->succs.push_back(2);
+	fn->block(2)->succs.push_back(1);
+	QuicksortDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_EQ(r.algorithm, SortAlgorithm::Quicksort);
+	EXPECT_GE(r.confidence, 0.45f);
+	EXPECT_NEAR(r.confidence, 0.70f, 0.30f);
+}
+
+// A graph DFS has the loop, compares and recursion of a partition, but stores
+// only a visited flag and calls only itself: no elements change places.
+TEST(QuicksortDetectorTest, RecursionInALoopThatMovesNoElementsIsNotQuicksort)
+{
+	auto fn = makeFunc(
+		"qsort_rec",
+		{ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::Load,
+		 ssa::IrInstr::Op::Load,
 		 ssa::IrInstr::Op::Store,
 		 ssa::IrInstr::Op::Store,
 		 ssa::IrInstr::Op::Add,
@@ -977,9 +1011,7 @@ TEST(QuicksortDetectorTest, PartitionWithSelfCallIsQuicksort)
 	fn->block(2)->succs.push_back(1);
 	QuicksortDetector det;
 	auto r = det.detect(*fn);
-	EXPECT_EQ(r.algorithm, SortAlgorithm::Quicksort);
-	EXPECT_GE(r.confidence, 0.45f);
-	EXPECT_NEAR(r.confidence, 0.70f, 0.30f);
+	EXPECT_LT(r.confidence, 0.45f);
 }
 
 TEST(QuicksortDetectorTest, PartitionShapeWithoutALoopIsNotQuicksort)

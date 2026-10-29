@@ -110,6 +110,23 @@ static bool isPartitionThenRecurse(const ssa::SSAFunction& fn)
 	return selfAfterHelper == 2;
 }
 
+// A partition exchanges elements: either two stores to non-stack memory of
+// values loaded from non-stack memory, or a call to a (swap) helper.  A graph
+// DFS -- `vis[u] = 1; for (v...) if (adj[u][v] && !vis[v]) dfs(v);` -- has the
+// loop, the compares and the recursion, but stores only a constant and calls
+// only itself.
+static bool exchangesElements(const ssa::SSAFunction& fn)
+{
+	for (const auto& blk: fn.blocks())
+	{
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+			if (i && i->op == ssa::IrInstr::Op::Call && !i->calleeName.empty() && i->calleeName != fn.name())
+				return true;
+	}
+	return ssa::countElementMoves(fn) >= 2;
+}
+
 } // anonymous namespace
 
 SortResult QuicksortDetector::detect(const ssa::SSAFunction& fn) const
@@ -138,6 +155,7 @@ SortResult QuicksortDetector::detect(const ssa::SSAFunction& fn) const
 	// labelled quicksort at 0.90 with empirical precision 0. Require a
 	// recursive self-call. Iterative quicksort is a miss (B9-style).
 	if (countSelfCalls(fn) < 1) return result;
+	if (!exchangesElements(fn)) return result;
 
 	float score = ev.confidence + 0.25f;
 	if (score > 1.0f) score = 1.0f;

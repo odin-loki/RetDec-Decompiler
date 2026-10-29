@@ -731,6 +731,10 @@ bool blockOnCycle(const SSAFunction& fn, BlockId b);
 /// is in the body of a different loop.  Sequential loops are not nested.
 bool hasNestedLoop(const SSAFunction& fn);
 
+/// Stores to non-stack memory of a value loaded from non-stack memory: the
+/// element moves of a swap, a merge or a copy, as opposed to -O0 spills.
+int countElementMoves(const SSAFunction& fn);
+
 } // namespace ssa
 } // namespace retdec
 
