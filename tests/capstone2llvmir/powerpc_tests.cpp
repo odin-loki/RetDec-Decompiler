@@ -18845,6 +18845,105 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VCNTMBB)
 	EXPECT_EQ(0x0300000000000000ULL, getRegisterValueUnsigned(PPC_REG_R3)) << dumpFunction(_function);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSMADDASP)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F1, 0.25_f64},
+		{PPC_REG_F2, 1.5_f64},
+		{PPC_REG_F3, 2.0_f64},
+	});
+
+	emulate_bin("f0 22 18 08");
+
+	EXPECT_EQ(3.25, getRegisterValueDouble(PPC_REG_F1)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSRSP)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F2, 0.1_f64},
+	});
+
+	emulate_bin("f0 20 14 64");
+
+	EXPECT_EQ(double(0.1f), getRegisterValueDouble(PPC_REG_F1)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSMAXCDP)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F2, 2.0_f64},
+		{PPC_REG_F3, 3.0_f64},
+	});
+
+	emulate_bin("f0 22 1c 00");
+
+	EXPECT_EQ(3.0, getRegisterValueDouble(PPC_REG_F1)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSCVSXDSP)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F2, 0.0_f64},
+	});
+
+	emulate_bin("f0 20 14 e0");
+
+	EXPECT_EQ(0.0, getRegisterValueDouble(PPC_REG_F1)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSCMPGTDP)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F2, 3.0_f64},
+		{PPC_REG_F3, 2.0_f64},
+	});
+
+	emulate_bin("f0 42 18 59");
+
+	EXPECT_EQ(0xffffffffffffffffULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
+	EXPECT_EQ(0x0ULL, vLow(PPC_REG_V2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSCVDPSPN)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F2, 1.5_f64},
+	});
+
+	emulate_bin("f0 40 14 2d");
+
+	EXPECT_EQ(0x3fc0000000000000ULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_XSMAXJDP)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F2, 2.0_f64},
+		{PPC_REG_F3, 3.0_f64},
+		{PPC_REG_F1, 0.0_f64},
+	});
+
+	emulate_bin("f0 22 1c 80");
+
+	// vs1 is modelled apart from f1; the result is its high doubleword.
+	EXPECT_EQ(0x4008000000000000ULL, vHigh(PPC_REG_VSL1)) << dumpFunction(_function);
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

@@ -1876,7 +1876,21 @@ bool Capstone2LlvmIrTranslatorPowerpc_impl::isSinglePrecisionForm(unsigned id)
 	case PPC_INS_XSADDSP:
 	case PPC_INS_XSSUBSP:
 	case PPC_INS_XSMULSP:
-	case PPC_INS_XSDIVSP: return true;
+	case PPC_INS_XSDIVSP:
+	case PPC_INS_XSSQRTSP:
+	case PPC_INS_XSRESP:
+	case PPC_INS_XSRSQRTESP:
+	case PPC_INS_XSRSP:
+	case PPC_INS_XSCVSXDSP:
+	case PPC_INS_XSCVUXDSP:
+	case PPC_INS_XSMADDASP:
+	case PPC_INS_XSMADDMSP:
+	case PPC_INS_XSMSUBASP:
+	case PPC_INS_XSMSUBMSP:
+	case PPC_INS_XSNMADDASP:
+	case PPC_INS_XSNMADDMSP:
+	case PPC_INS_XSNMSUBASP:
+	case PPC_INS_XSNMSUBMSP: return true;
 	default: return false;
 	}
 }
@@ -1918,6 +1932,31 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateFpArithm(cs_insn* i, cs_ppc
 	case PPC_INS_XSCPSGNDP: val = fpIntrinsic(irb, llvm::Intrinsic::copysign, {op2, op1}); break;
 	case PPC_INS_XSMAXDP: val = fpIntrinsic(irb, llvm::Intrinsic::maxnum, {op1, op2}); break;
 	case PPC_INS_XSMINDP: val = fpIntrinsic(irb, llvm::Intrinsic::minnum, {op1, op2}); break;
+	// The C-type forms are the C `a > b ? a : b` reading; the J-type forms
+	// follow Java's NaN-propagating max/min.
+	case PPC_INS_XSMAXCDP: val = irb.CreateSelect(irb.CreateFCmpOGT(op1, op2), op1, op2); break;
+	case PPC_INS_XSMINCDP: val = irb.CreateSelect(irb.CreateFCmpOLT(op1, op2), op1, op2); break;
+	case PPC_INS_XSMAXJDP:
+	case PPC_INS_XSMINJDP:
+	{
+		auto id = i->id == PPC_INS_XSMAXJDP ? llvm::Intrinsic::maxnum : llvm::Intrinsic::minnum;
+		val = fpIntrinsic(irb, id, {op1, op2});
+		val = irb.CreateSelect(irb.CreateFCmpUNO(op2, op2), op2, val);
+		val = irb.CreateSelect(irb.CreateFCmpUNO(op1, op1), op1, val);
+		break;
+	}
+	case PPC_INS_XSCMPEQDP:
+	case PPC_INS_XSCMPGEDP:
+	case PPC_INS_XSCMPGTDP:
+	{
+		auto* c = i->id == PPC_INS_XSCMPEQDP ? irb.CreateFCmpOEQ(op1, op2)
+				: i->id == PPC_INS_XSCMPGEDP ? irb.CreateFCmpOGE(op1, op2)
+				: irb.CreateFCmpOGT(op1, op2);
+		auto* i128 = irb.getInt128Ty();
+		auto* m = irb.CreateShl(irb.CreateZExt(irb.CreateSExt(c, irb.getInt64Ty()), i128), 64);
+		storeOpI128(pi->operands[0], m, irb);
+		return;
+	}
 	default: return;
 	}
 
@@ -1956,10 +1995,13 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateFpUnary(cs_insn* i, cs_ppc*
 	case PPC_INS_FCFIDU:
 	case PPC_INS_FCFIDUS:
 	case PPC_INS_XSCVSXDDP:
-	case PPC_INS_XSCVUXDDP: {
+	case PPC_INS_XSCVUXDDP:
+	case PPC_INS_XSCVSXDSP:
+	case PPC_INS_XSCVUXDSP: {
 		op1 = loadOp(pi->operands[1], irb);
 		op1 = generateTypeConversion(irb, op1, irb.getInt64Ty(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
-		bool uns = (i->id == PPC_INS_FCFIDU || i->id == PPC_INS_FCFIDUS || i->id == PPC_INS_XSCVUXDDP);
+		bool uns = (i->id == PPC_INS_FCFIDU || i->id == PPC_INS_FCFIDUS || i->id == PPC_INS_XSCVUXDDP
+				|| i->id == PPC_INS_XSCVUXDSP);
 		llvm::Value* val = uns ? irb.CreateUIToFP(op1, f64) : irb.CreateSIToFP(op1, f64);
 		if (isSinglePrecisionForm(i->id))
 		{
@@ -2008,7 +2050,15 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateFpUnary(cs_insn* i, cs_ppc*
 	default: break;
 	}
 
-	if (i->id == PPC_INS_XSCVSPDP)
+	if (i->id == PPC_INS_XSCVDPSPN)
+	{
+		// Single-precision result in word 0 of the target.
+		auto* d = loadOpDouble(pi->operands[1], irb);
+		auto* bits = irb.CreateBitCast(irb.CreateFPTrunc(d, irb.getFloatTy()), irb.getInt32Ty());
+		storeOpI128(pi->operands[0], irb.CreateShl(irb.CreateZExt(bits, irb.getInt128Ty()), 96), irb);
+		return;
+	}
+	if (i->id == PPC_INS_XSCVSPDP || i->id == PPC_INS_XSCVSPDPN)
 	{
 		auto* raw = loadOp(pi->operands[1], irb);
 		llvm::Value* bits64 = nullptr;
@@ -2041,17 +2091,21 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateFpUnary(cs_insn* i, cs_ppc*
 	case PPC_INS_XSNABSDP: val = irb.CreateFNeg(fpIntrinsic(irb, llvm::Intrinsic::fabs, {op1})); break;
 	case PPC_INS_FSQRT:
 	case PPC_INS_FSQRTS:
-	case PPC_INS_XSSQRTDP: val = fpIntrinsic(irb, llvm::Intrinsic::sqrt, {op1}); break;
+	case PPC_INS_XSSQRTDP:
+	case PPC_INS_XSSQRTSP: val = fpIntrinsic(irb, llvm::Intrinsic::sqrt, {op1}); break;
+	case PPC_INS_XSRSP: val = op1; break;
 	case PPC_INS_FRSP:
 	case PPC_INS_XSCVDPSP: val = roundToSingle(irb, op1); break;
 	// The estimate instructions are specified only to within a relative
 	// error bound, so the exact operation is the honest reading of them.
 	case PPC_INS_FRE:
 	case PPC_INS_FRES:
-	case PPC_INS_XSREDP: val = irb.CreateFDiv(one, op1); break;
+	case PPC_INS_XSREDP:
+	case PPC_INS_XSRESP: val = irb.CreateFDiv(one, op1); break;
 	case PPC_INS_FRSQRTE:
 	case PPC_INS_FRSQRTES:
-	case PPC_INS_XSRSQRTEDP: val = irb.CreateFDiv(one, fpIntrinsic(irb, llvm::Intrinsic::sqrt, {op1})); break;
+	case PPC_INS_XSRSQRTEDP:
+	case PPC_INS_XSRSQRTESP: val = irb.CreateFDiv(one, fpIntrinsic(irb, llvm::Intrinsic::sqrt, {op1})); break;
 	case PPC_INS_FRIM:
 	case PPC_INS_XSRDPIM: val = fpIntrinsic(irb, llvm::Intrinsic::floor, {op1}); break;
 	case PPC_INS_FRIP:
@@ -4630,17 +4684,32 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecFpFma(cs_insn* i, cs_ppc
 	case PPC_INS_XSNMADDMDP:
 	case PPC_INS_XSNMSUBADP:
 	case PPC_INS_XSNMSUBMDP:
+	case PPC_INS_XSMADDASP:
+	case PPC_INS_XSMADDMSP:
+	case PPC_INS_XSMSUBASP:
+	case PPC_INS_XSMSUBMSP:
+	case PPC_INS_XSNMADDASP:
+	case PPC_INS_XSNMADDMSP:
+	case PPC_INS_XSNMSUBASP:
+	case PPC_INS_XSNMSUBMSP:
 	{
 		EXPECT_IS_TERNARY(i, pi, irb);
 		auto* xt = loadOpDouble(pi->operands[0], irb);
 		auto* xa = loadOpDouble(pi->operands[1], irb);
 		auto* xb = loadOpDouble(pi->operands[2], irb);
-		const bool typeA = (i->id == PPC_INS_XSMADDADP || i->id == PPC_INS_XSMSUBADP
-				|| i->id == PPC_INS_XSNMADDADP || i->id == PPC_INS_XSNMSUBADP);
-		const bool sub = (i->id == PPC_INS_XSMSUBADP || i->id == PPC_INS_XSMSUBMDP
-				|| i->id == PPC_INS_XSNMSUBADP || i->id == PPC_INS_XSNMSUBMDP);
-		const bool neg = (i->id == PPC_INS_XSNMADDADP || i->id == PPC_INS_XSNMADDMDP
-				|| i->id == PPC_INS_XSNMSUBADP || i->id == PPC_INS_XSNMSUBMDP);
+		const auto id = i->id;
+		const bool typeA = (id == PPC_INS_XSMADDADP || id == PPC_INS_XSMSUBADP
+				|| id == PPC_INS_XSNMADDADP || id == PPC_INS_XSNMSUBADP
+				|| id == PPC_INS_XSMADDASP || id == PPC_INS_XSMSUBASP
+				|| id == PPC_INS_XSNMADDASP || id == PPC_INS_XSNMSUBASP);
+		const bool sub = (id == PPC_INS_XSMSUBADP || id == PPC_INS_XSMSUBMDP
+				|| id == PPC_INS_XSNMSUBADP || id == PPC_INS_XSNMSUBMDP
+				|| id == PPC_INS_XSMSUBASP || id == PPC_INS_XSMSUBMSP
+				|| id == PPC_INS_XSNMSUBASP || id == PPC_INS_XSNMSUBMSP);
+		const bool neg = (id == PPC_INS_XSNMADDADP || id == PPC_INS_XSNMADDMDP
+				|| id == PPC_INS_XSNMSUBADP || id == PPC_INS_XSNMSUBMDP
+				|| id == PPC_INS_XSNMADDASP || id == PPC_INS_XSNMADDMSP
+				|| id == PPC_INS_XSNMSUBASP || id == PPC_INS_XSNMSUBMSP);
 		auto* mulA = typeA ? xa : xt;
 		auto* addend = typeA ? xt : xa;
 		if (sub)
@@ -4651,6 +4720,10 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateVecFpFma(cs_insn* i, cs_ppc
 		if (neg)
 		{
 			val = irb.CreateFNeg(val);
+		}
+		if (isSinglePrecisionForm(id))
+		{
+			val = roundToSingle(irb, val);
 		}
 		storeOp(pi->operands[0], val, irb, eOpConv::FPCAST_OR_BITCAST);
 		return;
