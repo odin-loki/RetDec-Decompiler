@@ -42,21 +42,18 @@ LLVM IR construction remains single-threaded (`LLVMContext` is not thread-safe).
 
 ## Parallel batch decompile
 
-`parallelBatchDecompile()` in `retdec.h` takes one config per binary and
-dispatches them to a thread pool. **They do not currently overlap.** bin2llvmir
-holds its state in ten process-wide provider maps and
-`ProviderInitialization::runOnModule` clears all of them on entry, so a second
-pipeline destroys the `Config` and `FileImage` the first is still using --
-a use-after-free, not a garbled log. `decompile()` therefore takes a
-process-wide lock and the pipelines take turns.
+`parallelBatchDecompile()` in `retdec.h` takes one config per binary and runs
+them concurrently on a thread pool. The bin2llvmir providers are keyed by
+`llvm::Module*` (`providers/module_map.h`) and each pipeline releases only its
+own entries; per-pipeline statics are `thread_local`; logging goes through a
+per-thread `Log::ThreadScope`, so each job writes its own log and error files.
+A job that throws becomes `false` for that input.
 
-What the function still buys over a loop is the error handling: a job that
-throws becomes `false` for that input rather than an escaped exception.
-
-Getting the concurrency back means keying and clearing the providers per
-`llvm::Module` instead of per process. That is the fix; see `pipelineLock()` in
-`src/retdec/retdec.cpp` and section 6 of
-`docs/internal/UNFIXED_AUDIT_FINDINGS.md`.
+`tests/decompiler/parallel_decompile_check.cpp` (ctest
+`parallel_decompile_matches_serial`) decompiles fixtures serially, then several
+copies of each at once, and requires byte-identical output. It runs clean under
+ThreadSanitizer (build with `-fsanitize=thread` in `CMAKE_CXX_FLAGS`; LLVM and
+the other external projects stay uninstrumented).
 
 ## Profiling
 

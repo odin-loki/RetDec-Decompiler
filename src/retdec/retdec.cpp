@@ -147,28 +147,12 @@ bool pipelineProfilingEnabled()
 
 /// Serialises every LLVM pass pipeline in this process.
 ///
-/// bin2llvmir keeps its state in process-wide maps -- ConfigProvider,
-/// FileImageProvider, DemanglerProvider, LtiProvider, NamesProvider,
-/// DebugFormatProvider, AbiProvider, CallingConventionProvider, AsmInstruction
-/// and SymbolicTree -- and ProviderInitialization::runOnModule begins by
-/// calling clear() on all ten. clear() is not "drop my entries", it is "drop
-/// everyone's": a second pipeline entering the providers destroys the Config
-/// and the FileImage the first one is still holding pointers into.
-///
-/// parallelBatchDecompile() ran N of these on a thread pool, so an API that
-/// advertises parallelism was a use-after-free on its own fast path. Keying and
-/// clearing the providers per module is the real fix and the one that gets the
-/// parallelism back; it is ten headers and every accessor in them, and it needs
-/// the LLVM build to do safely. Until then the pipelines take turns: a batch is
-/// slower than its name suggests and correct rather than corrupt.
-///
-/// Recursive because tryEmulationUnpacking() runs a pipeline of its own through
-/// decompileToLlvmIr() while holding this.
-std::recursive_mutex& pipelineLock()
-{
-	static std::recursive_mutex m;
-	return m;
-}
+/// Concurrency: every bin2llvmir provider is keyed by llvm::Module* (see
+/// providers/module_map.h) and ProviderInitialization releases only its own
+/// module's entries, so pipelines on different modules run side by side.
+/// decompile() releases its module's providers before the module dies;
+/// disassemble() and decompileToLlvmIr() hand the module to the caller, and a
+/// later pipeline that reuses the address releases the stale entry on entry.
 
 /// @param mayReset whether this decompilation may clear what the profiler has
 ///        already accumulated. False whenever another one is in flight -- see
@@ -531,8 +515,6 @@ void fillFunctions(llvm::Module& module, retdec::common::FunctionSet* fs)
 
 LlvmModuleContextPair disassemble(const std::string& inputPath, retdec::common::FunctionSet* fs)
 {
-	const std::lock_guard<std::recursive_mutex> pipelineGuard(pipelineLock());
-
 	auto context = std::make_unique<llvm::LLVMContext>();
 	auto module = createLlvmModule(*context);
 
@@ -617,6 +599,25 @@ static inline void addPass(llvm::legacy::PassManagerBase& PM, llvm::Pass* P, con
 }
 
 
+namespace {
+
+/// The writers setLogsFrom() would install, for the calling thread only.
+void setThreadLogsFrom(Log::ThreadScope& scope, const retdec::config::Parameters& params)
+{
+	auto logFile = params.getLogFile();
+	auto errFile = params.getErrFile();
+	auto verbose = params.isVerboseOutput();
+
+	scope.set(Log::Type::Info, Logger::Ptr(logFile.empty()
+			? new Logger(std::cout, verbose) : new FileLogger(logFile, verbose)));
+	if (!errFile.empty())
+	{
+		scope.set(Log::Type::Error, Logger::Ptr(new FileLogger(errFile)));
+	}
+}
+
+} // anonymous namespace
+
 void setLogsFrom(const retdec::config::Parameters& params)
 {
 	auto logFile = params.getLogFile();
@@ -637,15 +638,12 @@ void setLogsFrom(const retdec::config::Parameters& params)
 
 bool decompile(retdec::config::Config& config, std::string* outString)
 {
-	// See pipelineLock(): the bin2llvmir providers are process-wide and this
-	// function clears them, so two of these at once destroy each other's state.
-	const std::lock_guard<std::recursive_mutex> pipelineGuard(pipelineLock());
-
 	// Counts this decompilation against the process-wide profiler for as long
 	// as it runs; see configurePipelineProfiler above.
 	const profiling::ProfilingSession profilingSession;
 
-	setLogsFrom(config.parameters);
+	Log::ThreadScope threadLogs;
+	setThreadLogsFrom(threadLogs, config.parameters);
 	configurePipelineProfiler(profilingSession.ownsProfiler());
 
 	Log::phase("Initialization");
@@ -1158,9 +1156,8 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 
 LlvmModuleContextPair decompileToLlvmIr(retdec::config::Config& config, const std::string& stopBeforePass)
 {
-	const std::lock_guard<std::recursive_mutex> pipelineGuard(pipelineLock());
-
-	setLogsFrom(config.parameters);
+	Log::ThreadScope threadLogs;
+	setThreadLogsFrom(threadLogs, config.parameters);
 
 	Log::phase("Initialization");
 	auto& passRegistry = initializeLlvmPasses();
@@ -1221,10 +1218,6 @@ bool emulationUnpackDiagEnabled()
 
 bool tryEmulationUnpacking(retdec::config::Config& config, const std::string& outputPath)
 {
-	// Held across the emulation as well as the pipeline below it: the module it
-	// walks holds pointers into the providers.
-	const std::lock_guard<std::recursive_mutex> pipelineGuard(pipelineLock());
-
 	const bool diag = emulationUnpackDiagEnabled();
 
 	if (diag)

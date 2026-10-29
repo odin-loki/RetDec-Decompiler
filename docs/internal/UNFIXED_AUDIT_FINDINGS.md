@@ -558,7 +558,7 @@ with "not yet re-enabled".
 `tests/common/calling_convention_tests.cpp` is still unbuilt and still in that
 list.
 
-`src/bin2llvmir/providers/` — the ten provider maps are process-wide, and
+~~`src/bin2llvmir/providers/` — the ten provider maps are process-wide, and
 `ProviderInitialization::runOnModule` starts by calling `clear()` on all of
 them. `clear()` drops everyone's entries, not the caller's, so a second pipeline
 destroys the `Config` and `FileImage` the first is still holding pointers into.
@@ -572,7 +572,11 @@ environment can compile bin2llvmir to check it. What *is* done is that
 `disassemble()` now take a process-wide recursive lock, so the pipelines take
 turns instead of corrupting each other. `parallelBatchDecompile` is therefore
 correct and serial; `retdec.h` and `docs/PERFORMANCE.md` say so. Lifting the
-lock is what the provider refactor is for.
+lock is what the provider refactor is for.~~ — fixed: providers are keyed per `llvm::Module` behind a
+shared mutex (`providers/module_map.h`), `ProviderInitialization` and
+`decompile()` release only their own module, the pipeline lock is gone, and
+`parallel_decompile_matches_serial` checks concurrent output against serial
+output (clean under TSan).
 
 The two mutable statics in `ModulePassPrinter` that the same batch path raced --
 `LastPhase`, a `std::string` every pass assigned to, and

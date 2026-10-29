@@ -409,8 +409,8 @@ No `retdec-qwen3-runner` and no CLI `--model`.
 
 ### Native decompile process
 
-`decompile()` takes a process-wide `pipelineLock()` (bin2llvmir providers
-are not re-entrant). LLVM passes run on the calling thread. Post-pipeline
+Concurrent `decompile()` calls on different threads are supported: bin2llvmir
+providers are keyed per `llvm::Module` and logging is per thread. LLVM passes run on the calling thread. Post-pipeline
 per-function detectors may use `retdec::utils::ThreadPool` when
 `RETDEC_PARALLEL_ANALYSIS` allows it and function count is high enough.
 
