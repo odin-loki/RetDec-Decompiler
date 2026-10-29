@@ -56,6 +56,28 @@ static void addPhi(ssa::SSAFunction& fn, ssa::VarId var = 0)
 	fn.addPhi(fn.block(0)->id, var);
 }
 
+// Make the block's two element loads feed its two stores, crossed, so the
+// stores are a real swap and not stack spills.
+static void wireSwap(ssa::SSAFunction& fn, ssa::BasicBlock& blk)
+{
+	std::vector<ssa::IrInstr*> loads, stores;
+	for (auto* i: blk.instrs)
+	{
+		if (i->op == ssa::IrInstr::Op::Load) loads.push_back(i);
+		if (i->op == ssa::IrInstr::Op::Store) stores.push_back(i);
+	}
+	for (std::size_t k = 0; k < 2 && k < loads.size() && k < stores.size(); ++k)
+	{
+		auto* v = fn.allocValue(ssa::ValueKind::VirtualReg);
+		loads[k]->defValue = v->id;
+		v->defInstr = loads[k];
+		ssa::Use u;
+		u.valueId = v->id;
+		u.operandIndex = 0;
+		stores[1 - k]->uses.push_back(u);
+	}
+}
+
 // Build the opcode bag of a compiled bubble sort: nested loops (two phis, no
 // loop-carried decrement), three element compares, a two-store adjacent swap
 // and three conditional branches.  `n - 1 - i` is the inner-loop bound, so the
@@ -94,6 +116,7 @@ static std::unique_ptr<ssa::SSAFunction> makeBubbleSort(const std::string& name)
 	auto* jVal = fn->allocValue(ssa::ValueKind::VirtualReg);
 	jVal->defInstr = jInc;
 	jPhi->addOperand(inner->id, jVal->id);
+	wireSwap(*fn, *inner);
 	return fn;
 }
 
@@ -152,6 +175,7 @@ static std::unique_ptr<ssa::SSAFunction> makeDescendingBubbleSort(const std::str
 	auto* jVal = fn->allocValue(ssa::ValueKind::VirtualReg);
 	jVal->defInstr = jInc;
 	jPhi->addOperand(inner->id, jVal->id);
+	wireSwap(*fn, *inner);
 	return fn;
 }
 
@@ -906,6 +930,25 @@ TEST(BubbleSortDetectorTest, BubbleSortIsDetected)
 	auto r = det.detect(*fn);
 	EXPECT_EQ(r.algorithm, SortAlgorithm::BubbleSort);
 	EXPECT_GE(r.confidence, 0.45f);
+}
+
+TEST(BubbleSortDetectorTest, StoresThatOnlySpillToTheStackAreNotASwap)
+{
+	auto fn = makeBubbleSort("bubble_sort");
+	// Point every store at a stack slot: -O0 spills, not element writes.
+	auto* slot = fn->allocValue(ssa::ValueKind::VirtualReg);
+	slot->isStackSlot = true;
+	for (std::uint32_t b = 0; b < fn->blockCount(); ++b)
+		for (auto* i: fn->block(b)->instrs)
+			if (i->op == ssa::IrInstr::Op::Store)
+			{
+				ssa::Use u;
+				u.valueId = slot->id;
+				u.operandIndex = 1;
+				i->uses.push_back(u);
+			}
+	BubbleSortDetector det;
+	EXPECT_LT(det.detect(*fn).confidence, 0.45f);
 }
 
 TEST(BubbleSortDetectorTest, BubbleSortWinsOverIntrosort)
