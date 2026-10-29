@@ -1582,8 +1582,9 @@ SemanticDetectionMap buildSemanticDetectionMap(
 	{
 		const std::string label = !result.emittedType.empty() ? result.emittedType : result.kindName();
 		std::string detail = result.toString();
-		// Open-addressing requires a strcmp/memcmp/hash callee (hasKeyCall).
-		if (label.find("open_addressing") != std::string::npos)
+		// Open-addressing found through a strcmp/memcmp/hash callee name
+		// (hasKeyCall) is name evidence; the hashed-bucket probe is not.
+		if (label.find("open_addressing") != std::string::npos && !result.structuralEvidence)
 		{
 			detail = "evidence:symbol_name " + detail;
 		}

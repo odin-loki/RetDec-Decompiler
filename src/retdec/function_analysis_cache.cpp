@@ -75,6 +75,7 @@ rapidjson::Value serializeContainer(
 	// printed "STL: ring_buffer" -- the same binary, two different outputs,
 	// which is what CACHE-05 compares.
 	obj.AddMember("emitted", toJsonString(r->emittedType, a), a);
+	obj.AddMember("structural", r->structuralEvidence, a);
 	obj.AddMember("elemKind", static_cast<int>(r->elementType.kind), a);
 	obj.AddMember("elemWidth", static_cast<int>(r->elementType.byteWidth), a);
 	obj.AddMember("elemSigned", r->elementType.isSigned, a);
@@ -103,6 +104,7 @@ std::optional<container_detect::ContainerResult> deserializeContainer(
 
 	if (obj.HasMember("emitted") && obj["emitted"].IsString())
 		r.emittedType.assign(obj["emitted"].GetString(), obj["emitted"].GetStringLength());
+	if (obj.HasMember("structural") && obj["structural"].IsBool()) r.structuralEvidence = obj["structural"].GetBool();
 	if (obj.HasMember("elemKind") && obj["elemKind"].IsInt())
 	{
 		const int ek = obj["elemKind"].GetInt();

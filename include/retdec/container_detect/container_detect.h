@@ -222,6 +222,10 @@ struct ContainerResult {
     std::vector<AccessPattern> accessPatterns;
     std::string      emittedType;    ///< e.g. "std::vector<int32_t>"
     std::string      objectName;     ///< recovered variable name
+    /// The detection rests on code shape alone, not on callee or symbol
+    /// names. Exporters tag name-based hits so the headline score skips them;
+    /// false is the conservative default.
+    bool             structuralEvidence = false;
 
     std::string kindName() const noexcept;
     std::string toString() const;

@@ -1625,6 +1625,51 @@ TEST(OpenAddressingDetectorTest, DivBy32WithHashIsOpenAddressing)
 	EXPECT_EQ(r.emittedType, "open_addressing_hash_table");
 }
 
+// A linear probe seen only by shape: an unnamed call's result is wrapped to a
+// bucket before the loop, and the probe index is wrapped again inside it.
+static ssa::IrInstr* addWrap(ssa::SSAFunction& fn, ssa::BlockId b)
+{
+	auto* instr = fn.addInstr(b, ssa::IrInstr::Op::And);
+	auto* lhs = fn.allocValue(ssa::ValueKind::VirtualReg);
+	auto* imm = fn.allocValue(ssa::ValueKind::Immediate);
+	imm->imm = 31;
+	instr->uses.push_back({lhs->id, 0});
+	instr->uses.push_back({imm->id, 1});
+	return instr;
+}
+
+TEST(OpenAddressingDetectorTest, HashedBucketThenWrappedProbeIsStructural)
+{
+	auto fn = makeFunc("function_119b",
+		{ssa::IrInstr::Op::Load, ssa::IrInstr::Op::Load, ssa::IrInstr::Op::Compare, ssa::IrInstr::Op::Store}, 1);
+	addCall(*fn, "function_1159");
+	addWrap(*fn, fn->block(0)->id);
+	auto* loop = fn->block(1);
+	addWrap(*fn, loop->id);
+	fn->block(0)->succs.push_back(loop->id);
+	loop->preds.push_back(fn->block(0)->id);
+	loop->succs.push_back(loop->id);
+	loop->preds.push_back(loop->id);
+	OpenAddressingDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_EQ(r.emittedType, "open_addressing_hash_table");
+	EXPECT_TRUE(r.structuralEvidence);
+}
+
+TEST(OpenAddressingDetectorTest, WrapWithoutAHashedBucketIsNotStructural)
+{
+	auto fn = makeFunc("probe",
+		{ssa::IrInstr::Op::Load, ssa::IrInstr::Op::Load, ssa::IrInstr::Op::Compare, ssa::IrInstr::Op::Store}, 1);
+	auto* loop = fn->block(1);
+	addWrap(*fn, loop->id);
+	fn->block(0)->succs.push_back(loop->id);
+	loop->preds.push_back(fn->block(0)->id);
+	loop->succs.push_back(loop->id);
+	loop->preds.push_back(loop->id);
+	OpenAddressingDetector det;
+	EXPECT_TRUE(det.detect(*fn).emittedType.empty());
+}
+
 TEST(OpenAddressingDetectorTest, XorMulWithoutStrcmpIsNotOpenAddressing)
 {
 	// AES GF mul is xor+mul, not a key compare.

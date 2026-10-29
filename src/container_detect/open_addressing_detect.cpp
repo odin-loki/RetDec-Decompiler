@@ -5,7 +5,6 @@
 
 #include "retdec/container_detect/container_detect.h"
 #include "retdec/ssa/ssa.h"
-
 namespace retdec {
 namespace container_detect {
 
@@ -33,7 +32,7 @@ static bool hasBackEdge(const ssa::SSAFunction& fn)
 		for (uint32_t s: blk->succs)
 			if (s <= b) return true;
 	}
-	return false;
+	return ssa::hasCycle(fn);
 }
 
 // xor+mul is AES GF / FNV, not enough. Open-addressing of keys needs
@@ -94,6 +93,46 @@ static bool hasModuloIndex(const ssa::SSAFunction& fn)
 	return false;
 }
 
+static bool isBucketWrap(const ssa::SSAFunction& fn, const ssa::IrInstr& instr)
+{
+	if (instr.op != ssa::IrInstr::Op::And && instr.op != ssa::IrInstr::Op::Rem) return false;
+	for (const auto& u: instr.uses)
+	{
+		const auto* iv = fn.value(u.valueId);
+		if (!iv || iv->kind != ssa::ValueKind::Immediate) continue;
+		if (instr.op == ssa::IrInstr::Op::And ? isBucketMask(iv->imm) : isBucketCapacity(iv->imm)) return true;
+	}
+	return false;
+}
+
+// The name-blind shape of a linear probe: a call's result reduced to a bucket
+// index (`i = hash(key) & (cap - 1)`), and a second bucket wrap inside a loop
+// (`i = (i + 1) & (cap - 1)`).  No callee name is read.
+static bool hasHashedBucketProbe(const ssa::SSAFunction& fn)
+{
+	bool hashedBucket = false, wrapInLoop = false, sawCall = false;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		const bool onCycle = ssa::blockOnCycle(fn, blk->id);
+		for (const auto* instr: blk->instrs)
+		{
+			if (instr && instr->op == ssa::IrInstr::Op::Call) sawCall = true;
+			if (!instr || !isBucketWrap(fn, *instr)) continue;
+			if (onCycle) wrapInLoop = true;
+			// At -O0 the hash result round-trips through a stack slot first.
+			else if (sawCall) hashedBucket = true;
+			for (const auto& u: instr->uses)
+			{
+				const auto* v = fn.value(u.valueId);
+				if (v && v->defInstr && v->defInstr->op == ssa::IrInstr::Op::Call) hashedBucket = true;
+			}
+		}
+	}
+	return hashedBucket && wrapInLoop;
+}
+
 } // anonymous namespace
 
 ContainerResult OpenAddressingDetector::detect(const ssa::SSAFunction& fn) const
@@ -103,8 +142,9 @@ ContainerResult OpenAddressingDetector::detect(const ssa::SSAFunction& fn) const
 
 	if (!hasBackEdge(fn)) return result;
 
-	const bool hash = hasKeyCall(fn);
-	const bool mod = hasModuloIndex(fn);
+	const bool structural = hasHashedBucketProbe(fn);
+	const bool hash = structural || hasKeyCall(fn);
+	const bool mod = structural || hasModuloIndex(fn);
 	const int cmps = countOp(fn, ssa::IrInstr::Op::Compare);
 	const int loads = countOp(fn, ssa::IrInstr::Op::Load);
 	const int stores = countOp(fn, ssa::IrInstr::Op::Store);
@@ -122,6 +162,7 @@ ContainerResult OpenAddressingDetector::detect(const ssa::SSAFunction& fn) const
 	if (result.confidence < 0.55f) return result;
 
 	result.emittedType = "open_addressing_hash_table";
+	result.structuralEvidence = structural;
 	result.elementType.kind = RecoveredType::Kind::Int32;
 	result.keyType.kind = RecoveredType::Kind::Int32;
 	return result;
