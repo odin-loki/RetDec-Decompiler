@@ -8,6 +8,7 @@
 #include "retdec/llvmir2hll/analysis/loop_bound_jump_analysis.h"
 #include "retdec/llvmir2hll/analysis/value_analysis.h"
 #include "retdec/llvmir2hll/ir/assign_stmt.h"
+#include "retdec/llvmir2hll/ir/break_stmt.h"
 #include "retdec/llvmir2hll/ir/return_stmt.h"
 #include "retdec/llvmir2hll/ir/empty_stmt.h"
 #include "retdec/llvmir2hll/ir/if_stmt.h"
@@ -260,6 +261,21 @@ ShPtr<UForLoopStmt> WhileTrueToUForLoopOptimizer::tryConversionToUForLoop() {
 
 	// The body is everything before the loop-end check.
 	auto body = splittedLoop->beforeLoopEndStmts;
+
+	// A for loop tests its condition before the body, but here the exit is
+	// tested after it: `while (true) { BODY; if (c) break; STEP; }` is not
+	// `for (; !c; STEP) { BODY; }`, which skips BODY on the iteration that
+	// exits and runs no BODY at all when c holds on entry.  binary_search -O0
+	// read the element it was about to compare before computing its index.
+	// Only an empty BODY makes the two the same, and only when the exit does
+	// nothing but break (anything else in it would be dropped).
+	if (skipEmptyStmts(body)) {
+		return {};
+	}
+	if (!isa<BreakStmt>(skipEmptyStmts(splittedLoop->loopEnd->getFirstIfBody()))
+			|| skipEmptyStmts(skipEmptyStmts(splittedLoop->loopEnd->getFirstIfBody())->getSuccessor())) {
+		return {};
+	}
 	if (!body) {
 		body = EmptyStmt::create(nullptr, whileLoop->getAddress());
 	}
