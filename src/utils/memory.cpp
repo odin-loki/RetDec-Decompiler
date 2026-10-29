@@ -23,6 +23,17 @@
 	#include <sys/resource.h>
 #endif
 
+#if defined(__SANITIZE_ADDRESS__)
+	#define RETDEC_UNDER_ASAN 1
+#elif defined(__has_feature)
+	#if __has_feature(address_sanitizer)
+		#define RETDEC_UNDER_ASAN 1
+	#endif
+#endif
+#ifndef RETDEC_UNDER_ASAN
+	#define RETDEC_UNDER_ASAN 0
+#endif
+
 namespace retdec {
 namespace utils {
 
@@ -34,12 +45,20 @@ namespace {
 * @brief Implementation of @c limitSystemMemory() on POSIX-compliant systems.
 */
 bool limitSystemMemoryOnPOSIX(std::size_t limit) {
+#if RETDEC_UNDER_ASAN
+	// ASan reserves terabytes of virtual address space for its shadow, so
+	// any RLIMIT_AS near physical RAM makes its next internal mmap fail
+	// with ENOMEM. Report success and leave the address space unlimited.
+	(void)limit;
+	return true;
+#else
 	struct rlimit rl = {
 		.rlim_cur = static_cast<rlim_t>(limit),        // Soft limit.
 		.rlim_max = RLIM_INFINITY // Hard limit (ceiling for rlim_cur).
 	};
 	auto rc = setrlimit(RLIMIT_AS, &rl);
 	return rc == 0;
+#endif
 }
 
 #endif
