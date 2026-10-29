@@ -756,6 +756,40 @@ TEST(HeapsortDetectorTest, NoChildIndexStaysBelowAssign)
 	EXPECT_LT(r.confidence, 0.55f);
 }
 
+// Heapify on its own: sift-down with 2*i+1 that recurses on the larger child.
+static std::unique_ptr<ssa::SSAFunction> makeHeapify(bool recursive)
+{
+	auto fn = makeFunc(
+		"heapify",
+		{ssa::IrInstr::Op::Shl,
+		 ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::CondBranch,
+		 ssa::IrInstr::Op::Store,
+		 ssa::IrInstr::Op::Store},
+		2);
+	auto* shlInstr = fn->block(fn->entryId())->instrs[0];
+	auto* imm1 = fn->allocValue(ssa::ValueKind::Immediate);
+	imm1->imm = 1;
+	ssa::Use u;
+	u.valueId = imm1->id;
+	u.operandIndex = 1;
+	shlInstr->uses.push_back(u);
+	if (recursive) fn->addInstr(fn->entryId(), ssa::IrInstr::Op::Call)->calleeName = "heapify";
+	return fn;
+}
+
+TEST(HeapsortDetectorTest, RecursiveHeapifyIsAHeap)
+{
+	HeapsortDetector det;
+	EXPECT_GE(det.detect(*makeHeapify(true)).confidence, 0.45f);
+}
+
+TEST(HeapsortDetectorTest, NonRecursiveSiftDownAloneStaysBelowTheGate)
+{
+	HeapsortDetector det;
+	EXPECT_LT(det.detect(*makeHeapify(false)).confidence, 0.45f);
+}
+
 TEST(HeapsortDetectorTest, XorHeavyIsNotHeapsort)
 {
 	// AES GF/T-table mixers have many Xors; that is not sift-down.

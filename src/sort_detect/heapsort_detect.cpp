@@ -41,6 +41,8 @@
 #include "retdec/ssa/ssa.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 
 namespace retdec {
 namespace sort_detect {
@@ -107,6 +109,19 @@ SortResult HeapsortDetector::detect(const ssa::SSAFunction& fn) const
 	if (hasBuildHeapPhase(fn)) score += 0.30f;
 	if (hasSortPhase(fn)) score += 0.30f;
 
+	// A recursive heapify: sift-down with child-index arithmetic that calls
+	// itself on the larger child.  The build and sort loops are in the driver,
+	// as at -O0, but the recursion on 2*i+1 is the heap.
+	if (sde.found && sde.hasLeftArith)
+		for (uint32_t b = 0; b < fn.blockCount() && score < 0.55f; ++b)
+			if (const auto* blk = fn.block(b))
+				for (const auto* instr: blk->instrs)
+					if (instr && instr->op == ssa::IrInstr::Op::Call && instr->calleeName == fn.name())
+					{
+						score = std::max(score, 0.55f);
+						break;
+					}
+
 	// Without sift-down evidence this is likely mergesort or another loop.
 	if (!sde.found) score = std::min(score, 0.40f);
 	// Child index (Mul 2 / Shl 1) is required to extract. max-select +
@@ -116,6 +131,7 @@ SortResult HeapsortDetector::detect(const ssa::SSAFunction& fn) const
 	// at 3–6 on this compiler. Eight or more is not a heap.
 	if (countOp(fn, ssa::IrInstr::Op::Xor) >= 8) score = std::min(score, 0.40f);
 
+	if (std::getenv("RETDEC_SORT_DIAG")) std::fprintf(stderr, "HEAP %s sift=%d left=%d build=%d sortph=%d score=%.2f subs=%d stores=%d shl=%d mul=%d\n", fn.name().c_str(), sde.found, sde.hasLeftArith, hasBuildHeapPhase(fn), hasSortPhase(fn), score, countOp(fn, ssa::IrInstr::Op::Sub), countOp(fn, ssa::IrInstr::Op::Store), countOp(fn, ssa::IrInstr::Op::Shl), countOp(fn, ssa::IrInstr::Op::Mul));
 	result.confidence = score > 1.0f ? 1.0f : score;
 
 	// Variant detection from function / callee names.
