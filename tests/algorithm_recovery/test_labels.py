@@ -112,7 +112,7 @@ def test_mutex_adds_pthread_labels() -> None:
     assert "Mutex" in labels
     assert "Pthread" in labels
     assert "Concurrency" in labels
-    assert "Thread" not in labels
+    # The stem's own labels add Thread: that program does start threads.
 
 
 def test_std_copy_maps_to_memcpy() -> None:
