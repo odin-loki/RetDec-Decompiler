@@ -11,6 +11,7 @@
 #include "retdec/bin2llvmir/providers/calling_convention/arm64/arm64_conv.h"
 #include "retdec/bin2llvmir/providers/calling_convention/mips/mips_conv.h"
 #include "retdec/bin2llvmir/providers/calling_convention/mips64/mips64_conv.h"
+#include "retdec/bin2llvmir/providers/calling_convention/riscv/riscv_conv.h"
 #include "retdec/bin2llvmir/providers/calling_convention/pic32/pic32_conv.h"
 #include "retdec/bin2llvmir/providers/calling_convention/powerpc/powerpc_conv.h"
 #include "retdec/bin2llvmir/providers/calling_convention/powerpc64/powerpc64_conv.h"
@@ -185,6 +186,7 @@ CallingConventionProvider::CallingConventionProvider()
 	registerCC(CallingConvention::ID::CC_MIPS, &MipsCallingConvention::create);
 	registerCC(CallingConvention::ID::CC_MIPS64, &Mips64CallingConvention::create);
 	registerCC(CallingConvention::ID::CC_PIC32, &Pic32CallingConvention::create);
+	registerCC(CallingConvention::ID::CC_RISCV, &RiscvCallingConvention::create);
 	// __vectorcall: passes first two integer args in ECX/EDX (x86) like fastcall,
 	// plus vector/float args in XMM registers.  Use fastcall as the integer-register
 	// approximation; XMM handling is resolved by the dataflow filter.

@@ -48,7 +48,8 @@ const std::vector<std::string> ccStrings = {
 	// MSVC __vectorcall or Intel __regcall function lost its convention across
 	// a config write/read round trip.
 	"vectorcall",
-	"regcall"};
+	"regcall",
+	"riscv_default"};
 
 // ccStrings is indexed by eCC, so a value added to the enum without a string
 // here serialises as "unknown" and reads back as CC_UNKNOWN -- silently, since
@@ -56,7 +57,7 @@ const std::vector<std::string> ccStrings = {
 // that a build failure instead: when it fires, add the string above and the
 // matching case to operator<< in src/common/calling_convention.cpp.
 static_assert(
-	static_cast<int>(retdec::common::CallingConvention::eCC::CC_ENDING) == 24,
+	static_cast<int>(retdec::common::CallingConvention::eCC::CC_ENDING) == 25,
 	"eCC gained a value: add its string to ccStrings and its case to operator<<");
 
 } // anonymous namespace

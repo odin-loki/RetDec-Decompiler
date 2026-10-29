@@ -50,6 +50,8 @@ class CallingConvention
 		CC_VECTORCALL,
 		/// Intel __regcall — maximises register usage for all argument types.
 		CC_REGCALL,
+		/// RISC-V psABI (RV32 and RV64).
+		CC_RISCV,
 		CC_ENDING,
 		};
 

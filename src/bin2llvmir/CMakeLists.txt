@@ -107,6 +107,7 @@ add_library(bin2llvmir STATIC
 	providers/calling_convention/mips/mips_conv.cpp
 	providers/calling_convention/mips/mips_psp.cpp
 	providers/calling_convention/mips64/mips64_conv.cpp
+	providers/calling_convention/riscv/riscv_conv.cpp
 	providers/calling_convention/pic32/pic32_conv.cpp
 	providers/calling_convention/powerpc/powerpc_conv.cpp
 	providers/calling_convention/powerpc64/powerpc64_conv.cpp

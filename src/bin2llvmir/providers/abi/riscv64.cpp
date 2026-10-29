@@ -34,8 +34,7 @@ AbiRiscv64::AbiRiscv64(llvm::Module* m, Config* c) :
 			RISCV_REG_A5,
 			RISCV_REG_A6};
 
-	// CC_RISCV is added in the shared wiring patch; until then UNKNOWN.
-	_defcc = CallingConvention::ID::CC_UNKNOWN;
+	_defcc = CallingConvention::ID::CC_RISCV;
 }
 
 bool AbiRiscv64::isGeneralPurposeRegister(const llvm::Value* val) const
