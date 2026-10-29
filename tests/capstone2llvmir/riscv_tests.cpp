@@ -6440,6 +6440,72 @@ TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_SDOTUSP_SCI_B)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_BEQIMM_taken)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_A0, 0xfffffffd},
+	});
+
+	emulate_bin("0b 68 d5 01", 0x1000);
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCondBranchFunction(), {true, 0x1010}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_CV_BNEIMM_not_taken)
+{
+	ONLY_MODE_RV32;
+	enableCoreV();
+
+	setRegisters({
+		{RISCV_REG_A0, 5},
+	});
+
+	emulate_bin("0b 78 55 00", 0x1000);
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getCondBranchFunction(), {false, 0x1010}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_MRET)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_ENDING + 0x1000 + 0x341, 0x4000},
+	});
+
+	emulate_bin("73 00 20 30");
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getReturnFunction(), {0x4000}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorRiscvTests, RISCV_INS_SRET)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{RISCV_REG_ENDING + 0x1000 + 0x141, 0x5000},
+	});
+
+	emulate_bin("73 00 20 10");
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_translator->getReturnFunction(), {0x5000}},
+	});
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

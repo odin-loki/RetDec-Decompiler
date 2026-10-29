@@ -1134,6 +1134,8 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateBranch(cs_insn* i, cs_riscv* 
 			case RISCV_INS_BGE: cond = irb.CreateICmpSGE(op0, op1); break;
 			case RISCV_INS_BLTU: cond = irb.CreateICmpULT(op0, op1); break;
 			case RISCV_INS_BGEU: cond = irb.CreateICmpUGE(op0, op1); break;
+			case RISCV_INS_CV_BEQIMM: cond = irb.CreateICmpEQ(op0, op1); break;
+			case RISCV_INS_CV_BNEIMM: cond = irb.CreateICmpNE(op0, op1); break;
 			default:
 				throw GenericError("Unhandled insn ID in translateBranch().");
 		}
@@ -7414,6 +7416,24 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateCoreVDsp(cs_insn* i, cs_riscv
 	{
 		storeRegister(rd, irb.CreateSExtOrTrunc(r, getDefaultType()), irb);
 	}
+}
+
+
+/**
+ * MRET/SRET/DRET: return from trap to the saved exception PC (mepc/sepc/dpc).
+ * Privilege and status-stack updates are not modelled.
+ */
+void Capstone2LlvmIrTranslatorRiscv_impl::translateTrapReturn(cs_insn* i, cs_riscv* ri, llvm::IRBuilder<>& irb)
+{
+	uint16_t csr = i->id == RISCV_INS_MRET ? RISCV_SYSREG_MEPC
+			: i->id == RISCV_INS_SRET ? RISCV_SYSREG_SEPC : RISCV_SYSREG_DPC;
+	auto* target = loadCsr(csr, irb);
+	if (target == nullptr)
+	{
+		translatePseudoAsmGeneric(i, ri, irb);
+		return;
+	}
+	generateReturnFunctionCall(irb, target);
 }
 
 } // namespace capstone2llvmir

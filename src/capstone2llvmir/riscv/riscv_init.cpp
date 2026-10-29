@@ -316,6 +316,9 @@ void Capstone2LlvmIrTranslatorRiscv_impl::initializePseudoCallInstructionIDs()
 
 	_returnInsnIds =
 	{
+			RISCV_INS_MRET,
+			RISCV_INS_SRET,
+			RISCV_INS_DRET,
 			// jalr x0, ra, 0 is classified at translation time.
 	};
 
@@ -335,6 +338,8 @@ void Capstone2LlvmIrTranslatorRiscv_impl::initializePseudoCallInstructionIDs()
 			RISCV_INS_BGEU,
 			RISCV_INS_C_BEQZ,
 			RISCV_INS_C_BNEZ,
+			RISCV_INS_CV_BEQIMM,
+			RISCV_INS_CV_BNEIMM,
 	};
 
 	_controlFlowInsnIds =
@@ -832,6 +837,11 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorRiscv_impl::*)(cs_insn* i, 
 		{RISCV_INS_ANDI, &Capstone2LlvmIrTranslatorRiscv_impl::translateAnd},
 		{RISCV_INS_ANDN, &Capstone2LlvmIrTranslatorRiscv_impl::translateAndn},
 		{RISCV_INS_AUIPC, &Capstone2LlvmIrTranslatorRiscv_impl::translateAuipc},
+		{RISCV_INS_CV_BEQIMM, &Capstone2LlvmIrTranslatorRiscv_impl::translateBranch},
+		{RISCV_INS_CV_BNEIMM, &Capstone2LlvmIrTranslatorRiscv_impl::translateBranch},
+		{RISCV_INS_MRET, &Capstone2LlvmIrTranslatorRiscv_impl::translateTrapReturn},
+		{RISCV_INS_SRET, &Capstone2LlvmIrTranslatorRiscv_impl::translateTrapReturn},
+		{RISCV_INS_DRET, &Capstone2LlvmIrTranslatorRiscv_impl::translateTrapReturn},
 		{RISCV_INS_BEQ, &Capstone2LlvmIrTranslatorRiscv_impl::translateBranch},
 		{RISCV_INS_BGE, &Capstone2LlvmIrTranslatorRiscv_impl::translateBranch},
 		{RISCV_INS_BGEU, &Capstone2LlvmIrTranslatorRiscv_impl::translateBranch},
