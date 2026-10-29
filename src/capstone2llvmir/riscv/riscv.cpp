@@ -4,6 +4,7 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek
  */
 
+#include <regex>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -6978,6 +6979,84 @@ void Capstone2LlvmIrTranslatorRiscv_impl::translateCoreV(cs_insn* i, cs_riscv* r
 				lo = u ? c32(0) : irb.CreateSub(irb.CreateNeg(b), c32(1));
 			}
 			r = irb.CreateSelect(irb.CreateICmpSGT(a, hi), hi, irb.CreateSelect(irb.CreateICmpSLT(a, lo), lo, a));
+		}
+		else if (op == "mac" || op == "msu")
+		{
+			auto* d = ldo(0);
+			auto* pr = irb.CreateMul(a, b);
+			r = op == "mac" ? irb.CreateAdd(d, pr) : irb.CreateSub(d, pr);
+		}
+		else if (std::regex_match(op, std::regex("(add|sub)(u?)(r?)n(r?)")))
+		{
+			// cv.add[u][r]N rd, rs1, rs2, Is3 / cv.add[u][r]Nr rd, rs1, rs2 (rd op= rs1, shift by rs2).
+			std::smatch g;
+			std::regex_match(op, g, std::regex("(add|sub)(u?)(r?)n(r?)"));
+			bool sub = g[1] == "sub", uns = g[2] == "u", rnd = g[3] == "r", regForm = g[4] == "r";
+			llvm::Value* x = regForm ? ldo(0) : a;
+			llvm::Value* y = regForm ? a : b;
+			llvm::Value* sh = regForm ? irb.CreateAnd(b, c32(31)) : c32(uint64_t(ri->operands[3].imm) & 31);
+			if (!regForm && ri->op_count < 4) { fallback(); return; }
+			llvm::Value* v = sub ? irb.CreateSub(x, y) : irb.CreateAdd(x, y);
+			if (rnd)
+			{
+				auto* half = irb.CreateLShr(irb.CreateShl(c32(1), sh), 1);
+				v = irb.CreateAdd(v, half);
+			}
+			r = uns ? irb.CreateLShr(v, sh) : irb.CreateAShr(v, sh);
+		}
+		else if (std::regex_match(op, std::regex("(mul|mac)(hh)?(s|u)(r?)n")) && ri->op_count >= 4)
+		{
+			std::smatch g;
+			std::regex_match(op, g, std::regex("(mul|mac)(hh)?(s|u)(r?)n"));
+			bool mac = g[1] == "mac", hh = g[2] == "hh", sg = g[3] == "s", rnd = g[4] == "r";
+			auto half16 = [&](llvm::Value* v) {
+				auto* t = irb.CreateTrunc(hh ? irb.CreateLShr(v, 16) : v, irb.getInt16Ty());
+				return sg ? irb.CreateSExt(t, i32) : irb.CreateZExt(t, i32);
+			};
+			auto* sh = c32(uint64_t(ri->operands[3].imm) & 31);
+			llvm::Value* v = irb.CreateMul(half16(a), half16(b));
+			if (mac) v = irb.CreateAdd(v, ldo(0));
+			if (rnd) v = irb.CreateAdd(v, irb.CreateLShr(irb.CreateShl(c32(1), sh), 1));
+			r = sg ? irb.CreateAShr(v, sh) : irb.CreateLShr(v, sh);
+		}
+		else if (op == "bset" || op == "bclr" || op == "bsetr" || op == "bclrr" || op == "extract"
+				|| op == "extractu" || op == "extractr" || op == "extractur" || op == "insert" || op == "insertr")
+		{
+			bool regForm = op.back() == 'r' && op != "bclr";
+			std::string base = regForm ? op.substr(0, op.size() - 1) : op;
+			llvm::Value* len;
+			llvm::Value* pos;
+			if (regForm)
+			{
+				if (!b) { fallback(); return; }
+				len = irb.CreateAnd(irb.CreateLShr(b, 5), c32(31));
+				pos = irb.CreateAnd(b, c32(31));
+			}
+			else
+			{
+				if (ri->op_count < 4) { fallback(); return; }
+				len = c32(uint64_t(ri->operands[2].imm) & 31);
+				pos = c32(uint64_t(ri->operands[3].imm) & 31);
+			}
+			// Field of len+1 bits; a full 32-bit field needs the 64-bit shift.
+			auto* i64 = irb.getInt64Ty();
+			auto* ones = irb.CreateTrunc(irb.CreateSub(irb.CreateShl(irb.getInt64(1),
+					irb.CreateZExt(irb.CreateAdd(len, c32(1)), i64)), irb.getInt64(1)), i32);
+			auto* fmask = irb.CreateShl(ones, pos);
+			if (base == "bset") r = irb.CreateOr(a, fmask);
+			else if (base == "bclr") r = irb.CreateAnd(a, irb.CreateNot(fmask));
+			else if (base == "insert")
+				r = irb.CreateOr(irb.CreateAnd(ldo(0), irb.CreateNot(fmask)), irb.CreateAnd(irb.CreateShl(a, pos), fmask));
+			else
+			{
+				auto* f = irb.CreateAnd(irb.CreateLShr(a, pos), ones);
+				if (base == "extract")
+				{
+					auto* up = irb.CreateSub(c32(31), len);
+					f = irb.CreateAShr(irb.CreateShl(f, up), up);
+				}
+				r = f;
+			}
 		}
 		else if (op == "ror" && b)
 		{
