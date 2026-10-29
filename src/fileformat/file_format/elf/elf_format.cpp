@@ -2859,7 +2859,10 @@ bool ElfFormat::hasMixedEndianForDouble() const
 {
 	std::uint64_t abiVersion = 0;
 	bool hasAbi = getAbiVersion(abiVersion);
-	return isArm() && (!hasAbi || abiVersion < 5);
+	// The old FPA word order is a 32-bit ARM thing only. AArch64 has no
+	// EABI version in e_flags, so it read as "pre-v5" and every double
+	// constant came out with its words swapped (1e-3 -> -3.6e+91).
+	return isArm() && reader.get_machine() == EM_ARM && (!hasAbi || abiVersion < 5);
 }
 
 /**

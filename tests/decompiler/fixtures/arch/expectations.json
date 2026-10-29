@@ -80,5 +80,12 @@
  ],
  "audit3-x86_64-pie-o1": [
   "(int128_t)(int64_t)("
+ ],
+ "audit4-aarch64-pie": [
+  "float64_t g1 = 0.001;",
+  "0.001 * (float64_t)(int32_t)a1 + v1",
+  "v3 <= 1.0e+9 ? (uint64_t)v6 : 0x3b9aca00",
+  "0.25f * (float32_t)((uint32_t)a1 >> 8)",
+  "!__asm_ucvtf"
  ]
 }
