@@ -14,3 +14,15 @@ foreach(_rel IN ITEMS CMakeLists.txt llvm/CMakeLists.txt)
 		message(STATUS "Keystone: patched CMP0051 for CMake 4 (${_rel})")
 	endif()
 endforeach()
+
+# GCC 13+ no longer pulls <cstdint> in transitively; Keystone's bundled
+# STLExtras.h uses intptr_t without including it.
+set(_stl "${KEYSTONE_SOURCE_DIR}/llvm/include/llvm/ADT/STLExtras.h")
+if(EXISTS "${_stl}")
+	file(READ "${_stl}" _c)
+	if(NOT _c MATCHES "#include <cstdint>")
+		string(REPLACE "#include <cstddef>" "#include <cstdint>\n#include <cstddef>" _c "${_c}")
+		file(WRITE "${_stl}" "${_c}")
+		message(STATUS "Keystone: added <cstdint> to STLExtras.h")
+	endif()
+endif()
