@@ -23813,6 +23813,86 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPMOVD2M_xmm)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VGETEXPPD_xmm)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x3fe8000000000000, 0x4020000000000000);
+
+	emulate_bin("62 f2 fd 08 42 c1");
+
+	EXPECT_EQ(0x4008000000000000ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xbff0000000000000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VGETMANTPS_xmm)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x0, 0xc0a0000040c00000);
+
+	emulate_bin("62 f3 7d 08 26 c1 01");
+
+	EXPECT_EQ(0xbfa000003f400000ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x3f8000003f800000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VSCALEFSD_xmm)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x1111, 0x4008000000000000);
+	setXmm(X86_REG_XMM2, 0x0, 0x400599999999999a);
+
+	emulate_bin("62 f2 f5 08 2d c2");
+
+	EXPECT_EQ(0x4028000000000000ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x1111ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VRANGEPD_xmm)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0xc000000000000000, 0x3ff0000000000000);
+	setXmm(X86_REG_XMM2, 0x4014000000000000, 0xc008000000000000);
+
+	emulate_bin("62 f3 f5 08 50 c2 05");
+
+	EXPECT_EQ(0x3ff0000000000000ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x4014000000000000ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VFPCLASSPS_xmm)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x7fc00000ff800000, 0x3f8000007f800000);
+
+	emulate_bin("62 f3 7d 08 66 c9 18");
+
+	EXPECT_EQ(0x5ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VGETEXPSS_xmm)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0xaaaa, 0x1234567800000000);
+	setXmm(X86_REG_XMM2, 0x0, 0x41800000);
+
+	emulate_bin("62 f2 75 08 43 c2");
+
+	EXPECT_EQ(0x1234567840800000ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xaaaaULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

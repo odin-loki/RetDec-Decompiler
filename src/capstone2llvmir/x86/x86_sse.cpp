@@ -9999,5 +9999,243 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvxCvtQq(cs_insn* i, cs_x86* xi
 }
 
 
+void Capstone2LlvmIrTranslatorX86_impl::translateAvx512FpMisc(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	// AVX-512 exponent/mantissa/class/range/scale helpers, done on the raw lane bits.
+	// Denormal inputs are treated like normals and MXCSR exceptions are not modelled.
+	enum Kind { GetExp, GetMant, ScaleF, Range, FpClass } kind;
+	bool dbl = false, scalar = false;
+	switch (i->id)
+	{
+	case X86_INS_VGETEXPPS: kind = GetExp; break;
+	case X86_INS_VGETEXPPD: kind = GetExp; dbl = true; break;
+	case X86_INS_VGETEXPSS: kind = GetExp; scalar = true; break;
+	case X86_INS_VGETEXPSD: kind = GetExp; dbl = true; scalar = true; break;
+	case X86_INS_VGETMANTPS: kind = GetMant; break;
+	case X86_INS_VGETMANTPD: kind = GetMant; dbl = true; break;
+	case X86_INS_VGETMANTSS: kind = GetMant; scalar = true; break;
+	case X86_INS_VGETMANTSD: kind = GetMant; dbl = true; scalar = true; break;
+	case X86_INS_VSCALEFPS: kind = ScaleF; break;
+	case X86_INS_VSCALEFPD: kind = ScaleF; dbl = true; break;
+	case X86_INS_VSCALEFSS: kind = ScaleF; scalar = true; break;
+	case X86_INS_VSCALEFSD: kind = ScaleF; dbl = true; scalar = true; break;
+	case X86_INS_VRANGEPS: kind = Range; break;
+	case X86_INS_VRANGEPD: kind = Range; dbl = true; break;
+	case X86_INS_VRANGESS: kind = Range; scalar = true; break;
+	case X86_INS_VRANGESD: kind = Range; dbl = true; scalar = true; break;
+	case X86_INS_VFPCLASSPS: kind = FpClass; break;
+	case X86_INS_VFPCLASSPD: kind = FpClass; dbl = true; break;
+	case X86_INS_VFPCLASSSS: kind = FpClass; scalar = true; break;
+	case X86_INS_VFPCLASSSD: kind = FpClass; dbl = true; scalar = true; break;
+	default: translatePseudoAsmGeneric(i, xi, irb); return;
+	}
+	bool hasImm = kind == GetMant || kind == Range || kind == FpClass;
+	bool binary = kind == ScaleF || kind == Range;
+	unsigned want = 1 + (scalar && kind != FpClass ? 2 : (binary ? 2 : 1)) + (hasImm ? 1 : 0);
+	bool bcast = false;
+	for (unsigned k = 0; k < xi->op_count; ++k)
+	{
+		bcast |= xi->operands[k].avx_bcast != X86_AVX_BCAST_INVALID;
+	}
+	if (xi->op_count != want || bcast || hasEvexModifier(xi, kind == FpClass ? 1 : 0)
+		|| (hasImm && xi->operands[want - 1].type != X86_OP_IMM)
+		|| xi->operands[0].type != X86_OP_REG)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned imm = hasImm ? unsigned(xi->operands[want - 1].imm) & 0xff : 0;
+	unsigned w = dbl ? 64 : 32, mb = dbl ? 52 : 23, eb = dbl ? 11 : 8;
+	uint64_t bias = dbl ? 1023 : 127, emax = (1ull << eb) - 1;
+	auto* it = irb.getIntNTy(w);
+	auto* ft = dbl ? irb.getDoubleTy() : irb.getFloatTy();
+	auto C = [&](uint64_t v) { return llvm::ConstantInt::get(it, v); };
+	auto bitsOf = [&](unsigned idx, unsigned& b) -> llvm::Value* {
+		auto& op = xi->operands[idx];
+		if (op.type == X86_OP_MEM)
+		{
+			b = op.size * 8;
+			return loadOp(op, irb, irb.getIntNTy(b));
+		}
+		return loadVectorOp(op, irb, b);
+	};
+	unsigned aIdx = 1, bIdx = 2;
+	if (scalar && !binary && kind != FpClass)
+	{
+		aIdx = 2;
+	}
+	unsigned ab = 0, bb = 0;
+	llvm::Value* A = bitsOf(aIdx, ab);
+	llvm::Value* B = binary ? bitsOf(bIdx, bb) : nullptr;
+	if (A == nullptr || (binary && B == nullptr))
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	unsigned n = scalar ? 1 : (kind == FpClass ? xi->operands[1].size * 8 : xi->operands[0].size * 8) / w;
+	if (n == 0 || ab < n * w || (binary && bb < n * w))
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	auto lane = [&](llvm::Value* v, unsigned k) {
+		return irb.CreateTrunc(irb.CreateLShr(v, uint64_t(k) * w), it);
+	};
+	auto expOf = [&](llvm::Value* x) { return irb.CreateAnd(irb.CreateLShr(x, mb), C(emax)); };
+	auto fracOf = [&](llvm::Value* x) { return irb.CreateAnd(x, C((1ull << mb) - 1)); };
+	auto signOf = [&](llvm::Value* x) { return irb.CreateAnd(x, C(1ull << (w - 1))); };
+	uint64_t one = bias << mb;
+	llvm::Value* mask = irb.getInt64(0);
+	unsigned outBits = scalar ? 128 : n * w;
+	auto* ot = irb.getIntNTy(outBits);
+	llvm::Value* res = llvm::ConstantInt::get(ot, 0);
+	for (unsigned k = 0; k < n; ++k)
+	{
+		llvm::Value* x = lane(A, k);
+		llvm::Value* e = expOf(x);
+		llvm::Value* f = fracOf(x);
+		llvm::Value* s = signOf(x);
+		auto* fZero = irb.CreateICmpEQ(f, C(0));
+		auto* eZero = irb.CreateICmpEQ(e, C(0));
+		auto* eMax = irb.CreateICmpEQ(e, C(emax));
+		llvm::Value* r = nullptr;
+		if (kind == GetExp)
+		{
+			llvm::Value* v = irb.CreateBitCast(irb.CreateSIToFP(irb.CreateSub(e, C(bias)), ft), it);
+			uint64_t inf = emax << mb;
+			v = irb.CreateSelect(irb.CreateAnd(eZero, fZero), C(inf | (1ull << (w - 1))), v);
+			v = irb.CreateSelect(eMax, irb.CreateSelect(fZero, C(inf), x), v);
+			r = v;
+		}
+		else if (kind == GetMant)
+		{
+			unsigned interval = imm & 3, sc = (imm >> 2) & 3;
+			llvm::Value* ex = C(bias);
+			if (interval == 2)
+			{
+				ex = C(bias - 1);
+			}
+			else if (interval != 0)
+			{
+				auto* top = irb.CreateICmpNE(irb.CreateAnd(f, C(1ull << (mb - 1))), C(0));
+				ex = irb.CreateSelect(top, C(bias - 1), C(bias));
+			}
+			llvm::Value* sign = (sc & 1) ? C(0) : s;
+			llvm::Value* v = irb.CreateOr(irb.CreateOr(sign, irb.CreateShl(ex, mb)), f);
+			auto* special = irb.CreateAnd(fZero, irb.CreateOr(eZero, eMax));
+			v = irb.CreateSelect(special, irb.CreateOr(sign, C(one)), v);
+			if (sc == 2)
+			{
+				uint64_t qnan = (emax << mb) | (1ull << (mb - 1)) | (1ull << (w - 1));
+				v = irb.CreateSelect(irb.CreateICmpNE(s, C(0)), C(qnan), v);
+			}
+			v = irb.CreateSelect(irb.CreateAnd(eMax, irb.CreateNot(fZero)),
+					irb.CreateOr(x, C(1ull << (mb - 1))), v);
+			r = v;
+		}
+		else if (kind == ScaleF)
+		{
+			llvm::Value* fa = irb.CreateBitCast(x, ft);
+			llvm::Value* fb = irb.CreateBitCast(lane(B, k), ft);
+			double lim = dbl ? 4200.0 : 400.0;
+			auto* lo = llvm::ConstantFP::get(ft, -lim);
+			auto* hi = llvm::ConstantFP::get(ft, lim);
+			fb = irb.CreateSelect(irb.CreateFCmpOLT(fb, lo), lo, fb);
+			fb = irb.CreateSelect(irb.CreateFCmpOGT(fb, hi), hi, fb);
+			auto* i32 = irb.getInt32Ty();
+			llvm::Value* t = irb.CreateFPToSI(fb, i32);
+			t = irb.CreateSelect(irb.CreateFCmpOGT(irb.CreateSIToFP(t, ft), fb),
+					irb.CreateSub(t, irb.getInt32(1)), t);
+			auto pow2 = [&](llvm::Value* p) {
+				int lim2 = int(bias) - 1;
+				p = irb.CreateSelect(irb.CreateICmpSLT(p, irb.getInt32(-lim2)), irb.getInt32(-lim2), p);
+				p = irb.CreateSelect(irb.CreateICmpSGT(p, irb.getInt32(int(bias))), irb.getInt32(int(bias)), p);
+				auto* bitsv = irb.CreateShl(irb.CreateZExt(irb.CreateAdd(p, irb.getInt32(int(bias))), it), mb);
+				return irb.CreateBitCast(bitsv, ft);
+			};
+			llvm::Value* h1 = irb.CreateSDiv(t, irb.getInt32(2));
+			llvm::Value* h2 = irb.CreateSub(t, h1);
+			llvm::Value* v = irb.CreateFMul(irb.CreateFMul(fa, pow2(h1)), pow2(h2));
+			r = irb.CreateBitCast(v, it);
+		}
+		else if (kind == Range)
+		{
+			llvm::Value* y = lane(B, k);
+			auto* absMask = C((1ull << (w - 1)) - 1);
+			llvm::Value* ca = irb.CreateBitCast(x, ft);
+			llvm::Value* cb = irb.CreateBitCast(y, ft);
+			if (imm & 2)
+			{
+				ca = irb.CreateBitCast(irb.CreateAnd(x, absMask), ft);
+				cb = irb.CreateBitCast(irb.CreateAnd(y, absMask), ft);
+			}
+			auto* lt = irb.CreateFCmpOLT(ca, cb);
+			llvm::Value* sel = (imm & 1) ? irb.CreateSelect(lt, y, x) : irb.CreateSelect(lt, x, y);
+			switch ((imm >> 2) & 3)
+			{
+			case 0: sel = irb.CreateOr(irb.CreateAnd(sel, absMask), s); break;
+			case 1: break;
+			case 2: sel = irb.CreateAnd(sel, absMask); break;
+			default: sel = irb.CreateOr(sel, C(1ull << (w - 1))); break;
+			}
+			r = sel;
+		}
+		else
+		{
+			auto* neg = irb.CreateICmpNE(s, C(0));
+			auto* pos = irb.CreateNot(neg);
+			auto* nan = irb.CreateAnd(eMax, irb.CreateNot(fZero));
+			auto* quiet = irb.CreateICmpNE(irb.CreateAnd(f, C(1ull << (mb - 1))), C(0));
+			auto* zero = irb.CreateAnd(eZero, fZero);
+			auto* inf = irb.CreateAnd(eMax, fZero);
+			llvm::Value* tests[8] = {
+				irb.CreateAnd(nan, quiet),
+				irb.CreateAnd(zero, pos),
+				irb.CreateAnd(zero, neg),
+				irb.CreateAnd(inf, pos),
+				irb.CreateAnd(inf, neg),
+				irb.CreateAnd(eZero, irb.CreateNot(fZero)),
+				irb.CreateAnd(neg, irb.CreateNot(eMax)),
+				irb.CreateAnd(nan, irb.CreateNot(quiet))};
+			llvm::Value* hit = irb.getFalse();
+			for (unsigned b = 0; b < 8; ++b)
+			{
+				if (imm & (1u << b))
+				{
+					hit = irb.CreateOr(hit, tests[b]);
+				}
+			}
+			mask = irb.CreateOr(mask, irb.CreateShl(irb.CreateZExt(hit, irb.getInt64Ty()), k));
+			continue;
+		}
+		res = irb.CreateOr(res, irb.CreateShl(irb.CreateZExt(r, ot), uint64_t(k) * w));
+	}
+	if (kind == FpClass)
+	{
+		if (xi->operands[0].reg < X86_REG_K0 || xi->operands[0].reg > X86_REG_K7)
+		{
+			translatePseudoAsmGeneric(i, xi, irb);
+			return;
+		}
+		storeRegister(xi->operands[0].reg, mask, irb);
+		return;
+	}
+	if (scalar)
+	{
+		unsigned ub = 0;
+		llvm::Value* up = loadVectorOp(xi->operands[1], irb, ub);
+		if (up == nullptr || ub < 128)
+		{
+			translatePseudoAsmGeneric(i, xi, irb);
+			return;
+		}
+		auto* keep = llvm::ConstantInt::get(ot, llvm::APInt::getHighBitsSet(128, 128 - w));
+		res = irb.CreateOr(irb.CreateAnd(irb.CreateTrunc(up, ot), keep), res);
+	}
+	storeVectorOp(xi->operands[0], outBits < 128 ? irb.CreateZExt(res, irb.getInt128Ty()) : res,
+			outBits < 128 ? 128 : outBits, irb);
+}
+
+
 } // namespace capstone2llvmir
 } // namespace retdec
