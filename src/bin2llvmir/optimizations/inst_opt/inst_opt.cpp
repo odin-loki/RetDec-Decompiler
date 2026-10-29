@@ -678,6 +678,22 @@ llvm::Value* castSequence(llvm::CastInst* cast1, llvm::CastInst* cast2)
 		{
 			return nullptr;
 		}
+		// Ends of different FP widths are one value conversion only when every
+		// link is fpext/fptrunc.  `bitcast double to i64 / trunc to i32 /
+		// bitcast to float` is ARM reading s0 out of d0: the low word's bits,
+		// not fptrunc of the double.
+		if (srcTy != dstTy)
+		{
+			for (Value* x = cast2; x != src; x = cast<CastInst>(x)->getOperand(0))
+			{
+				auto op = cast<CastInst>(x)->getOpcode();
+				if (op != Instruction::FPExt && op != Instruction::FPTrunc)
+				{
+					return nullptr;
+				}
+				if (x == cast1) break;
+			}
+		}
 		v = srcTy != dstTy
 				? CastInst::CreateFPCast(src, dstTy, "", cast2)
 				: src;
