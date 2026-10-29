@@ -165,13 +165,27 @@ void ConstantsAnalysis::widenIndexedGlobals()
 		if (!indexed) continue;
 		uint64_t es = dl.getTypeAllocSize(et);
 		uint64_t size = 0;
-		const auto* sym = ff ? ff->getSymbol(addr) : nullptr;
+		// Several symbols can share an address (labels, mapping symbols):
+		// take the largest object size among them.
+		bool named = false;
 		unsigned long long ss = 0;
-		if (sym && sym->getSize(ss) && ss > es)
+		for (const auto* tab : ff ? ff->getSymbolTables() : std::vector<fileformat::SymbolTable*>{})
+		{
+			for (const auto& sym : *tab)
+			{
+				unsigned long long sa = 0, sz = 0;
+				if (sym->getAddress(sa) && sa == addr && sym->getSize(sz) && sz > 0)
+				{
+					named = true;
+					ss = std::max(ss, sz);
+				}
+			}
+		}
+		if (named && ss > es)
 		{
 			size = ss;
 		}
-		else if (!sym && gv->isConstant())
+		else if (!named && gv->isConstant())
 		{
 			auto* seg = img->getSegmentFromAddress(addr);
 			if (seg == nullptr) continue;
