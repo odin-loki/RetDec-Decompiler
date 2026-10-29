@@ -498,6 +498,7 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		void translateAesKeygenAssist(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translatePclmulqdq(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateGfni(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateMiscIsa(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateCrc32(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSha(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 

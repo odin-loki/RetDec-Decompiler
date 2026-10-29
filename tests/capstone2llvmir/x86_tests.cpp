@@ -23970,6 +23970,47 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_VGF2P8AFFINEINVQB_ymm_emits_gf
 	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MOVDIRI_is_plain_store)
+{
+	SKIP_MODE_16;
+	auto* f = translateTextOrBytes("movdiri dword ptr [edi], eax", {0x0f, 0x38, 0xf9, 0x07});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("store")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MOVDIR64B_is_64_byte_memcpy)
+{
+	SKIP_MODE_16;
+	auto* f = translateTextOrBytes("movdir64b eax, [edi]", {0x66, 0x0f, 0x38, 0xf8, 0x07});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.memcpy")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_CLZERO_is_aligned_64_byte_memset)
+{
+	SKIP_MODE_16;
+	auto* f = translateTextOrBytes("clzero", {0x0f, 0x01, 0xfc});
+	ASSERT_NE(nullptr, f);
+	const std::string ir = dumpFunction(f);
+	EXPECT_NE(std::string::npos, ir.find("llvm.memset")) << ir;
+	EXPECT_NE(std::string::npos, ir.find("-64")) << ir;
+	EXPECT_FALSE(callsPseudoAsm(f)) << ir;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_RDPKRU_clears_edx)
+{
+	SKIP_MODE_16;
+	emulate("rdpkru");
+	EXPECT_NO_REGISTERS_LOADED();
+	EXPECT_JUST_REGISTERS_STORED({{X86_REG_EAX, ANY}, {X86_REG_EDX, 0x0}});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({{_module.getFunction("__asm_rdpkru"), {}}});
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

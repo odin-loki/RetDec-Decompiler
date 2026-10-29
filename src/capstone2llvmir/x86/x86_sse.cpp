@@ -10424,5 +10424,75 @@ void Capstone2LlvmIrTranslatorX86_impl::translateGfni(cs_insn* i, cs_x86* xi, IR
 	}
 }
 
+/**
+ * MOVDIRI, MOVDIR64B, CLZERO, RDPID, RDPKRU and WRPKRU.
+ * Direct stores and cache-line zeroing are plain memory operations; the
+ * processor-id and protection-key registers are not modelled, so they are
+ * read/written through pseudo calls with the architectural side effects
+ * (RDPKRU clears EDX) made explicit.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateMiscIsa(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	auto* i32 = irb.getInt32Ty();
+	bool is64 = _origBasicMode == CS_MODE_64;
+	auto* addrTy = is64 ? irb.getInt64Ty() : i32;
+	switch (i->id)
+	{
+		case X86_INS_MOVDIRI:
+		{
+			EXPECT_IS_BINARY(i, xi, irb);
+			Value* v = loadOp(xi->operands[1], irb);
+			storeOp(xi->operands[0], v, irb);
+			return;
+		}
+		case X86_INS_MOVDIR64B:
+		{
+			EXPECT_IS_BINARY(i, xi, irb);
+			Value* dst = loadOp(xi->operands[0], irb);
+			Value* src = loadOp(xi->operands[1], irb, nullptr, /*lea=*/true);
+			auto* pty = PointerType::get(irb.getInt8Ty(), 0);
+			irb.CreateMemCpy(
+					irb.CreateIntToPtr(dst, pty), MaybeAlign(64),
+					irb.CreateIntToPtr(src, pty), MaybeAlign(1),
+					64);
+			return;
+		}
+		case X86_INS_CLZERO:
+		{
+			Value* a = loadRegister(is64 ? X86_REG_RAX : X86_REG_EAX, irb);
+			a = irb.CreateZExtOrTrunc(a, addrTy);
+			a = irb.CreateAnd(a, ConstantInt::get(addrTy, ~uint64_t(63)));
+			irb.CreateMemSet(
+					irb.CreateIntToPtr(a, PointerType::get(irb.getInt8Ty(), 0)),
+					irb.getInt8(0), 64, MaybeAlign(64));
+			return;
+		}
+		case X86_INS_RDPID:
+		{
+			EXPECT_IS_UNARY(i, xi, irb);
+			auto* fn = getPseudoAsmFunction(i, i32, llvm::ArrayRef<llvm::Type*>{});
+			Value* v = irb.CreateCall(fn);
+			storeOp(xi->operands[0], v, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+			return;
+		}
+		case X86_INS_RDPKRU:
+		{
+			auto* fn = getPseudoAsmFunction(i, i32, llvm::ArrayRef<llvm::Type*>{});
+			storeRegister(X86_REG_EAX, irb.CreateCall(fn), irb);
+			storeRegister(X86_REG_EDX, irb.getInt32(0), irb);
+			return;
+		}
+		case X86_INS_WRPKRU:
+		{
+			auto* fn = getPseudoAsmFunction(i, irb.getVoidTy(), llvm::ArrayRef<llvm::Type*>{i32});
+			Value* eax = irb.CreateZExtOrTrunc(loadRegister(X86_REG_EAX, irb), i32);
+			irb.CreateCall(fn, {eax});
+			return;
+		}
+		default:
+			translatePseudoAsmGeneric(i, xi, irb);
+	}
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec
