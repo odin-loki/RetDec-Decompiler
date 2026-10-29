@@ -295,6 +295,26 @@ bool CondBranchOpt::transformConditionSub(
 		llvm::Instruction* binOp,
 		llvm::CmpInst::Predicate predicate)
 {
+	// `sbcs` computes N/V from `a - b - borrow`: the tree's outer sub is
+	// (a - b) minus a carry bit, not a compare of two values.  Treating it as
+	// one compared `trunc(a - b)` with the borrow as i1 (ARM 64-bit `x < y`).
+	auto isBit = [](Value* v)
+	{
+		if (v->getType()->isIntegerTy(1)) return true;
+		if (auto* z = dyn_cast<CastInst>(v))
+			return z->getOperand(0)->getType()->isIntegerTy(1);
+		return false;
+	};
+	if (isBit(testedVal) || isBit(subVal))
+	{
+		return false;
+	}
+	if (auto* bo = dyn_cast<BinaryOperator>(testedVal))
+	if (bo->getOpcode() == Instruction::Sub && isBit(bo->getOperand(1)))
+	{
+		return false;
+	}
+
 	auto* testedA = IrModifier::createAlloca(
 			br->getFunction(),
 			testedVal->getType());
