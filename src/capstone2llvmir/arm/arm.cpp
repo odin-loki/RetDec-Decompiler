@@ -7728,6 +7728,44 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLowOverheadLoop(cs_insn* i, cs_
 			generateCondBranchFunctionCall(irb, again, loadOp(ai->operands[1], irb));
 			return;
 		}
+		case ARM_INS_DLSTP:
+		case ARM_INS_WLSTP:
+		{
+			// Tail predication: LR counts elements and FPSCR.LTPSIZE
+			// (bits 18:16) records the element size from hw1 bits 5:4.
+			auto* n = loadOp(ai->operands[1], irb);
+			storeRegister(ARM_REG_LR, n, irb);
+			uint32_t size = (i->bytes[0] >> 4) & 3;
+			auto* fpscr = loadRegister(ARM_REG_FPSCR, irb);
+			fpscr = irb.CreateOr(
+					irb.CreateAnd(fpscr, llvm::ConstantInt::get(i32, ~(7u << 16))),
+					llvm::ConstantInt::get(i32, size << 16));
+			storeRegister(ARM_REG_FPSCR, fpscr, irb);
+			if (i->id == ARM_INS_WLSTP)
+			{
+				if (ai->op_count != 3)
+				{
+					throwUnexpectedOperands(i);
+				}
+				auto* zero = irb.CreateICmpEQ(n, llvm::ConstantInt::get(n->getType(), 0));
+				generateCondBranchFunctionCall(irb, zero, loadOp(ai->operands[2], irb));
+			}
+			return;
+		}
+		case ARM_INS_LETP:
+		{
+			EXPECT_IS_BINARY(i, ai, irb);
+			// Each iteration retires 128 / esize elements: 16 >> LTPSIZE.
+			auto* fpscr = loadRegister(ARM_REG_FPSCR, irb);
+			auto* ltp = irb.CreateAnd(irb.CreateLShr(fpscr, llvm::ConstantInt::get(i32, 16)),
+					llvm::ConstantInt::get(i32, 7));
+			auto* elems = irb.CreateLShr(llvm::ConstantInt::get(i32, 16), ltp);
+			auto* lr = loadRegister(ARM_REG_LR, irb);
+			auto* again = irb.CreateICmpUGT(lr, elems);
+			storeRegister(ARM_REG_LR, irb.CreateSelect(again, irb.CreateSub(lr, elems), lr), irb);
+			generateCondBranchFunctionCall(irb, again, loadOp(ai->operands[1], irb));
+			return;
+		}
 		default:
 			throw GenericError("Unhandled insn ID in translateLowOverheadLoop().");
 	}
