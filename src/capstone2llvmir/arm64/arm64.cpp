@@ -9337,5 +9337,67 @@ void Capstone2LlvmIrTranslatorArm64_impl::translatePacBranch(cs_insn* i, cs_arm6
 }
 
 
+/**
+ * FEAT_MOPS memcpy/memmove/memset triples. Capstone 6 drops operands of
+ * these, so Rd (bits 4:0), Rn (size, 9:5) and Rs (20:16) come from the
+ * encoding. The prologue does the whole operation as one pseudo call and
+ * leaves the registers as the epilogue would: Xd and Xs advanced by the
+ * size, Xn zero. The main and epilogue steps then have nothing left to do.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateMops(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	uint32_t w = i->bytes[0] | (i->bytes[1] << 8) | (i->bytes[2] << 16)
+			| (uint32_t(i->bytes[3]) << 24);
+	bool isSet = ((w >> 22) & 3) == 3;
+	unsigned phase = isSet ? (w >> 14) & 3 : (w >> 22) & 3;
+	if (phase != 0)
+	{
+		return;
+	}
+	auto xreg = [](unsigned n) -> uint32_t {
+		return n == 29 ? ARM64_REG_X29 : n == 30 ? ARM64_REG_X30
+				: n == 31 ? ARM64_REG_XZR : ARM64_REG_X0 + n;
+	};
+	uint32_t rd = xreg(w & 31);
+	uint32_t rn = xreg((w >> 5) & 31);
+	uint32_t rs = xreg((w >> 16) & 31);
+	bool tagged = (w >> 26) & 1; // SETG* (memset) or CPY* (memmove)
+
+	auto* ty = getDefaultType();
+	auto* pty = llvm::PointerType::get(irb.getContext(), 0);
+	auto* d = loadRegister(rd, irb);
+	auto* n = loadRegister(rn, irb);
+	auto* dp = irb.CreateIntToPtr(d, pty);
+	if (auto* di = llvm::dyn_cast<llvm::Instruction>(dp))
+	{
+		attachPointeeType(di, irb.getInt8Ty());
+	}
+	if (isSet)
+	{
+		auto* v = irb.CreateTrunc(loadRegister(rs, irb), irb.getInt8Ty());
+		auto* fnc = getPseudoAsmFunction(i, irb.getVoidTy(),
+				llvm::ArrayRef<llvm::Type*>{pty, irb.getInt8Ty(), ty},
+				tagged ? "__asm_setgp_memset" : "__asm_setp_memset");
+		irb.CreateCall(fnc, llvm::ArrayRef<llvm::Value*>{dp, v, n});
+	}
+	else
+	{
+		auto* sv = loadRegister(rs, irb);
+		auto* sp = irb.CreateIntToPtr(sv, pty);
+		if (auto* si = llvm::dyn_cast<llvm::Instruction>(sp))
+		{
+			attachPointeeType(si, irb.getInt8Ty());
+		}
+		auto* fnc = getPseudoAsmFunction(i, irb.getVoidTy(),
+				llvm::ArrayRef<llvm::Type*>{pty, pty, ty},
+				tagged ? "__asm_cpyp_memmove" : "__asm_cpyfp_memcpy");
+		irb.CreateCall(fnc, llvm::ArrayRef<llvm::Value*>{dp, sp, n});
+		storeRegister(rs, irb.CreateAdd(sv, n), irb);
+	}
+	storeRegister(rd, irb.CreateAdd(d, n), irb);
+	storeRegister(rn, llvm::ConstantInt::get(ty, 0), irb);
+}
+
+
 } // namespace capstone2llvmir
 } // namespace retdec

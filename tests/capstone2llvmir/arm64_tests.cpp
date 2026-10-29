@@ -725,6 +725,65 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_STLLR_stores_doubleword)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CPYFP_is_one_memcpy)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0x2000},
+		{ARM64_REG_X1, 0x3000},
+		{ARM64_REG_X2, 0x40},
+	});
+
+	// cpyfp ; cpyfm ; cpyfe  [x0]!, [x1]!, x2!
+	emulate_bin("40 04 01 19 40 04 41 19 40 04 81 19");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0x2040},
+		{ARM64_REG_X1, 0x3040},
+		{ARM64_REG_X2, 0},
+	});
+	auto* f = _module.getFunction("__asm_cpyfp_memcpy");
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(1u, f->getNumUses());
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SETP_is_one_memset)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0x2000},
+		{ARM64_REG_X1, 0xab},
+		{ARM64_REG_X2, 0x10},
+	});
+
+	// setp ; setm ; sete  [x0]!, x2!, x1
+	emulate_bin("40 04 c1 19 40 44 c1 19 40 84 c1 19");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0x2010},
+		{ARM64_REG_X2, 0},
+	});
+	auto* f = _module.getFunction("__asm_setp_memset");
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(1u, f->getNumUses());
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CPYP_is_memmove)
+{
+	setRegisters({
+		{ARM64_REG_X3, 0x2000},
+		{ARM64_REG_X4, 0x2004},
+		{ARM64_REG_X5, 8},
+	});
+
+	emulate_bin("a3 04 04 1d"); // cpyp [x3]!, [x4]!, x5!
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X3, 0x2008},
+		{ARM64_REG_X4, 0x200c},
+		{ARM64_REG_X5, 0},
+	});
+	EXPECT_NE(nullptr, _module.getFunction("__asm_cpyp_memmove"));
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ADC_r_r_r_false)
 {
 	setRegisters({
