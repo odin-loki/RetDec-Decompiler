@@ -7,6 +7,7 @@
 #include "retdec/ssa/ssa.h"
 
 #include <cstdio>
+#include <vector>
 #include <cstdlib>
 
 namespace retdec {
@@ -127,6 +128,36 @@ static bool exchangesElements(const ssa::SSAFunction& fn)
 	return ssa::countElementMoves(fn) >= 2;
 }
 
+// Quicksort partitions, then recurses: a self-call is reachable from the
+// partition loop. Mergesort recurses first and merges after, so every self-call
+// comes before any loop.
+static bool recursesAfterALoop(const ssa::SSAFunction& fn)
+{
+	std::vector<bool> seen(fn.blockCount(), false);
+	std::vector<ssa::BlockId> work;
+	for (const auto& blk: fn.blocks())
+		if (blk && ssa::blockOnCycle(fn, blk->id) && blk->id < seen.size() && !seen[blk->id])
+		{
+			seen[blk->id] = true;
+			work.push_back(blk->id);
+		}
+	while (!work.empty())
+	{
+		const auto* blk = fn.block(work.back());
+		work.pop_back();
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+			if (i && i->op == ssa::IrInstr::Op::Call && i->calleeName == fn.name()) return true;
+		for (auto s: blk->succs)
+			if (s < seen.size() && !seen[s])
+			{
+				seen[s] = true;
+				work.push_back(s);
+			}
+	}
+	return false;
+}
+
 } // anonymous namespace
 
 SortResult QuicksortDetector::detect(const ssa::SSAFunction& fn) const
@@ -156,6 +187,7 @@ SortResult QuicksortDetector::detect(const ssa::SSAFunction& fn) const
 	// recursive self-call. Iterative quicksort is a miss (B9-style).
 	if (countSelfCalls(fn) < 1) return result;
 	if (!exchangesElements(fn)) return result;
+	if (!recursesAfterALoop(fn)) return result;
 
 	float score = ev.confidence + 0.25f;
 	if (score > 1.0f) score = 1.0f;
