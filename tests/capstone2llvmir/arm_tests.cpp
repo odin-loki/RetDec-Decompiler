@@ -12474,6 +12474,84 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VJCVT_huge)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSDOT_q)
+{
+	ONLY_MODE_ARM;
+	_translator->modifyExtraMode(static_cast<cs_mode>(_translator->getExtraMode() | CS_MODE_V8));
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x1ULL)},
+		{ARM_REG_D1, armDBits(0x0ULL)},
+		{ARM_REG_D2, armDBits(0xffffffff04030201ULL)},
+		{ARM_REG_D3, armDBits(0x0ULL)},
+		{ARM_REG_D4, armDBits(0x202020208070605ULL)},
+		{ARM_REG_D5, armDBits(0x0ULL)},
+	});
+
+	emulate_bin("44 0d 22 fc");
+
+	EXPECT_EQ(0xfffffff800000047ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VUDOT_d)
+{
+	ONLY_MODE_ARM;
+	_translator->modifyExtraMode(static_cast<cs_mode>(_translator->getExtraMode() | CS_MODE_V8));
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x0ULL)},
+		{ARM_REG_D1, armDBits(0x1010101000000ffULL)},
+		{ARM_REG_D2, armDBits(0x303030300000002ULL)},
+	});
+
+	emulate_bin("12 0d 21 fc");
+
+	EXPECT_EQ(0xc000001feULL, dBits(ARM_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSDOT_lane)
+{
+	ONLY_MODE_ARM;
+	_translator->modifyExtraMode(static_cast<cs_mode>(_translator->getExtraMode() | CS_MODE_V8));
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x0ULL)},
+		{ARM_REG_D1, armDBits(0x0ULL)},
+		{ARM_REG_D2, armDBits(0xfe02ff0104030201ULL)},
+		{ARM_REG_D3, armDBits(0x0ULL)},
+	});
+
+	emulate_bin("62 0d 22 fe");
+
+	EXPECT_EQ(0xafffffffdULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x0ULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VUSMMLA)
+{
+	ONLY_MODE_ARM;
+	_translator->modifyExtraMode(static_cast<cs_mode>(_translator->getExtraMode() | CS_MODE_V8));
+
+	setRegisters({
+		{ARM_REG_D0, armDBits(0x0ULL)},
+		{ARM_REG_D1, armDBits(0x0ULL)},
+		{ARM_REG_D2, armDBits(0xffULL)},
+		{ARM_REG_D3, armDBits(0x101010101010101ULL)},
+		{ARM_REG_D4, armDBits(0xffULL)},
+		{ARM_REG_D5, armDBits(0x202020202020202ULL)},
+	});
+
+	emulate_bin("44 0c a2 fc");
+
+	EXPECT_EQ(0x1feffffff01ULL, dBits(ARM_REG_D0));
+	EXPECT_EQ(0x10ffffffffULL, dBits(ARM_REG_D1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

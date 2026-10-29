@@ -8714,5 +8714,75 @@ void Capstone2LlvmIrTranslatorArm_impl::translateArmMiscFp(cs_insn* i, cs_arm* a
 	fallback();
 }
 
+
+/**
+ * Int8 dot products VSDOT/VUDOT/VUSDOT/VSUDOT (vector and indexed) and the
+ * int8 matrix multiply-accumulate VSMMLA/VUMMLA/VUSMMLA.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateNeonDot(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	auto fallback = [&]() { translatePseudoAsmGeneric(i, ai, irb); };
+	if (ai->op_count != 3)
+	{
+		fallback();
+		return;
+	}
+	for (unsigned k = 0; k < 3; ++k)
+	{
+		if (ai->operands[k].type != ARM_OP_REG || !isNeonRegister(ai->operands[k].reg))
+		{
+			fallback();
+			return;
+		}
+	}
+	std::string m = i->mnemonic;
+	std::string op = m.substr(0, m.find('.'));
+	bool aS = op == "vsdot" || op == "vsudot" || op == "vsmmla";
+	bool bS = op == "vsdot" || op == "vusdot" || op == "vsmmla" || op == "vusmmla";
+	bool mmla = op.size() > 4 && op.compare(op.size() - 4, 4, "mmla") == 0;
+	auto* i32 = irb.getInt32Ty();
+	auto rd = ai->operands[0].reg;
+	auto* d = loadNeonVector(rd, 32, false, irb);
+	auto* a = loadNeonVector(ai->operands[1].reg, 8, false, irb);
+	auto* b = loadNeonVector(ai->operands[2].reg, 8, false, irb);
+	unsigned n = llvm::cast<llvm::FixedVectorType>(d->getType())->getNumElements();
+	int lane = operandLane(ai->operands[2]);
+	auto ex = [&](llvm::Value* v, unsigned k, bool s) {
+		auto* e = irb.CreateExtractElement(v, uint64_t(k));
+		return s ? irb.CreateSExt(e, i32) : irb.CreateZExt(e, i32);
+	};
+	llvm::Value* r = d;
+	if (mmla)
+	{
+		if (n != 4 || lane >= 0) { fallback(); return; }
+		for (unsigned row = 0; row < 2; ++row)
+		{
+			for (unsigned col = 0; col < 2; ++col)
+			{
+				llvm::Value* acc = irb.CreateExtractElement(d, uint64_t(2 * row + col));
+				for (unsigned j = 0; j < 8; ++j)
+				{
+					acc = irb.CreateAdd(acc, irb.CreateMul(ex(a, 8 * row + j, aS), ex(b, 8 * col + j, bS)));
+				}
+				r = irb.CreateInsertElement(r, acc, uint64_t(2 * row + col));
+			}
+		}
+	}
+	else
+	{
+		for (unsigned k = 0; k < n; ++k)
+		{
+			llvm::Value* acc = irb.CreateExtractElement(d, uint64_t(k));
+			unsigned bk = lane >= 0 ? unsigned(lane) : k;
+			for (unsigned j = 0; j < 4; ++j)
+			{
+				acc = irb.CreateAdd(acc, irb.CreateMul(ex(a, 4 * k + j, aS), ex(b, 4 * bk + j, bS)));
+			}
+			r = irb.CreateInsertElement(r, acc, uint64_t(k));
+		}
+	}
+	storeNeonVector(rd, r, irb);
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec
