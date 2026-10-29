@@ -18672,6 +18672,94 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VEXTRACTBM)
 	EXPECT_EQ(0x8101ULL, getRegisterValueUnsigned(PPC_REG_R3)) << dumpFunction(_function);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VCLRLB)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R4, 4},
+	});
+	setV(PPC_REG_V3, 0x0011223344556677ULL, 0x8899aabbccddeeffULL);
+
+	emulate_bin("10 43 21 8d");
+
+	EXPECT_EQ(0x0ULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
+	EXPECT_EQ(0x00000000ccddeeffULL, vLow(PPC_REG_V2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VCLRRB)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R4, 4},
+	});
+	setV(PPC_REG_V3, 0x0011223344556677ULL, 0x8899aabbccddeeffULL);
+
+	emulate_bin("10 43 21 cd");
+
+	EXPECT_EQ(0x0011223300000000ULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
+	EXPECT_EQ(0x0ULL, vLow(PPC_REG_V2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VSLDBI)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0x0ULL, 0x1ULL);
+	setV(PPC_REG_V4, 0xf000000000000000ULL, 0x0ULL);
+
+	emulate_bin("10 43 21 56");
+
+	EXPECT_EQ(0x0ULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
+	EXPECT_EQ(0x3eULL, vLow(PPC_REG_V2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VGBBD)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0xff00000000000000ULL, 0x0100000000000000ULL);
+
+	emulate_bin("10 40 1d 0c");
+
+	EXPECT_EQ(0x8080808080808080ULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
+	EXPECT_EQ(0x0000000000000080ULL, vLow(PPC_REG_V2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VBPERMQ)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V3, 0x8000000000000000ULL, 0x1ULL);
+	setV(PPC_REG_V4, 0x007f80ffffffffffULL, 0xffffffffffffffffULL);
+
+	emulate_bin("10 43 25 4c");
+
+	EXPECT_EQ(0xc000ULL, vHigh(PPC_REG_V2)) << dumpFunction(_function);
+	EXPECT_EQ(0x0ULL, vLow(PPC_REG_V2)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VCLZLSBB)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V4, 0x0000000100000000ULL, 0x0000000000000001ULL);
+	emulate_bin("10 60 26 02"); // vclzlsbb r3, v4
+
+	EXPECT_EQ(3ULL, getRegisterValueUnsigned(PPC_REG_R3)) << dumpFunction(_function);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_VCTZLSBB)
+{
+	ALL_MODES;
+
+	setV(PPC_REG_V4, 0x0000000100000000ULL, 0x0000000000000100ULL);
+	emulate_bin("10 61 26 02"); // vctzlsbb r3, v4
+
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(PPC_REG_R3)) << dumpFunction(_function);
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
