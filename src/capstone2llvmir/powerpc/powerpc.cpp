@@ -8954,6 +8954,52 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translatePpcRaw(cs_insn* i, cs_ppc* 
 				}
 			}
 		}
+		case PPC_INS_CMPEQB:
+		case PPC_INS_CMPRB:
+		{
+			// Byte-in-set / byte-in-range tests; only the GT bit of BF is set.
+			static const uint32_t crb[8][4] = {
+				{PPC_REG_CR0LT, PPC_REG_CR0GT, PPC_REG_CR0EQ, PPC_REG_CR0UN},
+				{PPC_REG_CR1LT, PPC_REG_CR1GT, PPC_REG_CR1EQ, PPC_REG_CR1UN},
+				{PPC_REG_CR2LT, PPC_REG_CR2GT, PPC_REG_CR2EQ, PPC_REG_CR2UN},
+				{PPC_REG_CR3LT, PPC_REG_CR3GT, PPC_REG_CR3EQ, PPC_REG_CR3UN},
+				{PPC_REG_CR4LT, PPC_REG_CR4GT, PPC_REG_CR4EQ, PPC_REG_CR4UN},
+				{PPC_REG_CR5LT, PPC_REG_CR5GT, PPC_REG_CR5EQ, PPC_REG_CR5UN},
+				{PPC_REG_CR6LT, PPC_REG_CR6GT, PPC_REG_CR6EQ, PPC_REG_CR6UN},
+				{PPC_REG_CR7LT, PPC_REG_CR7GT, PPC_REG_CR7EQ, PPC_REG_CR7UN},
+			};
+			unsigned bf = (w >> 23) & 7, ra = (w >> 16) & 31, rb = (w >> 11) & 31;
+			auto* i8 = irb.getInt8Ty();
+			auto* x = irb.CreateTrunc(ldg(ra), i8);
+			auto* b = ldg(rb);
+			auto by = [&](unsigned k) { return irb.CreateTrunc(irb.CreateLShr(b, 8 * k), i8); };
+			llvm::Value* r = irb.getFalse();
+			if (i->id == PPC_INS_CMPEQB)
+			{
+				for (unsigned k = 0; k < 8; ++k) r = irb.CreateOr(r, irb.CreateICmpEQ(x, by(k)));
+			}
+			else
+			{
+				auto inr = [&](unsigned lo, unsigned hi) {
+					return irb.CreateAnd(irb.CreateICmpULE(by(lo), x), irb.CreateICmpULE(x, by(hi)));
+				};
+				r = inr(1, 0);
+				if ((w >> 21) & 1) r = irb.CreateOr(r, inr(3, 2));
+			}
+			storeRegister(crb[bf][0], irb.getFalse(), irb);
+			storeRegister(crb[bf][1], r, irb);
+			storeRegister(crb[bf][2], irb.getFalse(), irb);
+			storeRegister(crb[bf][3], irb.getFalse(), irb);
+			return;
+		}
+		case PPC_INS_ADDPCIS:
+		{
+			// rt = next instruction address + (d << 16), d split over three fields.
+			int64_t d = int64_t(((w >> 6) & 0x3ff) << 6 | ((w >> 16) & 31) << 1 | (w & 1));
+			if (d & 0x8000) d -= 0x10000;
+			stg((w >> 21) & 31, c64(uint64_t(i->address + 4 + (d << 16))));
+			return;
+		}
 		case PPC_INS_SETB:
 		case PPC_INS_SETBC: case PPC_INS_SETBCR: case PPC_INS_SETNBC: case PPC_INS_SETNBCR:
 		{
