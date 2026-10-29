@@ -1709,6 +1709,25 @@ TEST(OpenAddressingDetectorTest, AndSevenIsNotOpenAddressing)
 	EXPECT_LT(r.confidence, 0.55f);
 }
 
+// Store the result of the last wrap instruction (And / Rem) back to memory:
+// `r->tail = (r->tail + 1) & 7`.  `toStack` puts it in a local instead.
+static void keepWrappedIndex(ssa::SSAFunction& fn, bool toStack = false)
+{
+	auto& instrs = fn.block(0)->instrs;
+	ssa::IrInstr* wrap = nullptr;
+	for (auto* i: instrs)
+		if (i->op == ssa::IrInstr::Op::And || i->op == ssa::IrInstr::Op::Rem) wrap = i;
+	if (!wrap) return;
+	auto* wrapped = fn.allocValue(ssa::ValueKind::VirtualReg);
+	wrap->defValue = wrapped->id;
+	wrapped->defInstr = wrap;
+	auto* addr = fn.allocValue(ssa::ValueKind::VirtualReg);
+	addr->isStackSlot = toStack;
+	auto* st = fn.addInstr(fn.block(0)->id, ssa::IrInstr::Op::Store);
+	st->uses.push_back({wrapped->id, 0});
+	st->uses.push_back({addr->id, 1});
+}
+
 // ─── RingBufferDetector tests ─────────────────────────────────────────────────
 
 TEST(RingBufferDetectorTest, PowerOfTwoAndMaskIsRingBuffer)
@@ -1722,7 +1741,7 @@ TEST(RingBufferDetectorTest, PowerOfTwoAndMaskIsRingBuffer)
 			ssa::IrInstr::Op::Add,
 		});
 	addImmInstr(*fn, ssa::IrInstr::Op::And, 7);
-	fn->block(0)->succs.push_back(0); // the buffer is a ring because it wraps
+	keepWrappedIndex(*fn);
 	RingBufferDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_GE(r.confidence, 0.45f);
@@ -1742,14 +1761,14 @@ TEST(RingBufferDetectorTest, AOneBitTestIsNotAWrapMask)
 			ssa::IrInstr::Op::Compare,
 		});
 	addImmInstr(*fn, ssa::IrInstr::Op::And, 1);
-	fn->block(0)->succs.push_back(0);
+	keepWrappedIndex(*fn);
 	RingBufferDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_LT(r.confidence, 0.45f);
 	EXPECT_TRUE(r.emittedType.empty());
 }
 
-// ...and nothing required a loop, so a masked load and store in straight-line
+// ...and nothing required the wrapped index to be kept, so a masked load and store in straight-line
 // code scored 0.85 before any Compare and 1.00 with one -- which made the
 // `confidence < 0.45f` gate unreachable and, because
 // ContainerDetector::analyseFunction keeps the highest-confidence answer,
@@ -1782,10 +1801,29 @@ TEST(RingBufferDetectorTest, TheScoreIsNotPinnedAtOne)
 			ssa::IrInstr::Op::Store,
 		});
 	addImmInstr(*fn, ssa::IrInstr::Op::And, 15);
-	fn->block(0)->succs.push_back(0);
+	keepWrappedIndex(*fn);
 	RingBufferDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_LT(r.confidence, 1.0f);
+}
+
+// A linear probe wraps its index the same way, in a loop, but keeps it in a
+// local; an open-addressing hash table was reported as a ring buffer.
+TEST(RingBufferDetectorTest, AWrappedProbeIndexKeptInALocalIsNotARingBuffer)
+{
+	auto fn = makeFunc(
+		"ht_lookup",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Store,
+			ssa::IrInstr::Op::Compare,
+			ssa::IrInstr::Op::Add,
+		});
+	addImmInstr(*fn, ssa::IrInstr::Op::And, 31);
+	keepWrappedIndex(*fn, /*toStack=*/true);
+	fn->block(0)->succs.push_back(0);
+	RingBufferDetector det;
+	EXPECT_LT(det.detect(*fn).confidence, 0.45f);
 }
 
 TEST(RingBufferDetectorTest, AndWithoutImmediateIsNotRingBuffer)
@@ -1849,7 +1887,7 @@ TEST(RingBufferDetectorTest, RemByCapacityIsRingBuffer)
 			ssa::IrInstr::Op::Add,
 		});
 	addImmInstr(*fn, ssa::IrInstr::Op::Rem, 10);
-	fn->block(0)->succs.push_back(0);
+	keepWrappedIndex(*fn);
 	RingBufferDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_GE(r.confidence, 0.45f);

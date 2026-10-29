@@ -39,15 +39,33 @@ static bool isWrapMask(uint64_t imm)
 	return ((imm + 1ULL) & imm) == 0ULL;
 }
 
-// A ring buffer is read or written more than once from the same code.
-static bool hasBackEdge(const ssa::SSAFunction& fn)
+static bool isWrapInstr(const ssa::SSAFunction& fn, const ssa::IrInstr& instr);
+
+// A ring keeps its wrapped head or tail: `r->tail = (r->tail + 1) % N` stores
+// the wrapped index back to memory that outlives the call.  A linear probe in
+// an open-addressing table wraps the same way but keeps the index in a local,
+// and a wrapped index that is only used to address an element is an array
+// index.  Requiring the persisted wrap replaces a loop requirement, which
+// both missed push/pop (no loop) and passed every probing loop.
+static bool hasPersistedWrap(const ssa::SSAFunction& fn)
 {
 	for (uint32_t b = 0; b < fn.blockCount(); ++b)
 	{
 		const auto* blk = fn.block(b);
 		if (!blk) continue;
-		for (uint32_t s: blk->succs)
-			if (s <= b) return true;
+		for (const auto* st: blk->instrs)
+		{
+			if (!st || st->op != ssa::IrInstr::Op::Store) continue;
+			bool wrappedValue = false, stackAddr = false;
+			for (const auto& u: st->uses)
+			{
+				const auto* v = fn.value(u.valueId);
+				if (!v) continue;
+				if (u.operandIndex == 0 && v->defInstr && isWrapInstr(fn, *v->defInstr)) wrappedValue = true;
+				if (u.operandIndex == 1 && v->isStackSlot) stackAddr = true;
+			}
+			if (wrappedValue && !stackAddr) return true;
+		}
 	}
 	return false;
 }
@@ -55,6 +73,18 @@ static bool hasBackEdge(const ssa::SSAFunction& fn)
 static bool isWrapCapacity(uint64_t imm)
 {
 	return imm >= 2 && imm <= 0xffffULL;
+}
+
+static bool isWrapInstr(const ssa::SSAFunction& fn, const ssa::IrInstr& instr)
+{
+	if (instr.op != ssa::IrInstr::Op::And && instr.op != ssa::IrInstr::Op::Rem) return false;
+	for (const auto& use: instr.uses)
+	{
+		const auto* val = fn.value(use.valueId);
+		if (!val || val->kind != ssa::ValueKind::Immediate) continue;
+		if (instr.op == ssa::IrInstr::Op::And ? isWrapMask(val->imm) : isWrapCapacity(val->imm)) return true;
+	}
+	return false;
 }
 
 static bool hasModuloIndex(const ssa::SSAFunction& fn)
@@ -116,12 +146,9 @@ ContainerResult RingBufferDetector::detect(const ssa::SSAFunction& fn) const
 	const int stores = countOp(fn, ssa::IrInstr::Op::Store);
 	const int cmps = countOp(fn, ssa::IrInstr::Op::Compare);
 
-	// A wrap index that is never revisited is an array index, not a ring: the
-	// buffer is a ring because the producer or the consumer comes back round.
-	// OpenAddressingDetector, whose evidence is the same shape, requires this
-	// too. Without it a single masked load and store in straight-line code was
-	// a ring buffer.
-	if (!hasBackEdge(fn)) return result;
+	// A wrap index that is only used, never kept, is an array index or a
+	// probe, not a ring; see hasPersistedWrap.
+	if (!hasPersistedWrap(fn)) return result;
 	if (!mod || loads < 1 || stores < 1 || hasInlineHash(fn)) return result;
 
 	// Graded, not pinned. The floor used to be 0.35 + 0.25 + 0.25 = 0.85 the
