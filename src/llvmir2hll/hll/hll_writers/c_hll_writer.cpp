@@ -424,8 +424,15 @@ bool CHLLWriter::emitFileHeader()
 			{
 				(*emit)[size] = 64;
 			}
+			else if (size <= 128)
+			{
+				// GCC and Clang provide a native 128-bit integer; narrowing
+				// it to 64 bits would make every 16-byte vector move copy
+				// only half of its data.
+				(*emit)[size] = 128;
+			}
 			else
-			{ // size > 64
+			{ // size > 128
 				(*emit)[size] = 64;
 			}
 		}
@@ -446,13 +453,17 @@ bool CHLLWriter::emitFileHeader()
 	for (const auto& p: emitSignedInt)
 	{
 		out->typedefLine(
-			getCurrentIndent(), "int" + std::to_string(p.second) + "_t", "int" + std::to_string(p.first) + "_t");
+			getCurrentIndent(),
+			p.second == 128 ? std::string("__int128") : "int" + std::to_string(p.second) + "_t",
+			"int" + std::to_string(p.first) + "_t");
 	}
 	// - unsigned
 	for (const auto& p: emitUnsignedInt)
 	{
 		out->typedefLine(
-			getCurrentIndent(), "uint" + std::to_string(p.second) + "_t", "uint" + std::to_string(p.first) + "_t");
+			getCurrentIndent(),
+			p.second == 128 ? std::string("unsigned __int128") : "uint" + std::to_string(p.second) + "_t",
+			"uint" + std::to_string(p.first) + "_t");
 	}
 
 	//
