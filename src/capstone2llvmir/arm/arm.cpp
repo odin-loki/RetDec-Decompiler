@@ -538,7 +538,30 @@ void Capstone2LlvmIrTranslatorArm_impl::translateInstruction(cs_insn* i, llvm::I
 				|| i->id == ARM_INS_CSINV || i->id == ARM_INS_CSNEG
 				// MVE VPT carries its compare condition in cc.
 				|| i->id == ARM_INS_VPT;
-		if (armCcUncond(ai) || branchInsn)
+		if (ai->vcc != ARMVCC_None && i->id != ARM_INS_VPT && i->id != ARM_INS_VPST
+				&& ai->op_count > 0 && ai->operands[0].type == ARM_OP_REG
+				&& ai->operands[0].reg >= ARM_REG_Q0 && ai->operands[0].reg <= ARM_REG_Q15)
+		{
+			// MVE VPT-block predication: only the lanes enabled by VPR.P0
+			// (Then) or by its complement (Else) take the new value.
+			_inCondition = false;
+			auto d = ai->operands[0].reg;
+			auto* before = loadNeonVector(d, 8, false, irb);
+			(this->*f)(i, ai, irb);
+			auto* after = loadNeonVector(d, 8, false, irb);
+			auto* p = loadRegister(ARM_REG_VPR, irb);
+			p = irb.CreateZExtOrTrunc(p, irb.getInt32Ty());
+			if (ai->vcc == ARMVCC_Else) p = irb.CreateXor(p, irb.getInt32(0xffff));
+			llvm::Value* r = after;
+			for (unsigned k = 0; k < 16; ++k)
+			{
+				auto* bit = irb.CreateICmpNE(irb.CreateAnd(p, irb.getInt32(1u << k)), irb.getInt32(0));
+				r = irb.CreateInsertElement(r, irb.CreateSelect(bit,
+						irb.CreateExtractElement(after, k), irb.CreateExtractElement(before, k)), k);
+			}
+			storeNeonVector(d, r, irb);
+		}
+		else if (armCcUncond(ai) || branchInsn)
 		{
 			_inCondition = false;
 			(this->*f)(i, ai, irb);
