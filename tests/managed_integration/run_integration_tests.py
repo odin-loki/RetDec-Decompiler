@@ -151,10 +151,14 @@ def decompile_cmd(retdec: Path, fixture: Path, output: Optional[Path] = None) ->
 
 
 def ensure_hello_pyc(fixtures_dir: Path) -> None:
-    """Compile the committed hello.py so CI has at least one real .pyc fixture."""
+    """Compile hello.py when hello.pyc is missing, so CI has one real .pyc.
+
+    The .pyc is committed; recompiling it on every run rewrites a tracked
+    file with whatever Python the runner has and leaves the checkout dirty.
+    """
     src = fixtures_dir / "python" / "hello.py"
     dest = fixtures_dir / "python" / "hello.pyc"
-    if not src.is_file():
+    if not src.is_file() or dest.is_file():
         return
     import py_compile
 
