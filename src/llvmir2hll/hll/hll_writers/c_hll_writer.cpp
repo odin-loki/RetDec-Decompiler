@@ -982,8 +982,11 @@ void CHLLWriter::visit(ShPtr<CallExpr> expr)
 			{
 				args.resize(arity->numParams);
 			}
-			else if (!arity->isVariadic && args.size() < arity->numParams)
+			else if (args.size() < arity->numParams)
 			{
+				// Variadic too: printf has one named parameter, and a call
+				// recovery found no arguments for -- `printf()` -- is the
+				// same missing-argument disagreement with the header.
 				calleeRetType = emittableCallResultType(expr);
 			}
 		}
