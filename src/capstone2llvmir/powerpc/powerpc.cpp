@@ -8804,9 +8804,9 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateTwin(cs_insn* i, cs_ppc* pi
 }
 
 /**
- * XER[OV] of an OE=1 form, from its source operands. The carry-in forms
- * (ADDE/ADDME/ADDZE/SUBFE/SUBFME/SUBFZE/DIVWE) return nullptr and leave
- * OV/SO untouched.
+ * XER[OV] of an OE=1 form, from its source operands and, for the
+ * carry-in forms, XER[CA]. DIVWE(U)O returns nullptr and leaves OV/SO
+ * untouched.
  */
 llvm::Value* Capstone2LlvmIrTranslatorPowerpc_impl::overflowOf(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
 {
@@ -8838,6 +8838,34 @@ llvm::Value* Capstone2LlvmIrTranslatorPowerpc_impl::overflowOf(cs_insn* i, cs_pp
 	if (pi->op_count < 2)
 	{
 		return nullptr;
+	}
+	auto carryInOv = [&](llvm::Value* x, llvm::Value* y) {
+		auto bw = dt->getIntegerBitWidth();
+		auto* w = irb.getIntNTy(bw + 1);
+		auto* ca = irb.CreateZExt(loadRegister(PPC_REG_CARRY, irb), w);
+		auto* sum = irb.CreateAdd(irb.CreateAdd(irb.CreateSExt(x, w), irb.CreateSExt(y, w)), ca);
+		return irb.CreateICmpNE(sum, irb.CreateSExt(irb.CreateTrunc(sum, dt), w));
+	};
+	auto* allOnes = llvm::ConstantInt::getSigned(dt, -1);
+	auto* zeroDt = llvm::ConstantInt::get(dt, 0);
+	switch (i->id)
+	{
+		case PPC_INS_ADDEO:
+			if (pi->op_count != 3) return nullptr;
+			return carryInOv(ld(1, dt), ld(2, dt));
+		case PPC_INS_SUBFEO:
+			if (pi->op_count != 3) return nullptr;
+			return carryInOv(irb.CreateNot(ld(1, dt)), ld(2, dt));
+		case PPC_INS_ADDMEO:
+			return carryInOv(ld(1, dt), allOnes);
+		case PPC_INS_ADDZEO:
+			return carryInOv(ld(1, dt), zeroDt);
+		case PPC_INS_SUBFMEO:
+			return carryInOv(irb.CreateNot(ld(1, dt)), allOnes);
+		case PPC_INS_SUBFZEO:
+			return carryInOv(irb.CreateNot(ld(1, dt)), zeroDt);
+		default:
+			break;
 	}
 	switch (i->id)
 	{
