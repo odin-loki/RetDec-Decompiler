@@ -1091,6 +1091,20 @@ ShPtr<Expression> LLVMInstructionConverter::convertGetElementPtrToExpression(
 
 	auto it = llvm::gep_type_begin(inst);
 	auto e = llvm::gep_type_end(inst);
+
+	// `gep i8, ptr %frame, k` into an `alloca [N x i8]` is a byte offset into
+	// the array: &frame[k], not (&frame)[k] (which steps whole arrays).
+	if (auto* gepOp = llvm::dyn_cast<llvm::GEPOperator>(&inst)) {
+		auto* a = llvm::dyn_cast<llvm::AllocaInst>(pointedValue);
+		if (a && gepOp->getNumIndices() == 1
+				&& gepOp->getSourceElementType()->isIntegerTy(8)
+				&& a->getAllocatedType()->isArrayTy()
+				&& a->getAllocatedType()->getArrayElementType()->isIntegerTy(8)) {
+			auto base = getConverter()->convertValueToExpressionDirectly(pointedValue);
+			return convertGEPIndices(base, it, e);
+		}
+	}
+
 	if (it != e) {
 		ShPtr<Expression> base;
 		auto index = getConverter()->convertValueToExpression(it.getOperand());

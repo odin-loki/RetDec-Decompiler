@@ -15,10 +15,12 @@
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Metadata.h>
+#include <llvm/IR/Operator.h>
 #include <llvm/IR/Type.h>
 #include <llvm/IR/Value.h>
 
 #include "retdec/llvmir2hll/ir/address_op_expr.h"
+#include "retdec/llvmir2hll/ir/bit_cast_expr.h"
 #include "retdec/llvmir2hll/ir/call_expr.h"
 #include "retdec/llvmir2hll/ir/const_int.h"
 #include "retdec/llvmir2hll/ir/const_string.h"
@@ -172,6 +174,26 @@ ShPtr<LLVMValueConverter> LLVMValueConverter::create(ShPtr<Module> resModule,
 ShPtr<Expression> LLVMValueConverter::convertValueToDerefExpression(llvm::Value* value, llvm::Type* accessedType)
 {
 	PRECONDITION_NON_NULL(value);
+
+	// A wider access into a byte-array frame object (retdec-stack merges
+	// pointer-walked locals into `alloca [N x i8]`): `*(T *)&frame[k]`, not
+	// `frame[k] = ...`, which would store one char.
+	if (accessedType && accessedType->isSized() && !accessedType->isIntegerTy(8)) {
+		llvm::Value* under = value->stripPointerCasts();
+		llvm::AllocaInst* a = llvm::dyn_cast<llvm::AllocaInst>(under);
+		auto* gep = llvm::dyn_cast<llvm::GEPOperator>(under);
+		if (!a && gep) {
+			a = llvm::dyn_cast<llvm::AllocaInst>(gep->getPointerOperand());
+		}
+		if (a && a->getAllocatedType()->isArrayTy()
+				&& a->getAllocatedType()->getArrayElementType()->isIntegerTy(8)) {
+			ShPtr<Expression> ptr = (under == a)
+				? ShPtr<Expression>(AddressOpExpr::create(convertValueToExpressionDirectly(a)))
+				: convertValueToExpressionDirectly(under);
+			return DerefOpExpr::create(BitCastExpr::create(
+				ptr, PointerType::create(typeConverter->convert(accessedType))));
+		}
+	}
 
 	auto expr = convertValueToExpressionDirectly(value);
 	if (!isConsideredAsPointer(value)) {
