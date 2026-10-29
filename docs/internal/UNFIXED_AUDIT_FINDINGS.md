@@ -20,7 +20,6 @@ Verified against the tree or left open in the last batches of this file:
 | `include/retdec/utils/string.h` `WideStringType` | `std::basic_string<uint32_t>`; libc++ deprecates non-standard `char_traits` |
 | `DerefOpExpr` / `UnaryOpExpr::getType()` | Returns the operand's type (the pointer), not the pointee. Consumers tuned against that |
 | Copy-propagation def-use comparator | Not a strict weak ordering; left because a fix changes emit order |
-| `llama_tokenize(..., parse_special=false)` | ChatML template is literal text, not special tokens |
 | `ctest-linux` / `ctest-windows` suite subset | Named targets only. `ctest-macos` runs `ctest` with no `-L` |
 | Pipeline stages marked hook/partial | [PIPELINE_REDESIGN_TODO.md](PIPELINE_REDESIGN_TODO.md) — not done |
 | Neural differential gate | `RETDEC_NEURAL_DIFF_GATE` warns and skips |

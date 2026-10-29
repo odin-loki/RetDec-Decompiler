@@ -278,7 +278,7 @@ public:
 			tokens.data(),
 			static_cast<int32_t>(tokens.size()),
 			true,
-			false);
+			true); // ChatML markers are control tokens; prompts.cpp neutralizes them in data.
 		if (n < 0)
 		{
 			tokens.resize(static_cast<std::size_t>(-n));
@@ -289,7 +289,7 @@ public:
 				tokens.data(),
 				static_cast<int32_t>(tokens.size()),
 				true,
-				false);
+				true);
 		}
 		if (n < 0)
 		{
