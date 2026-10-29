@@ -694,6 +694,8 @@ Capstone2LlvmIrTranslatorPowerpc_impl::_i2fm =
 		{PPC_INS_VSRAQ, &Capstone2LlvmIrTranslatorPowerpc_impl::translateVecLane},
 		{PPC_INS_VRLQ, &Capstone2LlvmIrTranslatorPowerpc_impl::translateVecLane},
 		{PPC_INS_LXVX, &Capstone2LlvmIrTranslatorPowerpc_impl::translateVecLoadIndexed},
+		{PPC_INS_LXV, &Capstone2LlvmIrTranslatorPowerpc_impl::translateVecLoadIndexed},
+		{PPC_INS_STXV, &Capstone2LlvmIrTranslatorPowerpc_impl::translateVecStoreIndexed},
 		{PPC_INS_LXVB16X, &Capstone2LlvmIrTranslatorPowerpc_impl::translateVecLoadIndexed},
 		{PPC_INS_LXVH8X, &Capstone2LlvmIrTranslatorPowerpc_impl::translateVecLoadIndexed},
 		{PPC_INS_STXVX, &Capstone2LlvmIrTranslatorPowerpc_impl::translateVecStoreIndexed},
