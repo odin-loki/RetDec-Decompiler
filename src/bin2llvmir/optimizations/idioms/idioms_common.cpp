@@ -42,6 +42,16 @@ Instruction * IdiomsCommon::exchangeBitShiftUDiv(BasicBlock::iterator iter) cons
 	return nullptr;
 }
 
+namespace {
+/// Is @a shift by @a cnst the sign bit of @a x (31 on i32, 63 on i64)?
+bool isSignShift(const ConstantInt* cnst, const Value* x)
+{
+	return x->getType()->isIntegerTy()
+			&& cnst->getValue().getLimitedValue() + 1
+					== x->getType()->getIntegerBitWidth();
+}
+} // anonymous namespace
+
 /**
  * Exchange x u>> 31 with x < 0
  *
@@ -54,8 +64,9 @@ Instruction * IdiomsCommon::exchangeLessThanZero(BasicBlock::iterator iter) cons
 	ConstantInt * cnst = nullptr;
 
 	// X u>> 31 --> X < 0
+	// Only the sign bit: a shift by 31 of an i64 is not `x < 0`.
 	if (match(&val, m_LShr(m_Value(op0), m_ConstantInt(cnst)))
-				&& *cnst->getValue().getRawData() == 31) {
+				&& isSignShift(cnst, op0)) {
 		Constant *NewCst = ConstantInt::get(op0->getType(), 0);
 
 		Instruction * cmp = CmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, op0, NewCst);
@@ -88,7 +99,7 @@ Instruction * IdiomsCommon::exchangeGreaterEqualZero(BasicBlock::iterator iter) 
 				&& cnst->isOne()) {
 
 		if (match(op0, m_LShr(m_Value(op1), m_ConstantInt(cnst)))
-				&& *cnst->getValue().getRawData() == 31) {
+				&& isSignShift(cnst, op1)) {
 
 			Constant *NewCst = ConstantInt::get(op0->getType(), 0);
 
@@ -104,7 +115,7 @@ Instruction * IdiomsCommon::exchangeGreaterEqualZero(BasicBlock::iterator iter) 
 	// ((X ^ -1) u>> 31) --> X >= 0
 	//
 	else if (match(&val, m_LShr(m_Value(op0), m_ConstantInt(cnst)))
-				&& *cnst->getValue().getRawData() == 31
+				&& isSignShift(cnst, op0)
 				&& (match(op0, m_Xor(m_Value(op1), m_ConstantInt(cnst)))
 					|| match(op0, m_Xor(m_ConstantInt(cnst), m_Value(op1))))
 				&& cnst->isMinusOne()) {
@@ -336,7 +347,7 @@ Instruction * IdiomsCommon::exchangeSignedModulo2n(BasicBlock::iterator iter) co
 		return nullptr;
 
 	if (! match(op_ashr, m_AShr(m_Value(op_x), m_ConstantInt(cnst)))
-			|| *cnst->getValue().getRawData() != 31) {
+			|| !isSignShift(cnst, op_x)) {
 		return nullptr;
 	}
 
@@ -362,7 +373,7 @@ Instruction * IdiomsCommon::exchangeSignedModulo2n(BasicBlock::iterator iter) co
 		return nullptr;
 
 	if (! match(op_ashr1, m_AShr(m_Value(op_x_tmp), m_ConstantInt(cnst)))
-			&& *cnst->getValue().getRawData() != 31)
+			|| !isSignShift(cnst, op_x_tmp))
 		return nullptr;
 
 	if (op_x_tmp != op_x)
