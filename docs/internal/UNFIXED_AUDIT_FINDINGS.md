@@ -579,10 +579,12 @@ The two mutable statics in `ModulePassPrinter` that the same batch path raced --
 `passWallStartForTimedPass` -- are `thread_local` now. They are per-pipeline
 state and there is one pipeline per thread.
 
-`src/neural/llama_inference.cpp:242` — `llama_tokenize` is called with
+~~`src/neural/llama_inference.cpp:242` — `llama_tokenize` is called with
 `parse_special=false`, so the ChatML template `prompts.cpp` builds is fed to the
 model as literal text and never applied. Every non-mock refinement runs the
-model outside its instruction-tuned distribution.
+model outside its instruction-tuned distribution.~~ — fixed: both `llama_tokenize`
+calls pass `parse_special=true`, and `prompts.cpp` neutralises ChatML markers
+in the data it embeds.
 
 ~~`src/retdec/semantic_recovery_export.cpp:95` — semantic comments are placed by
 DWARF/PDB *source* line number~~ — fixed. `definitionLineOf` finds the function
@@ -601,7 +603,10 @@ comment was added; it now leaves an untouched output byte for byte.
 
 `src/retdec-decompiler/retdec-decompiler.cpp:891` — managed inputs
 (`.apk`/`.jar`/`.pyc`/`.class`/`.wasm`) are written to a `.c` filename and
-bypass `--silent`, `-f json` and log redirection entirely.
+bypass `--silent`, `-f json` and log redirection entirely. The log half is fixed:
+`managed_decompiler.cpp` writes its progress, warnings and errors through
+`Log::info()` / `Log::error()` instead of `std::cerr`, so `--silent` and log
+redirection apply. Managed output is still source text, not JSON, under `-f json`.
 
 ---
 

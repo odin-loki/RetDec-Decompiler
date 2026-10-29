@@ -31,6 +31,7 @@ target_link_libraries(retdec-retdec-tests
         retdec::deps::llvm
         # What managed_decompiler.cpp dispatches to; the same list
         # src/retdec-decompiler/CMakeLists.txt links for the same file.
+        retdec::utils
         retdec-jvm-parser
         retdec-jvm-reconstruct
         retdec-java-emitter

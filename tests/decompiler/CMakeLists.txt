@@ -29,6 +29,7 @@ target_include_directories(format_router_probe
 )
 target_compile_features(format_router_probe PUBLIC cxx_std_20)
 target_link_libraries(format_router_probe
+    retdec::utils
     retdec-jvm-parser
     retdec-java-emitter
     retdec-cli-parser

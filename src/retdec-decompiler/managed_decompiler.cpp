@@ -11,6 +11,7 @@
  */
 
 #include "managed_decompiler.h"
+#include "retdec/utils/io/log.h"
 
 // Java / DEX / JAR
 #include "retdec/dex_parser/dex_apk_reader.h"
@@ -384,7 +385,7 @@ void logUnknownManagedFormat(const uint8_t* data, std::size_t size, const std::s
 
 static int decompileJavaClass(const std::string& inputFile, const std::string& outputFile)
 {
-	std::cerr << "[managed] Decompiling Java .class: " << inputFile << "\n";
+	retdec::utils::io::Log::info() << "[managed] Decompiling Java .class: " << inputFile << "\n";
 
 	std::vector<uint8_t> bytes;
 	try
@@ -393,14 +394,14 @@ static int decompileJavaClass(const std::string& inputFile, const std::string& o
 	}
 	catch (const std::exception& e)
 	{
-		std::cerr << "Error: " << e.what() << "\n";
+		retdec::utils::io::Log::error() << "Error: " << e.what() << "\n";
 		return 1;
 	}
 
 	auto parsed = retdec::jvm_parser::parseClassFile(bytes);
 	if (!parsed.ok)
 	{
-		std::cerr << "Error parsing .class: " << parsed.error << "\n";
+		retdec::utils::io::Log::error() << "Error parsing .class: " << parsed.error << "\n";
 		return 1;
 	}
 
@@ -416,7 +417,7 @@ static int decompileJavaClass(const std::string& inputFile, const std::string& o
 		if (!fr.source.empty()) combined += fr.source + "\n";
 	}
 
-	if (combined.empty()) std::cerr << "Warning: Java emitter produced no output.\n";
+	if (combined.empty()) retdec::utils::io::Log::info() << "Warning: Java emitter produced no output.\n";
 
 	try
 	{
@@ -424,11 +425,11 @@ static int decompileJavaClass(const std::string& inputFile, const std::string& o
 	}
 	catch (const std::exception& e)
 	{
-		std::cerr << "Error writing output: " << e.what() << "\n";
+		retdec::utils::io::Log::error() << "Error writing output: " << e.what() << "\n";
 		return 1;
 	}
 
-	std::cerr << "[managed] Java decompilation written to: " << outputFile << "\n";
+	retdec::utils::io::Log::info() << "[managed] Java decompilation written to: " << outputFile << "\n";
 	return 0;
 }
 
@@ -436,7 +437,7 @@ static int decompileJavaClass(const std::string& inputFile, const std::string& o
 
 static int decompileJavaJar(const std::string& inputFile, const std::string& outputFile)
 {
-	std::cerr << "[managed] Decompiling Java JAR: " << inputFile << "\n";
+	retdec::utils::io::Log::info() << "[managed] Decompiling Java JAR: " << inputFile << "\n";
 
 	std::vector<uint8_t> bytes;
 	try
@@ -445,7 +446,7 @@ static int decompileJavaJar(const std::string& inputFile, const std::string& out
 	}
 	catch (const std::exception& e)
 	{
-		std::cerr << "Error: " << e.what() << "\n";
+		retdec::utils::io::Log::error() << "Error: " << e.what() << "\n";
 		return 1;
 	}
 
@@ -453,11 +454,11 @@ static int decompileJavaJar(const std::string& inputFile, const std::string& out
 	auto jarResult = reader.read(bytes);
 	if (!jarResult.ok)
 	{
-		std::cerr << "Error parsing JAR: " << jarResult.error << "\n";
+		retdec::utils::io::Log::error() << "Error parsing JAR: " << jarResult.error << "\n";
 		return 1;
 	}
 	for (const auto& err: jarResult.errorList)
-		std::cerr << "Warning: " << err << "\n";
+		retdec::utils::io::Log::info() << "Warning: " << err << "\n";
 
 	retdec::java_emitter::JavaFileEmitter emitter;
 	auto emitResult = emitter.emitModule(jarResult.module);
@@ -474,11 +475,11 @@ static int decompileJavaJar(const std::string& inputFile, const std::string& out
 	}
 	catch (const std::exception& e)
 	{
-		std::cerr << "Error writing output: " << e.what() << "\n";
+		retdec::utils::io::Log::error() << "Error writing output: " << e.what() << "\n";
 		return 1;
 	}
 
-	std::cerr << "[managed] JAR decompilation written to: " << outputFile << " (" << jarResult.classesParsed << "/"
+	retdec::utils::io::Log::info() << "[managed] JAR decompilation written to: " << outputFile << " (" << jarResult.classesParsed << "/"
 			  << jarResult.classesFound << " classes)\n";
 	return 0;
 }
@@ -487,7 +488,7 @@ static int decompileJavaJar(const std::string& inputFile, const std::string& out
 
 static int decompileDex(const std::string& inputFile, const std::string& outputFile)
 {
-	std::cerr << "[managed] Decompiling DEX: " << inputFile << "\n";
+	retdec::utils::io::Log::info() << "[managed] Decompiling DEX: " << inputFile << "\n";
 
 	std::vector<uint8_t> bytes;
 	try
@@ -496,7 +497,7 @@ static int decompileDex(const std::string& inputFile, const std::string& outputF
 	}
 	catch (const std::exception& e)
 	{
-		std::cerr << "Error: " << e.what() << "\n";
+		retdec::utils::io::Log::error() << "Error: " << e.what() << "\n";
 		return 1;
 	}
 
@@ -505,10 +506,10 @@ static int decompileDex(const std::string& inputFile, const std::string& outputF
 
 	if (result.status == retdec::dex_parser::ApkReadResult::Error)
 	{
-		std::cerr << "Error parsing DEX: " << result.error << "\n";
+		retdec::utils::io::Log::error() << "Error parsing DEX: " << result.error << "\n";
 		return 1;
 	}
-	if (!result.error.empty()) std::cerr << "Warning: " << result.error << "\n";
+	if (!result.error.empty()) retdec::utils::io::Log::info() << "Warning: " << result.error << "\n";
 
 	retdec::java_emitter::JavaFileEmitter emitter;
 	auto emitResult = emitter.emitModule(result.module);
@@ -525,11 +526,11 @@ static int decompileDex(const std::string& inputFile, const std::string& outputF
 	}
 	catch (const std::exception& e)
 	{
-		std::cerr << "Error writing output: " << e.what() << "\n";
+		retdec::utils::io::Log::error() << "Error writing output: " << e.what() << "\n";
 		return 1;
 	}
 
-	std::cerr << "[managed] DEX decompilation written to: " << outputFile << "\n";
+	retdec::utils::io::Log::info() << "[managed] DEX decompilation written to: " << outputFile << "\n";
 	return 0;
 }
 
@@ -537,7 +538,7 @@ static int decompileDex(const std::string& inputFile, const std::string& outputF
 
 static int decompileApk(const std::string& inputFile, const std::string& outputFile)
 {
-	std::cerr << "[managed] Decompiling APK: " << inputFile << "\n";
+	retdec::utils::io::Log::info() << "[managed] Decompiling APK: " << inputFile << "\n";
 
 	std::vector<uint8_t> bytes;
 	try
@@ -546,7 +547,7 @@ static int decompileApk(const std::string& inputFile, const std::string& outputF
 	}
 	catch (const std::exception& e)
 	{
-		std::cerr << "Error: " << e.what() << "\n";
+		retdec::utils::io::Log::error() << "Error: " << e.what() << "\n";
 		return 1;
 	}
 
@@ -555,11 +556,11 @@ static int decompileApk(const std::string& inputFile, const std::string& outputF
 
 	if (result.status == retdec::dex_parser::ApkReadResult::Error)
 	{
-		std::cerr << "Error parsing APK: " << result.error << "\n";
+		retdec::utils::io::Log::error() << "Error parsing APK: " << result.error << "\n";
 		return 1;
 	}
 	for (const auto& w: result.warnings)
-		std::cerr << "Warning: " << w << "\n";
+		retdec::utils::io::Log::info() << "Warning: " << w << "\n";
 
 	retdec::java_emitter::JavaFileEmitter emitter;
 	auto emitResult = emitter.emitModule(result.module);
@@ -576,11 +577,11 @@ static int decompileApk(const std::string& inputFile, const std::string& outputF
 	}
 	catch (const std::exception& e)
 	{
-		std::cerr << "Error writing output: " << e.what() << "\n";
+		retdec::utils::io::Log::error() << "Error writing output: " << e.what() << "\n";
 		return 1;
 	}
 
-	std::cerr << "[managed] APK decompilation written to: " << outputFile << "\n";
+	retdec::utils::io::Log::info() << "[managed] APK decompilation written to: " << outputFile << "\n";
 	return 0;
 }
 
@@ -588,13 +589,13 @@ static int decompileApk(const std::string& inputFile, const std::string& outputF
 
 static int decompileCliAssembly(const std::string& inputFile, const std::string& outputFile)
 {
-	std::cerr << "[managed] Decompiling .NET CLI assembly: " << inputFile << "\n";
+	retdec::utils::io::Log::info() << "[managed] Decompiling .NET CLI assembly: " << inputFile << "\n";
 
 	retdec::cli_parser::CLIReader reader;
 	auto cliResult = reader.readFile(inputFile);
 	if (!cliResult.success)
 	{
-		std::cerr << "Error parsing CLI assembly: " << cliResult.error << "\n";
+		retdec::utils::io::Log::error() << "Error parsing CLI assembly: " << cliResult.error << "\n";
 		return 1;
 	}
 
@@ -608,7 +609,7 @@ static int decompileCliAssembly(const std::string& inputFile, const std::string&
 		if (!kv.second.empty()) combined += kv.second + "\n";
 	}
 
-	if (combined.empty()) std::cerr << "Warning: C# emitter produced no output.\n";
+	if (combined.empty()) retdec::utils::io::Log::info() << "Warning: C# emitter produced no output.\n";
 
 	try
 	{
@@ -616,11 +617,11 @@ static int decompileCliAssembly(const std::string& inputFile, const std::string&
 	}
 	catch (const std::exception& e)
 	{
-		std::cerr << "Error writing output: " << e.what() << "\n";
+		retdec::utils::io::Log::error() << "Error writing output: " << e.what() << "\n";
 		return 1;
 	}
 
-	std::cerr << "[managed] C# decompilation written to: " << outputFile << "\n";
+	retdec::utils::io::Log::info() << "[managed] C# decompilation written to: " << outputFile << "\n";
 	return 0;
 }
 
@@ -628,30 +629,30 @@ static int decompileCliAssembly(const std::string& inputFile, const std::string&
 
 static int decompilePyc(const std::string& inputFile, const std::string& outputFile)
 {
-	std::cerr << "[managed] Decompiling Python .pyc: " << inputFile << "\n";
+	retdec::utils::io::Log::info() << "[managed] Decompiling Python .pyc: " << inputFile << "\n";
 
 	retdec::pyc_parser::PycReader reader;
 	auto pycResult = reader.readFile(inputFile);
 
 	if (!pycResult.success)
 	{
-		std::cerr << "Error parsing .pyc: " << pycResult.error << "\n";
+		retdec::utils::io::Log::error() << "Error parsing .pyc: " << pycResult.error << "\n";
 		return 1;
 	}
 	if (!pycResult.root)
 	{
-		std::cerr << "Error: PycReader did not produce a root PyCodeObject.\n";
+		retdec::utils::io::Log::error() << "Error: PycReader did not produce a root PyCodeObject.\n";
 		return 1;
 	}
 	for (auto& w: pycResult.warnings)
-		std::cerr << "Warning: " << w << "\n";
+		retdec::utils::io::Log::info() << "Warning: " << w << "\n";
 
 	retdec::py_reconstruct::PyReconstructor reconstructor;
 	auto pyModule =
 		reconstructor.reconstruct(*pycResult.root, pycResult.version.major, pycResult.version.minor, inputFile);
 
 	for (auto& w: reconstructor.warnings())
-		std::cerr << "Warning: " << w << "\n";
+		retdec::utils::io::Log::info() << "Warning: " << w << "\n";
 
 	retdec::py_emitter::PyEmitOptions emitOpts;
 	emitOpts.pyMajor = pycResult.version.major;
@@ -660,7 +661,7 @@ static int decompilePyc(const std::string& inputFile, const std::string& outputF
 	auto emitResult = emitter.emit(pyModule);
 
 	for (auto& w: emitResult.warnings)
-		std::cerr << "Warning: " << w << "\n";
+		retdec::utils::io::Log::info() << "Warning: " << w << "\n";
 
 	try
 	{
@@ -668,11 +669,11 @@ static int decompilePyc(const std::string& inputFile, const std::string& outputF
 	}
 	catch (const std::exception& e)
 	{
-		std::cerr << "Error writing output: " << e.what() << "\n";
+		retdec::utils::io::Log::error() << "Error writing output: " << e.what() << "\n";
 		return 1;
 	}
 
-	std::cerr << "[managed] Python decompilation written to: " << outputFile << "\n";
+	retdec::utils::io::Log::info() << "[managed] Python decompilation written to: " << outputFile << "\n";
 	return 0;
 }
 
@@ -680,7 +681,7 @@ static int decompilePyc(const std::string& inputFile, const std::string& outputF
 
 static int decompileLua(const std::string& inputFile, const std::string& outputFile)
 {
-	std::cerr << "[managed] Decompiling Lua bytecode: " << inputFile << "\n";
+	retdec::utils::io::Log::info() << "[managed] Decompiling Lua bytecode: " << inputFile << "\n";
 
 	std::vector<uint8_t> bytes;
 	try
@@ -689,7 +690,7 @@ static int decompileLua(const std::string& inputFile, const std::string& outputF
 	}
 	catch (const std::exception& e)
 	{
-		std::cerr << "Error: " << e.what() << "\n";
+		retdec::utils::io::Log::error() << "Error: " << e.what() << "\n";
 		return 1;
 	}
 
@@ -698,7 +699,7 @@ static int decompileLua(const std::string& inputFile, const std::string& outputF
 
 	if (!luaResult.ok)
 	{
-		std::cerr << "Error parsing .luac: " << luaResult.error << "\n";
+		retdec::utils::io::Log::error() << "Error parsing .luac: " << luaResult.error << "\n";
 		return 1;
 	}
 
@@ -711,11 +712,11 @@ static int decompileLua(const std::string& inputFile, const std::string& outputF
 	}
 	catch (const std::exception& e)
 	{
-		std::cerr << "Error writing output: " << e.what() << "\n";
+		retdec::utils::io::Log::error() << "Error writing output: " << e.what() << "\n";
 		return 1;
 	}
 
-	std::cerr << "[managed] Lua decompilation written to: " << outputFile << "\n";
+	retdec::utils::io::Log::info() << "[managed] Lua decompilation written to: " << outputFile << "\n";
 	return 0;
 }
 
@@ -723,7 +724,7 @@ static int decompileLua(const std::string& inputFile, const std::string& outputF
 
 static int decompileWasm(const std::string& inputFile, const std::string& outputFile)
 {
-	std::cerr << "[managed] Decompiling WebAssembly: " << inputFile << "\n";
+	retdec::utils::io::Log::info() << "[managed] Decompiling WebAssembly: " << inputFile << "\n";
 
 	std::vector<uint8_t> bytes;
 	try
@@ -732,7 +733,7 @@ static int decompileWasm(const std::string& inputFile, const std::string& output
 	}
 	catch (const std::exception& e)
 	{
-		std::cerr << "Error: " << e.what() << "\n";
+		retdec::utils::io::Log::error() << "Error: " << e.what() << "\n";
 		return 1;
 	}
 
@@ -741,7 +742,7 @@ static int decompileWasm(const std::string& inputFile, const std::string& output
 
 	if (!wasmResult.ok)
 	{
-		std::cerr << "Error parsing .wasm: " << wasmResult.error << "\n";
+		retdec::utils::io::Log::error() << "Error parsing .wasm: " << wasmResult.error << "\n";
 		return 1;
 	}
 
@@ -754,11 +755,11 @@ static int decompileWasm(const std::string& inputFile, const std::string& output
 	}
 	catch (const std::exception& e)
 	{
-		std::cerr << "Error writing output: " << e.what() << "\n";
+		retdec::utils::io::Log::error() << "Error writing output: " << e.what() << "\n";
 		return 1;
 	}
 
-	std::cerr << "[managed] WASM (WAT) decompilation written to: " << outputFile << "\n";
+	retdec::utils::io::Log::info() << "[managed] WASM (WAT) decompilation written to: " << outputFile << "\n";
 	return 0;
 }
 
@@ -776,6 +777,6 @@ int decompileManaged(ManagedFormat fmt, const std::string& inputFile, const std:
 	case ManagedFormat::PythonPyc: return decompilePyc(inputFile, outputFile);
 	case ManagedFormat::LuaBytecode: return decompileLua(inputFile, outputFile);
 	case ManagedFormat::Wasm: return decompileWasm(inputFile, outputFile);
-	default: std::cerr << "Error: unknown managed format.\n"; return 1;
+	default: retdec::utils::io::Log::error() << "Error: unknown managed format.\n"; return 1;
 	}
 }
