@@ -14710,6 +14710,64 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_RCWCASP_swaps_when_the_pai
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_DC_ZVA_zeroes_64_bytes)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0x1234},
+	});
+
+	emulate_bin("20 74 0b d5"); // dc zva, x0
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1200, 0x0_qw},
+		{0x1208, 0x0_qw},
+		{0x1210, 0x0_qw},
+		{0x1218, 0x0_qw},
+		{0x1220, 0x0_qw},
+		{0x1228, 0x0_qw},
+		{0x1230, 0x0_qw},
+		{0x1238, 0x0_qw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_GCSPUSHM)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0xabc},
+		{ARM64_SYSREG_GCSPR_EL0, 0x2000},
+	});
+
+	emulate_bin("01 77 0b d5"); // gcspushm x1
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_SYSREG_GCSPR_EL0, 0x1ff8},
+	});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1ff8, 0xabc_qw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_GCSPOPM)
+{
+	setRegisters({
+		{ARM64_SYSREG_GCSPR_EL0, 0x2000},
+	});
+	setMemory({
+		{0x2000, 0x55_qw},
+	});
+
+	emulate_bin("22 77 2b d5"); // gcspopm x2
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X2, 0x55},
+		{ARM64_SYSREG_GCSPR_EL0, 0x2008},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

@@ -9870,5 +9870,75 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateArm64Twin(cs_insn* i, cs_arm6
 }
 
 
+
+/**
+ * SYS-space instructions: IC/DC/AT/TLBI/SYS/SYSP and friends stay
+ * pseudo-asm calls, except DC ZVA/GZVA, which
+ * zero a 64-byte block (DCZID_EL0.BS = 4, the common implementation value).
+ * SYSL reads an opaque value. GCS: GCSPUSHM/GCSPOPM move through the
+ * GCSPR_EL0 stack; GCSSTR/GCSSTTR are plain stores; the exception-return
+ * and stack-switch forms (GCSSS1/2, GCSPUSHX/POPX/POPCX) only touch the
+ * shadow stack, which is not otherwise modelled.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateSysOp(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	std::string m = i->mnemonic;
+	std::string ops = i->op_str ? i->op_str : "";
+	auto* i64 = irb.getInt64Ty();
+	auto lastReg = [&]() -> int {
+		for (int k = int(ai->op_count) - 1; k >= 0; --k)
+			if (ai->operands[k].type == ARM64_OP_REG) return k;
+		return -1;
+	};
+	if (m == "dc" && (ops.compare(0, 3, "zva") == 0 || ops.compare(0, 4, "gzva") == 0))
+	{
+		int k = lastReg();
+		if (k < 0)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		auto* base = irb.CreateAnd(loadRegister(ai->operands[k].reg, irb), llvm::ConstantInt::get(i64, ~uint64_t(63)));
+		for (unsigned off = 0; off < 64; off += 8)
+		{
+			storeIntPtr(irb, llvm::ConstantInt::get(i64, 0), irb.CreateAdd(base, llvm::ConstantInt::get(i64, off)), i64);
+		}
+		return;
+	}
+	if (m == "sysl")
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	const uint32_t gcspr = ARM64_SYSREG_GCSPR_EL0;
+	if (m == "gcspushm" && ai->op_count == 1)
+	{
+		auto* sp = irb.CreateSub(loadRegister(gcspr, irb), llvm::ConstantInt::get(i64, 8));
+		storeIntPtr(irb, loadOp(ai->operands[0], irb), sp, i64);
+		storeRegister(gcspr, sp, irb);
+		return;
+	}
+	if (m == "gcspopm" && ai->op_count == 1)
+	{
+		auto* sp = loadRegister(gcspr, irb);
+		storeOp(ai->operands[0], loadIntPtr(irb, sp, i64), irb);
+		storeRegister(gcspr, irb.CreateAdd(sp, llvm::ConstantInt::get(i64, 8)), irb);
+		return;
+	}
+	if ((m == "gcsstr" || m == "gcssttr") && ai->op_count == 2 && ai->operands[1].type == ARM64_OP_MEM)
+	{
+		storeIntPtr(irb, loadOp(ai->operands[0], irb), loadRegister(ai->operands[1].mem.base, irb), i64);
+		return;
+	}
+	if (m.compare(0, 3, "gcs") == 0 && m != "gcspushm" && m != "gcspopm" && m != "gcsstr" && m != "gcssttr")
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	// Cache/TLB/address-translation maintenance and generic SYS/SYSP stay
+	// visible as pseudo-asm calls.
+	translatePseudoAsmGeneric(i, ai, irb);
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec
