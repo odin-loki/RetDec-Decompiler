@@ -726,3 +726,10 @@ def test_lower_bound_and_memcpy_carry_their_implied_labels():
     ]}]}
     got = set(labels_from_config(cfg, "x"))
     assert {"LowerBound", "BinarySearch", "Search", "Memcpy", "Memmove", "Copy"} <= got
+
+
+def test_chaining_implies_a_hash_table():
+    cfg = {"functions": [{"semanticDetections": [
+        {"kind": "algorithm", "label": "Chaining", "confidence": 0.80, "detail": ""},
+    ]}]}
+    assert {"Chaining", "HashTable"} <= set(labels_from_config(cfg, "x"))

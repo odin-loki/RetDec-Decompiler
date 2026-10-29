@@ -2809,3 +2809,63 @@ TEST(IdiomDetectorTest, OneWayConversionsAreNotConversion)
 	EXPECT_FALSE(detects(*makeConversions(4, 0, false), IdiomKind::Conversion));
 	EXPECT_FALSE(detects(*makeConversions(1, 1, false), IdiomKind::Conversion));
 }
+
+namespace {
+
+ssa::ValueId defined(ssa::SSAFunction& fn, ssa::IrInstr* i)
+{
+	auto* v = reg(fn, 64);
+	i->defValue = v->id;
+	v->defInstr = i;
+	return v->id;
+}
+
+/// e = malloc(24); e->next = slot; slot = e; with `slot` either
+/// `table[h * 8]` or a fixed head.
+std::unique_ptr<ssa::SSAFunction> makeHeadInsert(bool indexed)
+{
+	auto fn = std::make_unique<ssa::SSAFunction>("put");
+	fn->addBlock("entry");
+	auto* call = fn->addInstr(0, ssa::IrInstr::Op::Call);
+	call->calleeName = "malloc";
+	const auto node = defined(*fn, call);
+	ssa::ValueId slot = reg(*fn, 64)->id;
+	if (indexed)
+	{
+		auto* mul = fn->addInstr(0, ssa::IrInstr::Op::Mul);
+		mul->uses.push_back({reg(*fn, 64)->id, 0});
+		mul->uses.push_back({fn->allocValue(ssa::ValueKind::Immediate)->id, 1});
+		const auto scaled = defined(*fn, mul);
+		auto* add = fn->addInstr(0, ssa::IrInstr::Op::Add);
+		add->uses.push_back({scaled, 0});
+		add->uses.push_back({reg(*fn, 64)->id, 1});
+		slot = defined(*fn, add);
+	}
+	auto* ld = fn->addInstr(0, ssa::IrInstr::Op::Load);
+	ld->uses.push_back({slot, 0});
+	const auto head = defined(*fn, ld);
+	auto* next = fn->addInstr(0, ssa::IrInstr::Op::Add);
+	next->uses.push_back({node, 0});
+	next->uses.push_back({fn->allocValue(ssa::ValueKind::Immediate)->id, 1});
+	const auto nextField = defined(*fn, next);
+	auto* link = fn->addInstr(0, ssa::IrInstr::Op::Store);
+	link->uses.push_back({head, 0});
+	link->uses.push_back({nextField, 1});
+	auto* pub = fn->addInstr(0, ssa::IrInstr::Op::Store);
+	pub->uses.push_back({node, 0});
+	pub->uses.push_back({slot, 1});
+	return fn;
+}
+
+} // namespace
+
+TEST(IdiomDetectorTest, NewNodeLinkedIntoAHashedBucketIsChaining)
+{
+	EXPECT_TRUE(detects(*makeHeadInsert(/*indexed=*/true), IdiomKind::HashTableChaining));
+}
+
+TEST(IdiomDetectorTest, NewNodePushedOntoOneFixedHeadIsNotChaining)
+{
+	// A linked-list push_front: same links, but no bucket index.
+	EXPECT_FALSE(detects(*makeHeadInsert(/*indexed=*/false), IdiomKind::HashTableChaining));
+}

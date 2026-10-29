@@ -786,6 +786,95 @@ bool hasConversionChain(const ssa::SSAFunction& fn)
 	return toFloat >= 1 && toInt >= 1 && toFloat + toInt >= 4;
 }
 
+/// Operand `idx` of `i`, or kInvalidValue.
+ssa::ValueId operandAt(const ssa::IrInstr& i, uint32_t idx)
+{
+	for (const auto& u: i.uses)
+		if (u.operandIndex == idx) return u.valueId;
+	return ssa::kInvalidValue;
+}
+
+const ssa::IrInstr* defOf(const ssa::SSAFunction& fn, ssa::ValueId id)
+{
+	const auto* v = fn.value(id);
+	return v ? v->defInstr : nullptr;
+}
+
+/// Look through pointer/integer casts (inttoptr, ptrtoint arrive as Assign).
+ssa::ValueId stripCasts(const ssa::SSAFunction& fn, ssa::ValueId id)
+{
+	for (int k = 0; k < 4; ++k)
+	{
+		const auto* d = defOf(fn, id);
+		if (!d || d->op != ssa::IrInstr::Op::Assign || d->isFloat || d->uses.size() != 1) break;
+		id = d->uses[0].valueId;
+	}
+	return id;
+}
+
+/// `id` is `base` or `base + k`.
+bool isFieldOf(const ssa::SSAFunction& fn, ssa::ValueId id, ssa::ValueId base)
+{
+	id = stripCasts(fn, id);
+	if (id == base) return true;
+	const auto* d = defOf(fn, id);
+	if (!d || d->op != ssa::IrInstr::Op::Add) return false;
+	for (const auto& u: d->uses)
+		if (stripCasts(fn, u.valueId) == base) return true;
+	return false;
+}
+
+/// `table + scaled(index)`: an Add with an operand made by Mul, Shl or And.
+bool isIndexedSlot(const ssa::SSAFunction& fn, ssa::ValueId id)
+{
+	id = stripCasts(fn, id);
+	const auto* d = defOf(fn, id);
+	if (!d || d->op != ssa::IrInstr::Op::Add) return false;
+	for (const auto& u: d->uses)
+		if (const auto* s = defOf(fn, u.valueId))
+			if (s->op == ssa::IrInstr::Op::Mul || s->op == ssa::IrInstr::Op::Shl || s->op == ssa::IrInstr::Op::And)
+				return true;
+	return false;
+}
+
+/// Insert at the head of a hashed bucket's chain:
+///   e = malloc(..); e->next = table[i]; table[i] = e;
+/// A plain linked-list push uses one fixed head, not an indexed slot.
+bool hasBucketHeadInsert(const ssa::SSAFunction& fn)
+{
+	std::vector<ssa::ValueId> nodes;
+	std::vector<const ssa::IrInstr*> loads, stores;
+	for (const auto& blk: fn.blocks())
+	{
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i) continue;
+			if (i->op == ssa::IrInstr::Op::Call && i->defValue != ssa::kInvalidValue
+				&& (i->calleeName.find("malloc") != std::string::npos || i->calleeName.find("calloc") != std::string::npos))
+				nodes.push_back(i->defValue);
+			if (i->op == ssa::IrInstr::Op::Load && !addrOnStack(fn, *i)) loads.push_back(i);
+			if (i->op == ssa::IrInstr::Op::Store && !addrOnStack(fn, *i)) stores.push_back(i);
+		}
+	}
+	for (ssa::ValueId node: nodes)
+		for (const auto* ld: loads)
+		{
+			const ssa::ValueId slot = stripCasts(fn, operandAt(*ld, 0));
+			if (ld->defValue == ssa::kInvalidValue || !isIndexedSlot(fn, slot)) continue;
+			bool linked = false, published = false;
+			for (const auto* st: stores)
+			{
+				const ssa::ValueId val = stripCasts(fn, operandAt(*st, 0));
+				const ssa::ValueId addr = stripCasts(fn, operandAt(*st, 1));
+				if (val == ld->defValue && addr != slot && isFieldOf(fn, addr, node)) linked = true;
+				if (val == node && addr == slot) published = true;
+			}
+			if (linked && published) return true;
+		}
+	return false;
+}
+
 IdiomResult makeResult(IdiomKind kind, float confidence, const std::string& detail)
 {
 	IdiomResult r;
@@ -903,6 +992,9 @@ bool IdiomDetector::passesPreflight(const ssa::SSAFunction& fn) const
 std::vector<IdiomResult> IdiomDetector::detect(const ssa::SSAFunction& fn) const
 {
 	std::vector<IdiomResult> out;
+	// Straight-line and tiny, so it runs before the size preflight.
+	if (hasBucketHeadInsert(fn))
+		out.push_back(makeResult(IdiomKind::HashTableChaining, 0.80f, "bucket_head_insert"));
 	if (!passesPreflight(fn)) return out;
 
 	if (hasDigitLoop(fn))

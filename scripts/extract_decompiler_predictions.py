@@ -323,6 +323,9 @@ def _apply_label_implications(labels: set[str]) -> None:
         labels.add("Search")
     if "Atomic" in labels or "Mutex" in labels or "Pthread" in labels:
         labels.add("Concurrency")
+    # Chaining and open addressing are the two ways to build a hash table.
+    if "Chaining" in labels or "OpenAddressing" in labels:
+        labels.add("HashTable")
 
 
 def _strip_spurious_noise(

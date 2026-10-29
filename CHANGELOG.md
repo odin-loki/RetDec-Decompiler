@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- Algorithm recovery recognises insertion at the head of a hashed bucket chain (malloc'd node linked to table[i], then stored there) as separate-chaining HashTable; Chaining/OpenAddressing imply HashTable in extraction.
 - Algorithm recovery labels straight-line int/float round-trip code as Conversion; the SSA records int<->float conversion direction (analysis cache version 7).
 - Atomic instructions found in the SSA are exported as structural evidence (evidence:atomic_instruction) instead of symbol-name evidence, so lock-free counters are labelled Atomic/Concurrency.
 - Fixed a miscompile: bin2llvmir's dead-instruction cleanup erased atomic read-modify-writes (e.g. `lock add [m], 1`) once their unused flag computations were removed, so atomic counters vanished from the output.
