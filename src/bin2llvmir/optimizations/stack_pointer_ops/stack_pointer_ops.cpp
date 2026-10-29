@@ -7,6 +7,12 @@
 
 #include <cassert>
 #include <iomanip>
+#include <functional>
+#include <map>
+#include <optional>
+#include <regex>
+
+#include <llvm/IR/IRBuilder.h>
 
 #include <llvm/IR/InstIterator.h>
 #include <llvm/IR/Instruction.h>
@@ -64,6 +70,7 @@ bool StackPointerOpsRemove::run()
 	bool changed = false;
 	changed |= removeStackPointerStores();
 	changed |= removePreservationStores();
+	changed |= rebaseIntoLocalArrays();
 
 	return changed;
 }
@@ -217,6 +224,108 @@ bool StackPointerOpsRemove::removePreservationStores()
 		}
 	}
 
+	return changed;
+}
+
+namespace {
+
+std::optional<int> localOffset(const AllocaInst* a)
+{
+	static const std::regex re("^stack_var_(-?[0-9]+)(\\.typed[0-9]*)?$");
+	std::smatch m;
+	std::string n = a->getName().str();
+	if (std::regex_match(n, m, re)) return std::stoi(m[1].str());
+	return std::nullopt;
+}
+
+} // anonymous namespace
+
+/**
+ * `rbp - 144 + 4*i` is `&dp[i]` when bp-152..bp-24 is the array `dp`, but the
+ * frame pointer is the address of the saved-rbp slot, so the expression is
+ * built on that slot.  Emitted as C, the slot and the array are unrelated
+ * objects and the access misses the array.  Address arithmetic on one local
+ * whose constant offset lands inside a local array is rebased on that array.
+ */
+bool StackPointerOpsRemove::rebaseIntoLocalArrays()
+{
+	bool changed = false;
+	const auto& dl = _module->getDataLayout();
+	for (auto& f : *_module)
+	{
+		if (f.isDeclaration()) continue;
+		struct Slot { AllocaInst* a; int off; int size; };
+		std::map<AllocaInst*, Slot> slots;
+		std::vector<Slot> arrays;
+		for (auto& i : f.getEntryBlock())
+		{
+			auto* a = dyn_cast<AllocaInst>(&i);
+			if (a == nullptr || !a->isStaticAlloca()) continue;
+			auto o = localOffset(a);
+			if (!o) continue;
+			Slot s{a, *o, int(dl.getTypeAllocSize(a->getAllocatedType()))};
+			slots[a] = s;
+			if (a->getAllocatedType()->isArrayTy()) arrays.push_back(s);
+		}
+		if (arrays.empty()) continue;
+
+		auto arrayAt = [&](int off) -> const Slot* {
+			for (auto& s : arrays)
+				if (off >= s.off && off < s.off + s.size) return &s;
+			return nullptr;
+		};
+
+		std::vector<BinaryOperator*> adds;
+		for (auto& bb : f)
+			for (auto& i : bb)
+				if (auto* b = dyn_cast<BinaryOperator>(&i); b && b->getOpcode() == Instruction::Add)
+					adds.push_back(b);
+
+		for (auto* b : adds)
+		{
+			// Leaves of the add tree, two levels deep: one `ptrtoint A`, the
+			// constants, and everything else.
+			PtrToIntInst* p2i = nullptr;
+			int64_t c = 0;
+			bool haveC = false, bad = false;
+			std::vector<Value*> rest;
+			std::function<void(Value*, int)> walk = [&](Value* v, int depth) {
+				auto* op = dyn_cast<BinaryOperator>(v);
+				if (depth < 2 && op && op->getOpcode() == Instruction::Add)
+				{
+					walk(op->getOperand(0), depth + 1);
+					walk(op->getOperand(1), depth + 1);
+				}
+				else if (auto* ci = dyn_cast<ConstantInt>(v))
+				{
+					c += ci->getSExtValue();
+					haveC = true;
+				}
+				else if (auto* pi = dyn_cast<PtrToIntInst>(v); pi && isa<AllocaInst>(pi->getPointerOperand()))
+				{
+					if (p2i) bad = true;
+					p2i = pi;
+				}
+				else rest.push_back(v);
+			};
+			walk(b, 0);
+			if (bad || p2i == nullptr || !haveC) continue;
+			auto* a = cast<AllocaInst>(p2i->getPointerOperand());
+			if (!slots.count(a)) continue;
+			auto& s = slots[a];
+			int64_t target = int64_t(s.off) + c;
+			if (target >= s.off && target < s.off + s.size) continue;
+			auto* r = arrayAt(int(target));
+			if (r == nullptr || r->a == a) continue;
+			IRBuilder<> irb(b);
+			Value* nv = irb.CreatePtrToInt(r->a, b->getType());
+			for (auto* v : rest) nv = irb.CreateAdd(v, nv);
+			if (target != r->off)
+				nv = irb.CreateAdd(nv, ConstantInt::get(b->getType(), target - r->off));
+			b->replaceAllUsesWith(nv);
+			changed = true;
+		}
+	}
 	return changed;
 }
 

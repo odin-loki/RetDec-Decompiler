@@ -29,6 +29,7 @@ class StackPointerOpsRemove : public llvm::ModulePass
 		bool run();
 		bool removeStackPointerStores();
 		bool removePreservationStores();
+		bool rebaseIntoLocalArrays();
 
 	private:
 		llvm::Module* _module = nullptr;
