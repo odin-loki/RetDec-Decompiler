@@ -57,14 +57,6 @@ bool hasVarintLoop(const ssa::SSAFunction& fn)
 	return hasBackEdge(fn) && mask7f && shr7 && (mask80 || countOp(fn, ssa::IrInstr::Op::And) >= 1);
 }
 
-bool hasDigitLoop(const ssa::SSAFunction& fn)
-{
-	const bool hasZero = hasConstant(fn, static_cast<uint64_t>('0')) || hasConstant(fn, 48u);
-	const bool hasNine = hasConstant(fn, static_cast<uint64_t>('9')) || hasConstant(fn, 57u);
-	return hasBackEdge(fn) && hasZero && hasNine
-		&& (countOp(fn, ssa::IrInstr::Op::Mul) >= 1 || countOp(fn, ssa::IrInstr::Op::Shl) >= 1);
-}
-
 /// A byte loaded from memory and tested against zero: `while (*p)`.
 ///
 /// This is what distinguishes a string walk from any other loop, and it needs
@@ -258,6 +250,29 @@ bool onlyScalarLoads(const ssa::SSAFunction& fn)
 			if (i && i->op == ssa::IrInstr::Op::Load && !addrOnStack(fn, *i)) return false;
 	}
 	return true;
+}
+
+bool hasDigitLoop(const ssa::SSAFunction& fn)
+{
+	// `c >= '0' && c <= '9'`, which gcc may also test as `c > '/'`, or
+	// folded into one unsigned range check `(c - '0') < 10`, where the
+	// subtraction is an add of -'0' at the byte, word or register width.
+	// Only instructions inside the loop count.
+	bool zero = false, nine = false, minusZero = false, ten = false, scale = false;
+	forEachLoopInstr(fn, [&](const ssa::IrInstr& i) {
+		if (i.op == ssa::IrInstr::Op::Compare) {
+			zero = zero || immOperand(fn, i, 48u) || immOperand(fn, i, 47u);
+			nine = nine || immOperand(fn, i, 57u) || immOperand(fn, i, 58u);
+			ten = ten || immOperand(fn, i, 10u) || immOperand(fn, i, 9u);
+		}
+		if (i.op == ssa::IrInstr::Op::Add || i.op == ssa::IrInstr::Op::Sub) {
+			minusZero = minusZero || immOperand(fn, i, 0xD0u) || immOperand(fn, i, 0xFFD0u)
+				|| immOperand(fn, i, 0xFFFFFFD0u) || immOperand(fn, i, static_cast<uint64_t>(-48))
+				|| (i.op == ssa::IrInstr::Op::Sub && immOperand(fn, i, 48u));
+		}
+		if (i.op == ssa::IrInstr::Op::Mul || i.op == ssa::IrInstr::Op::Shl) scale = true;
+	});
+	return ((zero && nine) || (minusZero && ten)) && scale;
 }
 
 /// A reflected or normal CRC-32 polynomial XORed in inside a shifting loop.

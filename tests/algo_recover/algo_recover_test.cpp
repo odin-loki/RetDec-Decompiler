@@ -2135,6 +2135,30 @@ TEST(IdiomDetectorTest, APolynomialOutsideTheLoopIsNotCrc)
 	EXPECT_FALSE(detects(*fn, IdiomKind::Crc));
 }
 
+TEST(IdiomDetectorTest, DigitRangeCheckFoldedIntoOneCompareIsAtoi)
+{
+	// gcc folds `c >= '0' && c <= '9'` into `(uint8_t)(c - '0') < 10`.
+	auto fn = makeLoop();
+	opImm(*fn, ssa::IrInstr::Op::Add, 0xD0u);
+	opImm(*fn, ssa::IrInstr::Op::Compare, 10u);
+	opImm(*fn, ssa::IrInstr::Op::Mul, 10u);
+	pad(*fn);
+	EXPECT_TRUE(detects(*fn, IdiomKind::Atoi));
+}
+
+TEST(IdiomDetectorTest, DigitConstantsOutsideTheLoopAreNotAtoi)
+{
+	auto fn = makeLoop();
+	opImm(*fn, ssa::IrInstr::Op::Mul, 10u);
+	pad(*fn);
+	for (uint64_t c: {0xD0u, 10u}) {
+		auto* imm = fn->allocValue(ssa::ValueKind::Immediate);
+		imm->imm = c;
+		fn->addInstr(0, c == 10u ? ssa::IrInstr::Op::Compare : ssa::IrInstr::Op::Add)->uses.push_back({imm->id, 1});
+	}
+	EXPECT_FALSE(detects(*fn, IdiomKind::Atoi));
+}
+
 TEST(IdiomDetectorTest, LowBitAddedThenShiftedOutIsPopcount)
 {
 	auto fn = makeLoop();

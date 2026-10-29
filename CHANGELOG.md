@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- Atoi: the digit test is also recognised when gcc folds
+  `c >= '0' && c <= '9'` into one unsigned check `(c - '0') < 10` (an add
+  of -'0' at any width), and only constants inside the loop count.
+  atoi_parse -O0/-O2/-O3 are now detected; full-corpus macro-F1 0.3877 to
+  0.4185 (40/126 exact), no false positives.
 - When classic structuring leaves gotos in a function, it is structured a
   second time with repeated controlled node splitting of small blocks (up to
   16 statements) outside loops, and the result is kept if it has clearly
