@@ -14486,6 +14486,145 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CLREX_is_nothing)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_RCWSET_twin)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0x0f},
+		{ARM64_REG_X2, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0xf0_qw},
+	});
+
+	emulate_bin("41 b0 20 38"); // rcwset x0, x1, [x2]
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X1, 0xf0},
+	});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0xff_qw},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_RCWSWP_twin)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0xaa},
+		{ARM64_REG_X2, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x55_qw},
+	});
+
+	emulate_bin("41 a0 20 38"); // rcwswp x0, x1, [x2]
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X1, 0x55},
+	});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0xaa_qw},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CTZ_x)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0x100},
+	});
+
+	emulate_bin("20 18 c0 da"); // ctz x0, x1
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 8},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CTZ_w_zero)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0xffffffff00000000},
+	});
+
+	emulate_bin("20 18 c0 5a"); // ctz w0, w1
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 32},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ADDPT)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0x1000},
+		{ARM64_REG_X2, 2},
+	});
+
+	emulate_bin("20 2c 02 9a"); // addpt x0, x1, x2, lsl #3
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0x1010},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_MADDPT)
+{
+	setRegisters({
+		{ARM64_REG_X1, 3},
+		{ARM64_REG_X2, 4},
+		{ARM64_REG_X3, 5},
+	});
+
+	emulate_bin("20 0c 62 9b"); // maddpt x0, x1, x2, x3
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 17},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FJCVTZS_exact)
+{
+	setRegisters({
+		{ARM64_REG_D1, double(-3.0)},
+	});
+
+	emulate_bin("20 00 7e 1e"); // fjcvtzs w0, d1
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0xfffffffd},
+		{ARM64_REG_CPSR_N, false},
+		{ARM64_REG_CPSR_Z, true},
+		{ARM64_REG_CPSR_C, false},
+		{ARM64_REG_CPSR_V, false},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_FJCVTZS_inexact)
+{
+	setRegisters({
+		{ARM64_REG_D1, 3.7_f64},
+	});
+
+	emulate_bin("20 00 7e 1e"); // fjcvtzs w0, d1
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 3},
+		{ARM64_REG_CPSR_N, false},
+		{ARM64_REG_CPSR_Z, false},
+		{ARM64_REG_CPSR_C, false},
+		{ARM64_REG_CPSR_V, false},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ERET_call)
+{
+	emulate_bin("e0 03 9f d6"); // eret
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_eret"), {}},
+	});
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

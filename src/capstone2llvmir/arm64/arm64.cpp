@@ -9478,6 +9478,53 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateArm64Misc(cs_insn* i, cs_arm6
 	};
 	switch (i->id)
 	{
+		case ARM64_INS_CTZ:
+		{
+			bool sf = w >> 31;
+			auto* t = sf ? i64 : irb.getInt32Ty();
+			auto* v = irb.CreateTrunc(zrOrX(rn), t);
+			auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::cttz, t);
+			storeRegister(xreg(rd), irb.CreateZExt(irb.CreateCall(f, {v, irb.getFalse()}), i64), irb);
+			return;
+		}
+		case ARM64_INS_ADDPT:
+		case ARM64_INS_SUBPT:
+		{
+			// The pointer-tag top bits are not separately preserved.
+			auto* n = rn == 31 ? loadRegister(ARM64_REG_SP, irb) : zrOrX(rn);
+			auto* m = irb.CreateShl(zrOrX(rm), (w >> 10) & 7);
+			auto* r = i->id == ARM64_INS_ADDPT ? irb.CreateAdd(n, m) : irb.CreateSub(n, m);
+			storeRegister(spOrX(rd), r, irb);
+			return;
+		}
+		case ARM64_INS_MADDPT:
+		case ARM64_INS_MSUBPT:
+		{
+			unsigned ra = (w >> 10) & 31;
+			auto* p = irb.CreateMul(zrOrX(rn), zrOrX(rm));
+			auto* r = i->id == ARM64_INS_MADDPT ? irb.CreateAdd(zrOrX(ra), p) : irb.CreateSub(zrOrX(ra), p);
+			if (rd != 31) storeRegister(xreg(rd), r, irb);
+			return;
+		}
+		case ARM64_INS_FJCVTZS:
+		{
+			llvm::Value* d = loadRegister(ARM64_REG_D0 + rn, irb);
+			if (!d->getType()->isDoubleTy())
+				d = irb.CreateBitCast(irb.CreateZExtOrTrunc(d, i64), irb.getDoubleTy());
+			auto* fabs = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::fabs, irb.getDoubleTy());
+			auto* ok = irb.CreateFCmpOLT(irb.CreateCall(fabs, {d}), llvm::ConstantFP::get(irb.getDoubleTy(), 9.2e18));
+			auto* safe = irb.CreateSelect(ok, d, llvm::ConstantFP::get(irb.getDoubleTy(), 0.0));
+			auto* r32 = irb.CreateTrunc(irb.CreateFPToSI(safe, i64), irb.getInt32Ty());
+			auto* exact = irb.CreateAnd(ok, irb.CreateFCmpOEQ(irb.CreateSIToFP(r32, irb.getDoubleTy()), d));
+			if (rd != 31) storeRegister(xreg(rd), irb.CreateZExt(r32, i64), irb);
+			auto* f = llvm::ConstantInt::getFalse(irb.getContext());
+			flags(f, exact, f, f);
+			return;
+		}
+		case ARM64_INS_RETAASPPC:
+		case ARM64_INS_RETABSPPC:
+			generateReturnFunctionCall(irb, loadRegister(ARM64_REG_LR, irb));
+			return;
 		case ARM64_INS_CFINV:
 			flags(nullptr, nullptr, irb.CreateNot(loadRegister(ARM64_REG_CPSR_C, irb)), nullptr);
 			return;
@@ -9723,6 +9770,70 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLse128(cs_insn* i, cs_arm64* 
 	{
 		irb.CreateFence(llvm::AtomicOrdering::Acquire);
 	}
+}
+
+
+/**
+ * Instructions whose data effect equals an existing translator's:
+ * FEAT_THE RCW* read-check-write atomics (the RCW mask check is not
+ * modelled) and the FEAT_RCPC3 LDAP1/STL1 single-lane forms.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateArm64Twin(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	unsigned sid = 0;
+	void (Capstone2LlvmIrTranslatorArm64_impl::*fn)(cs_insn*, cs_arm64*, llvm::IRBuilder<>&) = nullptr;
+	switch (i->id)
+	{
+		case ARM64_INS_RCWSET: sid = ARM64_INS_LDSET; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWSETA: sid = ARM64_INS_LDSETA; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWSETL: sid = ARM64_INS_LDSETL; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWSETAL: sid = ARM64_INS_LDSETAL; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWCLR: sid = ARM64_INS_LDCLR; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWCLRA: sid = ARM64_INS_LDCLRA; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWCLRL: sid = ARM64_INS_LDCLRL; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWCLRAL: sid = ARM64_INS_LDCLRAL; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWSWP: sid = ARM64_INS_SWP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWSWPA: sid = ARM64_INS_SWPA; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWSWPL: sid = ARM64_INS_SWPL; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWSWPAL: sid = ARM64_INS_SWPAL; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWCAS: sid = ARM64_INS_CAS; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateCas; break;
+		case ARM64_INS_RCWCASA: sid = ARM64_INS_CASA; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateCas; break;
+		case ARM64_INS_RCWCASL: sid = ARM64_INS_CASL; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateCas; break;
+		case ARM64_INS_RCWCASAL: sid = ARM64_INS_CASAL; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateCas; break;
+		case ARM64_INS_RCWSSET: sid = ARM64_INS_LDSET; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWSSETA: sid = ARM64_INS_LDSETA; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWSSETL: sid = ARM64_INS_LDSETL; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWSSETAL: sid = ARM64_INS_LDSETAL; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWSCLR: sid = ARM64_INS_LDCLR; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWSCLRA: sid = ARM64_INS_LDCLRA; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWSCLRL: sid = ARM64_INS_LDCLRL; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWSCLRAL: sid = ARM64_INS_LDCLRAL; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWSSWP: sid = ARM64_INS_SWP; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWSSWPA: sid = ARM64_INS_SWPA; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWSSWPL: sid = ARM64_INS_SWPL; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWSSWPAL: sid = ARM64_INS_SWPAL; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateLse; break;
+		case ARM64_INS_RCWSCAS: sid = ARM64_INS_CAS; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateCas; break;
+		case ARM64_INS_RCWSCASA: sid = ARM64_INS_CASA; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateCas; break;
+		case ARM64_INS_RCWSCASL: sid = ARM64_INS_CASL; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateCas; break;
+		case ARM64_INS_RCWSCASAL: sid = ARM64_INS_CASAL; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateCas; break;
+		case ARM64_INS_LDAP1: sid = ARM64_INS_LD1; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateNeonLoadStore; break;
+		case ARM64_INS_STL1: sid = ARM64_INS_ST1; fn = &Capstone2LlvmIrTranslatorArm64_impl::translateNeonLoadStore; break;
+		default:
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+	}
+	unsigned hid = i->id;
+	i->id = sid;
+	try
+	{
+		(this->*fn)(i, ai, irb);
+	}
+	catch (...)
+	{
+		i->id = hid;
+		throw;
+	}
+	i->id = hid;
 }
 
 
