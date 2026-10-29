@@ -7733,5 +7733,97 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLowOverheadLoop(cs_insn* i, cs_
 	}
 }
 
+/**
+ * MVE scalar shifts by immediate (v8.1-M): UQSHL/SQSHL saturate a left
+ * shift, URSHR/SRSHR round a right shift. The ...LL/...RL forms work on the
+ * RdaHi:RdaLo pair. Both round and saturate are built from plain shifts and
+ * compares in i64. The register-amount forms stay pseudo calls.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateMveScalarShift(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	bool wide = false;
+	bool isSigned = false;
+	bool left = false;
+	switch (i->id)
+	{
+		case ARM_INS_UQSHL: left = true; break;
+		case ARM_INS_SQSHL: left = true; isSigned = true; break;
+		case ARM_INS_URSHR: break;
+		case ARM_INS_SRSHR: isSigned = true; break;
+		case ARM_INS_UQSHLL: wide = true; left = true; break;
+		case ARM_INS_SQSHLL: wide = true; left = true; isSigned = true; break;
+		case ARM_INS_URSHRL: wide = true; break;
+		case ARM_INS_SRSHRL: wide = true; isSigned = true; break;
+		default: throw GenericError("Unhandled insn ID in translateMveScalarShift().");
+	}
+	unsigned immIdx = wide ? 2 : 1;
+	if (ai->op_count != immIdx + 1 || ai->operands[immIdx].type != ARM_OP_IMM)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	uint64_t n = static_cast<uint32_t>(ai->operands[immIdx].imm);
+
+	auto* i32 = irb.getInt32Ty();
+	auto* i64 = irb.getInt64Ty();
+	auto c64 = [&](uint64_t v) { return llvm::ConstantInt::get(i64, v); };
+	llvm::Value* x = nullptr;
+	if (wide)
+	{
+		auto* lo = irb.CreateZExt(loadRegister(ai->operands[0].reg, irb), i64);
+		auto* hi = irb.CreateZExt(loadRegister(ai->operands[1].reg, irb), i64);
+		x = irb.CreateOr(irb.CreateShl(hi, 32), lo);
+	}
+	else
+	{
+		auto* r = loadRegister(ai->operands[0].reg, irb);
+		x = isSigned ? irb.CreateSExt(r, i64) : irb.CreateZExt(r, i64);
+	}
+
+	llvm::Value* res = nullptr;
+	if (!left)
+	{
+		auto shr = [&](uint64_t k) {
+			return isSigned ? irb.CreateAShr(x, c64(k)) : irb.CreateLShr(x, c64(k));
+		};
+		res = irb.CreateAdd(shr(n), irb.CreateAnd(shr(n - 1), c64(1)));
+	}
+	else if (!wide)
+	{
+		auto* r = irb.CreateShl(x, c64(n));
+		if (isSigned)
+		{
+			auto* mx = c64(0x7fffffff);
+			auto* mn = c64(static_cast<uint64_t>(INT64_C(-0x80000000)));
+			r = irb.CreateSelect(irb.CreateICmpSGT(r, mx), mx, r);
+			res = irb.CreateSelect(irb.CreateICmpSLT(r, mn), mn, r);
+		}
+		else
+		{
+			auto* mx = c64(0xffffffff);
+			res = irb.CreateSelect(irb.CreateICmpUGT(r, mx), mx, r);
+		}
+	}
+	else
+	{
+		auto* r = irb.CreateShl(x, c64(n));
+		auto* back = isSigned ? irb.CreateAShr(r, c64(n)) : irb.CreateLShr(r, c64(n));
+		auto* ovf = irb.CreateICmpNE(back, x);
+		llvm::Value* sat = c64(~UINT64_C(0));
+		if (isSigned)
+		{
+			sat = irb.CreateSelect(irb.CreateICmpSLT(x, c64(0)),
+					c64(UINT64_C(0x8000000000000000)), c64(UINT64_C(0x7fffffffffffffff)));
+		}
+		res = irb.CreateSelect(ovf, sat, r);
+	}
+
+	storeRegister(ai->operands[0].reg, irb.CreateTrunc(res, i32), irb);
+	if (wide)
+	{
+		storeRegister(ai->operands[1].reg, irb.CreateTrunc(irb.CreateLShr(res, 32), i32), irb);
+	}
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec

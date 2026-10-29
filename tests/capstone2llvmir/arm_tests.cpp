@@ -8290,6 +8290,212 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LE_last_iteration_falls_throug
 	});
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UQSHL_saturates)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0x80000000},
+	});
+
+	// uqshl r0, #1
+	emulate_bin("50 ea 4f 0f");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0xffffffff},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UQSHL_in_range)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0x3},
+	});
+
+	// uqshl r0, #1
+	emulate_bin("50 ea 4f 0f");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x6},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SQSHL_saturates_negative)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0xc0000000},
+	});
+
+	// sqshl r0, #1 (0xc0000000 << 1 just fits)
+	emulate_bin("50 ea 7f 0f");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x80000000},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SQSHL_saturates_positive)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0x40000000},
+	});
+
+	// sqshl r0, #1
+	emulate_bin("50 ea 7f 0f");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x7fffffff},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_URSHR_rounds)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0x3},
+	});
+
+	// urshr r0, #1
+	emulate_bin("50 ea 5f 0f");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x2},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SRSHR_rounds_negative)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0xfffffffb},
+	});
+
+	// srshr r0, #1 (-5 -> -2)
+	emulate_bin("50 ea 6f 0f");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0xfffffffe},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_URSHR_by_32)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0x80000000},
+	});
+
+	// urshr r0, #32
+	emulate_bin("50 ea 1f 0f");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x1},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UQSHLL_saturates)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0},
+		{ARM_REG_R1, 0x80000000},
+	});
+
+	// uqshll r0, r1, #1
+	emulate_bin("51 ea 4f 01");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0xffffffff},
+		{ARM_REG_R1, 0xffffffff},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SQSHLL_in_range)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0x80000000},
+		{ARM_REG_R1, 0xffffffff},
+	});
+
+	// sqshll r0, r1, #1
+	emulate_bin("51 ea 7f 01");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0},
+		{ARM_REG_R1, 0xffffffff},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_URSHRL_rounds)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0x1},
+		{ARM_REG_R1, 0x1},
+	});
+
+	// urshrl r0, r1, #1
+	emulate_bin("51 ea 5f 01");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x80000001},
+		{ARM_REG_R1, 0},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SRSHRL_by_32)
+{
+	ONLY_MODE_THUMB;
+	ENABLE_V81M;
+
+	setRegisters({
+		{ARM_REG_R0, 0x80000000},
+		{ARM_REG_R1, 0xffffffff},
+	});
+
+	// srshrl r0, r1, #32 (-2^31 / 2^32 rounds to -0.5 -> 0)
+	emulate_bin("51 ea 2f 01");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x0},
+		{ARM_REG_R1, 0x0},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_TBB)
 {
 	ONLY_MODE_THUMB;
