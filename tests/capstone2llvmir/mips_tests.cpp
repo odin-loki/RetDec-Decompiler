@@ -11336,6 +11336,71 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_EXTR_W)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_TEQ_taken)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{MIPS_REG_A0, 5},
+		{MIPS_REG_A1, 5},
+	});
+
+	emulate("teq $a0, $a1");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_A0, MIPS_REG_A1});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_teq"), {}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_TEQ_not_taken)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{MIPS_REG_A0, 5},
+		{MIPS_REG_A1, 6},
+	});
+
+	emulate("teq $a0, $a1");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_A0, MIPS_REG_A1});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_TLTU_taken)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{MIPS_REG_A0, 1},
+		{MIPS_REG_A1, 2},
+	});
+
+	emulate("tltu $a0, $a1");
+
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_tltu"), {}},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_TGE_not_taken_signed)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{MIPS_REG_A0, -1},
+		{MIPS_REG_A1, 2},
+	});
+
+	emulate("tge $a0, $a1");
+
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LBUX)
 {
 	ONLY_MODE_32;

@@ -198,6 +198,7 @@ class Capstone2LlvmIrTranslatorMips_impl :
 		void translateAddiur1sp(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateMovep(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateLwxs(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
+		void translateTrap(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateAddiusp(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateJraddiusp(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateBitswap(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);

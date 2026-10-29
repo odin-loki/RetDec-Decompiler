@@ -9214,6 +9214,10 @@ void Capstone2LlvmIrTranslatorMips_impl::translateDspIndexLoad(cs_insn* i, cs_mi
 	{
 		auto* idx = loadOp(mi->operands[1], irb);
 		auto* base = loadOp(mi->operands[2], irb);
+		if (i->id == MIPS_INS_LHXS || i->id == MIPS_INS_LHUXS)
+		{
+			idx = irb.CreateShl(idx, 1);
+		}
 		addr = irb.CreateAdd(
 				generateTypeConversion(irb, base, getDefaultType(), eOpConv::ZEXT_TRUNC_OR_BITCAST),
 				generateTypeConversion(irb, idx, getDefaultType(), eOpConv::ZEXT_TRUNC_OR_BITCAST));
@@ -9230,9 +9234,18 @@ void Capstone2LlvmIrTranslatorMips_impl::translateDspIndexLoad(cs_insn* i, cs_mi
 		ty = irb.getInt8Ty();
 		ct = eOpConv::ZEXT_TRUNC_OR_BITCAST;
 	}
-	else if (i->id == MIPS_INS_LHX)
+	else if (i->id == MIPS_INS_LBX)
+	{
+		ty = irb.getInt8Ty();
+	}
+	else if (i->id == MIPS_INS_LHX || i->id == MIPS_INS_LHUX
+			|| i->id == MIPS_INS_LHXS || i->id == MIPS_INS_LHUXS)
 	{
 		ty = irb.getInt16Ty();
+		if (i->id == MIPS_INS_LHUX || i->id == MIPS_INS_LHUXS)
+		{
+			ct = eOpConv::ZEXT_TRUNC_OR_BITCAST;
+		}
 	}
 	storeOp(mi->operands[0], loadIntPtr(irb, addr, ty), irb, ct);
 }
@@ -9434,6 +9447,36 @@ void Capstone2LlvmIrTranslatorMips_impl::translateDspCtrl(cs_insn* i, cs_mips* m
 			return;
 	}
 }
+
+/**
+ * Conditional traps: TEQ/TNE/TGE/TGEU/TLT/TLTU and their immediate forms.
+ * The trap itself is a pseudo call that only happens when the condition holds.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateTrap(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	if (mi->op_count < 2)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+	auto* a = loadOp(mi->operands[0], irb);
+	auto* b = generateTypeConversion(irb, loadOp(mi->operands[1], irb), a->getType(), eOpConv::SEXT_TRUNC_OR_BITCAST);
+	llvm::Value* cond = nullptr;
+	switch (i->id)
+	{
+		case MIPS_INS_TEQ: case MIPS_INS_TEQI: cond = irb.CreateICmpEQ(a, b); break;
+		case MIPS_INS_TNE: case MIPS_INS_TNEI: cond = irb.CreateICmpNE(a, b); break;
+		case MIPS_INS_TGE: case MIPS_INS_TGEI: cond = irb.CreateICmpSGE(a, b); break;
+		case MIPS_INS_TGEU: case MIPS_INS_TGEIU: cond = irb.CreateICmpUGE(a, b); break;
+		case MIPS_INS_TLT: case MIPS_INS_TLTI: cond = irb.CreateICmpSLT(a, b); break;
+		case MIPS_INS_TLTU: case MIPS_INS_TLTIU: cond = irb.CreateICmpULT(a, b); break;
+		default: throw GenericError("unhandled trap id");
+	}
+	auto* fnc = getPseudoAsmFunction(i, irb.getVoidTy(), llvm::ArrayRef<llvm::Type*>{});
+	llvm::IRBuilder<> body(generateIfThen(cond, irb));
+	body.CreateCall(fnc);
+}
+
 
 } // namespace capstone2llvmir
 } // namespace retdec
