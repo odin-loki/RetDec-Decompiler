@@ -138,7 +138,8 @@ IntToFloatCastInAssignIsRemoved) {
 	auto varB = Variable::create("b", FloatType::create(32));
 	testFunc->addLocalVar(varA);
 	testFunc->addLocalVar(varB);
-	auto castExpr = IntToFPCastExpr::create(varA, FloatType::create(32));
+	auto castExpr = IntToFPCastExpr::create(varA, FloatType::create(32),
+		IntToFPCastExpr::Variant::SIToFP);
 	auto assign = AssignStmt::create(varB, castExpr);
 	testFunc->setBody(assign);
 
@@ -233,6 +234,42 @@ TruncCastIntToIntIsRemoved) {
 
 	EXPECT_EQ(varA, assign->getRhs())
 		<< "int-to-int truncation cast should be removed";
+}
+
+// float b = (float)a  with SIToFP and an unsigned a: C would convert a as
+// unsigned, so the cast must stay (x64 -O1 f_fl).
+TEST_F(CCastOptimizerTests,
+SignedIntToFloatOfUnsignedOperandIsPreserved) {
+	auto varA = Variable::create("a", IntType::create(32, false));
+	auto varB = Variable::create("b", FloatType::create(32));
+	testFunc->addLocalVar(varA);
+	testFunc->addLocalVar(varB);
+	auto castExpr = IntToFPCastExpr::create(varA, FloatType::create(32),
+		IntToFPCastExpr::Variant::SIToFP);
+	auto assign = AssignStmt::create(varB, castExpr);
+	testFunc->setBody(assign);
+
+	Optimizer::optimize<CCastOptimizer>(module);
+
+	EXPECT_TRUE(isa<IntToFPCastExpr>(assign->getRhs()))
+		<< "signed conversion of an unsigned operand must keep its cast";
+}
+
+// The same with a signed operand is implicit and goes away.
+TEST_F(CCastOptimizerTests,
+SignedIntToFloatOfSignedOperandIsRemoved) {
+	auto varA = Variable::create("a", IntType::create(32, true));
+	auto varB = Variable::create("b", FloatType::create(32));
+	testFunc->addLocalVar(varA);
+	testFunc->addLocalVar(varB);
+	auto castExpr = IntToFPCastExpr::create(varA, FloatType::create(32),
+		IntToFPCastExpr::Variant::SIToFP);
+	auto assign = AssignStmt::create(varB, castExpr);
+	testFunc->setBody(assign);
+
+	Optimizer::optimize<CCastOptimizer>(module);
+
+	EXPECT_EQ(varA, assign->getRhs());
 }
 
 } // namespace tests

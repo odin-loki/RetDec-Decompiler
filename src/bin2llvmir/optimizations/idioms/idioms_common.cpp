@@ -32,9 +32,15 @@ Instruction * IdiomsCommon::exchangeBitShiftUDiv(BasicBlock::iterator iter) cons
 
 	// X u>> C --> X / 2^C
 	if (match(&val, m_LShr(m_Value(op0), m_ConstantInt(cnst))) &&
-			isPowerOfTwoRepresentable(cnst)) {
-		Constant *NewCst = ConstantInt::get(cnst->getType(),
-						pow(2, *cnst->getValue().getRawData()));
+			isPowerOfTwoRepresentable(cnst)
+			&& cnst->getValue().getZExtValue() < 64) {
+		// 2^C as an APInt: the old `pow(2, C)` went through a double and a
+		// uint64_t, so on i128 (a 16-byte struct copy forwarded through
+		// xmm) `lshr 96` became `udiv 2^63` (x64 -O1 f_st_copy). Shifts
+		// past 63 stay shifts: C cannot spell a 2^96 literal.
+		Constant *NewCst = ConstantInt::get(cnst->getType()->getContext(),
+				APInt::getOneBitSet(cnst->getBitWidth(),
+						cnst->getValue().getZExtValue()));
 		BinaryOperator *div = BinaryOperator::CreateUDiv(op0, NewCst);
 		return div;
 	}
@@ -223,9 +229,15 @@ Instruction * IdiomsCommon::exchangeBitShiftMul(BasicBlock::iterator iter) const
 
 	// X << C --> X * 2^C
 	if (match(&val, m_Shl(m_Value(op0), m_ConstantInt(cnst))) &&
-			isPowerOfTwoRepresentable(cnst)) {
-		Constant *NewCst = ConstantInt::get(cnst->getType(),
-						pow(2, *cnst->getValue().getRawData()));
+			isPowerOfTwoRepresentable(cnst)
+			&& cnst->getValue().getZExtValue() < 64) {
+		// 2^C as an APInt: the old `pow(2, C)` went through a double and a
+		// uint64_t, so on i128 (a 16-byte struct copy forwarded through
+		// xmm) `lshr 96` became `udiv 2^63` (x64 -O1 f_st_copy). Shifts
+		// past 63 stay shifts: C cannot spell a 2^96 literal.
+		Constant *NewCst = ConstantInt::get(cnst->getType()->getContext(),
+				APInt::getOneBitSet(cnst->getBitWidth(),
+						cnst->getValue().getZExtValue()));
 		BinaryOperator *mul = BinaryOperator::CreateMul(op0, NewCst);
 		return mul;
 	}

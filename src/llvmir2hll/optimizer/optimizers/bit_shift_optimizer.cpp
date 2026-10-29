@@ -76,6 +76,11 @@ bool isSecondOpPositiveConstInt(ShPtr<BinaryOpExpr> expr) {
 	if (secOpConstInt->isNegative()) {
 		return false;
 	}
+	// A 2^C literal past 2^63 has no C spelling: `x >> 96` on a 128-bit
+	// value printed as `x / 0` (x64 -O1 f_st_copy).
+	if (secOpConstInt->getValue().uge(64)) {
+		return false;
+	}
 	// Everything is alright.
 	return true;
 }

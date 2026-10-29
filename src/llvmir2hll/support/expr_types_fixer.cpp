@@ -33,6 +33,7 @@
 #include "retdec/llvmir2hll/support/debug.h"
 #include "retdec/llvmir2hll/support/expr_types_fixer.h"
 #include "retdec/llvmir2hll/ir/ternary_op_expr.h"
+#include "retdec/llvmir2hll/ir/trunc_cast_expr.h"
 
 namespace retdec {
 namespace llvmir2hll {
@@ -204,6 +205,23 @@ public:
 			bool s = expr->getVariant() == DivOpExpr::Variant::SDiv;
 			expr->setFirstOperand(fix(s, expr->getFirstOperand()));
 			expr->setSecondOperand(fix(s, expr->getSecondOperand()));
+		}
+		OrderedAllVisitor::visit(expr);
+	}
+	// Copy propagation can inline a `(uint32_t)x` truncation into a signed
+	// int-to-float conversion, which then converted as unsigned (x64 -O1
+	// f_fl: `(float)(int)a` printed as `(uint32_t)a`).
+	void visit(ShPtr<IntToFPCastExpr> expr) override {
+		bool s = expr->getVariant() == IntToFPCastExpr::Variant::SIToFP;
+		auto op = expr->getOperand();
+		auto t = cast<IntType>(op->getType());
+		if (t && t->isSigned() != s) {
+			auto nt = IntType::create(t->getSize(), s);
+			if (auto tr = cast<TruncCastExpr>(op)) {
+				expr->setOperand(TruncCastExpr::create(tr->getOperand(), nt));
+			} else {
+				expr->setOperand(BitCastExpr::create(op, nt));
+			}
 		}
 		OrderedAllVisitor::visit(expr);
 	}

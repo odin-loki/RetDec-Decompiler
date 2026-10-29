@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "retdec/llvmir2hll/ir/int_to_fp_cast_expr.h"
 #include "retdec/llvmir2hll/ir/assign_stmt.h"
 #include "retdec/llvmir2hll/ir/call_expr.h"
 #include "retdec/llvmir2hll/ir/cast_expr.h"
@@ -83,7 +84,13 @@ ShPtr<Expression> CCastOptimizer::checkAndOptimize(ShPtr<Expression> dst,
 		// Implicit conversion to float type.
 		} else if (ShPtr<FloatType> dstFType = cast<FloatType>(dst->getType())) {
 			if (ShPtr<FloatType> srcFType = cast<FloatType>(src->getType())) {
-				if (cast<IntType>(srcCast->getOperand()->getType()) ||
+				auto opInt = cast<IntType>(srcCast->getOperand()->getType());
+				// The implicit conversion follows the operand's signedness,
+				// so `(float)(int32_t)x` with an unsigned-typed x must stay.
+				auto i2f = cast<IntToFPCastExpr>(srcCast);
+				bool signOk = !opInt || !i2f || opInt->isSigned()
+					== (i2f->getVariant() == IntToFPCastExpr::Variant::SIToFP);
+				if ((opInt && signOk) ||
 						cast<FloatType>(srcCast->getOperand()->getType())) {
 					// Cast expression removed.
 					optimized = true;

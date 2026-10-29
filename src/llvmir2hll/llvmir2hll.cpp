@@ -216,6 +216,126 @@ void printErrorUnsupportedObject(
 namespace {
 
 /**
+ * Find the scalar that occupies bytes [off, off + size) of @a v, looking
+ * through bitcasts and constant-index insert/extractelement (little-endian
+ * lane layout). Returns nullptr when the bytes come from anything else.
+ */
+llvm::Value* findLaneSource(
+		const llvm::DataLayout& dl, llvm::Value* v, uint64_t off, uint64_t size, unsigned depth = 0)
+{
+	if (depth > 16 || !dl.isLittleEndian())
+	{
+		return nullptr;
+	}
+	auto* ty = v->getType();
+	if (!ty->isSized())
+	{
+		return nullptr;
+	}
+	uint64_t vs = dl.getTypeStoreSize(ty);
+	if (off == 0 && vs == size && !ty->isVectorTy())
+	{
+		return v;
+	}
+	if (auto* bc = llvm::dyn_cast<llvm::BitCastInst>(v))
+	{
+		auto* src = bc->getOperand(0);
+		if (src->getType()->isSized() && dl.getTypeStoreSize(src->getType()) == vs)
+		{
+			return findLaneSource(dl, src, off, size, depth + 1);
+		}
+		return nullptr;
+	}
+	if (auto* ee = llvm::dyn_cast<llvm::ExtractElementInst>(v))
+	{
+		auto* ci = llvm::dyn_cast<llvm::ConstantInt>(ee->getIndexOperand());
+		if (!ci)
+		{
+			return nullptr;
+		}
+		uint64_t es = dl.getTypeStoreSize(ee->getType());
+		return findLaneSource(dl, ee->getVectorOperand(), ci->getZExtValue() * es + off, size, depth + 1);
+	}
+	if (auto* ie = llvm::dyn_cast<llvm::InsertElementInst>(v))
+	{
+		auto* ci = llvm::dyn_cast<llvm::ConstantInt>(ie->getOperand(2));
+		if (!ci)
+		{
+			return nullptr;
+		}
+		auto* elt = ie->getOperand(1);
+		uint64_t es = dl.getTypeStoreSize(elt->getType());
+		uint64_t lo = ci->getZExtValue() * es;
+		if (off >= lo && off + size <= lo + es)
+		{
+			return findLaneSource(dl, elt, off - lo, size, depth + 1);
+		}
+		if (off + size <= lo || off >= lo + es)
+		{
+			return findLaneSource(dl, ie->getOperand(0), off, size, depth + 1);
+		}
+		return nullptr;
+	}
+	return nullptr;
+}
+
+/**
+ * Scalar SSE code reaches here as an `insertelement` of the float result
+ * into the full xmm register, bitcasts of the register and an
+ * `extractelement` of lane 0 again. The C writer cannot follow that through
+ * the never-written upper lanes, which it printed as an uninitialised
+ * int128_t (x64 -O1 f_fl). Replace each such extract with the scalar that
+ * was inserted.
+ */
+void foldVectorLaneExtracts(llvm::Module& m)
+{
+	const auto& dl = m.getDataLayout();
+	for (auto& f : m)
+	{
+		std::vector<llvm::ExtractElementInst*> work;
+		for (auto& bb : f)
+		for (auto& i : bb)
+		{
+			if (auto* ee = llvm::dyn_cast<llvm::ExtractElementInst>(&i))
+			{
+				work.push_back(ee);
+			}
+		}
+		for (auto* ee : work)
+		{
+			auto* ty = ee->getType();
+			if (!ty->isSized() || ty->isVectorTy())
+			{
+				continue;
+			}
+			auto* ci = llvm::dyn_cast<llvm::ConstantInt>(ee->getIndexOperand());
+			if (ci == nullptr)
+			{
+				continue;
+			}
+			uint64_t es = dl.getTypeStoreSize(ty);
+			auto* src = findLaneSource(
+					dl, ee->getVectorOperand(), ci->getZExtValue() * es, es);
+			if (src == nullptr || src == ee
+					|| llvm::isa<llvm::ExtractElementInst>(src))
+			{
+				continue;
+			}
+			llvm::Value* r = src;
+			if (src->getType() != ty)
+			{
+				if (!llvm::CastInst::isBitCastable(src->getType(), ty))
+				{
+					continue;
+				}
+				r = new llvm::BitCastInst(src, ty, "", ee);
+			}
+			ee->replaceAllUsesWith(r);
+		}
+	}
+}
+
+/**
  * C has no counterpart of the integer min/max, abs and saturating-arithmetic
  * intrinsics that LLVM's InstCombine forms from compares and selects, so they
  * used to reach the output as calls to undefined llvm_umax_i64() and friends.
@@ -416,6 +536,7 @@ void LlvmIr2Hll::getAnalysisUsage(llvm::AnalysisUsage &au) const
 bool LlvmIr2Hll::runOnModule(llvm::Module &m)
 {
 	expandIntegerIntrinsics(m);
+	foldVectorLaneExtracts(m);
 	logLlvmInputIrShapeDiag(m);
 
 	LlvmIr2HllPhaseTimer diagTimer(llvmIr2HllDiagEnabled());

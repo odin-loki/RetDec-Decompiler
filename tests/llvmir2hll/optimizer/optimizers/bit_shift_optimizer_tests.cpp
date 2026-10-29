@@ -513,6 +513,27 @@ ArithmeticalRightShiftOfUnsignedVariableIsNotADivision) {
 	EXPECT_TRUE(outShr->isArithmetical());
 }
 
+TEST_F(BitShiftOptimizerTests,
+ShiftByAtLeast64IsNotTurnedIntoDivision) {
+	// return a >> 96;  (a is a 128-bit integer)
+	//
+	// 2^96 does not fit the 64-bit constant the optimizer builds; it used to
+	// print as `a / 0`.
+	ShPtr<Variable> varA(Variable::create("a", IntType::create(128, false)));
+	ShPtr<BitShrOpExpr> shr(BitShrOpExpr::create(varA,
+		ConstInt::create(llvm::APInt(128, 96), false),
+		BitShrOpExpr::Variant::Logical));
+	ShPtr<ReturnStmt> returnStmt(ReturnStmt::create(shr));
+	testFunc->setBody(returnStmt);
+
+	Optimizer::optimize<BitShiftOptimizer>(module);
+
+	ShPtr<ReturnStmt> out(cast<ReturnStmt>(testFunc->getBody()));
+	ASSERT_TRUE(out);
+	EXPECT_TRUE(isa<BitShrOpExpr>(out->getRetVal()))
+		<< "expected the shift to stay, got " << out->getRetVal();
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec

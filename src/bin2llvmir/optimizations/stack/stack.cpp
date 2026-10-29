@@ -593,27 +593,38 @@ void StackAnalysis::handleInstruction(
 			debugSv || configSv);
 
 	AllocaInst* a = p.first;
+	// Same stack offset observed at another type (an i64 `movabs` store of
+	// a va_list's gp/fp offsets read back as i32): access the one slot at the
+	// access's own type. A separate ".typed" alloca made the store and the
+	// load unrelated variables, so the load read garbage (x64 -O1 vsum).
+	// Only an access wider than the slot still gets a view of its own.
+	Type* accessTy = nullptr;
 	if (a != nullptr && t != nullptr && a->getAllocatedType() != t)
 	{
-		// Same stack offset can be observed with incompatible types in complex
-		// lowered IR. Keep this access typed-correct by using a dedicated alloca
-		// instead of forcing incompatible loads/stores on the shared slot.
-		// Accesses at the same type share one alloca: giving each access its
-		// own made a store and the later loads of the same slot unrelated
-		// variables, so the store was removed as dead.
-		auto ip = inst->getFunction()->getEntryBlock().getFirstInsertionPt();
-		auto& view = _typedViews[{a, t}];
-		if (view)
+		auto& dl = _module->getDataLayout();
+		bool fits = t->isSized() && a->getAllocatedType()->isSized()
+				&& dl.getTypeStoreSize(t)
+					<= dl.getTypeStoreSize(a->getAllocatedType());
+		if (fits)
 		{
-			a = view;
+			accessTy = t;
 		}
-		else if (ip != inst->getFunction()->getEntryBlock().end())
+		else
 		{
-			std::string typedName = a->hasName()
-					? (a->getName().str() + ".typed")
-					: "stack_var_typed";
-			a = new AllocaInst(t, Abi::DEFAULT_ADDR_SPACE, typedName, &*ip);
-			view = a;
+			auto ip = inst->getFunction()->getEntryBlock().getFirstInsertionPt();
+			auto& view = _typedViews[{a, t}];
+			if (view)
+			{
+				a = view;
+			}
+			else if (ip != inst->getFunction()->getEntryBlock().end())
+			{
+				std::string typedName = a->hasName()
+						? (a->getName().str() + ".typed")
+						: "stack_var_typed";
+				a = new AllocaInst(t, Abi::DEFAULT_ADDR_SPACE, typedName, &*ip);
+				view = a;
+			}
 		}
 	}
 
@@ -627,14 +638,23 @@ void StackAnalysis::handleInstruction(
 	{
 		auto* conv = IrModifier::convertValueToType(
 				s->getValueOperand(),
-				llvm_utils::pointeeType(a),
+				accessTy ? accessTy : llvm_utils::pointeeType(a),
 				inst);
-		auto* ns = llvm_utils::createStoreInst(conv, a, inst);
+		if (accessTy)
+		{
+			new StoreInst(conv, a, inst);
+		}
+		else
+		{
+			llvm_utils::createStoreInst(conv, a, inst);
+		}
 		_toRemove.insert(s);
 	}
 	else if (l && l->getPointerOperand() == val)
 	{
-		auto* nl = llvm_utils::createLoadInst(a, "", l);
+		Value* nl = accessTy
+				? static_cast<Value*>(new LoadInst(accessTy, a, "", l))
+				: static_cast<Value*>(llvm_utils::createLoadInst(a, "", l));
 		auto* conv = IrModifier::convertValueToType(nl, l->getType(), l);
 		l->replaceAllUsesWith(conv);
 		_toRemove.insert(l);

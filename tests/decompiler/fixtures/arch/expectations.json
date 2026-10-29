@@ -1,69 +1,76 @@
 {
-  "_comment": "Cross-compiled from sumsq.c with clang-18 --target=<triple> (mips64: <arch>-linux-gnuabi64) -O1 -nostdlib -fuse-ld=lld -Wl,-e,main [-no-pie]. Each fixture must decompile and its C must contain every listed substring.",
-  "sumsq-powerpc64le-pie": [
-    "sq(uint64_t a1)",
-    "a1 * a1",
-    "int main(int argc, char ** argv)",
-    "0x55555556"
-  ],
-  "sumsq-powerpc64-pie": [
-    "sq(uint64_t a1)",
-    "a1 * a1",
-    "int main(int argc, char ** argv)",
-    "0x55555556",
-    "!function_"
-  ],
-  "sumsq-powerpc64-nopie": [
-    "int main(int argc, char ** argv)",
-    "(argc - 1)",
-    "0x55555556",
-    "!function_"
-  ],
-  "sumsq-mips64-pie": [
-    "sq(uint64_t a1)",
-    "a1 * a1",
-    "int main(int argc, char ** argv)",
-    "0x55555556",
-    "!function_"
-  ],
-  "sumsq-mips64el-pie": [
-    "sq(uint64_t a1)",
-    "a1 * a1",
-    "int main(int argc, char ** argv)",
-    "0x55555556",
-    "!function_"
-  ],
-  "xarch-powerpc64-pie": [
-    "uint32_t g1[16] = {3, 1, 4, 1, 5,",
-    "> 1000 ?",
-    "f_rec((",
-    "!function_",
-    "!&g3"
-  ],
-  "xarch-mips64el-pie": [
-    "uint32_t g1[16] = {3, 1, 4, 1, 5,",
-    "f_rec((",
-    "? -",
-    "!function_"
-  ],
-  "xarch-aarch64-pie": [
-    "uint32_t g1[16] = {3, 1, 4, 1, 5,",
-    "f_rec(result - 1)",
-    "!; i >= 1;",
-    "!(uint64_t)i)"
-  ],
-  "signs-aarch64-pie": [
-    "(int8_t)a1",
-    "/ (int32_t)(",
-    "!(unsigned char)a1"
-  ],
-  "unroll-x86_64-pie": [
-    "= a2 & 0x7ffffffc;",
-    "!v1 = 0; // 0x126e"
-  ],
-  "audit-powerpc-pie": [
-    "return *(uint32_t *)((a1 << 2) + (uint32_t)g",
-    "void * * g2 = &g1;",
-    "!*(uint32_t *)0x104ac"
-  ]
+ "_comment": "Cross-compiled from sumsq.c with clang-18 --target=<triple> (mips64: <arch>-linux-gnuabi64) -O1 -nostdlib -fuse-ld=lld -Wl,-e,main [-no-pie]. Each fixture must decompile and its C must contain every listed substring.",
+ "sumsq-powerpc64le-pie": [
+  "sq(uint64_t a1)",
+  "a1 * a1",
+  "int main(int argc, char ** argv)",
+  "0x55555556"
+ ],
+ "sumsq-powerpc64-pie": [
+  "sq(uint64_t a1)",
+  "a1 * a1",
+  "int main(int argc, char ** argv)",
+  "0x55555556",
+  "!function_"
+ ],
+ "sumsq-powerpc64-nopie": [
+  "int main(int argc, char ** argv)",
+  "(argc - 1)",
+  "0x55555556",
+  "!function_"
+ ],
+ "sumsq-mips64-pie": [
+  "sq(uint64_t a1)",
+  "a1 * a1",
+  "int main(int argc, char ** argv)",
+  "0x55555556",
+  "!function_"
+ ],
+ "sumsq-mips64el-pie": [
+  "sq(uint64_t a1)",
+  "a1 * a1",
+  "int main(int argc, char ** argv)",
+  "0x55555556",
+  "!function_"
+ ],
+ "xarch-powerpc64-pie": [
+  "uint32_t g1[16] = {3, 1, 4, 1, 5,",
+  "> 1000 ?",
+  "f_rec((",
+  "!function_",
+  "!&g3"
+ ],
+ "xarch-mips64el-pie": [
+  "uint32_t g1[16] = {3, 1, 4, 1, 5,",
+  "f_rec((",
+  "? -",
+  "!function_"
+ ],
+ "xarch-aarch64-pie": [
+  "uint32_t g1[16] = {3, 1, 4, 1, 5,",
+  "f_rec(result - 1)",
+  "!; i >= 1;",
+  "!(uint64_t)i)"
+ ],
+ "signs-aarch64-pie": [
+  "(int8_t)a1",
+  "/ (int32_t)(",
+  "!(unsigned char)a1"
+ ],
+ "unroll-x86_64-pie": [
+  "= a2 & 0x7ffffffc;",
+  "!v1 = 0; // 0x126e"
+ ],
+ "audit-powerpc-pie": [
+  "return *(uint32_t *)((a1 << 2) + (uint32_t)g",
+  "void * * g2 = &g1;",
+  "!*(uint32_t *)0x104ac"
+ ],
+ "audit2-x86_64-pie": [
+  "float32_t v1 = (float32_t)(int32_t)a1;",
+  "* v1 + 3.25f",
+  "uint64_t v6 = 8;",
+  "!int128_t",
+  "!/ 0;"
+ ]
 }
