@@ -85,3 +85,18 @@ add_subdirectory(managed_integration)
 if(RETDEC_ENABLE_NEURAL)
 	add_subdirectory(neural)
 endif()
+
+# The original RetDec suites are plain gtest executables that register nothing
+# with CTest, so `ctest` never ran them (they were reachable only through
+# scripts/retdec-tests-runner.py and the standalone-check scripts). Register
+# each one as a single test. capstone2llvmir is left to its own CI gates.
+foreach(_legacy_suite
+		tests-bin2llvmir tests-common tests-config tests-cpdetect tests-ctypes
+		tests-ctypesparser tests-demangler tests-llvm-emul tests-llvmir2hll
+		tests-loader tests-pdbparser tests-pelib tests-serdes tests-unpacker
+		tests-utils)
+	if(TARGET ${_legacy_suite})
+		add_test(NAME suite-${_legacy_suite} COMMAND ${_legacy_suite} --gtest_brief=1)
+		set_tests_properties(suite-${_legacy_suite} PROPERTIES LABELS "legacy-suite")
+	endif()
+endforeach()
