@@ -105,6 +105,7 @@ TOKEN_MAP = {
     "fifo": "FIFO",
     "queue": "Queue",
     "chaining": "Chaining",
+    "openaddressing": "OpenAddressing",
 }
 
 # B7: name-hint detections must carry this token in detail and are
@@ -170,6 +171,7 @@ ALLOWED_ALGO_MIN_CONF: dict[str, float] = {
     "fifo": 0.70,
     "queue": 0.70,
     "chaining": 0.70,
+    "openaddressing": 0.70,
 }
 SORT_LABEL_MIN_CONF: dict[str, float] = {
     "radix sort": 0.65,

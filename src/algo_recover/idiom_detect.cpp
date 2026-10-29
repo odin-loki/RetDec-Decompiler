@@ -913,6 +913,61 @@ bool hasVisitThenEnqueue(const ssa::SSAFunction& fn)
 	return false;
 }
 
+/// `x % 2^k` or `x & (2^k - 1)`: a wrapped table index.
+bool isWrappedIndex(const ssa::SSAFunction& fn, const ssa::IrInstr* d)
+{
+	if (!d) return false;
+	for (const auto& u: d->uses)
+	{
+		const auto* v = fn.value(u.valueId);
+		if (!v || v->kind != ssa::ValueKind::Immediate || u.operandIndex != 1) continue;
+		// `% 2^32` is the 32-bit wrap artefact, not a table size.
+		if (d->op == ssa::IrInstr::Op::Rem && isPow2(v->imm) && v->imm >= 4 && v->imm < (1ULL << 24)) return true;
+		if (d->op == ssa::IrInstr::Op::And && v->imm >= 3 && v->imm < (1ULL << 24) && isPow2(v->imm + 1)) return true;
+	}
+	return false;
+}
+
+/// `table + wrapped(i) * stride` (+ field offset), casts looked through.
+bool isProbedSlot(const ssa::SSAFunction& fn, ssa::ValueId id)
+{
+	for (int depth = 0; depth < 2; ++depth)
+	{
+		const auto* add = defOf(fn, stripCasts(fn, id));
+		if (!add || add->op != ssa::IrInstr::Op::Add) return false;
+		ssa::ValueId inner = ssa::kInvalidValue;
+		for (const auto& u: add->uses)
+		{
+			const auto* s = defOf(fn, stripCasts(fn, u.valueId));
+			if (s && (s->op == ssa::IrInstr::Op::Mul || s->op == ssa::IrInstr::Op::Shl))
+				for (const auto& w: s->uses)
+					if (isWrappedIndex(fn, defOf(fn, stripCasts(fn, w.valueId)))) return true;
+			if (s && s->op == ssa::IrInstr::Op::Add) inner = u.valueId;
+		}
+		if (inner == ssa::kInvalidValue) return false;
+		id = inner; // the field offset was added on top of the slot
+	}
+	return false;
+}
+
+/// Open-addressing probe: in a loop, a slot `table[i % CAP]` is tested for
+/// occupancy (a field compared with 0) and its key compared (strcmp/memcmp).
+bool hasOpenAddressingProbe(const ssa::SSAFunction& fn)
+{
+	bool occupancy = false, keyCompare = false;
+	forEachLoopInstr(fn, [&](const ssa::IrInstr& i) {
+		if (i.op == ssa::IrInstr::Op::Call
+			&& (i.calleeName.find("strcmp") != std::string::npos || i.calleeName.find("memcmp") != std::string::npos))
+			keyCompare = true;
+		if (i.op != ssa::IrInstr::Op::Compare || !immOperand(fn, i, 0)) return;
+		for (const auto& u: i.uses)
+			if (const auto* ld = defOf(fn, u.valueId); ld && ld->op == ssa::IrInstr::Op::Load
+				&& isProbedSlot(fn, operandAt(*ld, 0)))
+				occupancy = true;
+	});
+	return occupancy && keyCompare;
+}
+
 IdiomResult makeResult(IdiomKind kind, float confidence, const std::string& detail)
 {
 	IdiomResult r;
@@ -960,6 +1015,7 @@ std::string IdiomResult::primaryLabel() const noexcept
 	case IdiomKind::Statistics: return "Statistics";
 	case IdiomKind::NewtonRaphson: return "NewtonRaphson";
 	case IdiomKind::Conversion: return "Conversion";
+	case IdiomKind::HashTableOpenAddressing: return "HashTable";
 	default: return "Unknown";
 	}
 }
@@ -1004,6 +1060,7 @@ std::vector<std::string> IdiomResult::exportLabels() const
 	case IdiomKind::Statistics: return {"Statistics"};
 	case IdiomKind::NewtonRaphson: return {"NewtonRaphson"};
 	case IdiomKind::Conversion: return {"Conversion"};
+	case IdiomKind::HashTableOpenAddressing: return {"HashTable", "OpenAddressing"};
 	default: return {};
 	}
 }
@@ -1092,6 +1149,8 @@ std::vector<IdiomResult> IdiomDetector::detect(const ssa::SSAFunction& fn) const
 		if (sh.varFloatDiv && sh.halfOrTwo && sh.floatCompare && !sh.memStore)
 			out.push_back(makeResult(IdiomKind::NewtonRaphson, 0.75f, "halved_sum_with_quotient"));
 	}
+	if (hasOpenAddressingProbe(fn))
+		out.push_back(makeResult(IdiomKind::HashTableOpenAddressing, 0.80f, "occupancy_probe_of_wrapped_slot"));
 	if (hasVisitThenEnqueue(fn)) out.push_back(makeResult(IdiomKind::Bfs, 0.80f, "mark_visited_then_enqueue"));
 	if (hasConversionChain(fn)) out.push_back(makeResult(IdiomKind::Conversion, 0.75f, "int_float_round_trips"));
 	if (hasFibonacciLoop(fn)) out.push_back(makeResult(IdiomKind::Fibonacci, 0.80f, "add_and_rotate_scalars"));

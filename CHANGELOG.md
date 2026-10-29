@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- Idiom detector: open-addressing probe (wrapped slot occupancy test + strcmp/memcmp key compare) exports HashTable/OpenAddressing; fixes hash_table -O2/-O3.
 - Bubble sort detection accepts the -O2 packed adjacent swap (a 64-bit word of two ints written back with its halves exchanged).
 - Integer matrix multiplication additionally exports LinearAlgebra (the float kernel keeps MatrixMultiply alone); analysis cache version 8.
 - Algorithm recovery recognises BFS's visit step (a zero-tested flag set to 1 alongside an indexed enqueue in one loop block); indexed-slot matching accepts sign-extended (shifted) indices.

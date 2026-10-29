@@ -2954,3 +2954,53 @@ TEST(IdiomDetectorTest, IntegerMatrixMultiplyAlsoExportsLinearAlgebra)
 		EXPECT_TRUE(found);
 	}
 }
+
+namespace {
+
+ssa::ValueId binop(ssa::SSAFunction& fn, ssa::IrInstr::Op op, ssa::ValueId a, ssa::ValueId b)
+{
+	auto* i = fn.addInstr(1, op);
+	i->uses.push_back({a, 0});
+	i->uses.push_back({b, 1});
+	return defined(fn, i);
+}
+
+/// `slot = table + (h % cap) * 24; if (slot->used != 0 && strcmp(slot, key) == 0)`
+std::unique_ptr<ssa::SSAFunction> makeProbe(uint64_t cap, bool keyCompare)
+{
+	auto fn = makeLoop();
+	const auto idx = binop(*fn, ssa::IrInstr::Op::Rem, reg(*fn, 64)->id, immValue(*fn, cap));
+	const auto off = binop(*fn, ssa::IrInstr::Op::Mul, idx, immValue(*fn, 24));
+	const auto slot = binop(*fn, ssa::IrInstr::Op::Add, off, reg(*fn, 64)->id);
+	const auto used = binop(*fn, ssa::IrInstr::Op::Add, slot, immValue(*fn, 20));
+	auto* ld = fn->addInstr(1, ssa::IrInstr::Op::Load);
+	ld->uses.push_back({used, 0});
+	auto* cmp = fn->addInstr(1, ssa::IrInstr::Op::Compare);
+	cmp->uses.push_back({defined(*fn, ld), 0});
+	cmp->uses.push_back({immValue(*fn, 0), 1});
+	if (keyCompare)
+	{
+		auto* call = fn->addInstr(1, ssa::IrInstr::Op::Call);
+		call->calleeName = "strcmp";
+	}
+	pad(*fn);
+	fn->addInstr(1, ssa::IrInstr::Op::CondBranch);
+	return fn;
+}
+
+} // namespace
+
+TEST(IdiomDetectorTest, ProbingAWrappedSlotAndComparingItsKeyIsOpenAddressing)
+{
+	EXPECT_TRUE(detects(*makeProbe(32, true), IdiomKind::HashTableOpenAddressing));
+}
+
+TEST(IdiomDetectorTest, ProbeWithoutAKeyCompareIsNotOpenAddressing)
+{
+	EXPECT_FALSE(detects(*makeProbe(32, false), IdiomKind::HashTableOpenAddressing));
+}
+
+TEST(IdiomDetectorTest, The32BitWrapIsNotATableSize)
+{
+	EXPECT_FALSE(detects(*makeProbe(1ULL << 32, true), IdiomKind::HashTableOpenAddressing));
+}

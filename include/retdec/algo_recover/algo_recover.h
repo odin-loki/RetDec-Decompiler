@@ -449,6 +449,7 @@ enum class IdiomKind : uint8_t
 	Statistics,
 	NewtonRaphson,
 	Conversion,
+	HashTableOpenAddressing,
 };
 
 struct IdiomResult
