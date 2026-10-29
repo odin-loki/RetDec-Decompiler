@@ -523,6 +523,121 @@ TEST_F(GotoCFGOptimizerTests, PatternA_TheMovedRunKeepsTheTargetsOwnLabel)
 	expectEveryGotoResolves(reachable);
 }
 
+
+// Pattern D when the goto has a successor: giving the break the goto's
+// successor before prepending it made the chain loop back on itself.
+TEST_F(GotoCFGOptimizerTests, PatternD_GotoWithASuccessorBecomesBreakWithoutACycle)
+{
+	auto varA = Variable::create("a", IntType::create(32));
+	testFunc->addLocalVar(varA);
+	auto retStmt = ReturnStmt::create();
+	auto dead = AssignStmt::create(varA, ConstInt::create(llvm::APInt(32, 1)));
+	auto gotoExit = GotoStmt::create(retStmt);
+	gotoExit->setSuccessor(dead);
+	auto whileStmt = WhileLoopStmt::create(ConstInt::create(llvm::APInt(1, 1)),
+		gotoExit, retStmt);
+	testFunc->setBody(whileStmt);
+
+	Optimizer::optimize<GotoCFGOptimizer>(module);
+
+	auto body = cast<WhileLoopStmt>(testFunc->getBody())->getBody();
+	ASSERT_TRUE(isa<BreakStmt>(body)) << body;
+	int n = 0;
+	for (auto s = body; s; s = s->getSuccessor())
+		ASSERT_LT(++n, 10) << "cycle in the loop body";
+}
+
+// Pattern E:  if (c) { a = 1; goto T; }  b = 2;  T: return;
+//          => if (c) { a = 1; } else { b = 2; }  return;
+TEST_F(GotoCFGOptimizerTests, PatternE_TrailingForwardGotoMovesTheRunToElse)
+{
+	auto varA = Variable::create("a", IntType::create(32));
+	auto varB = Variable::create("b", IntType::create(32));
+	testFunc->addLocalVar(varA);
+	testFunc->addLocalVar(varB);
+	auto retStmt = ReturnStmt::create();
+	auto assignB = AssignStmt::create(varB, ConstInt::create(llvm::APInt(32, 2)), retStmt);
+	auto gotoT = GotoStmt::create(retStmt);
+	auto assignA = AssignStmt::create(varA, ConstInt::create(llvm::APInt(32, 1)), gotoT);
+	auto is = IfStmt::create(varA, assignA, assignB);
+	testFunc->setBody(is);
+
+	Optimizer::optimize<GotoCFGOptimizer>(module);
+
+	ASSERT_EQ(is, testFunc->getBody());
+	EXPECT_EQ(assignA, is->getFirstIfBody());
+	EXPECT_FALSE(assignA->hasSuccessor()) << "the goto should be gone";
+	ASSERT_TRUE(is->hasElseClause());
+	EXPECT_EQ(assignB, is->getElseClause());
+	EXPECT_FALSE(assignB->hasSuccessor());
+	EXPECT_EQ(retStmt, is->getSuccessor());
+	EXPECT_FALSE(retStmt->isGotoTarget());
+}
+
+// Pattern F:  L: a = 1;  if (c) goto L;  return;
+//          => while (true) { a = 1; if (!c) break; }  return;
+TEST_F(GotoCFGOptimizerTests, PatternF_BackwardConditionalGotoBecomesLoop)
+{
+	auto varA = Variable::create("a", IntType::create(32));
+	testFunc->addLocalVar(varA);
+	auto retStmt = ReturnStmt::create();
+	auto assignA = AssignStmt::create(varA, ConstInt::create(llvm::APInt(32, 1)));
+	auto gotoL = GotoStmt::create(assignA);
+	auto is = IfStmt::create(varA, gotoL, retStmt);
+	assignA->setSuccessor(is);
+	testFunc->setBody(assignA);
+
+	Optimizer::optimize<GotoCFGOptimizer>(module);
+
+	auto loop = cast<WhileLoopStmt>(testFunc->getBody());
+	ASSERT_TRUE(loop) << testFunc->getBody();
+	EXPECT_EQ(assignA, loop->getBody());
+	EXPECT_EQ(is, assignA->getSuccessor());
+	EXPECT_TRUE(isa<BreakStmt>(is->getFirstIfBody()));
+	EXPECT_EQ(retStmt, loop->getSuccessor());
+	EXPECT_FALSE(assignA->isGotoTarget());
+}
+
+// Pattern F, unconditional:  L: a = 1;  goto L;  =>  while (true) { a = 1; }
+TEST_F(GotoCFGOptimizerTests, PatternF_BackwardUnconditionalGotoBecomesLoop)
+{
+	auto varA = Variable::create("a", IntType::create(32));
+	testFunc->addLocalVar(varA);
+	auto assignA = AssignStmt::create(varA, ConstInt::create(llvm::APInt(32, 1)));
+	auto gotoL = GotoStmt::create(assignA);
+	assignA->setSuccessor(gotoL);
+	testFunc->setBody(assignA);
+
+	Optimizer::optimize<GotoCFGOptimizer>(module);
+
+	auto loop = cast<WhileLoopStmt>(testFunc->getBody());
+	ASSERT_TRUE(loop) << testFunc->getBody();
+	EXPECT_EQ(assignA, loop->getBody());
+	EXPECT_FALSE(assignA->hasSuccessor());
+	EXPECT_FALSE(loop->hasSuccessor());
+}
+
+// Pattern F must not wrap a break that belongs to an enclosing loop.
+TEST_F(GotoCFGOptimizerTests, PatternF_NotAppliedWhenTheRunHasAnEscapingBreak)
+{
+	auto varA = Variable::create("a", IntType::create(32));
+	testFunc->addLocalVar(varA);
+	auto brk = BreakStmt::create();
+	auto assignA = AssignStmt::create(varA, ConstInt::create(llvm::APInt(32, 1)));
+	auto inner = IfStmt::create(varA, brk);
+	assignA->setSuccessor(inner);
+	auto gotoL = GotoStmt::create(assignA);
+	auto is = IfStmt::create(varA, gotoL);
+	inner->setSuccessor(is);
+	auto outer = WhileLoopStmt::create(ConstInt::create(llvm::APInt(1, 1)), assignA);
+	testFunc->setBody(outer);
+
+	Optimizer::optimize<GotoCFGOptimizer>(module);
+
+	EXPECT_EQ(assignA, outer->getBody());
+	EXPECT_TRUE(isa<GotoStmt>(is->getFirstIfBody()));
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec

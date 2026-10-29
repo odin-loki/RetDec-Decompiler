@@ -3,7 +3,9 @@
  * @brief Structural elimination of spurious goto statements.
  * @copyright (c) 2024, MIT license
  *
- * Implements patterns A–D described in the header. Runs iteratively on each
+ * Implements patterns A–D described in the header, plus E (a trailing forward
+ * goto moves the skipped run into the other clause) and F (a backward sibling
+ * goto becomes a while loop). Runs iteratively on each
  * function until no further rewrites are possible.
  */
 
@@ -19,7 +21,9 @@
 #include "retdec/llvmir2hll/ir/goto_stmt.h"
 #include "retdec/llvmir2hll/ir/if_stmt.h"
 #include "retdec/llvmir2hll/ir/module.h"
+#include "retdec/llvmir2hll/ir/const_bool.h"
 #include "retdec/llvmir2hll/ir/return_stmt.h"
+#include "retdec/llvmir2hll/ir/switch_stmt.h"
 #include "retdec/llvmir2hll/ir/statement.h"
 #include "retdec/llvmir2hll/ir/ufor_loop_stmt.h"
 #include "retdec/llvmir2hll/ir/var_def_stmt.h"
@@ -103,6 +107,186 @@ void moveRunIntoIfBody(
 	last->setSuccessor(nullptr);
 }
 
+
+/// Whether the chain starting at @a stmt contains a break or continue that
+/// would bind to a loop or switch enclosing the chain (rather than one nested
+/// inside it).  @a inSwitch is set while scanning a switch nested in the
+/// chain: a break there binds to that switch, a continue still escapes.
+bool hasEscapingBreakOrContinue(ShPtr<Statement> stmt, bool inSwitch = false,
+		bool single = false)
+{
+	for (int i = 0; stmt && i < 4096; ++i, stmt = single ? nullptr : stmt->getSuccessor())
+	{
+		if (isa<BreakStmt>(stmt) && !inSwitch) return true;
+		if (isa<ContinueStmt>(stmt)) return true;
+		if (auto is = cast<IfStmt>(stmt))
+		{
+			for (auto ci = is->clause_begin(); ci != is->clause_end(); ++ci)
+				if (hasEscapingBreakOrContinue(ci->second, inSwitch)) return true;
+			if (is->hasElseClause()
+					&& hasEscapingBreakOrContinue(is->getElseClause(), inSwitch))
+				return true;
+		}
+		else if (auto ss = cast<SwitchStmt>(stmt))
+		{
+			for (auto ci = ss->clause_begin(); ci != ss->clause_end(); ++ci)
+				if (hasEscapingBreakOrContinue(ci->second, true)) return true;
+		}
+		// Loops: their breaks and continues bind to themselves.
+	}
+	return false;
+}
+
+/// The goto ending the chain @a body (skipping nothing), or null.  Sets
+/// @a prev to the statement before it (null when the goto is the only one).
+ShPtr<GotoStmt> trailingGoto(ShPtr<Statement> body, ShPtr<Statement>& prev)
+{
+	prev = nullptr;
+	for (auto s = body; s; s = s->getSuccessor())
+	{
+		if (!s->getSuccessor())
+			return cast<GotoStmt>(s);
+		prev = s;
+	}
+	return nullptr;
+}
+
+/// Pattern E: a clause of @a is ends with `goto T`, T a later sibling of
+/// @a is.  The statements between @a is and T run only when the other clause
+/// was taken, so they move to its end and the goto goes:
+///
+///     if (c) { A; goto T; } [else { B; }]  R;  T: ...
+///  => if (c) { A; } else { [B;] R; }  T: ...
+bool tryTrailingForwardGoto(const ShPtr<IfStmt>& is)
+{
+	if (is->hasElseIfClauses() || !is->getSuccessor()) return false;
+
+	for (int which = 0; which < 2; ++which)
+	{
+		bool inElse = which == 1;
+		if (inElse && !is->hasElseClause()) break;
+		auto body = inElse ? is->getElseClause() : is->getFirstIfBody();
+		ShPtr<Statement> prev;
+		auto g = trailingGoto(body, prev);
+		if (!g || g->isGotoTarget() || !g->getTarget()) continue;
+		auto target = g->getTarget();
+		// The sole-goto then-clause without an else is Pattern A's.
+		if (!prev && !inElse && !is->hasElseClause()) continue;
+		if (target == is->getSuccessor() && !prev) continue; // Pattern B-like; leave
+		std::vector<ShPtr<Statement>> run;
+		if (target != is->getSuccessor())
+		{
+			run = collectBetween(is->getSuccessor(), target);
+			if (run.empty()) continue;
+		}
+
+		// Detach the run from the main chain.
+		if (!run.empty())
+		{
+			is->setSuccessor(target);
+			run.back()->setSuccessor(nullptr);
+		}
+
+		// Drop the goto.
+		if (prev)
+		{
+			Statement::removeStatement(g);
+		}
+		else if (inElse)
+		{
+			is->removeElseClause();
+		}
+		else
+		{
+			// `if (c) goto T; else { B; }`: becomes `if (!c) { B; }`.
+			auto elseBody = is->getElseClause();
+			target->removeObserver(g);
+			target->removePredecessor(g);
+			is->removeElseClause();
+			is->setFirstIfCond(ExpressionNegater::negate(is->getFirstIfCond()));
+			is->setFirstIfBody(elseBody);
+			inElse = true; // the "other" clause is now the then-clause
+			if (!run.empty())
+			{
+				Statement::getLastStatement(elseBody)->setSuccessor(run.front());
+			}
+			return true;
+		}
+
+		if (run.empty()) return true;
+
+		// Append the run to the other clause.
+		if (inElse)
+		{
+			Statement::getLastStatement(is->getFirstIfBody())->setSuccessor(run.front());
+		}
+		else if (is->hasElseClause())
+		{
+			Statement::getLastStatement(is->getElseClause())->setSuccessor(run.front());
+		}
+		else
+		{
+			is->setElseClause(run.front());
+		}
+		return true;
+	}
+	return false;
+}
+
+/// Pattern F: a backward goto to an earlier sibling becomes a loop.
+///
+///     L: S...;  if (c) goto L;  R    =>  while (true) { S...; if (!c) break; }  R
+///     L: S...;  goto L;         R    =>  while (true) { S...; }  R
+///
+/// Not done when S holds a break or continue bound outside it, which the new
+/// loop would capture.
+bool tryBackwardSiblingGoto(const ShPtr<Statement>& stmt)
+{
+	ShPtr<GotoStmt> g;
+	auto is = cast<IfStmt>(stmt);
+	if (is)
+	{
+		if (is->hasElseClause() || is->hasElseIfClauses()) return false;
+		auto b = is->getFirstIfBody();
+		while (b && isa<EmptyStmt>(b)) b = b->getSuccessor();
+		if (!b || b->getSuccessor()) return false;
+		g = cast<GotoStmt>(b);
+	}
+	else
+	{
+		g = cast<GotoStmt>(stmt);
+	}
+	if (!g || !g->getTarget() || g->isGotoTarget()) return false;
+	auto target = g->getTarget();
+	if (target == stmt) return false;
+	auto run = collectBetween(target, stmt, 1024);
+	if (run.empty()) return false;
+	for (auto &s: run)
+		if (hasEscapingBreakOrContinue(s, false, /*single=*/true)) return false;
+
+	auto after = stmt->getSuccessor();
+	auto loop = WhileLoopStmt::create(ConstBool::create(true),
+		EmptyStmt::create(), nullptr, target->getAddress());
+	target->prependStatement(loop);
+	// Jumping to the loop's first statement is entering the loop.
+	loop->transferLabelFrom(target);
+	target->redirectGotosTo(loop);
+	// `stmt` no longer falls through to `after`; the loop does.
+	stmt->setSuccessor(nullptr);
+	loop->setSuccessor(after);
+	loop->setBody(target);
+	if (is)
+	{
+		is->setFirstIfCond(ExpressionNegater::negate(is->getFirstIfCond()));
+		is->setFirstIfBody(BreakStmt::create());
+	}
+	else
+	{
+		Statement::removeStatement(g);
+	}
+	return true;
+}
+
 /// One pass over the body of @a func.  Returns true if any change was made.
 /// @a loopExit is the statement that follows the enclosing loop (used to
 /// detect gotos that should become break statements — Pattern D).
@@ -115,6 +299,11 @@ bool onePass(ShPtr<Function> func)
 		bool changed = false;
 		while (stmt)
 		{
+			if (tryBackwardSiblingGoto(stmt))
+			{
+				anyChange = true;
+				return true;
+			}
 			// --- Pattern A: if(cond) goto L_forward ---
 			if (auto is = cast<IfStmt>(stmt))
 			{
@@ -160,6 +349,11 @@ bool onePass(ShPtr<Function> func)
 						}
 					}
 				}
+				if (!changed && tryTrailingForwardGoto(is))
+				{
+					changed = true;
+					anyChange = true;
+				}
 			}
 
 			// --- Pattern D: goto to loop exit → break ---
@@ -173,7 +367,10 @@ bool onePass(ShPtr<Function> func)
 					auto brk = BreakStmt::create();
 					brk->transferLabelFrom(gs);
 					gs->redirectGotosTo(brk);
-					brk->setSuccessor(gs->getSuccessor());
+					// prependStatement() links the end of brk's chain to
+					// gs, so brk must not have a successor yet; giving it
+					// gs's successor first made a cycle.  removeStatement()
+					// below links brk to gs's successor.
 					gs->prependStatement(brk);
 					Statement::removeStatement(gs);
 					changed = true;
