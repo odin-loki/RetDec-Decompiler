@@ -954,6 +954,14 @@ ShPtr<Expression> LLVMInstructionConverter::convertExtCastInstToExpression(
 		llvm::User &inst, ExtCastExpr::Variant variant) {
 	auto op = getConverter()->convertValueToExpression(inst.getOperand(0));
 	auto dstType = getConverter()->convertType(inst.getType());
+	// `sext i1` is 0 or -1, but C converts a true condition to 1: emit it as
+	// `-(T)cond`. InstCombine turns `x - zext(c)` into `x + sext(c)`, and the
+	// bare cast added a borrow instead of subtracting it (rv32 64-bit math).
+	if (variant == ExtCastExpr::Variant::SExt
+			&& inst.getOperand(0)->getType()->isIntegerTy(1)) {
+		return NegOpExpr::create(ExtCastExpr::create(op, dstType,
+			ExtCastExpr::Variant::ZExt));
+	}
 	return ExtCastExpr::create(op, dstType, variant);
 }
 

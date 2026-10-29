@@ -261,6 +261,44 @@ bool IdiomsLibgccImpl::testArchAndInitialize(
 		res0Hi = abi->getRegister(MIPS_REG_V1);
 		bigEndian = arch.isEndianBig();
 	}
+	else if ((arch.isMips() && !arch.isMips64())
+			|| (arch.isRiscv() && !arch.isRiscv64())
+			|| (arch.isPpc() && !arch.isPpc64()))
+	{
+		// 32-bit o32 / ilp32 / SysV ppc: 64-bit args in the first two
+		// argument-register pairs, 64-bit result in the first return pair.
+		// Calls to __udivdi3 and friends kept only the result's first word.
+		int a0, a1, a2, a3, v0, v1;
+		if (arch.isMips())
+		{
+			a0 = MIPS_REG_A0; a1 = MIPS_REG_A1; a2 = MIPS_REG_A2;
+			a3 = MIPS_REG_A3; v0 = MIPS_REG_V0; v1 = MIPS_REG_V1;
+		}
+		else if (arch.isRiscv())
+		{
+			a0 = RISCV_REG_X10; a1 = RISCV_REG_X11; a2 = RISCV_REG_X12;
+			a3 = RISCV_REG_X13; v0 = RISCV_REG_X10; v1 = RISCV_REG_X11;
+		}
+		else
+		{
+			a0 = PPC_REG_R3; a1 = PPC_REG_R4; a2 = PPC_REG_R5;
+			a3 = PPC_REG_R6; v0 = PPC_REG_R3; v1 = PPC_REG_R4;
+		}
+		op0Single = op0Double = abi->getRegister(a0);
+		op1Single = abi->getRegister(a1);
+		op1Double = abi->getRegister(a2);
+		res0Single = res0Double = abi->getRegister(v0);
+		res1Single = res1Double = abi->getRegister(v1);
+		op0Hi = abi->getRegister(a1);
+		op1Hi = abi->getRegister(a3);
+		res0Hi = abi->getRegister(v1);
+		res1Hi = nullptr;
+		bigEndian = arch.isEndianBig();
+		if (!op0Single || !op1Single || !op1Double || !res0Single || !op1Hi)
+		{
+			return false;
+		}
+	}
 	else
 	{
 		return false;
