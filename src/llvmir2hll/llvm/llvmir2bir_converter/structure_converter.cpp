@@ -1633,7 +1633,10 @@ void StructureConverter::reduceToNestedWhileTrueLoopWithContinueInHeader(
 	attachMultiExitLoopComment(nestedWhile, getLoopFor(node));
 	node->setBody(nestedWhile);
 
-	node->deleteSucc(1);
+	// Delete the inner-loop body node (index succ) and only unlink the
+	// parent loop header (index 1 - succ); deleting the latter would strip
+	// the header's own successors and drop the enclosing loop's body.
+	node->deleteSucc(succ);
 	node->removeSucc(0);
 	reducedLoops.insert(getLoopFor(node));
 
