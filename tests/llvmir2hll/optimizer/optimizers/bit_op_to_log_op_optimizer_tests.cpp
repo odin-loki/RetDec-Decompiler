@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include "llvmir2hll/analysis/tests_with_value_analysis.h"
+#include "retdec/llvmir2hll/ir/lt_op_expr.h"
 #include "retdec/llvmir2hll/ir/add_op_expr.h"
 #include "retdec/llvmir2hll/ir/and_op_expr.h"
 #include "retdec/llvmir2hll/ir/array_index_op_expr.h"
@@ -748,18 +749,8 @@ SwitchBitOrDivSecOpNegativeOneNotOptimize) {
 }
 
 TEST_F(BitOpToLogOpOptimizerTests,
-SwitchBitOrDivNegativeOneFirstOpFloatTypeSecOpOptimize) {
-	// void test() {
-	//     switch (a | (b / -1)) {
-	//     }
-	//     return b;
-	// }
-	// Expected output:
-	// void test() {
-	//     switch (a || (b / -1)) {
-	//     }
-	//     return b;
-	// }
+SwitchBitOrIsNotOptimizedBecauseSwitchSelectsByValue) {
+	// switch (a | (b / -1)) stays: a switch tests the value, not its truth.
 	ShPtr<Variable> varA(Variable::create("a", IntType::create(32)));
 	ShPtr<Variable> varB(Variable::create("b", FloatType::create(16)));
 	testFunc->addLocalVar(varA);
@@ -773,15 +764,27 @@ SwitchBitOrDivNegativeOneFirstOpFloatTypeSecOpOptimize) {
 	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
 	Optimizer::optimize<BitOpToLogOpOptimizer>(module, va);
 
-	// Check that the output is correct.
-	ASSERT_TRUE(testFunc->getBody()) <<
-		"expected a non-empty body";
-	ShPtr<SwitchStmt> outSwitchStmt(cast<SwitchStmt>(testFunc->getBody()));
-	ASSERT_TRUE(outSwitchStmt) <<
-		"expected SwitchStmt, got " << testFunc->getBody();
-	ShPtr<OrOpExpr> outOrOpA(cast<OrOpExpr>(switchStmt->getControlExpr()));
-	ASSERT_TRUE(outOrOpA) <<
-		"expected OrOpExpr, got " << switchStmt->getControlExpr();
+	EXPECT_TRUE(isa<BitOrOpExpr>(switchStmt->getControlExpr()))
+		<< "got " << switchStmt->getControlExpr();
+}
+
+TEST_F(BitOpToLogOpOptimizerTests,
+BitOrUnderComparisonInIfIsNotOptimized) {
+	// if ((a | b) < 5) stays (x64 -O2 f_s64 printed `(a || b) < ...`).
+	ShPtr<Variable> varA(Variable::create("a", IntType::create(64)));
+	ShPtr<Variable> varB(Variable::create("b", IntType::create(64)));
+	testFunc->addLocalVar(varA);
+	testFunc->addLocalVar(varB);
+	ShPtr<BitOrOpExpr> bitOr(BitOrOpExpr::create(varA, varB));
+	ShPtr<LtOpExpr> lt(LtOpExpr::create(bitOr, ConstInt::create(5, 64)));
+	ShPtr<IfStmt> ifStmt(IfStmt::create(lt, ReturnStmt::create(varA)));
+	testFunc->setBody(ifStmt);
+
+	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
+	Optimizer::optimize<BitOpToLogOpOptimizer>(module, va);
+
+	EXPECT_TRUE(isa<BitOrOpExpr>(lt->getFirstOperand()))
+		<< "got " << lt->getFirstOperand();
 }
 
 TEST_F(BitOpToLogOpOptimizerTests,

@@ -9,6 +9,8 @@
 #ifndef RETDEC_LLVMIR2HLL_OPTIMIZER_OPTIMIZERS_BIT_OP_TO_LOG_OP_OPTIMIZER_H
 #define RETDEC_LLVMIR2HLL_OPTIMIZER_OPTIMIZERS_BIT_OP_TO_LOG_OP_OPTIMIZER_H
 
+#include <set>
+
 #include "retdec/llvmir2hll/optimizer/func_optimizer.h"
 #include "retdec/llvmir2hll/support/debug.h"
 #include "retdec/llvmir2hll/support/smart_ptr.h"
@@ -135,6 +137,12 @@ private:
 
 	/// A variable for check if is some chance to divide by zero.
 	bool isPotentionalProblem;
+
+	/// Expressions of the current condition whose value is only tested for
+	/// truth: the condition itself and operands of &&, || and ! below it.
+	std::set<Expression*> boolContext;
+	void collectBoolContext(ShPtr<Expression> expr);
+	void tryOptimizeCond(ShPtr<Expression> expr, bool isBoolean);
 };
 
 } // namespace llvmir2hll

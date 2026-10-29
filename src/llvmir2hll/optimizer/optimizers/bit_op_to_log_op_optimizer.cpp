@@ -16,6 +16,7 @@
 #include "retdec/llvmir2hll/ir/int_type.h"
 #include "retdec/llvmir2hll/ir/mod_op_expr.h"
 #include "retdec/llvmir2hll/ir/mul_op_expr.h"
+#include "retdec/llvmir2hll/ir/not_op_expr.h"
 #include "retdec/llvmir2hll/ir/or_op_expr.h"
 #include "retdec/llvmir2hll/ir/switch_stmt.h"
 #include "retdec/llvmir2hll/ir/while_loop_stmt.h"
@@ -58,7 +59,7 @@ void BitOpToLogOpOptimizer::visit(ShPtr<SwitchStmt> stmt) {
 	FuncOptimizer::visit(stmt);
 
 	// Try to optimize switch control expression.
-	tryOptimizeCond(stmt->getControlExpr());
+	tryOptimizeCond(stmt->getControlExpr(), false);
 }
 
 void BitOpToLogOpOptimizer::visit(ShPtr<WhileLoopStmt> stmt) {
@@ -104,8 +105,14 @@ void BitOpToLogOpOptimizer::visit(ShPtr<BitAndOpExpr> expr) {
 }
 
 void BitOpToLogOpOptimizer::visit(ShPtr<BitOrOpExpr> expr) {
-	// BitAnd which is not in condition.
+	// BitOr which is not in condition.
 	if (!isCondition) {
+		return;
+	}
+	// `a | b` is `a || b` only where just its truth matters: under a
+	// comparison, `(y | x) < 0x100000000` became `(y || x) < ...` (x64 -O2
+	// f_s64), and a switch on it selects by value.
+	if (!boolContext.count(expr.get())) {
 		return;
 	}
 
@@ -306,9 +313,38 @@ bool BitOpToLogOpOptimizer::isPotentionalMulProblem(ShPtr<MulOpExpr> mulOpExpr) 
 * @brief This function try optimize on conditions.
 */
 void BitOpToLogOpOptimizer::tryOptimizeCond(ShPtr<Expression> expr) {
+	tryOptimizeCond(expr, true);
+}
+
+void BitOpToLogOpOptimizer::tryOptimizeCond(ShPtr<Expression> expr,
+		bool isBoolean) {
+	boolContext.clear();
+	if (isBoolean) {
+		collectBoolContext(expr);
+	}
 	isCondition = true;
 	expr->accept(this);
 	isCondition = false;
+	boolContext.clear();
+}
+
+void BitOpToLogOpOptimizer::collectBoolContext(ShPtr<Expression> expr) {
+	if (!expr) {
+		return;
+	}
+	boolContext.insert(expr.get());
+	if (auto e = cast<BitOrOpExpr>(expr)) {
+		collectBoolContext(e->getFirstOperand());
+		collectBoolContext(e->getSecondOperand());
+	} else if (auto e = cast<OrOpExpr>(expr)) {
+		collectBoolContext(e->getFirstOperand());
+		collectBoolContext(e->getSecondOperand());
+	} else if (auto e = cast<AndOpExpr>(expr)) {
+		collectBoolContext(e->getFirstOperand());
+		collectBoolContext(e->getSecondOperand());
+	} else if (auto e = cast<NotOpExpr>(expr)) {
+		collectBoolContext(e->getOperand());
+	}
 }
 
 } // namespace llvmir2hll
