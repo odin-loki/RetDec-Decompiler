@@ -8,6 +8,8 @@
 
 #include <algorithm>
 #include <sstream>
+#include <cstdio>
+#include <cstdlib>
 
 namespace retdec {
 namespace algo_recover {
@@ -1363,6 +1365,8 @@ bool IdiomDetector::passesPreflight(const ssa::SSAFunction& fn) const
 std::vector<IdiomResult> IdiomDetector::detect(const ssa::SSAFunction& fn) const
 {
 	std::vector<IdiomResult> out;
+	if (getenv("RD_IDDBG")) { fprintf(stderr,"IDDBG %s blocks=%zu pre=%d cyc=%d\n", fn.name().c_str(), (size_t)fn.blockCount(), (int)passesPreflight(fn), (int)hasBackEdge(fn));
+	  for (const auto& blk: fn.blocks()) { if(!blk) continue; fprintf(stderr," B%u cyc=%d succ=", (unsigned)blk->id, (int)ssa::blockOnCycle(fn, blk->id)); for(auto s2: blk->succs) fprintf(stderr,"%u,",(unsigned)s2); fprintf(stderr,":"); for (const auto* i: blk->instrs) { if(!i) continue; fprintf(stderr," %d", (int)i->op); if(i->op==ssa::IrInstr::Op::Call) fprintf(stderr,"[%s]", i->calleeName.c_str()); for (auto&u: i->uses){auto v=fn.value(u.valueId); if(!v) continue; if(v->kind==ssa::ValueKind::Immediate) fprintf(stderr,"#%llx",(unsigned long long)v->imm); else if(v->kind==ssa::ValueKind::MemRef) fprintf(stderr,"m%u%s",(unsigned)v->memWidth, v->isStackSlot?"s":""); else if (v->isStackSlot) fprintf(stderr,"S");} } fprintf(stderr,"\n"); } }
 	// Straight-line and tiny, so it runs before the size preflight.
 	if (hasHeadInsert(fn, true))
 		out.push_back(makeResult(IdiomKind::HashTableChaining, 0.80f, "bucket_head_insert"));
