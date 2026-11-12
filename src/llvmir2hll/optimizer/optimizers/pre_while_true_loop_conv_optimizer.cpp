@@ -5,6 +5,7 @@
 * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
+#include <cstdio>
 #include "retdec/llvmir2hll/analysis/value_analysis.h"
 #include "retdec/llvmir2hll/analysis/var_uses_visitor.h"
 #include "retdec/llvmir2hll/ir/and_op_expr.h"
@@ -328,6 +329,8 @@ bool PreWhileTrueLoopConvOptimizer::tryOptimizationCase2(
 		}
 	}
 
+	fprintf(stderr, "TMPDBG case2 tmp=%s i=%s nuses=%zu loopEndIn=%d vaValid=%d\n", tmpVar->getName().c_str(), iVar->getName().c_str(), tmpVarDirUses.size(), (int)tmpVarDirUses.count(splittedLoop->loopEnd), (int)va->isInValidState());
+	for (auto &u : tmpVarDirUses) fprintf(stderr, "  use: %s\n", u->getTextRepr().c_str());
 	// Optimize the loop.
 	for (auto &dirUse : tmpVarDirUses) {
 		if (dirUse != tmpVarDef) {

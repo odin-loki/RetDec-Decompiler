@@ -6,7 +6,10 @@
 //   values      px / % / fr / plain numbers, #rgb #rrggbb #rrggbbaa, rgb()/rgba(), keywords, var(--token[, fallback])
 //   tokens      custom properties (`--accent: #3af`) declared in `:root` (or any rule matching the node) — theme tokens
 //   cascade     specificity (ids, classes + pseudo, types), then source order; inline (node API) values win;
-//               inherited properties: color, font-size, text-align
+//               inherited properties: color, font-size, text-align, font-family, font-weight, placeholder-color
+//   fonts       font-family: a comma list of family names (case-insensitive, quotes optional) or generic families
+//               (monospace, sans-serif, ...) resolved by UiContext::resolveFont; font-weight: normal | bold | bolder |
+//               lighter | 100..900. Widget class defaults for these win over inheritance (codeedit is monospace).
 // Not yet: transitions (the animation core tweens node opacity / offsets), attribute selectors, :nth-child.
 #pragma once
 
@@ -49,6 +52,15 @@ enum class GradientDir : u8 { None, Vertical, Horizontal };
 enum class TextAlignment : u8 { Start, Center, End };
 
 inline constexpr int kMaxGridTracks = 8;
+inline constexpr int kMaxFontFamilies = 4; ///< font-family list entries kept (the rest are ignored)
+
+/// Hash of a CSS font family name: case-insensitive, surrounding quotes and spaces ignored ("JetBrains Mono" ==
+/// 'jetbrains mono'). 0 for an empty name.
+u32 fontFamilyHash(std::string_view name);
+/// Parses a CSS font-family list into hashes; returns the count kept (at most kMaxFontFamilies).
+u32 parseFontFamilies(std::string_view list, std::array<u32, kMaxFontFamilies>& out);
+inline constexpr u16 kFontWeightNormal = 400;
+inline constexpr u16 kFontWeightBold = 700;
 
 /// The fully resolved style of a node. Trivially copyable; deduplicated in StyleTable.
 struct ComputedStyle {
@@ -81,6 +93,11 @@ struct ComputedStyle {
     f32 shadowBlur = 0.f, shadowX = 0.f, shadowY = 0.f;
     f32 backdropBlur = 0.f; ///< backdrop-filter: blur(<len>) / backdrop-blur: <len> (frosted glass under the background)
     bool pointerEvents = true;
+    // fonts (inherited unless the class default sets them)
+    std::array<u32, kMaxFontFamilies> fontFamily{}; ///< fontFamilyHash() of each listed family; empty = default face
+    u8 fontFamilyCount = 0;
+    u16 fontWeight = 0;      ///< CSS weight; 0 = unset (normal)
+    Color placeholderColor;  ///< placeholder / special-value text; transparent = `color` at reduced alpha
     friend bool operator==(const ComputedStyle&, const ComputedStyle&) = default;
 };
 
@@ -91,11 +108,11 @@ enum class Prop : u8 {
     AlignItems, AlignSelf, Justify, Wrap, Overflow, GridColumns, GridColumn, GridColumnSpan, GridRow, GridRowSpan,
     Left, Top, Right, Bottom, CenterX, CenterY, Background, Background2, Gradient, BorderColor, BorderWidth,
     RadiusTL, RadiusTR, RadiusBR, RadiusBL, Color, FontSize, TextAlign, Opacity, ShadowColor, ShadowBlur, ShadowX,
-    ShadowY, PointerEvents, BackdropBlur, Count
+    ShadowY, PointerEvents, BackdropBlur, FontFamily, FontWeight, PlaceholderColor, Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
 
-enum class PropType : u8 { Bool, Enum, Length, Number, Color, Tracks };
+enum class PropType : u8 { Bool, Enum, Length, Number, Color, Tracks, Idents };
 struct PropInfo {
     Prop id;
     std::string_view cssName;
@@ -119,11 +136,15 @@ struct PropValue {
     fuse::ui::Color color;
     std::array<Length, kMaxGridTracks> tracks{};
     u8 trackCount = 0;
+    std::array<u32, kMaxFontFamilies> idents{}; ///< Idents: hashed identifiers (font-family list)
+    u8 identCount = 0;
     static PropValue ofBool(bool v) { PropValue p; p.type = PropType::Bool; p.b = v; return p; }
     static PropValue ofEnum(u8 v) { PropValue p; p.type = PropType::Enum; p.e = v; return p; }
     static PropValue ofLength(Length v) { PropValue p; p.type = PropType::Length; p.len = v; return p; }
     static PropValue ofNumber(f32 v) { PropValue p; p.type = PropType::Number; p.num = v; return p; }
     static PropValue ofColor(fuse::ui::Color v) { PropValue p; p.type = PropType::Color; p.color = v; return p; }
+    /// A font-family list ("JetBrains Mono, monospace").
+    static PropValue ofFontFamily(std::string_view list) { PropValue p; p.type = PropType::Idents; p.identCount = u8(parseFontFamilies(list, p.idents)); return p; }
 };
 void applyProp(ComputedStyle& s, Prop p, const PropValue& v);
 PropValue readProp(const ComputedStyle& s, Prop p);

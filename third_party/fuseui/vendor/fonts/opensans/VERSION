@@ -5,3 +5,7 @@ retrieved: copied unchanged from vendor/bullet/examples/OpenGLWindow/OpenSans.tt
 license: Apache-2.0
 license_file: LICENSE.txt
 sha256: OpenSans.ttf e64e508b2aa2880f907e470c4550980ec4c0694d103a43f36150ac3f93189bee
+bold: OpenSans-Bold.ttf (Version 1.10, Apache-2.0), unchanged from https://github.com/google/fonts
+  apache/opensans/OpenSans-Bold.ttf at commit 092ac9e068723bb83f1e288075b7775c32ce0543 (the last commit with the
+  Apache-2.0 Open Sans 1.10 family, before it moved to ofl/opensans), fetched over HTTPS 2026-11-12
+sha256: OpenSans-Bold.ttf 1b43de2449d39b65ff6f63315d4afda585f72fbbec2e3d9a56f59de6c75149d3

@@ -7,7 +7,6 @@
 
 #include "retdec/gui/model/dlg_input.h"
 
-#include <forge/os/os.hpp>
 
 #include <format>
 #include <system_error>

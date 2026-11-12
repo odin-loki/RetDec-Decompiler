@@ -12,6 +12,8 @@ namespace {
 constexpr char kDocMagic[4] = {'F', 'U', 'I', 'C'};
 constexpr char kStyleMagic[4] = {'F', 'U', 'S', 'C'};
 constexpr u32 kMaxDepth = 128;
+constexpr u32 kCustomPropTag = 0xFFFFFFFFu;      ///< a custom property (--token) declaration
+constexpr u32 kLegacyCustomPropTag = 56;         ///< Prop::Count before font-family / font-weight / placeholder-color
 
 struct Writer {
     std::vector<u8> b;
@@ -148,10 +150,14 @@ void writeValue(Writer& w, const PropValue& v) {
     w.f32_(v.color.r); w.f32_(v.color.g); w.f32_(v.color.b); w.f32_(v.color.a);
     w.u8_(v.trackCount);
     for (u8 i = 0; i < v.trackCount; ++i) writeLength(w, v.tracks[i]);
+    if (v.type == PropType::Idents) { // only Idents values carry this (older blobs never have the type)
+        w.u8_(v.identCount);
+        for (u8 i = 0; i < v.identCount; ++i) w.u32_(v.idents[i]);
+    }
 }
 bool readValue(Reader& r, PropValue& v) {
     const u8 t = r.u8_();
-    if (t > u8(PropType::Tracks)) return r.ok = false;
+    if (t > u8(PropType::Idents)) return r.ok = false;
     v.type = PropType(t);
     v.b = r.u8_() != 0;
     v.e = r.u8_();
@@ -161,6 +167,11 @@ bool readValue(Reader& r, PropValue& v) {
     v.trackCount = r.u8_();
     if (v.trackCount > kMaxGridTracks) return r.ok = false;
     for (u8 i = 0; i < v.trackCount && r.ok; ++i) readLength(r, v.tracks[i]);
+    if (v.type == PropType::Idents) {
+        v.identCount = r.u8_();
+        if (v.identCount > kMaxFontFamilies) return r.ok = false;
+        for (u8 i = 0; i < v.identCount && r.ok; ++i) v.idents[i] = r.u32_();
+    }
     return r.ok;
 }
 void writeSheet(Writer& w, const StyleSheet& s) {
@@ -182,7 +193,7 @@ void writeSheet(Writer& w, const StyleSheet& s) {
         }
         w.u32_(u32(rule.decls.size()));
         for (const Declaration& d : rule.decls) {
-            w.u32_(u32(d.prop));
+            w.u32_(d.prop == Prop::Count ? kCustomPropTag : u32(d.prop));
             w.u32_(d.customHash);
             writeValue(w, d.value);
             w.str(d.raw);
@@ -214,9 +225,13 @@ std::expected<StyleSheet, std::string> readSheet(Reader& r) {
         rule.decls.resize(r.count(40));
         for (Declaration& d : rule.decls) {
             const u32 p = r.u32_();
-            if (p > u32(Prop::Count)) return std::unexpected("cooked style: bad property");
-            d.prop = Prop(p);
             d.customHash = r.u32_();
+            // Custom properties are tagged kCustomPropTag; blobs cooked before the font properties existed tagged them
+            // with the then Prop::Count (56), told apart from Prop(56) by their name hash.
+            if (p == kCustomPropTag || p == u32(Prop::Count) || (p == kLegacyCustomPropTag && d.customHash != 0))
+                d.prop = Prop::Count;
+            else if (p < u32(Prop::Count)) d.prop = Prop(p);
+            else return std::unexpected("cooked style: bad property");
             readValue(r, d.value);
             d.raw = r.str();
         }

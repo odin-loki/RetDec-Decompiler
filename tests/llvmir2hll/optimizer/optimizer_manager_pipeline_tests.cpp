@@ -1308,7 +1308,17 @@ TEST_F(OptimizerManagerPipelineTests, NewtonSqrtLoopConditionKeepsItsVariableDec
 							 << " without declaring it:\n" << code;
 }
 
-)
+// TMPDEBUG
+TEST_F(OptimizerManagerPipelineTests, TmpNewtonDump)
+{
+	auto module = convertLLVMIR2BIR(kNewtonSqrtFunction1060);
+	StringSet en, dis;
+	if (auto e = getenv("TMP_EN")) { std::stringstream ss(e); std::string t; while (std::getline(ss, t, ',')) if (!t.empty()) en.insert(t); }
+	if (auto e = getenv("TMP_DIS")) { std::stringstream ss(e); std::string t; while (std::getline(ss, t, ',')) if (!t.empty()) dis.insert(t); }
+	if (!getenv("TMP_NOOPT")) runPipeline(module, dis, en);
+	fprintf(stderr, "%s\n", emitC(module).c_str());
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec

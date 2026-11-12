@@ -3,8 +3,8 @@
  * @brief AIAssistantPanel — chat about the selected function with a local
  *        model (Tools → AI Assistant).
  *
- *   Model: (none)                      [Load] [GPU: OFF] [⚙] [Clear]
- *   (⚙) Temperature [0.60] Top-P [0.95] Top-K [20] Max tokens [512] [ ] Thinking mode
+ *   Model: (none)                [Load] [GPU: OFF] [Settings] [Clear]
+ *   (Settings) Temperature [0.60] Top-P [0.95] Top-K [20] Max tokens [512] [ ] Thinking mode
  *   ┌ chat log (User blue, Assistant green, System grey) ────────────┐
  *   status
  *   [ query …                                   ] [Send] [Stop]

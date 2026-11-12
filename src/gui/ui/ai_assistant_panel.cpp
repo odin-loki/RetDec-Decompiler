@@ -67,7 +67,8 @@ AIAssistantPanel::AIAssistantPanel(UiContext& ui, NodeHandle parent, model::Assi
 	loadBtn_ = w::button(ui, top, "Load", "load_model_button");
 	gpuBtn_ = w::button(ui, top, "GPU: OFF", "gpu_button");
 	ui.addClass(gpuBtn_, "retdec-toggle");
-	settingsBtn_ = w::button(ui, top, "⚙", "settings_button");
+	// The Qt "⚙" glyph is not in the bundled font: the toggle is labelled in words.
+	settingsBtn_ = w::button(ui, top, "Settings", "settings_button");
 	ui.addClass(settingsBtn_, "retdec-toggle");
 	w::setTooltip(ui, settingsBtn_, "Generation settings");
 	clearBtn_ = w::button(ui, top, "Clear", "clear_button");

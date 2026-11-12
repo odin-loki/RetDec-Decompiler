@@ -1,0 +1,8 @@
+name: DejaVu Sans (symbol / wide-coverage fallback face)
+upstream: https://github.com/dejavu-fonts/dejavu-fonts
+version: 2.37
+retrieved: release asset https://github.com/dejavu-fonts/dejavu-fonts/releases/download/version_2_37/dejavu-fonts-ttf-2.37.tar.bz2
+  (ttf/DejaVuSans.ttf and LICENSE, unchanged), fetched over HTTPS 2026-11-12
+license: Bitstream Vera Fonts licence + Arev Fonts licence (permissive, redistribution allowed; DejaVu changes are public domain)
+license_file: LICENSE
+sha256: DejaVuSans.ttf 7da195a74c55bef988d0d48f9508bd5d849425c1770dba5d7bfc6ce9ed848954

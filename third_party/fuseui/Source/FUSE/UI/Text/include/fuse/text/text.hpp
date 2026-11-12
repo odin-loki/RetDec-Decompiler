@@ -71,10 +71,15 @@ class Font {
 public:
     static std::expected<Font, TextError> fromBytes(std::span<const std::uint8_t> bytes);
     static std::expected<Font, TextError> fromFile(const std::string& path);
-    /// FUSE's bundled UI font (vendor/fonts/opensans) when the build knows its path; InvalidFont otherwise.
+    /// Loads a font file at run time: `path` as given when it names an existing file, otherwise relative to each
+    /// font search directory in turn (see fontSearchPaths(); e.g. "jetbrainsmono/JetBrainsMono-Regular.ttf").
+    static std::expected<Font, TextError> load(std::string_view path);
+    /// FUSE's bundled UI font (vendor/fonts/opensans) when the build knows its path or a font search directory has
+    /// it; InvalidFont otherwise.
     static std::expected<Font, TextError> bundled();
-    /// FUSE's bundled fallback faces in chain order: Noto Sans Hebrew, Arabic, Devanagari, Symbols 2 and Twemoji
-    /// (COLRv0 colour emoji). Fonts whose files are missing are skipped. Attach them with setFallbacks().
+    /// FUSE's bundled fallback faces in chain order: Noto Sans Hebrew, Arabic, Devanagari, Twemoji (COLRv0 colour
+    /// emoji), Symbols 2 and DejaVu Sans (wide symbol coverage: check marks, arrows, geometric shapes, box drawing).
+    /// Fonts whose files are missing are skipped. Attach them with setFallbacks().
     static std::vector<Font> bundledFallbacks();
 
     Font() = default;
@@ -125,6 +130,28 @@ private:
     State* m_state = nullptr; // owned (pimpl); released in ~Font
     std::uint32_t m_id = 0;
 };
+
+// ---- Font files ----------------------------------------------------------------------------------------------------
+/// Adds a directory searched for relative font paths (Font::load, the bundled faces). Directories added later are
+/// searched first. Thread-safe.
+void addFontSearchPath(std::string dir);
+/// The font search directories in order: addFontSearchPath() entries (newest first), $FUSE_UI_FONT_DIR, the build
+/// tree's vendor/fonts (compiled in), then the install locations next to the executable: <exe dir>/<FUSE_TEXT_FONT_
+/// INSTALL_REL> (default "../share/fuse/fonts") and <exe dir>/fonts. Directories that do not exist are still listed.
+std::vector<std::string> fontSearchPaths();
+/// `path` when it names a readable file, else the first search directory + "/" + path that does; empty when none.
+std::string findFontFile(std::string_view path);
+
+/// A face FUSE bundles under vendor/fonts (`file` is relative to a font search directory).
+struct BundledFace {
+    std::string_view family;     ///< CSS family name ("Open Sans", "JetBrains Mono", "DejaVu Sans")
+    std::uint16_t weight = 400;  ///< CSS weight (400 regular, 700 bold)
+    std::string_view file;
+    bool monospace = false;      ///< the face for the generic "monospace" family
+    bool fallback = false;       ///< a coverage face (glyph fallback), not a UI face
+};
+/// Open Sans Regular / Bold, JetBrains Mono Regular / Bold and DejaVu Sans (fallback).
+std::span<const BundledFace> bundledFaces();
 
 // ---- Shaping -------------------------------------------------------------------------------------------------------
 /// Glyph id given to line-break characters after layout: they break the line but are never drawn.

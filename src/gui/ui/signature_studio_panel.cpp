@@ -120,6 +120,7 @@ SignatureStudioPanel::SignatureStudioPanel(UiContext& ui, NodeHandle parent)
 	log_ = std::make_unique<CodeView>(ui, root_, model::CodeLang::Plain);
 	ui.setCss(log_->node(), "height", "100px");
 	ui.setCss(log_->node(), "flex-shrink", "0");
+	ui.setCss(log_->node(), "flex-grow", "0");
 	log_->setShowGutter(false);
 	log_->setPlaceholder("Last tool output tail…");
 

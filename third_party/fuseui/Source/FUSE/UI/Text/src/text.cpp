@@ -23,8 +23,18 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <utility>
+
+#if defined(_WIN32)
+extern "C" __declspec(dllimport) unsigned long __stdcall GetModuleFileNameA(void* module, char* name, unsigned long size);
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#elif defined(__linux__)
+#include <unistd.h>
+#endif
 
 #if FUSE_TEXT_FULL
 #include "text_full.hpp"
@@ -426,24 +436,119 @@ std::expected<Font, TextError> Font::fromFile(const std::string& path) {
     return fromBytes(data);
 }
 
+// ---- Font files ----------------------------------------------------------------------------------------------------
+namespace {
+std::mutex g_fontPathMutex;
+std::vector<std::string>& userFontPaths() {
+    static std::vector<std::string> v;
+    return v;
+}
+bool readable(const std::string& path) {
+    std::FILE* fp = std::fopen(path.c_str(), "rb");
+    if (!fp) return false;
+    std::fclose(fp);
+    return true;
+}
+/// Directory of the running executable ("" when unknown).
+std::string executableDir() {
+    std::string p;
+#if defined(_WIN32)
+    char buf[4096];
+    const unsigned long n = GetModuleFileNameA(nullptr, buf, sizeof buf);
+    if (n > 0 && n < sizeof buf) p.assign(buf, n);
+#elif defined(__APPLE__)
+    char buf[4096];
+    std::uint32_t size = sizeof buf;
+    if (_NSGetExecutablePath(buf, &size) == 0) p = buf;
+#elif defined(__linux__)
+    char buf[4096];
+    const ssize_t n = readlink("/proc/self/exe", buf, sizeof buf - 1);
+    if (n > 0) p.assign(buf, std::size_t(n));
+#endif
+    const std::size_t slash = p.find_last_of("/\\");
+    return slash == std::string::npos ? std::string() : p.substr(0, slash);
+}
+bool absolutePath(std::string_view p) {
+    return (!p.empty() && (p[0] == '/' || p[0] == '\\')) || (p.size() > 2 && p[1] == ':');
+}
+} // namespace
+
+void addFontSearchPath(std::string dir) {
+    if (dir.empty()) return;
+    const std::lock_guard lock(g_fontPathMutex);
+    auto& v = userFontPaths();
+    std::erase(v, dir);
+    v.insert(v.begin(), std::move(dir));
+}
+
+std::vector<std::string> fontSearchPaths() {
+    std::vector<std::string> out;
+    {
+        const std::lock_guard lock(g_fontPathMutex);
+        out = userFontPaths();
+    }
+    if (const char* env = std::getenv("FUSE_UI_FONT_DIR"); env && *env) out.emplace_back(env);
+#if defined(FUSE_TEXT_FONT_DIR)
+    out.emplace_back(FUSE_TEXT_FONT_DIR);
+#endif
+    static const std::string exe = executableDir();
+    if (!exe.empty()) {
+#if defined(FUSE_TEXT_FONT_INSTALL_REL)
+        const std::string rel = FUSE_TEXT_FONT_INSTALL_REL;
+#else
+        const std::string rel = "../share/fuse/fonts";
+#endif
+        out.push_back(absolutePath(rel) ? rel : exe + "/" + rel);
+        out.push_back(exe + "/fonts");
+    }
+    return out;
+}
+
+std::string findFontFile(std::string_view path) {
+    if (path.empty()) return {};
+    std::string p(path);
+    if (readable(p)) return p;
+    if (absolutePath(path)) return {};
+    for (const std::string& dir : fontSearchPaths()) {
+        std::string c = dir + "/" + p;
+        if (readable(c)) return c;
+    }
+    return {};
+}
+
+std::span<const BundledFace> bundledFaces() {
+    static constexpr BundledFace kFaces[] = {
+        {"Open Sans", 400, "opensans/OpenSans.ttf", false, false},
+        {"Open Sans", 700, "opensans/OpenSans-Bold.ttf", false, false},
+        {"JetBrains Mono", 400, "jetbrainsmono/JetBrainsMono-Regular.ttf", true, false},
+        {"JetBrains Mono", 700, "jetbrainsmono/JetBrainsMono-Bold.ttf", true, false},
+        {"DejaVu Sans", 400, "dejavu/DejaVuSans.ttf", false, true},
+    };
+    return kFaces;
+}
+
+std::expected<Font, TextError> Font::load(std::string_view path) {
+    const std::string found = findFontFile(path);
+    if (found.empty()) return std::unexpected(TextError::InvalidFont);
+    return fromFile(found);
+}
+
 std::expected<Font, TextError> Font::bundled() {
 #if defined(FUSE_TEXT_BUNDLED_FONT)
-    return fromFile(FUSE_TEXT_BUNDLED_FONT);
-#else
-    return std::unexpected(TextError::InvalidFont);
+    if (auto f = fromFile(FUSE_TEXT_BUNDLED_FONT)) return f;
 #endif
+    return load("opensans/OpenSans.ttf"); // installed tree / FUSE_UI_FONT_DIR / addFontSearchPath
 }
 
 std::vector<Font> Font::bundledFallbacks() {
     std::vector<Font> out;
-#if defined(FUSE_TEXT_FONT_DIR)
-    // Emoji before Symbols 2 so emoji-presentation code points (U+2764 ...) come out in colour.
+    // Emoji before Symbols 2 so emoji-presentation code points (U+2764 ...) come out in colour; DejaVu Sans last as
+    // the wide-coverage catch-all (check marks, arrows, geometric shapes, box drawing, math).
     static const char* const kFiles[] = {"noto/NotoSansHebrew-Regular.ttf", "noto/NotoSansArabic-Regular.ttf",
                                          "noto/NotoSansDevanagari-Regular.ttf", "twemoji/TwemojiMozilla.ttf",
-                                         "noto/NotoSansSymbols2-Regular.ttf"};
+                                         "noto/NotoSansSymbols2-Regular.ttf", "dejavu/DejaVuSans.ttf"};
     for (const char* f : kFiles)
-        if (auto font = fromFile(std::string(FUSE_TEXT_FONT_DIR) + "/" + f)) out.push_back(std::move(*font));
-#endif
+        if (auto font = load(f)) out.push_back(std::move(*font));
     return out;
 }
 

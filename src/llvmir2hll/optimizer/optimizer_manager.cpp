@@ -378,6 +378,27 @@ void OptimizerManager::runOptimizerProvidedItShouldBeRun(ShPtr<Optimizer> optimi
 
 	printOptimization(OPT_ID);
 
+	// ValueAnalysis caches what every statement and expression reads and
+	// writes, keyed by the object. Most passes rewrite statements in place
+	// without telling it -- IfStructureOptimizer turns `if (a) break; if (b)
+	// break;` into one `if (a || b)` by rewriting one of the two conditions --
+	// and the passes that do take it only clear the cache when its state is
+	// already invalid. So a pass running after an in-place rewrite was handed
+	// the reads of the condition as it was *before* the rewrite.
+	//
+	// That is how generated_float_newton_sqrt-gcc-O2 lost a declaration in
+	// CC-01: after the merge, the cached reads of the loop's exit `if` were
+	// those of `rax == 1` alone, PreWhileTrueLoopConvOptimizer concluded that
+	// nothing there read the temporary it was eliminating, removed the
+	// temporary's definition, and left the condition still reading it --
+	// `while (fabs(v1 - v3) >= 1.0e-12 && v2 != 1)` with v3 declared nowhere.
+	//
+	// The manager is the one place that knows a pass has run, so it is the
+	// one place that can drop what the pass may have made stale. Rebuilding
+	// is per pass that actually asks; CopyPropagation and its simple variant
+	// already clear unconditionally.
+	va->clearCache();
+
 	if (recoverFromOutOfMemory)
 	{
 		// Some optimizations, most notable CopyPropagation, may run out of

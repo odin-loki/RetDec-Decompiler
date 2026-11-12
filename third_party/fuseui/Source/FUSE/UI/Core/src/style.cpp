@@ -67,6 +67,9 @@ constexpr PropInfo kProps[] = {
     {Prop::ShadowY, "shadow-y", T::Length, false, true, false},
     {Prop::PointerEvents, "pointer-events", T::Bool, false, false, false},
     {Prop::BackdropBlur, "backdrop-blur", T::Length, false, true, false},
+    {Prop::FontFamily, "font-family", T::Idents, true, false, true},
+    {Prop::FontWeight, "font-weight", T::Number, true, false, true},
+    {Prop::PlaceholderColor, "placeholder-color", T::Color, true, true, false},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -148,6 +151,33 @@ constexpr NamedColor kNamed[] = {{"black", 0x000000}, {"white", 0xFFFFFF}, {"red
 } // namespace
 
 const PropInfo& propInfo(Prop p) { return kProps[int(p)]; }
+
+u32 fontFamilyHash(std::string_view name) {
+    name = trim(name);
+    if (name.size() >= 2 && (name.front() == '"' || name.front() == '\'') && name.back() == name.front())
+        name = trim(name.substr(1, name.size() - 2));
+    if (name.empty()) return 0;
+    u32 h = 2166136261u; // FNV-1a over the lower-cased name, runs of spaces folded to one
+    bool space = false;
+    for (const char c : name) {
+        if (std::isspace(static_cast<unsigned char>(c))) { space = true; continue; }
+        if (space) { h = (h ^ u32(' ')) * 16777619u; space = false; }
+        h = (h ^ u32(static_cast<unsigned char>(std::tolower(static_cast<unsigned char>(c))))) * 16777619u;
+    }
+    return h ? h : 1u;
+}
+
+u32 parseFontFamilies(std::string_view list, std::array<u32, kMaxFontFamilies>& out) {
+    out = {};
+    u32 n = 0;
+    while (!list.empty() && n < u32(kMaxFontFamilies)) {
+        const auto comma = list.find(',');
+        if (const u32 h = fontFamilyHash(list.substr(0, comma))) out[n++] = h;
+        if (comma == std::string_view::npos) break;
+        list.remove_prefix(comma + 1);
+    }
+    return n;
+}
 bool findProp(std::string_view name, Prop& out) {
     for (const auto& pi : kProps)
         if (pi.cssName == name) { out = pi.id; return true; }
@@ -216,6 +246,13 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
         return false;
     case T::Length: return parseLength(text, out.len);
     case T::Number: {
+        if (p == Prop::FontWeight) {
+            if (text == "normal") { out.num = f32(kFontWeightNormal); return true; }
+            if (text == "bold" || text == "bolder") { out.num = f32(kFontWeightBold); return true; }
+            if (text == "lighter") { out.num = 300.f; return true; }
+            std::string_view unit;
+            return parseNumber(text, out.num, unit) && unit.empty() && out.num >= 1.f && out.num <= 1000.f;
+        }
         std::string_view unit;
         if (!parseNumber(text, out.num, unit)) return false;
         if (unit == "%") out.num /= 100.f;
@@ -237,6 +274,9 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
         }
         return out.trackCount > 0;
     }
+    case T::Idents:
+        out.identCount = u8(parseFontFamilies(text, out.idents));
+        return out.identCount > 0;
     }
     return false;
 }
@@ -299,6 +339,9 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::ShadowX: s.shadowX = v.len.value; break;
     case Prop::ShadowY: s.shadowY = v.len.value; break;
     case Prop::PointerEvents: s.pointerEvents = v.b; break;
+    case Prop::FontFamily: s.fontFamily = v.idents; s.fontFamilyCount = v.identCount; break;
+    case Prop::FontWeight: s.fontWeight = u16(std::clamp(v.num, 1.f, 1000.f)); break;
+    case Prop::PlaceholderColor: s.placeholderColor = v.color; break;
     case Prop::Count: break;
     }
 }
@@ -318,6 +361,15 @@ PropValue readProp(const ComputedStyle& s, Prop p) {
     case Prop::Layout: return PropValue::ofEnum(u8(s.layout));
     case Prop::Direction: return PropValue::ofEnum(u8(s.direction));
     case Prop::TextAlign: return PropValue::ofEnum(u8(s.textAlign));
+    case Prop::FontWeight: return PropValue::ofNumber(f32(s.fontWeight ? s.fontWeight : kFontWeightNormal));
+    case Prop::PlaceholderColor: return PropValue::ofColor(s.placeholderColor);
+    case Prop::FontFamily: {
+        PropValue v;
+        v.type = PropType::Idents;
+        v.idents = s.fontFamily;
+        v.identCount = s.fontFamilyCount;
+        return v;
+    }
     default: break;
     }
     PropValue v;
@@ -329,6 +381,13 @@ void inheritFrom(ComputedStyle& s, const ComputedStyle& parent) {
     s.color = parent.color;
     s.fontSize = parent.fontSize;
     s.textAlign = parent.textAlign;
+    s.placeholderColor = parent.placeholderColor;
+    // A widget class default (codeedit: monospace) is the class's own value, not overridden by inheritance.
+    if (s.fontFamilyCount == 0) {
+        s.fontFamily = parent.fontFamily;
+        s.fontFamilyCount = parent.fontFamilyCount;
+    }
+    if (s.fontWeight == 0) s.fontWeight = parent.fontWeight;
 }
 
 // ---- Parser --------------------------------------------------------------------------------------------------------
@@ -681,6 +740,7 @@ u32 StyleEngine::intern(const ComputedStyle& cs) {
     mix(cs.background.r); mix(cs.background.g); mix(cs.background.a); mix(cs.color.r); mix(cs.color.a);
     mix(cs.width.value); mix(cs.height.value); mix(cs.padding.l); mix(cs.padding.t); mix(cs.gap); mix(cs.fontSize);
     mix(cs.opacity); mix(cs.borderWidth); mix(cs.radius[0]); mix(cs.grow);
+    h = (h ^ (u64(cs.fontFamily[0]) | u64(cs.fontWeight) << 32)) * 1099511628211ull;
     h = (h ^ (u64(cs.layout) | u64(cs.direction) << 8 | u64(cs.visible) << 16 | u64(cs.alignItems) << 24 | u64(cs.justify) << 32)) * 1099511628211ull;
     const std::size_t mask = m_hashIndex.size() - 1;
     std::size_t slot = std::size_t(h >> 20) & mask;
