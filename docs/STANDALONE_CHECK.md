@@ -251,6 +251,10 @@ CMakeLists — `neural/forge_inference.cpp` needs Forge's inference stack
 `mock_inference.cpp` provides a null `createForgeInference()` here instead.
 `EXCLUDED_REASONS` records modules that compile standalone but are deliberately
 left out, so `--audit` can tell "nobody wired this up" from "we decided not to".
+A module that needs a header from outside the tree is listed there even when it
+compiles on some machine: `opencl` builds wherever `opencl-c-headers` is
+installed (every file compiles under C++23), but it needs `<CL/cl.h>` and an ICD
+loader, so OCL-01 owns it and the audit's verdict does not depend on the box.
 
 ## What it has already caught
 
