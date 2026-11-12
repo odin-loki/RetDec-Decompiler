@@ -82,6 +82,12 @@ public:
 			std::forward<Predicate>(predicate)) {}
 
 	/**
+	* @brief Creates a singular iterator (C++20 iterators are default
+	*        constructible).
+	*/
+	FilterIterator() = default;
+
+	/**
 	* @brief Creates an end iterator.
 	*/
 	FilterIterator(Iterator end): current(end), end(std::move(end)) {}
@@ -93,6 +99,8 @@ public:
 	~FilterIterator() = default;
 
 	FilterIterator &operator=(const FilterIterator &other) = default;
+
+	FilterIterator &operator=(FilterIterator &&other) = default;
 
 	reference operator*() const {
 		return *current;
@@ -114,6 +122,12 @@ public:
 		++current;
 		skipElementsWhilePredicateIsFalse();
 		return *this;
+	}
+
+	FilterIterator operator++(int) {
+		FilterIterator old = *this;
+		++*this;
+		return old;
 	}
 
 private:
