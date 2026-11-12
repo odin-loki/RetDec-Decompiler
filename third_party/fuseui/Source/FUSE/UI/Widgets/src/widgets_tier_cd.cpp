@@ -20,8 +20,7 @@ NodeHandle make(UiContext& ui, std::string_view cls, NodeHandle parent, std::str
     return h ? *h : NodeHandle{};
 }
 f32 lineH(const UiContext& ui, NodeHandle n) {
-    const f32 px = ui.computed(n).fontSize;
-    return std::ceil(ui.font() ? ui.font()->metrics(px).lineHeight() : px * 1.25f);
+    return ui.lineHeight(ui.computed(n).fontSize, n);
 }
 Color accentOf(const PaintContext& pc) { return pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD)); }
 NodeHandle nthChild(const UiContext& ui, NodeHandle n, u32 i) {
@@ -505,7 +504,7 @@ struct ChartW {
         f32 lx = c.right();
         for (u32 k = ns; k-- > 0;) {
             const Series& se = s->series[k];
-            const f32 w = ui.measureString(se.name, fs) + 22.f;
+            const f32 w = ui.measureString(se.name, fs, pc.node) + 22.f;
             lx -= w;
             dl.rect({lx, c.y + 5.f, 10.f, 10.f}, pc.tint(se.color), 2.f);
             ui.paintString(dl, se.name, {lx + 14.f, c.y, w - 14.f, 20.f}, text, fs, TextAlignment::Start, pc.node.index);

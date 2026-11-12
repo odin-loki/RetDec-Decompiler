@@ -1,0 +1,146 @@
+/*
+ * RetDec — Catppuccin Mocha dark theme (FuseUI CSS).
+ * Port of the Qt GUI's catppuccin_mocha.qss; catppuccin_latte.css styles the
+ * same selectors with the Latte palette (a theme switch appends the other
+ * sheet, and the last sheet wins).
+ *
+ * Palette:
+ *   Base #1e1e2e  Mantle #181825  Crust #11111b
+ *   Surface0 #313244  Surface1 #45475a  Surface2 #585b70
+ *   Overlay0 #6c7086  Overlay1 #7f849c  Text #cdd6f4  Subtext0 #a6adc8
+ *   Blue #89b4fa  Green #a6e3a1  Yellow #f9e2af  Red #f38ba8  Peach #fab387
+ *   Mauve #cba6f7  Teal #94e2d5
+ *
+ * font-family / font-weight are ignored by FuseUI builds that do not know
+ * them yet (an unknown property is skipped, the rest of the sheet applies).
+ */
+
+:root {
+  --bg: #1e1e2e; --mantle: #181825; --crust: #11111b;
+  --surface: #181825; --surface-hi: #313244; --surface2: #45475a; --surface3: #585b70;
+  --border: #45475a; --border-dim: #313244;
+  --text: #cdd6f4; --text-dim: #a6adc8; --text-muted: #6c7086; --text-strong: #cdd6f4;
+  --accent: #89b4fa; --accent-hi: #b4d0ff; --on-accent: #1e1e2e;
+  --danger: #f38ba8; --warning: #fab387; --success: #a6e3a1; --info: #89b4fa;
+  --input: #313244; --code-bg: #11111b; --selection: #3e4260;
+  background: var(--bg); color: var(--text); font-size: 13px;
+}
+
+/* ── Core widgets ─────────────────────────────────────────────────────────── */
+
+label { color: var(--text); }
+button {
+  background: var(--surface-hi); color: var(--text); border: 1px var(--surface2); border-radius: 6px;
+  padding: 5px 14px; text-align: center;
+}
+button:hover { background: var(--surface2); border-color: var(--accent); color: var(--accent); }
+button:pressed { background: var(--bg); }
+button:disabled { color: var(--surface3); border-color: var(--surface-hi); background: var(--bg); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: bold; }
+button.primary:hover { background: var(--accent-hi); border-color: var(--accent-hi); color: var(--on-accent); }
+toolbutton { background: transparent; color: var(--text); border-width: 0px; border-radius: 4px; padding: 4px 8px; }
+toolbutton:hover { background: var(--surface-hi); color: var(--accent); }
+toolbutton:pressed { background: var(--surface2); }
+toolbutton:checked { background: var(--surface2); color: var(--accent); }
+toolbutton:disabled { color: var(--surface3); background: transparent; }
+lineedit, spinbox {
+  background: var(--input); color: var(--text); border: 1px var(--surface2); border-radius: 4px; padding: 4px 8px;
+}
+combobox { background: var(--input); color: var(--text); border: 1px var(--surface2); border-radius: 4px; padding: 4px 8px; }
+combobox:hover { border-color: var(--accent); }
+lineedit:focus, spinbox:focus-visible, combobox:focus-visible, button:focus-visible { border-color: var(--accent); }
+checkbox, radio, switch, slider, dial, progressbar, scrollbar { background-end: var(--accent); color: var(--text); }
+progressbar { background: var(--surface-hi); }
+link { color: var(--accent); }
+separator { border-color: var(--border-dim); }
+
+/* ── Menus ────────────────────────────────────────────────────────────────── */
+
+menubar { background: var(--mantle); padding: 2px 4px; gap: 2px; border-color: var(--border-dim); }
+menubutton, .retdec-menu-title { padding: 4px 10px; border-radius: 4px; color: var(--text); background: transparent; }
+menubutton:hover, menubutton:focus-visible, .retdec-menu-title:hover { background: var(--surface-hi); color: var(--accent); }
+menu {
+  background: var(--mantle); border: 1px var(--surface2); border-radius: 6px; padding: 4px; gap: 0px;
+  box-shadow: 0px 6px 18px rgba(0, 0, 0, 0.5);
+}
+menuitem { padding: 5px 24px 5px 12px; border-radius: 4px; color: var(--text); background-end: var(--accent); }
+menuitem:focus, menuitem:hover { background: var(--surface-hi); color: var(--accent); }
+menuitem:disabled { color: var(--surface3); background: transparent; }
+menuitem:checked { color: var(--accent); }
+
+/* ── Lists, tables, tabs ──────────────────────────────────────────────────── */
+
+listview, treeview, tableview, gridview {
+  background: var(--crust); color: var(--text); border: 1px var(--border-dim); border-radius: 4px; padding: 2px;
+  background-end: var(--accent);
+}
+listview:focus, treeview:focus, tableview:focus { border-color: var(--accent); }
+tabbar { color: var(--text-dim); background: var(--mantle); background-end: var(--accent); }
+.tabwidget { gap: 0px; }
+
+/* ── Popups, dialogs, tooltips ────────────────────────────────────────────── */
+
+popup.modal { background: rgba(17, 17, 27, 0.55); }
+.card {
+  background: var(--bg); border: 1px var(--surface2); border-radius: 10px; padding: 14px; gap: 10px;
+  box-shadow: 0px 4px 14px rgba(0, 0, 0, 0.45);
+}
+tooltip { background: var(--crust); color: var(--text); border: 1px var(--surface2); border-radius: 4px; padding: 3px 7px; font-size: 12px; }
+.title { font-size: 18px; color: var(--text-strong); font-weight: bold; }
+.dim { color: var(--text-dim); }
+.md-h1 { font-size: 22px; color: var(--text-strong); }
+.md-h2 { font-size: 18px; color: var(--text-strong); }
+.md-h3 { font-size: 15px; color: var(--accent); }
+.md-p, .md-li { color: var(--text); }
+.md-code { background: var(--crust); color: var(--success); font-family: "JetBrains Mono", "Cascadia Code", monospace; }
+.md-quote { color: var(--text-dim); background: var(--surface-hi); }
+.propgrid { background: var(--crust); border: 1px var(--border-dim); }
+.propgroup { color: var(--text-strong); background: var(--surface-hi); }
+codeedit { background: var(--code-bg); color: var(--text); border: 1px var(--border-dim); font-family: "JetBrains Mono", "Cascadia Code", monospace; }
+
+/* ── Docks ────────────────────────────────────────────────────────────────── */
+
+.dockarea { background: var(--bg); }
+.dock { background: var(--bg); border: 1px var(--border-dim); border-radius: 0px; }
+docktitle { color: var(--text-dim); font-size: 12px; font-weight: bold; background: var(--mantle); }
+
+/* ── RetDec panels (shared classes) ───────────────────────────────────────── */
+
+.retdec-toolbar { background: var(--mantle); }
+.retdec-muted { color: var(--text-dim); }
+.retdec-empty-icon { color: var(--text-muted); }
+.retdec-empty-title { color: var(--text); }
+.retdec-empty-hint { color: var(--text-dim); }
+.retdec-badge { background: var(--surface-hi); color: var(--text); }
+.retdec-badge-warning { background: var(--warning); color: var(--on-accent); }
+.retdec-pane-title { color: var(--text-dim); background: var(--mantle); }
+.retdec-findbar { background: var(--mantle); }
+.retdec-banner { background: var(--mantle); border: 1px var(--border-dim); border-radius: 6px; }
+.retdec-banner-title { color: var(--text-strong); font-weight: bold; }
+.retdec-status { color: var(--text-dim); }
+.retdec-section-title { color: var(--text-strong); font-weight: bold; }
+.retdec-section-rule { background: var(--border-dim); }
+.retdec-note { color: var(--text-dim); }
+.retdec-form-label { color: var(--text); }
+.retdec-error { color: var(--danger); }
+.retdec-warning-icon { color: var(--warning); }
+.retdec-info-icon { color: var(--info); }
+
+/* ── Main window ──────────────────────────────────────────────────────────── */
+
+.retdec-main { background: var(--bg); }
+.retdec-maintoolbar { flex-direction: row; gap: 4px; padding: 4px; align-items: center; background: var(--mantle); }
+.retdec-maintoolbar toolbutton { padding: 4px 10px; }
+.retdec-toolbar-sep { width: 1px; height: 18px; background: var(--border-dim); }
+.retdec-central { padding: 6px 6px 0px 6px; gap: 6px; background: var(--bg); }
+.retdec-start { align-items: center; justify-content: center; gap: 12px; padding: 24px; }
+.retdec-start-actions { flex-direction: row; gap: 12px; justify-content: center; }
+.retdec-statusbar {
+  flex-direction: row; gap: 10px; padding: 3px 8px; align-items: center; background: var(--mantle);
+  border-color: var(--border-dim); font-size: 12px; color: var(--text-dim);
+}
+.retdec-statusbar label { color: var(--text-dim); font-size: 12px; }
+.retdec-status-message { color: var(--text); }
+.retdec-status-stage { color: var(--accent); }
+.retdec-statusbar progressbar { width: 150px; height: 8px; }
+.retdec-toolwindow-body { gap: 6px; }

@@ -10,11 +10,17 @@ namespace {
 
 constexpr f32 kPi = 3.14159265f;
 
-f32 lineHeight(UiContext& ui, f32 px) { return ui.font() ? std::ceil(ui.font()->metrics(px).lineHeight()) : std::ceil(px * 1.25f); }
+f32 lineHeight(UiContext& ui, f32 px, NodeHandle n) { return ui.lineHeight(px, n); }
 
 Size textSize(UiContext& ui, NodeHandle n, std::string_view s) {
     const f32 px = ui.computed(n).fontSize;
-    return {std::ceil(ui.measureString(s, px)), lineHeight(ui, px)};
+    return {std::ceil(ui.measureString(s, px, n)), lineHeight(ui, px, n)};
+}
+
+/// Placeholder / special-value colour: `placeholder-color`, else the text colour at reduced alpha.
+Color mutedCol(const PaintContext& pc) {
+    const Color c = pc.style.placeholderColor.a > 0.f ? pc.style.placeholderColor : pc.style.color.withAlpha(pc.style.color.a * 0.45f);
+    return pc.tint(c);
 }
 
 Color accent(const PaintContext& pc) { return pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD)); }
@@ -70,7 +76,7 @@ struct Link {
     static Size measure(UiContext& ui, NodeHandle n, Size) { return textSize(ui, n, ui.text(n)); }
     static void paint(const PaintContext& pc, DrawList& dl) {
         labelAt(pc, dl, pc.ui.text(pc.node), pc.content, TextAlignment::Start);
-        const f32 w = pc.ui.measureString(pc.ui.text(pc.node), pc.style.fontSize);
+        const f32 w = pc.ui.measureString(pc.ui.text(pc.node), pc.style.fontSize, pc.node);
         const f32 y = pc.content.bottom() - 1.f;
         if (pc.states & (kStateHover | kStateFocusVisible)) dl.line({pc.content.x, y}, {pc.content.x + w, y}, textCol(pc), 1.f);
     }
@@ -241,12 +247,27 @@ struct Dial {
 struct ProgressBar {
     static constexpr std::string_view kName = "progressbar";
     static constexpr A11yRole kRole = A11yRole::ProgressBar;
+    static constexpr f32 kSweepSeconds = 1.6f; ///< indeterminate: one sweep across and back
     static Size measure(UiContext&, NodeHandle, Size) { return {120.f, 8.f}; }
     static void paint(const PaintContext& pc, DrawList& dl) {
         const f32 r = std::min(pc.content.h * 0.5f, pc.style.radius[0]);
         dl.rect(pc.content, pc.tint(Color::rgb(0x000000, 0.3f)), r);
+        if (pc.ui.hasClass(pc.node, "indeterminate")) { // a 30 % chunk bouncing between the ends
+            const f32 cw = std::round(pc.content.w * 0.3f);
+            const double ph = std::fmod(pc.ui.now(), double(kSweepSeconds)) / double(kSweepSeconds);
+            const f32 t = f32(ph < 0.5 ? ph * 2.0 : 2.0 - ph * 2.0);
+            const f32 x = std::round(pc.content.x + (pc.content.w - cw) * (t * t * (3.f - 2.f * t)));
+            dl.rect({x, pc.content.y, cw, pc.content.h}, accent(pc), r);
+            return;
+        }
         const f32 w = std::round(pc.content.w * frac(pc.ui, pc.node));
         if (w > 0.f) dl.rect({pc.content.x, pc.content.y, w, pc.content.h}, accent(pc), r);
+    }
+    /// Repaints an indeterminate bar ~30 times a second while it lives and stays indeterminate.
+    static void tick(UiContext& ui, NodeHandle n) {
+        if (!ui.alive(n) || !ui.hasClass(n, "indeterminate")) return;
+        ui.invalidate(n);
+        ui.startTimer(1.f / 30.f, false, [n](UiContext& u) { tick(u, n); });
     }
 };
 
@@ -256,22 +277,28 @@ struct SpinBox {
     static constexpr A11yRole kRole = A11yRole::SpinBox;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
-    static int fmt(UiContext& ui, NodeHandle n, char* buf, int cap) {
+    static int fmt(const UiContext& ui, NodeHandle n, char* buf, int cap) {
         const f32 st = ui.rangeStep(n);
         const int dec = st > 0.f && st < 1.f ? (st < 0.1f ? 2 : 1) : 0;
         return std::snprintf(buf, std::size_t(cap), "%.*f", dec, double(ui.value(n)));
     }
+    /// Special-value text (setSpecialValueText) while the value is at the minimum.
+    static bool special(const UiContext& ui, NodeHandle n) {
+        return !ui.placeholder(n).empty() && ui.value(n) <= ui.rangeMin(n);
+    }
     static Size measure(UiContext& ui, NodeHandle n, Size) {
         char buf[32];
         const int len = fmt(ui, n, buf, 32);
-        const Size t = textSize(ui, n, std::string_view(buf, std::size_t(std::max(0, len))));
+        Size t = textSize(ui, n, std::string_view(buf, std::size_t(std::max(0, len))));
+        if (!ui.placeholder(n).empty()) t.w = std::max(t.w, textSize(ui, n, ui.placeholder(n)).w);
         return {std::max(48.f, t.w) + 20.f, t.h};
     }
     static void paint(const PaintContext& pc, DrawList& dl) {
         char buf[32];
         const int len = fmt(pc.ui, pc.node, buf, 32);
         const Rect c = pc.content;
-        labelAt(pc, dl, std::string_view(buf, std::size_t(std::max(0, len))), {c.x, c.y, c.w - 20.f, c.h}, TextAlignment::Start);
+        const std::string_view shown = special(pc.ui, pc.node) ? pc.ui.placeholder(pc.node) : std::string_view(buf, std::size_t(std::max(0, len)));
+        labelAt(pc, dl, shown, {c.x, c.y, c.w - 20.f, c.h}, TextAlignment::Start);
         const f32 ax = c.right() - 10.f, my = c.y + c.h * 0.5f;
         const Color a = textCol(pc);
         dl.line({ax - 4.f, my - 3.f}, {ax, my - 7.f}, a, 1.5f);
@@ -317,7 +344,7 @@ struct ComboBox {
         f32 w = 0.f;
         const std::string_view items = ui.text(n);
         for (u32 k = 0, c = itemCount(items); k < c; ++k) w = std::max(w, textSize(ui, n, item(items, k)).w);
-        return {w + 22.f, lineHeight(ui, ui.computed(n).fontSize)};
+        return {w + 22.f, lineHeight(ui, ui.computed(n).fontSize, n)};
     }
     static void paint(const PaintContext& pc, DrawList& dl) {
         const Rect c = pc.content;
@@ -351,7 +378,7 @@ struct LineEdit {
     static constexpr A11yRole kRole = A11yRole::TextField;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
-    static Size measure(UiContext& ui, NodeHandle n, Size) { return {160.f, lineHeight(ui, ui.computed(n).fontSize)}; }
+    static Size measure(UiContext& ui, NodeHandle n, Size) { return {160.f, lineHeight(ui, ui.computed(n).fontSize, n)}; }
     static void paint(const PaintContext& pc, DrawList& dl) {
         UiContext& ui = pc.ui;
         const Rect c = pc.content;
@@ -361,17 +388,19 @@ struct LineEdit {
         const bool focused = pc.states & kStateFocus;
         // IME pre-edit (UI1) is shown inline at the cursor, underlined, with its own caret; it is not in the buffer.
         const std::string_view pre = focused ? ui.composition() : std::string_view{};
-        const f32 cx = ui.measureString(t.substr(0, eb.cursor()), px);
-        const f32 preW = pre.empty() ? 0.f : ui.measureString(pre, px);
-        const f32 caretX = cx + (pre.empty() ? 0.f : ui.measureString(pre.substr(0, std::size_t(ui.compositionCaret())), px));
+        const f32 cx = ui.measureString(t.substr(0, eb.cursor()), px, pc.node);
+        const f32 preW = pre.empty() ? 0.f : ui.measureString(pre, px, pc.node);
+        const f32 caretX = cx + (pre.empty() ? 0.f : ui.measureString(pre.substr(0, std::size_t(ui.compositionCaret())), px, pc.node));
         const f32 scrollX = std::max(0.f, caretX - c.w + 2.f);
         dl.pushClip(c);
         if (focused && eb.hasSelection() && pre.empty()) {
             const std::size_t a = std::min(eb.cursor(), eb.anchor()), b = std::max(eb.cursor(), eb.anchor());
-            const f32 x0 = ui.measureString(t.substr(0, a), px), x1 = ui.measureString(t.substr(0, b), px);
+            const f32 x0 = ui.measureString(t.substr(0, a), px, pc.node), x1 = ui.measureString(t.substr(0, b), px, pc.node);
             dl.rect({c.x + x0 - scrollX, c.y, x1 - x0, c.h}, accent(pc).withAlpha(0.45f * pc.opacity));
         }
-        if (pre.empty()) {
+        if (t.empty() && !focused && !ui.placeholder(pc.node).empty()) {
+            ui.paintString(dl, ui.placeholder(pc.node), c, mutedCol(pc), px, TextAlignment::Start, pc.node.index);
+        } else if (pre.empty()) {
             labelAt(pc, dl, t, {c.x - scrollX, c.y, c.w + scrollX + 1000.f, c.h}, TextAlignment::Start);
         } else {
             const f32 x = c.x - scrollX;
@@ -405,7 +434,7 @@ struct LineEdit {
             const f32 px = ui.computed(ec.node).fontSize;
             while (eb.cursor() < t.size()) {
                 const std::size_t nx = fuse::text::nextBoundary(t, eb.cursor());
-                const f32 mid = (ui.measureString(std::string_view(t).substr(0, eb.cursor()), px) + ui.measureString(std::string_view(t).substr(0, nx), px)) * 0.5f;
+                const f32 mid = (ui.measureString(std::string_view(t).substr(0, eb.cursor()), px, ec.node) + ui.measureString(std::string_view(t).substr(0, nx), px, ec.node)) * 0.5f;
                 if (c.x + mid > e.pos.x) break;
                 eb.moveRight(false);
             }
@@ -627,5 +656,34 @@ NodeHandle image(UiContext& ui, NodeHandle p, u32 idx, f32 w, f32 h, std::string
 NodeHandle separator(UiContext& ui, NodeHandle p, std::string_view id) { return make(ui, "separator", p, id); }
 
 std::string_view comboText(const UiContext& ui, NodeHandle n) { return item(ui.text(n), u32(ui.value(n))); }
+
+void setPlaceholderText(UiContext& ui, NodeHandle edit, std::string_view text) {
+    ui.setPlaceholder(edit, text);
+    ui.invalidate(edit);
+}
+std::string_view placeholderText(const UiContext& ui, NodeHandle edit) { return ui.placeholder(edit); }
+void setSpecialValueText(UiContext& ui, NodeHandle spin, std::string_view text) {
+    ui.setPlaceholder(spin, text);
+    ui.invalidate(spin);
+}
+std::string_view specialValueText(const UiContext& ui, NodeHandle spin) { return ui.placeholder(spin); }
+std::string_view spinBoxText(const UiContext& ui, NodeHandle spin, std::string& scratch) {
+    if (SpinBox::special(ui, spin)) return ui.placeholder(spin);
+    char buf[32];
+    const int len = SpinBox::fmt(ui, spin, buf, 32);
+    scratch.assign(buf, std::size_t(std::max(0, len)));
+    return scratch;
+}
+void setProgressIndeterminate(UiContext& ui, NodeHandle bar, bool on) {
+    if (!ui.alive(bar) || ui.hasClass(bar, "indeterminate") == on) return;
+    if (on) {
+        ui.addClass(bar, "indeterminate");
+        ProgressBar::tick(ui, bar);
+    } else {
+        ui.removeClass(bar, "indeterminate");
+        ui.invalidate(bar);
+    }
+}
+bool progressIndeterminate(const UiContext& ui, NodeHandle bar) { return ui.hasClass(bar, "indeterminate"); }
 
 } // namespace fuse::ui::widgets

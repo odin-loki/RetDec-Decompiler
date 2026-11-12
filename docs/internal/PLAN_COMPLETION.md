@@ -11,7 +11,7 @@ Last updated: **v2.0.24**. Historical plan text stays in
 | DecompileBench | **Done (stand-in + stock v5.0)** | 216-binary harness; stock via `remnux/retdec`; OSS-Fuzz paper corpus out of scope |
 | Algorithm recovery | Done (caveat) | name-blind **mean_f1_raw=0.056** (full) / **0.126** (ci-core); stem-era 1.0 withdrawn |
 | Default `.c` recompile | Done | CC-01 **216/216** (run 276). Stock remains 0/216 |
-| Neural refinement | Done | tiers 1–5, gates, llama.cpp pin, opt-in via env. Differential gate **not** implemented |
+| Neural refinement | Done | tiers 1–5, gates, inference on Forge (llama.cpp pin removed), opt-in via env. Differential gate **not** implemented |
 | Licensing | Done | AGPL + commercial, doctor checks |
 | Fuzz / sanitizers | Done | `sanitizers.yml`, `tests/crash_corpus/` |
 | Part 16 automation | Done | doctor, nightly report, benchmark gate, demo |

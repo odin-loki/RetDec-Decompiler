@@ -49,7 +49,7 @@ Phased plan for GUI/product work. Update checkboxes as items ship.
 
 - [x] CUDA wiring into hot analysis paths — **documented CPU-only default** ([GUI_PHASE_D.md](GUI_PHASE_D.md))
 - [x] Reference decompiler plugin sample — `examples/decompiler_plugin/`
-- [x] AI assistant — Tools window (`AIAssistantPanel`); local GGUF / llama.cpp / optional Ollama. Not a neural-chat quality claim. No in-tree Qwen stack (`C-QWEN3-GPU` withdrawn) ([GUI_PHASE_D.md](GUI_PHASE_D.md))
+- [x] AI assistant — Tools window (`AIAssistantPanel`); local model (.fpk / .gguf / HF dir) on Forge (was llama.cpp) / optional Ollama. Not a neural-chat quality claim. No in-tree Qwen stack (`C-QWEN3-GPU` withdrawn) ([GUI_PHASE_D.md](GUI_PHASE_D.md))
 - [x] Multi-language output picker in GUI — Settings → Decompiler → Preferred output language (`--output-lang`)
 
 ## Phase E — GUI polish (May 2026)

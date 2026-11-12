@@ -33,7 +33,7 @@ RetDec/
 ├── CMakeLists.txt            cmake_minimum_required 3.13; project VERSION 2.0.22
 ├── CMakePresets.json         cmakeMinimumRequired 3.26; core-* and full-*
 ├── cmake/
-│   ├── deps.cmake            LLVM 23.1.0, Capstone, llama.cpp b10451, …
+│   ├── deps.cmake            LLVM 23.1.0, Capstone, … (Forge/FuseUI are vendored in third_party/)
 │   ├── options.cmake
 │   └── superbuild/           Superbuild; also requires CMake 3.26
 ├── vcpkg.json                Leftover; no CMake/preset/workflow reads it
@@ -405,7 +405,7 @@ finished product.
 
 ### Neural KV / MoE
 
-There is no in-tree `Qwen3Config`. Optional KV reuse is llama.cpp
+There is no in-tree `Qwen3Config`. Optional KV prefix reuse (Forge session) is
 `RETDEC_NEURAL_REUSE_KV` — [NEURAL_REFINEMENT.md](NEURAL_REFINEMENT.md).
 
 ### CUDA

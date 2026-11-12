@@ -22,7 +22,7 @@ inputs, not as a free-choice native list.
 
 This edition extends Avast RetDec 5.0 with semantic library recovery,
 algorithm-recovery **name-blind** measurements, optional verified offline
-neural refinement (llama.cpp), a native desktop GUI (FuseUI, no third-party GUI toolkit), and packaged
+neural refinement (Forge, in-process), a native desktop GUI (FuseUI, no third-party GUI toolkit), and packaged
 Linux / macOS / Windows installs.
 
 ---
@@ -81,7 +81,7 @@ See [docs/internal/D7_DECISION.md](internal/D7_DECISION.md).
 | **Input-keyed output** | Native binaries emit C. Managed formats emit that format’s language. Not a free-choice eleven-language native list. |
 | **Semantic recovery** | Post-pipeline detectors label containers, algorithms, crypto, concurrency, and serialisation in comments/JSON. They do not emit idiomatic C++. Name-blind F1 is 0.056. |
 | **GPU backends (experimental)** | CUDA (`cuda_accel`) and OpenCL exist in-tree, default-OFF, **unintegrated**, not a product feature. |
-| **On-device AI (default on)** | llama.cpp + shipped Unsloth Qwen 3.5 9B Q4_K_M GGUF. `RETDEC_NEURAL_REFINE=0` disables. No `--model` flag. No `retdec-qwen3-runner`. |
+| **On-device AI (default on)** | Forge (vendored inference engine) + shipped Unsloth Qwen 3.5 9B Q4_K_M GGUF. `RETDEC_NEURAL_REFINE=0` disables. No `--model` flag. No `retdec-qwen3-runner`. |
 | **Desktop GUI (FuseUI)** | Document tabs, docks, Call Graph, Type Hierarchy, Signature Studio, Diff, Binary browser, AI Assistant Tools window. macOS ships `RetDec.app`. |
 | **Plugins** | Example LLVM pass in `examples/decompiler_plugin/`. The decompiler CLI has no flag that loads a pass plugin. |
 | **Packages** | Linux x86_64 tarball; macOS arm64 tarball + `RetDec.app`; Windows NSIS + portable zip (intended names; a given CI run may still be building). Keyless Sigstore. AppImage opt-in only. |
@@ -162,8 +162,9 @@ fallback as a shipped capability.
 
 ## AI assistant (on-device inference)
 
-Optional on-device naming uses **llama.cpp + a GGUF on disk**
-(`RETDEC_ENABLE_LLAMACPP` at build; `RETDEC_NEURAL_REFINE` at run). The
+Optional on-device naming uses **Forge + a model on disk** (`.fpk`, `.gguf`
+or a Hugging Face directory; `RETDEC_ENABLE_NEURAL` at build;
+`RETDEC_NEURAL_REFINE` at run). The
 in-tree Qwen3/FlashAttention stack is **not wired into `src/retdec`**
 (C-QWEN3-GPU withdrawn). Use `RETDEC_NEURAL_REFINE` and
 `RETDEC_NEURAL_MODEL`. There is no `--model` CLI flag and no

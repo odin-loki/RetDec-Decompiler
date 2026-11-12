@@ -5,7 +5,7 @@ sprints. Not shipped at v2.0.22.**
 
 For shippable work see [ENGINEERING_ROADMAP.md](internal/ENGINEERING_ROADMAP.md)
 (Tiers 1–5). For what the product actually is — specification extraction,
-buildable C, input-keyed outputs, GUI (FuseUI), optional llama.cpp, Linux / macOS /
+buildable C, input-keyed outputs, GUI (FuseUI), optional neural refine (Forge), Linux / macOS /
 Windows installers — see [README.md](../README.md) and [CLAIMS.md](CLAIMS.md).
 
 Roadmap overlap (STL detectors vs reconstruction quality, architecture gaps):
@@ -74,7 +74,7 @@ Train models on **(source, compiled, decompiled)** triples at multiple `-O` leve
 2. **Structure model** — predict `if`/`while`/`for` from CFG + memory accesses (seq2seq on graph).
 3. **Diff model** — patch-aware naming (“version bump changed bounds check here”).
 
-**Shipped, separate, opt-in:** llama.cpp refine (`RETDEC_ENABLE_LLAMACPP`,
+**Shipped, separate, opt-in:** Forge neural refine (`RETDEC_ENABLE_NEURAL`,
 `RETDEC_NEURAL_REFINE`). Complements item 1; it is not this research programme.
 There is no in-tree `src/qwen3` (`C-QWEN3-GPU` withdrawn). The neural
 **differential** gate is not implemented.
@@ -170,7 +170,7 @@ Beyond coroutines: Node-style callbacks, `.NET async/await` state machines, Qt s
 
 | Rank | Topic | Why |
 |------|-------|-----|
-| 1 | Learned naming (4) | Complements opt-in llama.cpp; high analyst satisfaction |
+| 1 | Learned naming (4) | Complements opt-in Forge refine; high analyst satisfaction |
 | 2 | Binary similarity (5) | Malware + patch diff workflows |
 | 3 | FFI reconstruction (3) | Growing mixed-language firmware |
 | 4 | Concurrency model (1) | Hard but differentiating; primitives already ship |

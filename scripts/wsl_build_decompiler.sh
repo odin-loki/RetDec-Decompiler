@@ -25,11 +25,10 @@ echo "==> Cleaning stale CMake cache (fixes retdec-master path mismatch)"
 rm -rf build/linux/CMakeCache.txt build/linux/CMakeFiles build/linux/build.ninja
 clean_stale_cmake_caches
 
-echo "==> Configure core-debug (CPU-only, neural mock)"
+echo "==> Configure core-debug (CPU-only; neural refine on Forge, off unless RETDEC_NEURAL_REFINE=1)"
 cmake --preset core-debug \
 	-DRETDEC_ENABLE_CUDA_ACCEL=OFF \
-	-DRETDEC_ENABLE_NEURAL=ON \
-	-DRETDEC_ENABLE_LLAMACPP=OFF
+	-DRETDEC_ENABLE_NEURAL=ON
 
 JOBS="$(nproc 2>/dev/null || echo 4)"
 echo "==> Build retdec-decompiler (-j${JOBS}) — expect 30-90 minutes on first run"

@@ -62,7 +62,7 @@ This directory contains **technical documentation** for building, operating, ext
 | [CLAIMS.md](CLAIMS.md) | Everyone quoting numbers | Claims register; withdrawn F1 / CUDA-pipe rows |
 | [BENCHMARKS.md](BENCHMARKS.md) | Releases | Harness and methodology |
 | [BENCHMARKS_TABLE.md](BENCHMARKS_TABLE.md) | Releases | Fork vs stock RetDec 5.0 + F1 gates |
-| [NEURAL_REFINEMENT.md](NEURAL_REFINEMENT.md) | Operators | llama.cpp opt-in, gates, allowlist |
+| [NEURAL_REFINEMENT.md](NEURAL_REFINEMENT.md) | Operators | Forge inference backend, model formats, devices, gates, allowlist |
 | [CUDA_CAPABILITIES.md](CUDA_CAPABILITIES.md) | Parked-research readers | CUDA vs CUDA-accel flags; unintegrated |
 | [PERFORMANCE.md](PERFORMANCE.md) | Maintainers | Profiling and perf-nightly |
 | [STANDALONE_CHECK.md](STANDALONE_CHECK.md) | Contributors | LLVM-free layer with just a compiler |

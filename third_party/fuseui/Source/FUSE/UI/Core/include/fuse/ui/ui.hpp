@@ -19,6 +19,7 @@
 #include <concepts>
 #include <expected>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -48,6 +49,7 @@ enum class EventType : u8 {
     PointerMove, PointerDown, PointerUp, PointerEnter, PointerLeave, Click, Wheel, KeyDown, KeyUp, Text, FocusIn,
     FocusOut,
     Composition, ///< IME pre-edit changed: `text` = pre-edit (empty ends it), `caret` = byte offset in it
+    DoubleClick, ///< second press of a double click (after its PointerDown), to the pressed node; `clicks` = 2
 };
 enum class Phase : u8 { Capture, Target, Bubble };
 
@@ -61,6 +63,20 @@ struct Event {
     std::string_view text; ///< Text: UTF-8 (valid during dispatch only)
     FocusReason focusReason = FocusReason::Programmatic;
     i32 caret = 0;         ///< Composition: caret byte offset into `text`
+    u8 clicks = 0;         ///< PointerDown / PointerUp / Click / DoubleClick: 1 single, 2 double, 3 triple ... click
+};
+
+/// Double-click detection (UiContext::setDoubleClick): a press counts as the next click of a series when it is the
+/// same button on the same node within `interval` seconds and `distance` px of the previous press. The defaults
+/// match the Windows / GNOME / macOS defaults (500 ms, 4 px).
+struct DoubleClickSettings {
+    f32 interval = 0.5f;
+    f32 distance = 4.f;
+};
+/// Monotonic clock in seconds for input timing (double clicks) and widget animation; null `now` = steady_clock.
+struct UiClock {
+    void* user = nullptr;
+    double (*now)(void* user) = nullptr;
 };
 
 /// Clipboard backend of a context (UI1). Default: a context-local buffer; apps install the platform clipboard
@@ -72,12 +88,18 @@ struct ClipboardHooks {
 };
 
 // ---- Signals -------------------------------------------------------------------------------------------------------
-enum class SignalKind : u8 { Clicked, Toggled, ValueChanged, TextChanged, Submitted, FocusChanged, HoverChanged, Event };
+enum class SignalKind : u8 {
+    Clicked, Toggled, ValueChanged, TextChanged, Submitted, FocusChanged, HoverChanged, Event,
+    DoubleClicked,    ///< a double click (second press) on the node, when its widget did not consume it
+    Activated,        ///< item activation (table / model list: Enter or double click): value = row, index = column
+    SelectionChanged, ///< a multi-selection changed: value = number of selected items
+};
 struct SignalArgs {
     f32 value = 0.f;
     bool flag = false;
     std::string_view text{};
     const Event* event = nullptr;
+    i32 index = -1; ///< secondary index (Activated: column, -1 = whole row)
 };
 using Slot = InlineFn<void(UiContext&, NodeHandle, const SignalArgs&)>;
 using CommandFn = void (*)(UiContext&, NodeHandle, u64 a, u64 b);
@@ -351,13 +373,76 @@ public:
     void snapshotA11y(std::vector<A11ySnapshotNode>& out) const;
 
     // text
+    /// The default face (UiContextDesc::font, or the bundled regular face after registerBundledFonts()).
     const fuse::text::Font* font() const { return m_font; }
     fuse::text::GlyphAtlas& atlas() { return m_atlas; }
-    /// Emits glyph commands for a laid-out block at `origin` (top-left).
+    /// Emits glyph commands for a laid-out block at `origin` (top-left), laid out with `node`'s face (fontFor).
     void paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, Vec2 origin, Color c, f32 pixelSize, u32 node);
-    /// Lays out and paints a one-off string (widgets' secondary labels). Uses an internal scratch layout.
+    /// Same, for a block laid out with `font`.
+    void paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, Vec2 origin, Color c, f32 pixelSize, u32 node,
+                         const fuse::text::Font& font);
+    /// Lays out and paints a one-off string (widgets' secondary labels) in `node`'s face. Uses an internal scratch
+    /// layout.
     void paintString(DrawList& dl, std::string_view s, Rect box, Color c, f32 pixelSize, TextAlignment align, u32 node);
+    /// Same in `font` (null: `node`'s face) — per-cell fonts of item views.
+    void paintString(DrawList& dl, std::string_view s, Rect box, Color c, f32 pixelSize, TextAlignment align, u32 node,
+                     const fuse::text::Font* font);
+    /// Width of one line in the default face.
     f32 measureString(std::string_view s, f32 pixelSize);
+    /// Width of one line in `node`'s face (font-family / font-weight) — use it for text the widget paints with
+    /// paintString(..., node) so carets and hit tests line up.
+    f32 measureString(std::string_view s, f32 pixelSize, NodeHandle node);
+    f32 measureString(std::string_view s, f32 pixelSize, const fuse::text::Font* font);
+    /// Line height (ceil of ascent - descent + gap) of `node`'s face (the default face for an invalid handle).
+    f32 lineHeight(f32 pixelSize, NodeHandle node = {}) const;
+
+    // fonts: several faces, selected per node by CSS font-family / font-weight
+    /// Registers `font` as `family` (case-insensitive CSS name) at `weight` (100..900: 400 normal, 700 bold); the
+    /// context owns it and attaches its fallback faces (addFallbackFont) to it. Replaces an earlier face of the same
+    /// family and weight. Returns the registered face.
+    const fuse::text::Font* registerFont(std::string_view family, u16 weight, fuse::text::Font font);
+    /// Same, non-owning: `font` must outlive the context (process-wide faces shared by several contexts). Its
+    /// fallback chain is the caller's.
+    void registerSharedFont(std::string_view family, u16 weight, const fuse::text::Font& font);
+    /// Font::load(`path`) (file or font-search-path relative) + registerFont.
+    std::expected<const fuse::text::Font*, fuse::text::TextError> registerFontFile(std::string_view family, u16 weight,
+                                                                                  std::string_view path);
+    /// Makes family name `alias` (e.g. the generic "monospace") resolve to `family`. Aliases do not chain.
+    void setFontAlias(std::string_view alias, std::string_view family);
+    /// The family the default face belongs to: nodes without font-family use the default face for normal weights and
+    /// this family's nearest registered face for bold ones. Unset: bold falls back to the default face.
+    void setDefaultFontFamily(std::string_view family);
+    /// Appends a coverage face tried for code points a face lacks (glyph fallback), owned by the context. It is added
+    /// to the chain of every face the context owns (registerFont); shared / desc faces keep their own chains.
+    const fuse::text::Font* addFallbackFont(fuse::text::Font font);
+    /// Registers FUSE's bundled faces once per process (shared): Open Sans Regular / Bold ("Open Sans", aliases
+    /// "sans-serif", "system-ui"), JetBrains Mono Regular / Bold ("JetBrains Mono", aliases "monospace",
+    /// "ui-monospace") with the bundled fallback chain (DejaVu Sans for symbols, plus Noto / Twemoji when present).
+    /// Sets the default family to Open Sans when none is set, and the default face when the context has none.
+    /// Returns the number of faces registered (0 when the font files cannot be found).
+    u32 registerBundledFonts();
+    /// The face for a family list (fontFamilyHash values) and weight: the first registered family (after aliases)
+    /// wins, at its nearest weight (CSS matching: bold asks prefer heavier faces); none registered: the default face
+    /// (or the default family's bold face for weight >= 600). Null when the context has no font at all.
+    const fuse::text::Font* resolveFont(std::span<const u32> families, u16 weight) const;
+    /// Same for a CSS family list string ("JetBrains Mono, monospace").
+    const fuse::text::Font* resolveFont(std::string_view familyList, u16 weight = kFontWeightNormal) const;
+    const fuse::text::Font* fontFor(const ComputedStyle& style) const;
+    /// The face a node's text uses (its computed font-family / font-weight).
+    const fuse::text::Font* fontFor(NodeHandle n) const;
+
+    // pointer timing
+    void setDoubleClick(const DoubleClickSettings& s) { m_dblClick = s; }
+    const DoubleClickSettings& doubleClick() const { return m_dblClick; }
+    /// Replaces the input / animation clock (tests drive a virtual one).
+    void setClock(const UiClock& c) { m_clock = c; }
+    /// Seconds on the context's clock.
+    double now() const;
+
+    /// Secondary text a widget shows instead of its value: the placeholder of an empty unfocused lineedit / codeedit,
+    /// the special-value text of a spinbox at its minimum (see widgets::setPlaceholderText / setSpecialValueText).
+    void setPlaceholder(NodeHandle n, std::string_view s);
+    std::string_view placeholder(NodeHandle n) const;
 
     struct Node;
     struct Cold;
@@ -434,6 +519,32 @@ private:
     std::vector<std::pair<u32, i32>> m_scratchTab;
     std::vector<fuse::text::ShapedGlyph> m_shapeScratch;
     fuse::text::TextLayout m_stringScratch;
+
+    struct FontFace {
+        u32 family = 0;
+        u16 weight = kFontWeightNormal;
+        const fuse::text::Font* font = nullptr;
+    };
+    std::vector<FontFace> m_faces;
+    std::vector<std::unique_ptr<fuse::text::Font>> m_ownedFonts, m_fallbackFonts;
+    std::vector<std::pair<u32, u32>> m_fontAliases; ///< alias hash -> family hash
+    u32 m_defaultFamily = 0;
+    u32 familyOf(u32 h) const;
+    const fuse::text::Font* faceOf(u32 family, u16 weight) const;
+    void attachFallbacks(fuse::text::Font& f) const;
+    const fuse::text::Font* fontAt(u32 nodeIndex) const;
+    void paintLayout(DrawList& dl, const fuse::text::TextLayout& tl, Vec2 o, Color c, f32 px, u32 node,
+                     const fuse::text::Font& font);
+
+    DoubleClickSettings m_dblClick;
+    UiClock m_clock;
+    struct ClickSeries {
+        NodeHandle node;
+        MouseButton button = MouseButton::Left;
+        Vec2 pos;
+        double time = -1e30;
+        u8 count = 0;
+    } m_clicks;
 
     struct Connection {
         u32 node = 0xFFFFFFFFu, nodeGen = 0, gen = 0;

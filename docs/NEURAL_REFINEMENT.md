@@ -5,15 +5,27 @@ C emission. Not a decompiler pass and not GPU acceleration of lifting.
 
 ## Status
 
-- `retdec::neural` with llama.cpp (`RETDEC_ENABLE_LLAMACPP`, default **ON**).
-  Pin: **b10451** in `cmake/deps.cmake` (`llama.cpp` archive tag `b10451`).
-  Release installers build with llama.cpp **ON** (GPU offload **OFF**).
-  CTest jobs keep neural **OFF** and do not download the GGUF.
+- `retdec::neural` runs on **Forge** (`third_party/forge`, vendored; nothing
+  is fetched): `createForgeInference()` in `src/neural/forge_inference.cpp`
+  uses Forge's C++ inference API (`forge::inference::model` / `session`, its
+  sampler chain and its GBNF `grammar_constraint`). llama.cpp is no longer
+  used; its build options, its `deps/` ExternalProject and its pin are gone
+  (see CHANGELOG Unreleased). Release installers build with
+  `RETDEC_ENABLE_NEURAL=ON` (GPU default **OFF**). CTest jobs keep neural
+  **OFF** and do not download the GGUF; `retdec-neural-forge-tests` runs the
+  backend end to end on Forge's tiny random-weight model
+  (`tests/neural/data/tiny_f32.fpk`).
 - Runtime refine is **on by default** when the shipped GGUF is present.
-  - Build: `RETDEC_ENABLE_LLAMACPP` (fetch/link llama.cpp),
-    `RETDEC_ENABLE_NEURAL` (library; stub if llama.cpp OFF).
+  - Build: `RETDEC_ENABLE_NEURAL` (library on Forge; the decompiler links
+    an empty stub when it is OFF).
   - Run: looks for `share/retdec/models/Qwen3.5-9B-Q4_K_M.gguf` (or
     `RETDEC_NEURAL_MODEL`). Disable with `RETDEC_NEURAL_REFINE=0`.
+  - Model formats: a Forge `.fpk` loads as is; a `.gguf` or a Hugging Face
+    directory is imported once into Forge's model cache (`$FORGE_CACHE`,
+    default `~/.cache/forge`) under the same content-addressed name `forge
+    run` uses, so the two share imports. `RETDEC_NEURAL_IMPORT_CODEC` picks
+    the import codec (default `f32`). An installed RetDec ships Forge's
+    import templates in `share/retdec/support/forge/templates`.
 - **Shipped GGUF:** Unsloth `Qwen3.5-9B-Q4_K_M.gguf` (SHA-256
   `03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8`) is
   pinned in `support/models.json`. GitHub Release assets cap at 2 GB, so
@@ -27,11 +39,9 @@ C emission. Not a decompiler pass and not GPU acceleration of lifting.
   prints a warning and **skips** (treated as pass). Decompiled C is never
   compiled-and-executed as a test oracle.
 - **9B Instruct path:** Qwen 3.6 has no 9B (27B / 35B only). The 9B
-  checkpoint is **Qwen 3.5**. Stage a **llama.cpp-native** GGUF with
-  `bash scripts/fetch_qwen_gguf.sh`. Prefer Unsloth
-  `Qwen3.5-9B-Q4_K_M.gguf` (b10451). `ollama pull qwen3.5:9b` writes
-  `rope.dimension_sections` length 3; b10451 expects 4 (llama.cpp PR 25334
-  is still open). Do not load `mmproj`.
+  checkpoint is **Qwen 3.5**. Stage the GGUF with
+  `bash scripts/fetch_qwen_gguf.sh` (Unsloth `Qwen3.5-9B-Q4_K_M.gguf`, the
+  allowlisted file); Forge imports it on first load. Do not load `mmproj`.
 - Multimodal `mmproj` / `-VL-` filenames are rejected.
 - Prompts use the Qwen Instruct chat template. Thinking is off unless
   `RETDEC_NEURAL_THINKING=1`.
@@ -39,24 +49,27 @@ C emission. Not a decompiler pass and not GPU acceleration of lifting.
   Other tiers use temperature 0.6, top-p 0.95, top-k 20 (Qwen Instruct).
 - Prompt-prefix KV reuse is **off** unless `RETDEC_NEURAL_REUSE_KV=1`.
   When on, the manifest records `"reuse_kv":true` (non-reproducible).
-- **N15 Naming GBNF:** the Naming tier sets `llama_sampler_init_grammar`
+- **N15 Naming GBNF:** the Naming tier sets a Forge `grammar_constraint`
   (`namingRenameMapGbnf`) so the model emits a JSON rename map, then
   `applyJsonRenameMap` rewrites identifiers in the deterministic C.
-  Other tiers stay unconstrained. Requires a real GGUF; mock tests cover
-  the apply/GBNF string only.
-- `RETDEC_NEURAL_GPU_OFFLOAD=ON` passes `GGML_CUDA` into llama.cpp.
-  `RETDEC_NEURAL_N_GPU_LAYERS` sets `llama_model_params.n_gpu_layers`
-  (`-1` = all layers, `0` = CPU). The GUI AI Assistant (Tools →
-  AI Assistant…) writes this env from the GPU toggle and Settings → ML
-  device (CPU → `0`; GPU or Auto → `-1`) before `loadModel`.
-  `RETDEC_NEURAL_MTP=1` sets `llama_model_params.load_mtp`. Speculative
-  MTP decode has no C API at b10451.
+  Other tiers stay unconstrained. `retdec-neural-forge-tests` checks that
+  grammar-constrained output parses as JSON on the tiny model.
+- **Device:** Forge loads GPU runtimes at run time. `RETDEC_NEURAL_DEVICE`
+  (or Forge's own `FORGE_DEVICE`) selects one: `cpu`, `cuda[:N]`, `vulkan`,
+  `hip`, `metal`, ... `RETDEC_NEURAL_N_GPU_LAYERS` (still written by the GUI
+  AI Assistant from its GPU toggle and Settings → ML device: CPU → `0`, GPU
+  or Auto → `-1`) maps `0` to the CPU and anything else to the GPU (Metal on
+  Apple, CUDA elsewhere); Forge offloads the whole graph or nothing, so the
+  count has no finer meaning. An unavailable device falls back to the CPU
+  with a warning. `RETDEC_NEURAL_THREADS` sets `FORGE_THREADS`.
+  The llama.cpp-era MTP switch no longer applies.
 
-When `RETDEC_ENABLE_LLAMACPP` is OFF, `src/retdec/neural_refine_stub.cpp`
+When `RETDEC_ENABLE_NEURAL` is OFF, `src/retdec/neural_refine_stub.cpp`
 provides an empty `maybeRefineDecompilerOutput`.
 
-**Build-time:** `RETDEC_NEURAL_GPU_OFFLOAD=ON` compiles `GGML_CUDA` into
-llama.cpp. CI default is OFF.
+**Build-time:** `RETDEC_NEURAL_GPU_OFFLOAD=ON` only makes the GPU Forge's
+default device; it needs no CUDA toolkit (runtimes are loaded at run time).
+CI default is OFF.
 
 **Runtime (decompiler / GUI child `QProcess` env):**
 
@@ -126,7 +139,7 @@ On compile or structural failure, deterministic output is kept.
 ## Offline
 
 Build with `RETDEC_NEURAL_OFFLINE_ONLY=ON` and run with `RETDEC_NO_NETWORK=1`.
-Inference is in-process llama.cpp only.
+Inference is in-process Forge only.
 
 Hook: `neural::maybeRefineDecompilerOutput` in
 `include/retdec/neural/decompile_hook.h`, called from `src/retdec/retdec.cpp`.

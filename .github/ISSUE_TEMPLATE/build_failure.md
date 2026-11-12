@@ -21,7 +21,7 @@ assignees: ''
   - Core-only: `core-debug` / `core-debug-msvc`
 - Compiler and version (C++23 required: GCC 13+, Clang 17+, Apple Clang 15+, MSVC 2022 17.6+). The GUI needs no toolkit (FuseUI is vendored); `-DRETDEC_GUI=OFF` builds CLI-only.
 
-CUDA / OpenCL are **not** required. `RETDEC_ENABLE_CUDA_ACCEL` defaults OFF on every full preset. Do not enable them to “fix” a product build. llama.cpp (`RETDEC_ENABLE_LLAMACPP`) is optional.
+CUDA / OpenCL are **not** required. `RETDEC_ENABLE_CUDA_ACCEL` defaults OFF on every full preset. Do not enable them to “fix” a product build. Neural refinement runs on the vendored Forge (`RETDEC_ENABLE_NEURAL`); there is no llama.cpp download.
 
 ## Configure / build log
 

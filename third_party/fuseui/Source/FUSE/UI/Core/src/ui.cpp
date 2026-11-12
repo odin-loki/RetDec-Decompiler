@@ -1,8 +1,10 @@
 #include "fuse/ui/ui.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <limits>
 
 namespace fuse::ui {
@@ -57,7 +59,9 @@ struct UiContext::Cold {
     std::vector<std::pair<Prop, PropValue>> inl;
     fuse::text::TextLayout layout;
     f32 layoutWidth = -1.f, layoutSize = -1.f;
+    const fuse::text::Font* layoutFont = nullptr; ///< face `layout` was shaped with
     std::unique_ptr<fuse::text::TextEditBuffer> edit;
+    std::string placeholder;
 };
 
 // ---- Registry ------------------------------------------------------------------------------------------------------
@@ -168,7 +172,9 @@ u32 UiContext::alloc() {
         c.a11yName.clear();
         c.inl.clear();
         c.layoutWidth = c.layoutSize = -1.f;
+        c.layoutFont = nullptr;
         c.edit.reset();
+        c.placeholder.clear();
     } else {
         i = u32(m_nodes.size());
         m_nodes.emplace_back();
@@ -547,7 +553,9 @@ void UiContext::styleRec(u32 i, bool parentChanged) {
         if (idx != before) {
             ComputedStyle la = m_styles.style(before);
             const ComputedStyle& lb = m_styles.style(idx);
-            const bool fontChanged = la.fontSize != lb.fontSize || la.textAlign != lb.textAlign;
+            const bool fontChanged = la.fontSize != lb.fontSize || la.textAlign != lb.textAlign ||
+                                     la.fontFamily != lb.fontFamily || la.fontFamilyCount != lb.fontFamilyCount ||
+                                     la.fontWeight != lb.fontWeight;
             n.style = idx;
             changed = true;
             markPaint(i);
@@ -556,6 +564,7 @@ void UiContext::styleRec(u32 i, bool parentChanged) {
             la.color = lb.color; la.shadowColor = lb.shadowColor; la.opacity = lb.opacity; la.radius = lb.radius;
             la.gradient = lb.gradient; la.shadowBlur = lb.shadowBlur; la.shadowX = lb.shadowX; la.shadowY = lb.shadowY; la.backdropBlur = lb.backdropBlur;
             la.pointerEvents = lb.pointerEvents; la.borderWidth = lb.borderWidth; la.textAlign = lb.textAlign;
+            la.placeholderColor = lb.placeholderColor;
             if (fontChanged) {
                 m_cold[i]->layoutWidth = -1.f;
                 n.dirty |= kDirtyText;
@@ -580,31 +589,52 @@ void UiContext::stylePass() {
 void UiContext::ensureText(u32 i, f32 width) {
     Cold& c = *m_cold[i];
     const ComputedStyle& s = m_styles.style(m_nodes[i].style);
-    if (!m_font) return;
-    if (c.layoutWidth == width && c.layoutSize == s.fontSize && !(m_nodes[i].dirty & kDirtyText)) return;
+    const fuse::text::Font* font = fontFor(s);
+    if (!font) return;
+    if (c.layoutWidth == width && c.layoutSize == s.fontSize && c.layoutFont == font && !(m_nodes[i].dirty & kDirtyText))
+        return;
     fuse::text::TextLayoutDesc d;
     d.pixelSize = s.fontSize;
     d.maxWidth = std::isfinite(width) ? width : 0.f;
     d.align = fuse::text::TextAlign(u8(s.textAlign));
-    fuse::text::layoutText(*m_font, fuse::text::defaultShaper(), c.text, d, c.layout);
+    fuse::text::layoutText(*font, fuse::text::defaultShaper(), c.text, d, c.layout);
     c.layoutWidth = width;
     c.layoutSize = s.fontSize;
+    c.layoutFont = font;
     m_nodes[i].dirty &= u8(~kDirtyText);
 }
 
-f32 UiContext::measureString(std::string_view s, f32 px) {
-    if (!m_font) return 0.f;
-    return fuse::text::measureText(*m_font, s, px, m_shapeScratch);
+f32 UiContext::measureString(std::string_view s, f32 px) { return measureString(s, px, m_font); }
+f32 UiContext::measureString(std::string_view s, f32 px, NodeHandle n) {
+    return measureString(s, px, node(n) ? fontAt(n.index) : m_font);
+}
+f32 UiContext::measureString(std::string_view s, f32 px, const fuse::text::Font* font) {
+    if (!font) font = m_font;
+    if (!font) return 0.f;
+    return fuse::text::measureText(*font, s, px, m_shapeScratch);
+}
+f32 UiContext::lineHeight(f32 px, NodeHandle n) const {
+    const fuse::text::Font* f = node(n) ? fontAt(n.index) : m_font;
+    return f ? std::ceil(f->metrics(px).lineHeight()) : std::ceil(px * 1.25f);
 }
 
 void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, Vec2 o, Color col, f32 px, u32 nodeIdx) {
-    if (!m_font || col.a <= 0.f) return;
+    if (const fuse::text::Font* f = fontAt(nodeIdx)) paintLayout(dl, tl, o, col, px, nodeIdx, *f);
+}
+void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, Vec2 o, Color col, f32 px, u32 nodeIdx,
+                                const fuse::text::Font& font) {
+    paintLayout(dl, tl, o, col, px, nodeIdx, font);
+}
+
+void UiContext::paintLayout(DrawList& dl, const fuse::text::TextLayout& tl, Vec2 o, Color col, f32 px, u32 nodeIdx,
+                            const fuse::text::Font& font) {
+    if (col.a <= 0.f) return;
     for (const auto& ln : tl.lines) {
         for (u32 k = ln.firstGlyph; k < ln.firstGlyph + ln.glyphCount; ++k) {
             const auto& g = tl.glyphs[k];
             if (g.glyph == fuse::text::kInvisibleGlyph) continue;
-            fuse::text::forEachPaintGlyph(*m_font, g, px, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
-                                                               const fuse::text::ColorLayer* layer) {
+            fuse::text::forEachPaintGlyph(font, g, px, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
+                                                           const fuse::text::ColorLayer* layer) {
                 const auto ag = m_atlas.get(f, glyph, fpx);
                 if (!ag.valid || ag.w == 0) return;
                 DrawCmd c;
@@ -625,15 +655,190 @@ void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, 
 }
 
 void UiContext::paintString(DrawList& dl, std::string_view s, Rect box, Color col, f32 px, TextAlignment align, u32 nodeIdx) {
-    if (!m_font || s.empty()) return;
+    paintString(dl, s, box, col, px, align, nodeIdx, nullptr);
+}
+void UiContext::paintString(DrawList& dl, std::string_view s, Rect box, Color col, f32 px, TextAlignment align, u32 nodeIdx,
+                            const fuse::text::Font* font) {
+    if (!font) font = fontAt(nodeIdx);
+    if (!font || s.empty()) return;
     fuse::text::TextLayoutDesc d;
     d.pixelSize = px;
     d.maxWidth = box.w;
     d.elide = true;
     d.align = fuse::text::TextAlign(u8(align));
-    fuse::text::layoutText(*m_font, fuse::text::defaultShaper(), s, d, m_stringScratch);
+    fuse::text::layoutText(*font, fuse::text::defaultShaper(), s, d, m_stringScratch);
     const f32 y = box.y + std::floor((box.h - m_stringScratch.height) * 0.5f);
-    paintTextLayout(dl, m_stringScratch, {box.x, y}, col, px, nodeIdx);
+    paintLayout(dl, m_stringScratch, {box.x, y}, col, px, nodeIdx, *font);
+}
+
+// ---- Fonts ---------------------------------------------------------------------------------------------------------
+namespace {
+// CSS font matching (simplified): exact weight, else for bold asks (>= 600) the nearest heavier face first, for normal
+// asks the nearest lighter face first, then the nearest overall.
+i32 weightDistance(u16 want, u16 have) {
+    const i32 d = i32(have) - i32(want);
+    if (d == 0) return 0;
+    const bool preferHeavier = want >= 600;
+    return (preferHeavier == (d > 0)) ? std::abs(d) : 2000 + std::abs(d);
+}
+} // namespace
+
+u32 UiContext::familyOf(u32 h) const {
+    for (const auto& [alias, family] : m_fontAliases)
+        if (alias == h) return family;
+    return h;
+}
+const fuse::text::Font* UiContext::faceOf(u32 family, u16 weight) const {
+    const fuse::text::Font* best = nullptr;
+    i32 bestD = std::numeric_limits<i32>::max();
+    for (const FontFace& f : m_faces)
+        if (f.family == family) {
+            const i32 d = weightDistance(weight, f.weight);
+            if (d < bestD) { bestD = d; best = f.font; }
+        }
+    return best;
+}
+const fuse::text::Font* UiContext::resolveFont(std::span<const u32> families, u16 weight) const {
+    if (weight == 0) weight = kFontWeightNormal;
+    for (const u32 h : families)
+        if (h)
+            if (const fuse::text::Font* f = faceOf(familyOf(h), weight)) return f;
+    if (weight >= 600 && m_defaultFamily) {
+        const u32 fam = familyOf(m_defaultFamily);
+        for (const FontFace& f : m_faces)
+            if (f.family == fam && f.weight >= 600) return faceOf(fam, weight);
+    }
+    if (m_font) return m_font;
+    return m_defaultFamily ? faceOf(familyOf(m_defaultFamily), weight) : nullptr;
+}
+const fuse::text::Font* UiContext::resolveFont(std::string_view list, u16 weight) const {
+    std::array<u32, kMaxFontFamilies> h{};
+    const u32 n = parseFontFamilies(list, h);
+    return resolveFont(std::span<const u32>(h.data(), n), weight);
+}
+const fuse::text::Font* UiContext::fontFor(const ComputedStyle& s) const {
+    if (s.fontFamilyCount == 0 && s.fontWeight < 600) return m_font ? m_font : resolveFont(std::span<const u32>{}, s.fontWeight);
+    return resolveFont(std::span<const u32>(s.fontFamily.data(), s.fontFamilyCount), s.fontWeight);
+}
+const fuse::text::Font* UiContext::fontFor(NodeHandle n) const { return node(n) ? fontAt(n.index) : m_font; }
+const fuse::text::Font* UiContext::fontAt(u32 i) const {
+    if (i >= m_nodes.size() || !m_nodes[i].alive) return m_font ? m_font : resolveFont(std::span<const u32>{}, 0);
+    return fontFor(m_styles.style(m_nodes[i].style));
+}
+
+void UiContext::attachFallbacks(fuse::text::Font& f) const {
+    std::vector<const fuse::text::Font*> chain;
+    chain.reserve(m_fallbackFonts.size());
+    for (const auto& fb : m_fallbackFonts) chain.push_back(fb.get());
+    f.setFallbacks(std::move(chain));
+}
+
+const fuse::text::Font* UiContext::registerFont(std::string_view family, u16 weight, fuse::text::Font font) {
+    if (!font.valid()) return nullptr;
+    auto owned = std::make_unique<fuse::text::Font>(std::move(font));
+    attachFallbacks(*owned);
+    const fuse::text::Font* f = owned.get();
+    m_ownedFonts.push_back(std::move(owned));
+    registerSharedFont(family, weight, *f);
+    return f;
+}
+void UiContext::registerSharedFont(std::string_view family, u16 weight, const fuse::text::Font& font) {
+    const u32 h = fontFamilyHash(family);
+    if (!h || !font.valid()) return;
+    if (weight == 0) weight = kFontWeightNormal;
+    bool replaced = false;
+    for (FontFace& f : m_faces)
+        if (f.family == h && f.weight == weight) { f.font = &font; replaced = true; }
+    if (!replaced) m_faces.push_back({h, weight, &font});
+    markAllDirty();
+    for (auto& c : m_cold) c->layoutFont = nullptr;
+}
+std::expected<const fuse::text::Font*, fuse::text::TextError> UiContext::registerFontFile(std::string_view family, u16 weight,
+                                                                                          std::string_view path) {
+    auto f = fuse::text::Font::load(path);
+    if (!f) return std::unexpected(f.error());
+    return registerFont(family, weight, std::move(*f));
+}
+void UiContext::setFontAlias(std::string_view alias, std::string_view family) {
+    const u32 a = fontFamilyHash(alias), f = fontFamilyHash(family);
+    if (!a || !f) return;
+    std::erase_if(m_fontAliases, [&](const auto& kv) { return kv.first == a; });
+    if (a != f) m_fontAliases.emplace_back(a, f);
+    markAllDirty();
+}
+void UiContext::setDefaultFontFamily(std::string_view family) {
+    m_defaultFamily = fontFamilyHash(family);
+    markAllDirty();
+}
+const fuse::text::Font* UiContext::addFallbackFont(fuse::text::Font font) {
+    if (!font.valid()) return nullptr;
+    m_fallbackFonts.push_back(std::make_unique<fuse::text::Font>(std::move(font)));
+    for (auto& f : m_ownedFonts) attachFallbacks(*f);
+    markAllDirty();
+    return m_fallbackFonts.back().get();
+}
+
+namespace {
+struct BundledSet {
+    std::vector<std::pair<const fuse::text::BundledFace*, std::unique_ptr<fuse::text::Font>>> faces;
+    std::vector<fuse::text::Font> fallbacks;
+};
+const BundledSet& bundledSet() {
+    static const BundledSet set = [] {
+        BundledSet s;
+        s.fallbacks = fuse::text::Font::bundledFallbacks();
+        std::vector<const fuse::text::Font*> chain;
+        for (const auto& f : s.fallbacks) chain.push_back(&f);
+        for (const fuse::text::BundledFace& bf : fuse::text::bundledFaces()) {
+            if (bf.fallback) continue;
+            auto f = fuse::text::Font::load(bf.file);
+            if (!f) continue;
+            auto p = std::make_unique<fuse::text::Font>(std::move(*f));
+            p->setFallbacks(chain);
+            s.faces.emplace_back(&bf, std::move(p));
+        }
+        return s;
+    }();
+    return set;
+}
+} // namespace
+
+u32 UiContext::registerBundledFonts() {
+    const BundledSet& set = bundledSet();
+    u32 n = 0;
+    std::string_view uiFamily, monoFamily;
+    for (const auto& [bf, font] : set.faces) {
+        registerSharedFont(bf->family, bf->weight, *font);
+        ++n;
+        if (bf->monospace) monoFamily = bf->family;
+        else uiFamily = bf->family;
+        if (!m_font && !bf->monospace && bf->weight == kFontWeightNormal) m_font = font.get();
+    }
+    if (!uiFamily.empty()) {
+        setFontAlias("sans-serif", uiFamily);
+        setFontAlias("system-ui", uiFamily);
+        if (!m_defaultFamily) setDefaultFontFamily(uiFamily);
+    }
+    if (!monoFamily.empty()) {
+        setFontAlias("monospace", monoFamily);
+        setFontAlias("ui-monospace", monoFamily);
+    }
+    return n;
+}
+
+double UiContext::now() const {
+    if (m_clock.now) return m_clock.now(m_clock.user);
+    using C = std::chrono::steady_clock;
+    return std::chrono::duration<double>(C::now().time_since_epoch()).count();
+}
+
+void UiContext::setPlaceholder(NodeHandle h, std::string_view s) {
+    if (!node(h) || m_cold[h.index]->placeholder == s) return;
+    m_cold[h.index]->placeholder.assign(s);
+    markLayout(h.index);
+}
+std::string_view UiContext::placeholder(NodeHandle h) const {
+    return node(h) ? std::string_view(m_cold[h.index]->placeholder) : std::string_view{};
 }
 
 // ---- Layout --------------------------------------------------------------------------------------------------------
@@ -1253,15 +1458,27 @@ bool UiContext::pointerDown(Vec2 p, MouseButton b) {
     u32 target = interactiveAncestor(h.index);
     if (target == kNone) target = h.index;
     if (m_nodes[target].state & kStateDisabled) return true;
+    const NodeHandle th{target, m_nodes[target].gen};
+    // click series (double / triple click): same button, same node, within the interval and the slop distance
+    const double t = now();
+    const bool series = m_clicks.count > 0 && m_clicks.node == th && m_clicks.button == b &&
+                        t - m_clicks.time <= double(m_dblClick.interval) &&
+                        std::abs(p.x - m_clicks.pos.x) <= m_dblClick.distance && std::abs(p.y - m_clicks.pos.y) <= m_dblClick.distance;
+    m_clicks = {th, b, p, t, u8(series ? std::min(m_clicks.count + 1, 255) : 1)};
     if (b == MouseButton::Left) {
-        m_pressed = {target, m_nodes[target].gen};
+        m_pressed = th;
         setState(m_pressed, kStatePressed, true);
         u32 f = target;
         while (f != kNone && !focusableNode(f)) f = m_nodes[f].parent;
         setFocus(handleOf(f), FocusReason::Pointer);
     }
-    Event e; e.type = EventType::PointerDown; e.pos = p; e.button = b; e.mods = m_mods;
+    Event e; e.type = EventType::PointerDown; e.pos = p; e.button = b; e.mods = m_mods; e.clicks = m_clicks.count;
     dispatch(target, e);
+    if (m_clicks.count == 2 && node(th)) {
+        Event dc = e;
+        dc.type = EventType::DoubleClick;
+        if (!dispatch(target, dc) && node(th)) emit(th, SignalKind::DoubleClicked, {.event = &dc});
+    }
     return true;
 }
 
@@ -1277,6 +1494,7 @@ bool UiContext::pointerUp(Vec2 p, MouseButton b) {
         const NodeHandle h = hitTest(p);
         if (h.valid() && h != m_root) {
             Event e; e.type = EventType::PointerUp; e.pos = p; e.button = b; e.mods = m_mods;
+            e.clicks = m_clicks.button == b ? m_clicks.count : u8(1);
             dispatch(h.index, e);
             return true;
         }
@@ -1284,14 +1502,15 @@ bool UiContext::pointerUp(Vec2 p, MouseButton b) {
     }
     m_pressed = {};
     setState(pr, kStatePressed, false);
-    Event e; e.type = EventType::PointerUp; e.pos = p; e.button = b; e.mods = m_mods;
+    const u8 clicks = m_clicks.node == pr && m_clicks.button == b ? m_clicks.count : u8(1);
+    Event e; e.type = EventType::PointerUp; e.pos = p; e.button = b; e.mods = m_mods; e.clicks = clicks;
     dispatch(pr.index, e);
     const NodeHandle h = hitTest(p);
     bool inside = false;
     for (u32 a = h.valid() ? h.index : kNone; a != kNone; a = m_nodes[a].parent)
         if (a == pr.index) { inside = true; break; }
     if (inside && node(pr) && !(m_nodes[pr.index].state & kStateDisabled)) {
-        Event c; c.type = EventType::Click; c.pos = p; c.button = b; c.mods = m_mods;
+        Event c; c.type = EventType::Click; c.pos = p; c.button = b; c.mods = m_mods; c.clicks = clicks;
         if (!dispatch(pr.index, c) && node(pr)) emit(pr, SignalKind::Clicked, {});
     }
     return true;

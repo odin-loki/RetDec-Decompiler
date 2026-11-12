@@ -637,7 +637,7 @@ struct ViewportW {
             dl.rect({f.right() - t, f.y, t, f.h}, fc);
         }
         if (!o.badge.empty()) {
-            const f32 fs = pc.style.fontSize, bw = pc.ui.measureString(o.badge, fs) + 16.f, bh = fs + 8.f;
+            const f32 fs = pc.style.fontSize, bw = pc.ui.measureString(o.badge, fs, pc.node) + 16.f, bh = fs + 8.f;
             const Rect b{pc.content.x + (pc.content.w - bw) * 0.5f, pc.content.y + 4.f + o.frameWidth, bw, bh};
             dl.rect(b, pc.tint(o.badgeColor), 3.f);
             pc.ui.paintString(dl, o.badge, b, pc.tint(o.badgeText), fs, TextAlignment::Center, pc.node.index);
@@ -760,7 +760,7 @@ struct CodeEditW {
     static f32 gutter(UiContext& ui, NodeHandle n, const CodeState& s) {
         char b[16];
         std::snprintf(b, sizeof b, "%zu", s.lines.size());
-        return ui.measureString(b, ui.computed(n).fontSize * 0.9f) + 18.f;
+        return ui.measureString(b, ui.computed(n).fontSize * 0.9f, n) + 18.f;
     }
     static u32 visible(UiContext& ui, NodeHandle n) { return std::max(1u, u32(ui.contentRect(n).h / lineH(ui, n))); }
     static void paint(const PaintContext& pc, DrawList& dl) {
@@ -788,21 +788,21 @@ struct CodeEditW {
                            fs * 0.9f, TextAlignment::End, pc.node.index);
             if (!(a == b) && li >= a.line && li <= b.line) { // selection
                 const u32 sc = li == a.line ? a.col : 0, ecl = li == b.line ? b.col : u32(L.size());
-                const f32 sx = x0 + ui.measureString(std::string_view(L).substr(0, sc), fs);
-                const f32 ex = x0 + ui.measureString(std::string_view(L).substr(0, ecl), fs) + (li != b.line ? 6.f : 0.f);
+                const f32 sx = x0 + ui.measureString(std::string_view(L).substr(0, sc), fs, pc.node);
+                const f32 ex = x0 + ui.measureString(std::string_view(L).substr(0, ecl), fs, pc.node) + (li != b.line ? 6.f : 0.f);
                 dl.rect({sx, y, std::max(0.f, ex - sx), lh}, pc.tint(Color::rgb(0x264F78)));
             }
             tokenize(s->lang, L, tok);
             for (std::size_t i = 0; i < L.size();) {
                 std::size_t j = i;
                 while (j < L.size() && tok[j] == tok[i]) ++j;
-                const f32 x = x0 + ui.measureString(std::string_view(L).substr(0, i), fs);
+                const f32 x = x0 + ui.measureString(std::string_view(L).substr(0, i), fs, pc.node);
                 ui.paintString(dl, std::string_view(L).substr(i, j - i), {x, y, c.right() - x + 400.f, lh}, pc.tint(kTok[tok[i]]), fs,
                                TextAlignment::Start, pc.node.index);
                 i = j;
             }
             if (focused && li == s->caret.line) {
-                const f32 cx = x0 + ui.measureString(std::string_view(L).substr(0, s->caret.col), fs);
+                const f32 cx = x0 + ui.measureString(std::string_view(L).substr(0, s->caret.col), fs, pc.node);
                 dl.rect({cx, y + 2.f, 2.f, lh - 4.f}, pc.tint(Color::rgb(0xFFFFFF)));
                 ui.setTextCaret(pc.node, {cx, y + 2.f, 2.f, lh - 4.f});
             }
@@ -868,7 +868,7 @@ struct CodeEditW {
         u32 col = 0;
         while (col < L.size()) {
             const u32 nx = nextCp(L, col);
-            const f32 mid = (ui.measureString(std::string_view(L).substr(0, col), fs) + ui.measureString(std::string_view(L).substr(0, nx), fs)) * 0.5f;
+            const f32 mid = (ui.measureString(std::string_view(L).substr(0, col), fs, n) + ui.measureString(std::string_view(L).substr(0, nx), fs, n)) * 0.5f;
             if (x < mid) break;
             col = nx;
         }
@@ -1060,7 +1060,7 @@ struct DateTimeW {
     static constexpr u32 kStart[5] = {0, 5, 8, 11, 14}, kLen[5] = {4, 2, 2, 2, 2};
     static Size measure(UiContext& ui, NodeHandle n, Size) {
         const f32 fs = ui.computed(n).fontSize;
-        return {ui.measureString("0000-00-00 00:00", fs) + kBtn + 10.f, std::ceil(fs * 1.4f)};
+        return {ui.measureString("0000-00-00 00:00", fs, n) + kBtn + 10.f, std::ceil(fs * 1.4f)};
     }
     static void paint(const PaintContext& pc, DrawList& dl) {
         UiContext& ui = pc.ui;
@@ -1071,8 +1071,8 @@ struct DateTimeW {
         const f32 fs = pc.style.fontSize;
         const bool focused = ui.focused() == pc.node;
         if (focused && t.size() >= 16) {
-            const f32 x0 = c.x + ui.measureString(t.substr(0, kStart[s->field]), fs);
-            const f32 x1 = c.x + ui.measureString(t.substr(0, kStart[s->field] + kLen[s->field]), fs);
+            const f32 x0 = c.x + ui.measureString(t.substr(0, kStart[s->field]), fs, pc.node);
+            const f32 x1 = c.x + ui.measureString(t.substr(0, kStart[s->field] + kLen[s->field]), fs, pc.node);
             dl.rect({x0 - 1.f, c.y + 1.f, x1 - x0 + 2.f, c.h - 2.f}, accentOf(pc).withAlpha(0.55f * pc.opacity), 3.f);
         }
         ui.paintString(dl, t, {c.x, c.y, c.w - kBtn, c.h}, pc.tint(pc.style.color), fs, TextAlignment::Start, pc.node.index);
@@ -1112,7 +1112,7 @@ struct DateTimeW {
             const std::string_view t = ui.text(ec.node);
             const f32 fs = ui.computed(ec.node).fontSize;
             for (u32 k = 5; k-- > 0;)
-                if (e.pos.x >= c.x + ui.measureString(t.substr(0, kStart[k]), fs) - 3.f) { s->field = k; break; }
+                if (e.pos.x >= c.x + ui.measureString(t.substr(0, kStart[k]), fs, ec.node) - 3.f) { s->field = k; break; }
             s->typed.clear();
             ui.invalidate(ec.node);
             return true;

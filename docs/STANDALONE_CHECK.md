@@ -246,8 +246,9 @@ regenerating it means one `--update-warnings` run per configuration from a clean
 `BUILD_DIR`, unioned.
 
 `EXCLUDED_SOURCES` in the script mirrors a conditional in a module's own
-CMakeLists — `neural/llama_inference.cpp` is only built when llama.cpp is
-present, and compiling it here would collide with `mock_inference.cpp`.
+CMakeLists — `neural/forge_inference.cpp` needs Forge's inference stack
+(generated op tables, the `forge_simd_mv` kernels), which only CMake builds;
+`mock_inference.cpp` provides a null `createForgeInference()` here instead.
 `EXCLUDED_REASONS` records modules that compile standalone but are deliberately
 left out, so `--audit` can tell "nobody wired this up" from "we decided not to".
 

@@ -1306,17 +1306,12 @@ TEST_F(OptimizerManagerPipelineTests, NewtonSqrtLoopConditionKeepsItsVariableDec
 	const auto bad = undeclaredLocals(module);
 	EXPECT_TRUE(bad.empty()) << "uses " << (bad.empty() ? std::string() : *bad.begin())
 							 << " without declaring it:\n" << code;
-}
 
-// TMPDEBUG
-TEST_F(OptimizerManagerPipelineTests, TmpNewtonDump)
-{
-	auto module = convertLLVMIR2BIR(kNewtonSqrtFunction1060);
-	StringSet en, dis;
-	if (auto e = getenv("TMP_EN")) { std::stringstream ss(e); std::string t; while (std::getline(ss, t, ',')) if (!t.empty()) en.insert(t); }
-	if (auto e = getenv("TMP_DIS")) { std::stringstream ss(e); std::string t; while (std::getline(ss, t, ',')) if (!t.empty()) dis.insert(t); }
-	if (!getenv("TMP_NOOPT")) runPipeline(module, dis, en);
-	fprintf(stderr, "%s\n", emitC(module).c_str());
+	// Declared is not the same as right. With the stale reads fixed and
+	// nothing else, the temporary was substituted away and the exit test
+	// became `fabs(x - x)`, folded to a constant: a loop that never converges
+	// and prints the guess from one step too early.
+	EXPECT_THAT(code, Not(HasSubstr("fabs_f64(0.0)"))) << code;
 }
 
 } // namespace tests

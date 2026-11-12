@@ -182,6 +182,7 @@ ModalDialog::ModalDialog(UiContext& ui, std::string_view title, float width, flo
 	dlg::ensureDialogStyles(ui);
 	card_ = w::dialog(ui, title, id);
 	titleLabel_ = ui.firstChild(card_);
+	ui.setCss(titleLabel_, "flex-shrink", "0");
 	body_ = w::dialogBody(ui, card_);
 	ui.addClass(body_, "retdec-dlg-body");
 	ui.setCss(body_, "flex-grow", "1");

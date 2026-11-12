@@ -63,7 +63,7 @@ binary corpus ([BENCHMARKS.md](BENCHMARKS.md)).
 |------|----------|--------|
 | Post-pipeline STL/algo/crypto/serial/concurrency comments | `src/retdec/retdec.cpp` + detector libs | **Partial** — runs; low name-blind F1 |
 | Buildable C sidecar | `--buildable` / `RETDEC_EMIT_BUILDABLE` | **Implemented** (default on) |
-| llama.cpp refine | `src/neural/` | **Partial** — opt-in; compile gate yes; differential gate **not implemented** |
+| Neural refine (Forge) | `src/neural/` | **Partial** — opt-in; compile gate yes; differential gate **not implemented** |
 | CUDA host (`cudaLaunchKernel`) | `src/ptx_decompile/cuda_host_recover.cpp` `CudaHostRecovery` | **Not wired** (tests only) |
 | OpenCL host (`cl*` APIs) | same file, `OclHostRecovery` | **Implemented** (log summary) |
 | PTX → CUDA-C | `src/ptx_decompile/` parser + lifter | **Not wired** (no CLI `.ptx`) |

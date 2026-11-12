@@ -1,6 +1,6 @@
 ## Summary
 
-<!-- What does this PR change and why? RetDec Imortek is a specification-extraction decompiler (v2.0.24): buildable C default, input-keyed outputs, GUI on FuseUI (vendored), optional llama.cpp. -->
+<!-- What does this PR change and why? RetDec Imortek is a specification-extraction decompiler (v2.0.24): buildable C default, input-keyed outputs, GUI on FuseUI (vendored), optional on-device neural refinement (Forge). -->
 
 ## Type of change
 

@@ -245,7 +245,7 @@ faster” figure (that claim is withdrawn).
 
 **Tools → AI Assistant…** opens `AIAssistantPanel` (not a dock).
 
-Optional llama.cpp refine uses env vars, not a CLI `--model` flag:
+Optional neural refine (on Forge) uses env vars, not a CLI `--model` flag:
 
 1. **Tools → Settings… → ML** — set **Model file (.gguf)**. When that path
    exists, Run Full Analysis sets `RETDEC_NEURAL_REFINE` /
@@ -320,7 +320,8 @@ externally; those toggles affect in-process analysis only.**
 
 These widgets persist `CUDASettings`. They do **not** drive `cuda_accel` or
 decompiler GPU kernels (`C-CUDA-PIPE` withdrawn). Neural GPU offload is
-llama.cpp `n_gpu_layers` via the ML tab.
+Forge's device choice via the ML tab (`RETDEC_NEURAL_N_GPU_LAYERS`: 0 = CPU,
+else GPU; or `RETDEC_NEURAL_DEVICE`).
 
 | Setting | Default | Description |
 |---------|---------|-------------|

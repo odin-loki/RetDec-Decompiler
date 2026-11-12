@@ -231,13 +231,12 @@ Third-party components (see cmake/deps.cmake for pinned versions):
 Keystone (GPL-2.0) is used only in capstone2llvmirtool and related tests.
 It must not be included in commercial distribution packages.
 
-llama.cpp (MIT) — when RETDEC_ENABLE_NEURAL is enabled.
-
 Vendored in third_party/ (see third_party/README.md; full licence texts in
 LICENSE-THIRD-PARTY):
 
   FuseUI (third_party/fuseui) — the GUI toolkit retdec-gui is built on.
-  Forge  (third_party/forge)  — OS layer, JSON, hashing, thread pool.
+  Forge  (third_party/forge)  — OS layer, JSON, hashing, thread pool, and the
+          inference stack behind neural refinement (RETDEC_ENABLE_NEURAL).
     Both first-party: Copyright (c) 2026 Odin Loch (Imortek), the owner of
     RetDec; AGPL-3.0-or-later with a commercial option, like RetDec itself.
     No other GUI toolkit is linked or shipped.

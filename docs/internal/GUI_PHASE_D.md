@@ -26,7 +26,7 @@ There is no in-tree Qwen3/FlashAttention stack (`C-QWEN3-GPU` withdrawn).
 | GUI | Tools → AI Assistant (`AIAssistantPanel`) — local GGUF load when configured |
 | CLI / batch | `RETDEC_NEURAL_REFINE=1` + `RETDEC_NEURAL_MODEL` (GGUF). There is no `retdec-qwen3-runner`. |
 | Optional HTTP | User-run Ollama on localhost (not bundled) |
-| In-process | `RETDEC_ENABLE_LLAMACPP=ON` for neural refinement hook only |
+| In-process | `RETDEC_ENABLE_NEURAL=ON` (Forge backend; was `RETDEC_ENABLE_LLAMACPP`) for neural refinement hook only |
 
 **Rationale:** The old in-tree Qwen panel is gone (`C-QWEN3-GPU` withdrawn).
 The Tools window is a local chat surface; post-decompile refine stays

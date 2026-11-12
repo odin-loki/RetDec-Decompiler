@@ -122,6 +122,9 @@ std::vector<fs::path> installPrefixCandidates()
 	fs::path up = (appDir / "..").lexically_normal(); // <bin>/.. ; for a bundle this is Contents/
 	if (up.has_relative_path() && up.filename().empty()) up = up.parent_path(); // "x/" -> "x"
 	out.push_back(up);
+	// Portable layout (scripts/windows_native_build.ps1 dist\windows): the
+	// executables sit flat in the prefix with share\ beside them, not in bin\.
+	out.push_back(appDir);
 	if (isMacBundleExecutableDir(appDir))
 	{
 		// X.app/Contents/MacOS -> install prefix holding X.app, bin/ and share/.

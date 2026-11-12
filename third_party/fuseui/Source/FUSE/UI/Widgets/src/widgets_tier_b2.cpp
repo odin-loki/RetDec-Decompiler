@@ -24,8 +24,7 @@ NodeHandle prevSibling(const UiContext& ui, NodeHandle n) {
     return prev;
 }
 f32 rowHeight(const UiContext& ui, NodeHandle n) {
-    const f32 px = ui.computed(n).fontSize;
-    return std::ceil(ui.font() ? ui.font()->metrics(px).lineHeight() : px * 1.25f) + 6.f;
+    return ui.lineHeight(ui.computed(n).fontSize, n) + 6.f;
 }
 void setBasis(UiContext& ui, NodeHandle pane, f32 px) {
     ui.set(pane, Prop::Basis, PropValue::ofLength(Length::px(std::round(px))));
@@ -111,7 +110,7 @@ struct DockTitle { // the title strip of a dock widget; text = title. Close box 
     static constexpr std::string_view kName = "docktitle";
     static constexpr A11yRole kRole = A11yRole::Text;
     static constexpr bool kInteractive = true;
-    static Size measure(UiContext& ui, NodeHandle n, Size) { return {std::ceil(ui.measureString(ui.text(n), ui.computed(n).fontSize)) + 24.f, rowHeight(ui, n) - 2.f}; }
+    static Size measure(UiContext& ui, NodeHandle n, Size) { return {std::ceil(ui.measureString(ui.text(n), ui.computed(n).fontSize, n)) + 24.f, rowHeight(ui, n) - 2.f}; }
     static Rect closeBox(const Rect& r) { return {r.right() - r.h, r.y, r.h, r.h}; }
     static void paint(const PaintContext& pc, DrawList& dl) {
         const Rect r = pc.rect;

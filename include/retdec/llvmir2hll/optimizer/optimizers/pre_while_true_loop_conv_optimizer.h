@@ -17,6 +17,10 @@ namespace llvmir2hll {
 
 class ValueAnalysis;
 class VarUsesVisitor;
+class AssignStmt;
+class IfStmt;
+class Variable;
+class WhileLoopStmt;
 
 /**
 * @brief Optimizes the bodies of @c while @c True loops to simplify
@@ -60,6 +64,9 @@ class VarUsesVisitor;
 *         break
 *     i = i + 1
 * @endcode
+*
+* Since `i = tmp + 1` now runs after the exit test instead of before it, (2)
+* is done only when nothing reads i in the if statement or outside the loop.
 *
 * Optimization (3):
 * @code
@@ -138,6 +145,10 @@ private:
 	bool tryOptimizationCase3(ShPtr<WhileLoopStmt> stmt);
 	bool tryOptimizationCase4(ShPtr<WhileLoopStmt> stmt);
 	bool tryOptimizationCase5(ShPtr<WhileLoopStmt> stmt);
+
+	bool iVarHasReaderTheMoveWouldChange(ShPtr<Variable> iVar,
+		ShPtr<WhileLoopStmt> loop, ShPtr<IfStmt> loopEnd,
+		ShPtr<AssignStmt> assign1BeforeIf, ShPtr<AssignStmt> assign2BeforeIf);
 
 private:
 	/// Analysis of values.

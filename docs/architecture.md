@@ -69,7 +69,7 @@ Default native extras:
 - **Post-pipeline semantic detectors** (comments + `.config.json`), not
   production-quality STL reconstruction. Name-blind algorithm-recovery F1 on
   the 216-binary corpus is **0.056** ([BENCHMARKS.md](BENCHMARKS.md)).
-- **Optional llama.cpp refine** (`RETDEC_ENABLE_LLAMACPP`, runtime
+- **Optional neural refine on Forge** (`RETDEC_ENABLE_NEURAL`, runtime
   `RETDEC_NEURAL_REFINE`). See [NEURAL_REFINEMENT.md](NEURAL_REFINEMENT.md).
 
 Native CPU architectures: see [ARCHITECTURE_TARGETS.md](ARCHITECTURE_TARGETS.md).
@@ -98,7 +98,7 @@ a leftover manifest that no CMake file, preset, script, or workflow reads.
 RetDec/
 ├── CMakeLists.txt            Root project (VERSION 2.0.22, cmake 3.13)
 ├── CMakePresets.json         core/full debug and release, asan, coverage
-├── cmake/deps.cmake          LLVM 23.1.0, Capstone 5.0.9, llama.cpp b10451, …
+├── cmake/deps.cmake          LLVM 23.1.0, Capstone 5.0.9, …
 ├── include/retdec/           Public headers
 ├── src/                      Implementations (see developer_guide.md)
 ├── tests/                    Unit, integration, managed, algorithm-recovery
@@ -413,7 +413,7 @@ Two separate consumers:
 
 1. **Post-decompile refine** — `neural::maybeRefineDecompilerOutput` when
    `RETDEC_NEURAL_REFINE=1` and a GGUF path is set. Requires
-   `RETDEC_ENABLE_LLAMACPP` at build time for a real backend; otherwise the
+   `RETDEC_ENABLE_NEURAL` at build time for the Forge backend; otherwise the
    stub in `src/retdec/neural_refine_stub.cpp` is a no-op. Compile gate is
    `cc`/`gcc -fsyntax-only`. Differential gate is **not implemented**
    (`RETDEC_NEURAL_DIFF_GATE=1` warns and skips). See
@@ -425,7 +425,7 @@ Two separate consumers:
 ```
 maybeRefineDecompilerOutput
   ├── model_verify     SHA-256 allowlist (fails closed if empty)
-  ├── llama.cpp        GGUF generate (optional n_gpu_layers)
+  ├── Forge            .fpk / .gguf / HF-dir generate (cpu or GPU device)
   ├── gates            -fsyntax-only + tree-sitter AST (structural)
   └── applyJsonRenameMap  Naming-tier GBNF JSON map
 ```
@@ -474,10 +474,12 @@ Detectors in `src/algo_recover` and friends consume `retdec::ssa`, not
 llvmir2hll BIR. `buildSsaModule` is an adapter. It does not replace
 mem2reg / llvmir2hll.
 
-### Why llama.cpp instead of a custom Qwen engine?
+### Why Forge instead of a custom Qwen engine?
 
-`src/qwen3/` was deleted. Optional refinement uses pinned llama.cpp
-**b10451** in `cmake/deps.cmake`.
+`src/qwen3/` was deleted. Optional refinement first used a pinned llama.cpp;
+it now runs on Forge (`third_party/forge`, first-party, vendored), the same
+library the GUI uses for its OS layer, so there is no external inference
+dependency to fetch or pin.
 
 ### Why INI for GUI settings?
 
@@ -505,7 +507,7 @@ Post-pipeline SSA rebuild
     call_conv → ipa → (optional type_inference)
     → container / algo / sort / concurrency / crypto / serial / patterns
     → comments + config JSON
-    → optional llama.cpp refine (*.refined.c)
+    → optional Forge neural refine (*.refined.c)
     → default --buildable sidecars
     → OclHostRecovery log
     │

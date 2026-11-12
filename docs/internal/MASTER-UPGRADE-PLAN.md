@@ -3,6 +3,9 @@
 **Historical plan; status as of 2.0.22 is in [README.md](../../README.md) and [docs/internal/README.md](README.md).**
 
 Steps 1–26 are done. Do not treat open checkboxes here as current work.
+Since then the inference backend has moved from llama.cpp to Forge
+(`third_party/forge`, `src/neural/forge_inference.cpp`; CHANGELOG Unreleased),
+so decision D1 and the llama.cpp layout below are history.
 Current scope: [MAINTAINER_SCOPE.md](MAINTAINER_SCOPE.md). Completion:
 [PLAN_COMPLETION.md](PLAN_COMPLETION.md).
 

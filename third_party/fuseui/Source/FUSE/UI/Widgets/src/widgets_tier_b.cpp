@@ -25,8 +25,7 @@ bool isClass(const UiContext& ui, NodeHandle n, std::string_view cls) {
 void setPx(UiContext& ui, NodeHandle n, Prop p, f32 v) { ui.set(n, p, PropValue::ofLength(Length::px(v))); }
 
 f32 rowHeight(UiContext& ui, NodeHandle n) {
-    const f32 px = ui.computed(n).fontSize;
-    return std::ceil(ui.font() ? ui.font()->metrics(px).lineHeight() : px * 1.25f) + 6.f;
+    return ui.lineHeight(ui.computed(n).fontSize, n) + 6.f;
 }
 Color textCol(const PaintContext& pc) { return pc.tint(pc.style.color); }
 Color accent(const PaintContext& pc) { return pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD)); }
@@ -136,7 +135,7 @@ struct MenuItem { // text = "label" or "label\n<sub items, one tab less>" (a sub
     static bool hasSub(std::string_view t) { return t.find('\n') != std::string_view::npos; }
     static Size measure(UiContext& ui, NodeHandle n, Size) {
         const std::string_view t = ui.text(n);
-        return {std::ceil(ui.measureString(label(t), ui.computed(n).fontSize)) + (hasSub(t) ? 18.f : 0.f), rowHeight(ui, n) - 6.f};
+        return {std::ceil(ui.measureString(label(t), ui.computed(n).fontSize, n)) + (hasSub(t) ? 18.f : 0.f), rowHeight(ui, n) - 6.f};
     }
     static void paint(const PaintContext& pc, DrawList& dl) {
         const std::string_view t = pc.ui.text(pc.node);
@@ -157,7 +156,7 @@ struct MenuItem { // text = "label" or "label\n<sub items, one tab less>" (a sub
         const std::string_view sub = t.substr(t.find('\n') + 1);
         f32 w = 0.f; // estimated panel width: open to the left when the right side has no room
         eachLine(sub, [&](u32, std::string_view l) {
-            if (l.empty() || l[0] != '\t') w = std::max(w, ui.measureString(l, ui.computed(n).fontSize) + 66.f);
+            if (l.empty() || l[0] != '\t') w = std::max(w, ui.measureString(l, ui.computed(n).fontSize, n) + 66.f);
             return true;
         });
         const f32 x = panel.right() - 2.f + w > ui.popupArea().x + ui.popupArea().w ? std::max(ui.popupArea().x, panel.x + 2.f - w) : panel.right() - 2.f;
@@ -210,7 +209,7 @@ struct MenuButton { // text = "Title\nitem\nitem..."
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
     static Size measure(UiContext& ui, NodeHandle n, Size) {
-        return {std::ceil(ui.measureString(nth(ui.text(n), 0), ui.computed(n).fontSize)), rowHeight(ui, n) - 6.f};
+        return {std::ceil(ui.measureString(nth(ui.text(n), 0), ui.computed(n).fontSize, n)), rowHeight(ui, n) - 6.f};
     }
     static void paint(const PaintContext& pc, DrawList& dl) {
         labelAt(pc, dl, nth(pc.ui.text(pc.node), 0), pc.content, TextAlignment::Center);
@@ -465,7 +464,7 @@ struct TabBar {
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
     static constexpr f32 kPad = 12.f;
-    static f32 tabW(UiContext& ui, NodeHandle n, std::string_view t) { return std::ceil(ui.measureString(t, ui.computed(n).fontSize)) + 2.f * kPad; }
+    static f32 tabW(UiContext& ui, NodeHandle n, std::string_view t) { return std::ceil(ui.measureString(t, ui.computed(n).fontSize, n)) + 2.f * kPad; }
     static Size measure(UiContext& ui, NodeHandle n, Size) {
         f32 w = 0.f;
         eachLine(ui.text(n), [&](u32, std::string_view t) { w += tabW(ui, n, t); return true; });

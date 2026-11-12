@@ -52,6 +52,21 @@ NodeHandle panel(UiContext& ui, NodeHandle parent, std::string_view id = {});
 /// Selected item text of a combo box.
 std::string_view comboText(const UiContext& ui, NodeHandle combo);
 
+/// Placeholder text of a lineedit or codeedit (Qt: placeholderText): painted in `placeholder-color` (default: the
+/// text colour at 45 % alpha) while the field is empty and unfocused. Empty = none.
+void setPlaceholderText(UiContext& ui, NodeHandle edit, std::string_view text);
+std::string_view placeholderText(const UiContext& ui, NodeHandle edit);
+/// Spin box special-value text (Qt: QSpinBox::specialValueText), e.g. "All" or "Auto": shown instead of the number
+/// while value() is at the range minimum. Empty = off.
+void setSpecialValueText(UiContext& ui, NodeHandle spin, std::string_view text);
+std::string_view specialValueText(const UiContext& ui, NodeHandle spin);
+/// What a spin box shows: the special-value text at the minimum, else the formatted number (written to `scratch`).
+std::string_view spinBoxText(const UiContext& ui, NodeHandle spin, std::string& scratch);
+/// Indeterminate ("busy") progress bar (Qt: range 0..0): a chunk sweeps across instead of showing value(). Adds the
+/// CSS class "indeterminate"; animates on the context clock (UiContext::now) until switched off or destroyed.
+void setProgressIndeterminate(UiContext& ui, NodeHandle bar, bool on);
+bool progressIndeterminate(const UiContext& ui, NodeHandle bar);
+
 // ---- Tier B (plan §5) ------------------------------------------------------------------------------------------------
 // Popups, menus, dialogs and tooltips live in the overlay layer: a core "layer" node kept as the root's last child,
 // laid out over the viewport and outside the flow. A popup is a viewport-sized scope node (the scrim) holding the
@@ -122,6 +137,12 @@ NodeHandle dockBody(const UiContext& ui, NodeHandle dock);
 void dockTo(UiContext& ui, NodeHandle dock, DockSide side);
 void dockClose(UiContext& ui, NodeHandle dock); ///< hides (dockTo re-shows); emits Toggled {flag = false}
 
+/// Font of one model cell (ItemModel::font): a CSS family list (empty = the view's / column's family) and weight
+/// (0 = the view's / column's weight). Resolved with UiContext::resolveFont.
+struct CellFont {
+    std::string_view family{};
+    u16 weight = 0;
+};
 /// Item model: a function table over caller data (no inheritance). `data` may return a view into `scratch`.
 struct ItemModel {
     const void* user = nullptr;
@@ -129,6 +150,8 @@ struct ItemModel {
     u32 (*rows)(const void* user) = nullptr;
     std::string_view (*data)(const void* user, u32 row, u32 col, std::string& scratch) = nullptr;
     std::string_view (*header)(const void* user, u32 col) = nullptr; ///< optional
+    /// Optional per-cell font (monospace addresses, bold totals); overrides the column font (setTableColumnFont).
+    CellFont (*font)(const void* user, u32 row, u32 col) = nullptr;
 };
 /// A ready-made row/column string model (owns its cells). sortBy reorders rows (stable, numeric when both parse).
 class StringTableModel {
@@ -159,6 +182,32 @@ f32 tableColumnWidth(const UiContext& ui, NodeHandle table, u32 col);
 void setTableColumnWidth(UiContext& ui, NodeHandle table, u32 col, f32 px);
 /// List view over column 0 of a model (shares the table machinery, no header).
 NodeHandle modelListView(UiContext& ui, NodeHandle parent, const ItemModel* model, std::string_view id = {});
+
+/// Table / model-list selection (Qt: SingleSelection / ExtendedSelection). Single (the default) keeps one selected
+/// row = value(). Extended: click selects one row, Ctrl+click toggles, Shift+click / Shift+arrows extend from the
+/// anchor, Ctrl+arrows move the current row only, Ctrl+Space toggles it, Ctrl+A selects all; value() stays the current
+/// row and changes emit SelectionChanged {value = count}.
+enum class SelectionMode : u8 { Single, Extended };
+void setTableSelectionMode(UiContext& ui, NodeHandle table, SelectionMode mode);
+SelectionMode tableSelectionMode(const UiContext& ui, NodeHandle table);
+bool tableRowSelected(const UiContext& ui, NodeHandle table, u32 row);
+/// Selected rows, ascending (Single: the current row, if any).
+std::vector<u32> tableSelectedRows(const UiContext& ui, NodeHandle table);
+u32 tableSelectedCount(const UiContext& ui, NodeHandle table);
+/// Programmatic selection (Single mode: selecting makes the row current; deselecting the current row clears it).
+void setTableRowSelected(UiContext& ui, NodeHandle table, u32 row, bool selected);
+void tableSelectAll(UiContext& ui, NodeHandle table);
+void tableClearSelection(UiContext& ui, NodeHandle table);
+/// Scrolls so `row` is visible (EnsureVisible: the least scrolling; Top / Center: placed there). Does not select.
+enum class ScrollHint : u8 { EnsureVisible, Top, Center };
+void scrollToRow(UiContext& ui, NodeHandle table, u32 row, ScrollHint hint = ScrollHint::EnsureVisible);
+/// Item activation (off by default): when on, Enter on the current row and a double click on a row emit
+/// Activated {value = row, index = column (-1 for Enter)} (Enter still emits Submitted as before).
+void setTableActivation(UiContext& ui, NodeHandle table, bool on);
+/// Column font (CSS family list, weight 0 = the view's): e.g. "monospace" for an address column. The view's own
+/// font-family / font-weight (CSS on the tableview node or its classes) applies to the other columns; ItemModel::font
+/// overrides per cell.
+void setTableColumnFont(UiContext& ui, NodeHandle table, u32 col, std::string_view family, u16 weight = 0);
 
 /// Dock layout persistence (plan §5 "saved layouts"): a small text blob with the side region sizes and, per dock
 /// widget with an id, its side, order in the region and open state. Restoring moves / opens / closes the named docks
