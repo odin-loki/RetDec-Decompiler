@@ -1068,7 +1068,12 @@ parseAR(const uint8_t* data, size_t size, const std::string& name, const FormatL
 		if (hdr[58] != '`' || hdr[59] != '\n') break;
 
 		size_t dataOff = off + 60;
-		if (dataOff + memberSize > size) memberSize = size - dataOff;
+		// Compared without forming the sum: the size field is ASCII the file
+		// controls, and strtoull() takes "-55" to 2^64 - 55, so
+		// `dataOff + memberSize > size` wrapped to a small number, the clamp
+		// was skipped, and the member was classified with that size -- a read
+		// past the end of the buffer on its fourth byte (fuzz-pr, lattice).
+		if (memberSize > size - dataOff) memberSize = size - dataOff;
 
 		// Skip special members: "/", "//", "/SYM64/"
 		bool isSpecial = (memberName[0] == '/' && (memberName[1] == 0 || memberName[1] == '/'));
