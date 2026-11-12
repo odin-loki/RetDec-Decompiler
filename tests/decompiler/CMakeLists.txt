@@ -183,11 +183,20 @@ set(_CORPUS_HELLO_PYC "${_CORPUS_FIXTURES_DIR}/hello.pyc")
 set(_CORPUS_HELLO_PY "${CMAKE_CURRENT_SOURCE_DIR}/corpus/sources/hello.py")
 file(TO_CMAKE_PATH "${_CORPUS_HELLO_PY}" _CORPUS_HELLO_PY_C)
 file(TO_CMAKE_PATH "${_CORPUS_HELLO_PYC}" _CORPUS_HELLO_PYC_C)
+# The .pyc magic is the interpreter's, so the fixture depends on which
+# interpreter configure chose, not only on hello.py. Without this a cached
+# build tree kept a .pyc from whatever Python first built it: ctest-windows
+# pins 3.12, but restored a hello.pyc with magic 3666 that pyc_parser does not
+# know, and corpus_regression failed on it. configure_file() rewrites the
+# stamp only when its content changes.
+set(_CORPUS_PYC_STAMP "${CMAKE_CURRENT_BINARY_DIR}/hello_pyc_interpreter.txt")
+file(CONFIGURE OUTPUT "${_CORPUS_PYC_STAMP}"
+    CONTENT "${Python3_EXECUTABLE} ${Python3_VERSION}\n")
 add_custom_command(
     OUTPUT "${_CORPUS_HELLO_PYC}"
     COMMAND ${Python3_EXECUTABLE} -c
         "import py_compile; py_compile.compile('${_CORPUS_HELLO_PY_C}', cfile='${_CORPUS_HELLO_PYC_C}', doraise=True)"
-    DEPENDS "${_CORPUS_HELLO_PY}"
+    DEPENDS "${_CORPUS_HELLO_PY}" "${_CORPUS_PYC_STAMP}"
     COMMENT "Generating corpus hello.pyc"
     VERBATIM
 )
