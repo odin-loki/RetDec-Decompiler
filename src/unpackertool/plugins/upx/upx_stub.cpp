@@ -167,6 +167,8 @@ UpxStub::UpxStub(retdec::loader::Image* inputFile, const UpxStubData* stubData, 
 {
 }
 
+UpxStub::~UpxStub() = default;
+
 std::shared_ptr<UpxStub> UpxStub::createStub(retdec::loader::Image* file)
 {
 	return _createStubImpl(file, nullptr);
