@@ -1,6 +1,6 @@
 # RetDec — Architecture Targets Roadmap
 
-Status of **native** decompilation targets as of Imortek **2.0.26**.
+Status of **native** decompilation targets as of Imortek **2.1.0**.
 Capstone dispatch and ABI tables live under `src/capstone2llvmir/` and
 `src/bin2llvmir/providers/abi/`. CLI `-a|--arch` accepts
 `mips|mips64|pic32|arm|thumb|arm64|powerpc|powerpc64|x86|x86-64|riscv|riscv64|sparc|sparc64|sysz|s390x|xcore`

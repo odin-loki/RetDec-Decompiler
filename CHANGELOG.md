@@ -6,6 +6,14 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ## [Unreleased]
 
+## [2.1.0] — 2026-11-12
+
+Headline: retdec-gui is rebuilt on FuseUI with no Qt anywhere in the tree, the
+codebase is C++23, and neural refinement runs on Forge instead of llama.cpp.
+Also in this release: CI fixes across Linux, Windows, macOS, sanitizers,
+coverage and fuzzing (AR/ELF-note/DWARF/PE relocation bounds, UBSan vptr in
+the idiom analyser, Windows CLI hang on usage errors).
+
 ### Changed — neural refinement on Forge (llama.cpp removed)
 
 - **Inference backend is Forge.** `retdec::neural::createForgeInference()` (`src/neural/forge_inference.cpp`) replaces `createLlamaInference()` and the llama.cpp ExternalProject: `deps/llamacpp`, `src/neural/llama_inference.cpp`, `RETDEC_ENABLE_LLAMACPP`, `RETDEC_HAS_LLAMACPP` and the `LLAMACPP_URL` pin are gone. It uses Forge's C++ inference API (`forge::inference::model` / `session`, the sampler chain, `grammar_constraint`); `cmake/first_party.cmake` exports `retdec::forge_inference` (Forge's headers are consumed as system headers).

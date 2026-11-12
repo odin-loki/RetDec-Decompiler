@@ -1,9 +1,9 @@
 # RetDec Imortek — Specification Extraction Decompiler
 
-**Version 2.0.26.** Repo:
+**Version 2.1.0.** Repo:
 [odin-loki/RetDec-Decompiler](https://github.com/odin-loki/RetDec-Decompiler).
 Release tag
-[v2.0.26](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.0.26).
+[v2.1.0](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.1.0).
 
 **A specification-extraction tool that contains a decompiler** — algorithm
 recovery, semantic export, and offline neural refinement are the product;
