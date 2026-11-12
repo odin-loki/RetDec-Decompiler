@@ -8,7 +8,7 @@ items. This is **not** a product pipeline at v2.0.22.
 - Nothing in `src/retdec` links `retdec::experimental`.
 
 The specification-extraction decompiler (buildable C, semantic detections,
-optional llama.cpp, Qt 6 GUI) does not use this target.
+optional llama.cpp, FuseUI GUI) does not use this target.
 
 Research-only enable:
 

@@ -181,6 +181,25 @@ const char* exportExtension(GraphExportFormat f);
 void setNodeShown(fuse::ui::UiContext& ui, fuse::ui::NodeHandle n, bool shown);
 bool nodeShown(const fuse::ui::UiContext& ui, fuse::ui::NodeHandle n);
 
+/// Save-file prompt on FuseUI's modal file dialog (one per panel; the dialog is created on first use).
+class SavePrompt
+{
+public:
+	explicit SavePrompt(fuse::ui::UiContext& ui): m_ui(ui) {}
+	~SavePrompt();
+	SavePrompt(const SavePrompt&) = delete;
+	SavePrompt& operator=(const SavePrompt&) = delete;
+	/// Opens the dialog in the current directory; `onChosen(path)` runs on OK (not on Cancel).
+	void open(std::string_view title, std::string_view filter, std::function<void(const std::string&)> onChosen);
+	fuse::ui::NodeHandle dialog() const { return m_dialog; }
+
+private:
+	fuse::ui::UiContext& m_ui;
+	fuse::ui::NodeHandle m_dialog;
+	fuse::ui::ConnectionHandle m_conn;
+	std::function<void(const std::string&)> m_onChosen;
+};
+
 /// Colour conversion model::Rgba -> FuseUI.
 fuse::ui::Color toColor(model::Rgba c, float opacity = 1.f);
 

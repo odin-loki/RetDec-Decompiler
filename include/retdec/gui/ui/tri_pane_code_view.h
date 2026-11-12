@@ -178,6 +178,7 @@ private:
 	model::TextPos caret_, anchor_;
 	int highlight_ = -1;
 	int first_ = 0;
+	int pendingCenter_ = -1; ///< centre request made before the first layout
 	float scrollX_ = 0.f;
 	bool dragging_ = false;
 	bool dragScroll_ = false;

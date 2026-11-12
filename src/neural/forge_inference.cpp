@@ -12,6 +12,7 @@
 
 #include "retdec/neural/inference.h"
 #include "retdec/neural/model_verify.h"
+#include "retdec/utils/binary_path.h"
 
 #include <forge/hash/blake3.hpp>
 #include <forge/import/gguf.hpp>
@@ -128,6 +129,27 @@ std::string importCodec()
 	return c.empty() ? std::string("f32") : c;
 }
 
+/// The importers read Forge's blueprint templates from $FORGE_TEMPLATES, else
+/// from the Forge source tree this was built from. An installed RetDec ships
+/// them in its support directory; point Forge there when the source tree is
+/// not around and nobody chose a directory.
+void useInstalledTemplates()
+{
+	if (std::getenv("FORGE_TEMPLATES")) return;
+	std::error_code ec;
+	if (fs::is_directory(forge::import::template_dir(), ec)) return;
+#if defined(RETDEC_NEURAL_FORGE_TEMPLATES_REL)
+	const fs::path installed = fs::path(retdec::utils::getThisBinaryDirectoryPath()) / RETDEC_NEURAL_FORGE_TEMPLATES_REL;
+	if (!fs::is_directory(installed, ec)) return;
+	const std::string v = installed.string();
+#if defined(_WIN32)
+	_putenv_s("FORGE_TEMPLATES", v.c_str());
+#else
+	setenv("FORGE_TEMPLATES", v.c_str(), 0);
+#endif
+#endif
+}
+
 /// `forge run <hf-dir|model.gguf>` resolution (apps/forge.cpp resolve_model):
 /// import once into a content-addressed cache keyed on the absolute path,
 /// codec, .fpk format version and each source file's name, size and mtime,
@@ -179,6 +201,7 @@ std::string resolveModel(const std::string& path, const std::string& codec)
 
 	if (!fs::exists(out))
 	{
+		useInstalledTemplates();
 		forge::import::import_options o;
 		o.codec = codec;
 		const std::string tmp = out.string() + ".partial";

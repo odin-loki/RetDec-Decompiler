@@ -18,7 +18,7 @@
     CMake build directory (default: build\windows).
 
 .PARAMETER DistSource
-    Reference staging folder to copy DLL/Qt layout from (default: dist\windows).
+    Reference staging folder to copy the DLL and share\retdec layout from (default: dist\windows).
 
 .PARAMETER DistOut
     Output folder for the debuggable bundle (default: dist\windows\debuggable).
@@ -80,23 +80,6 @@ $kitBin = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\rc.e
     Sort-Object FullName -Descending | Select-Object -First 1
 if ($kitBin) { $env:PATH = "$(Split-Path $kitBin.FullName);$env:PATH" }
 
-# Qt windeployqt (discover like windows_native_build.ps1)
-$qt6Dir = $env:Qt6_DIR
-if (-not $qt6Dir) {
-    $qtRoots = @("C:\Qt", "$env:USERPROFILE\Qt", "${env:ProgramFiles}\Qt", "${env:ProgramFiles(x86)}\Qt")
-    foreach ($r in $qtRoots) {
-        if (-not (Test-Path $r)) { continue }
-        $found = Get-ChildItem "$r\*\*\lib\cmake\Qt6" -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match "msvc" } |
-            Sort-Object FullName -Descending | Select-Object -First 1
-        if ($found) { $qt6Dir = $found.FullName; break }
-    }
-}
-if ($qt6Dir -and (Test-Path $qt6Dir)) {
-    $QtKitRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $qt6Dir))
-    $env:PATH = "$QtKitRoot\bin;$env:PATH"
-}
-
 Write-Host ""
 Write-Host "=== Reconfigure: Release + PDB (/Zi, /DEBUG:FULL) ===" -ForegroundColor Cyan
 cmake `
@@ -129,15 +112,8 @@ if (Test-Path $DistSrcFull) {
 
 Copy-Item $builtExe $DistOutFull -Force
 
-$winDeploy = Get-Command "windeployqt6.exe" -ErrorAction SilentlyContinue
-if (-not $winDeploy) { $winDeploy = Get-Command "windeployqt.exe" -ErrorAction SilentlyContinue }
-if ($winDeploy) {
-    $guiOut = Join-Path $DistOutFull "retdec-gui.exe"
-    & $winDeploy.Source --release --no-translations --no-system-d3d-compiler $guiOut
-}
-
-# Copy PDB and exe again after windeployqt (ensures we never ship a stale exe from robocopy).
-Copy-Item $builtExe $DistOutFull -Force
+# retdec-gui is FuseUI on Win32: no toolkit DLLs or plugins to deploy. Its
+# resources (share\retdec\gui) come along with the mirrored dist folder.
 if (Test-Path $builtPdb) {
     Copy-Item $builtPdb $DistOutFull -Force
     Write-Host "  [OK] retdec-gui + retdec-gui.pdb staged" -ForegroundColor Green

@@ -768,3 +768,28 @@ bool nodeShown(const fuse::ui::UiContext& ui, fuse::ui::NodeHandle n)
 }
 
 } // namespace retdec::gui::ui
+
+namespace retdec::gui::ui {
+
+SavePrompt::~SavePrompt()
+{
+	if (m_conn.valid()) m_ui.disconnect(m_conn);
+}
+
+void SavePrompt::open(std::string_view title, std::string_view filter, std::function<void(const std::string&)> onChosen)
+{
+	m_onChosen = std::move(onChosen);
+	if (m_conn.valid()) m_ui.disconnect(m_conn);
+	if (m_ui.alive(m_dialog)) m_ui.destroy(m_dialog);
+	std::error_code ec;
+	const std::string dir = std::filesystem::current_path(ec).generic_string();
+	m_dialog = fuse::ui::widgets::fileDialog(m_ui, title, dir, filter, /*save=*/true);
+	m_conn = m_ui.connect(m_dialog, fuse::ui::SignalKind::Submitted,
+		[this](fuse::ui::UiContext&, fuse::ui::NodeHandle, const fuse::ui::SignalArgs& a) {
+			const std::string path(a.text);
+			if (!path.empty() && m_onChosen) m_onChosen(path);
+		});
+	fuse::ui::widgets::openDialog(m_ui, m_dialog);
+}
+
+} // namespace retdec::gui::ui

@@ -8,7 +8,7 @@ assignees: ''
 
 ## Summary
 
-<!-- e.g. configure fails on full-linux-debug with Qt6 not found -->
+<!-- e.g. configure fails on full-linux-debug: compiler does not support C++23 -->
 
 ## Environment
 
@@ -19,7 +19,7 @@ assignees: ''
   - Linux / WSL / **macOS**: `full-linux-debug` or `full-linux-release` (`build/linux`)
   - Windows MSVC: `full-windows-debug` or `full-windows-release` (`build/windows`)
   - Core-only: `core-debug` / `core-debug-msvc`
-- Qt 6 installed? (`full-*` presets **require** Qt 6; `RETDEC_REQUIRE_QT6=ON`)
+- Compiler and version (C++23 required: GCC 13+, Clang 17+, Apple Clang 15+, MSVC 2022 17.6+). The GUI needs no toolkit (FuseUI is vendored); `-DRETDEC_GUI=OFF` builds CLI-only.
 
 CUDA / OpenCL are **not** required. `RETDEC_ENABLE_CUDA_ACCEL` defaults OFF on every full preset. Do not enable them to “fix” a product build. llama.cpp (`RETDEC_ENABLE_LLAMACPP`) is optional.
 
