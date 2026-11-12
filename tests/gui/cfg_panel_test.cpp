@@ -645,10 +645,13 @@ TEST(CFGPanelTest, ExportTextFormats)
 
 	const auto dotPath = retdec::gui::test::shotPath("retdec_cfg_export_test.dot");
 	ASSERT_TRUE(f.panel.exportTo(GraphExportFormat::Dot, dotPath).has_value());
-	std::ifstream in(dotPath);
-	std::stringstream ss;
-	ss << in.rdbuf();
-	EXPECT_EQ(ss.str(), f.panel.exportDot());
+	{
+		// Scoped: Windows cannot remove a file that still has an open handle.
+		std::ifstream in(dotPath, std::ios::binary);
+		std::stringstream ss;
+		ss << in.rdbuf();
+		EXPECT_EQ(ss.str(), f.panel.exportDot());
+	}
 	std::filesystem::remove(dotPath);
 }
 

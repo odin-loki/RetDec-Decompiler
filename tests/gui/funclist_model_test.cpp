@@ -239,10 +239,13 @@ TEST(FunclistModelTest, WriteTextFile)
 {
 	const auto path = std::filesystem::temp_directory_path() / "retdec-gui-funclist-model.txt";
 	ASSERT_TRUE(funclistWriteTextFile(path.string(), "abc\n"));
-	std::ifstream in(path);
-	std::stringstream ss;
-	ss << in.rdbuf();
-	EXPECT_EQ(ss.str(), "abc\n");
+	{
+		// Scoped: Windows cannot remove a file that still has an open handle.
+		std::ifstream in(path, std::ios::binary);
+		std::stringstream ss;
+		ss << in.rdbuf();
+		EXPECT_EQ(ss.str(), "abc\n");
+	}
 	std::filesystem::remove(path);
 	const auto bad = funclistWriteTextFile("/nonexistent-dir-xyz/file.txt", "x");
 	ASSERT_FALSE(bad);

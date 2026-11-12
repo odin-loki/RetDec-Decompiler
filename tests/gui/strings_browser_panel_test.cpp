@@ -665,10 +665,13 @@ TEST(StringsBrowserUiTest, ExportThroughDialog)
 	ASSERT_TRUE(w::fileDialogNavigate(f.h.ui, f.panel.fileDialogNode(), dir.string()));
 	f.h.frame();
 	f.h.clickNode(f.h.findByText("Save"));
-	std::ifstream in(dir / "strings.csv");
-	std::stringstream ss;
-	ss << in.rdbuf();
-	EXPECT_EQ(ss.str(), f.panel.stringsCsv());
+	{
+		// Scoped: Windows cannot remove a file that still has an open handle.
+		std::ifstream in(dir / "strings.csv", std::ios::binary);
+		std::stringstream ss;
+		ss << in.rdbuf();
+		EXPECT_EQ(ss.str(), f.panel.stringsCsv());
+	}
 	ASSERT_TRUE(f.panel.exportConstantsCsv((dir / "c.csv").string()));
 	EXPECT_TRUE(std::filesystem::exists(dir / "c.csv"));
 	std::filesystem::remove_all(dir);

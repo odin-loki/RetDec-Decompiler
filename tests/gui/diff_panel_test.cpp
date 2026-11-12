@@ -515,10 +515,13 @@ TEST(DiffPanelUiTest, ExportAndRender)
 	ASSERT_TRUE(w::fileDialogNavigate(h.ui, panel.fileDialogNode(), dir.string()));
 	h.frame();
 	h.clickNode(h.findByText("Save"));
-	std::ifstream in(dir / "diff.patch");
-	std::stringstream ss;
-	ss << in.rdbuf();
-	EXPECT_EQ(ss.str(), panel.unifiedText());
+	{
+		// Scoped: Windows cannot remove a file that still has an open handle.
+		std::ifstream in(dir / "diff.patch", std::ios::binary);
+		std::stringstream ss;
+		ss << in.rdbuf();
+		EXPECT_EQ(ss.str(), panel.unifiedText());
+	}
 	std::filesystem::remove_all(dir);
 	h.frame();
 
