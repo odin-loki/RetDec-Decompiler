@@ -213,8 +213,9 @@ const fuse::text::Font* styledFont(const UiContext& ui, NodeHandle node, bool mo
 	if (!mono && !bold) return nullptr;
 	const ComputedStyle& st = ui.computed(node);
 	const u16 weight = bold ? kFontWeightBold : (st.fontWeight ? st.fontWeight : kFontWeightNormal);
-	const fuse::text::Font* f = mono ? ui.resolveFont(kMonoFamily, weight)
-	                                 : ui.resolveFont(std::span<const u32>(st.fontFamily.data(), st.fontFamilyCount), weight);
+	const fuse::text::Font* f =
+		mono ? ui.resolveFont(kMonoFamily, weight)
+			 : ui.resolveFont(std::span<const u32>(st.fontFamily.data(), st.fontFamilyCount), weight);
 	return f == ui.fontFor(node) ? nullptr : f;
 }
 

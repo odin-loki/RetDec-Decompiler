@@ -45,17 +45,28 @@ std::string stringToolTip(const StringEntry& e, int col);
 /// Preview colour by category (0xRRGGBB), 0 when the default text colour applies.
 uint32_t stringCategoryColor(StringCategory c);
 
-class StringsTable
-{
+class StringsTable {
 public:
 	/// Entries still in the default Plain category are classified.
 	void setStrings(std::vector<StringEntry> entries);
 	void appendStrings(std::vector<StringEntry> entries);
 	void clear();
-	std::size_t size() const { return entries_.size(); }
-	const StringEntry& entry(std::size_t row) const { return entries_[row]; }
-	const std::vector<StringEntry>& entries() const { return entries_; }
-	uint64_t revision() const { return revision_; }
+	std::size_t size() const
+	{
+		return entries_.size();
+	}
+	const StringEntry& entry(std::size_t row) const
+	{
+		return entries_[row];
+	}
+	const std::vector<StringEntry>& entries() const
+	{
+		return entries_;
+	}
+	uint64_t revision() const
+	{
+		return revision_;
+	}
 	/// "Address,Type,Category,Value,Refs" + every row (value quoted, `"` doubled).
 	std::string exportCsv() const;
 
@@ -70,19 +81,33 @@ private:
  * only, as a case-insensitive substring or (regex mode) an ECMAScript regular
  * expression searched case-insensitively. An invalid regex shows nothing.
  */
-class StringsFilter
-{
+class StringsFilter {
 public:
 	void setTypeFilter(std::string_view typeName);
 	void setCategoryFilter(std::string_view catName);
 	void setTextFilter(std::string_view text, bool useRegex = false);
 	bool accepts(const StringEntry& e) const;
-	bool regexValid() const { return !useRegex_ || re_.has_value(); }
+	bool regexValid() const
+	{
+		return !useRegex_ || re_.has_value();
+	}
 
-	const std::string& typeFilter() const { return type_; }
-	const std::string& categoryFilter() const { return cat_; }
-	const std::string& textFilter() const { return text_; }
-	bool useRegex() const { return useRegex_; }
+	const std::string& typeFilter() const
+	{
+		return type_;
+	}
+	const std::string& categoryFilter() const
+	{
+		return cat_;
+	}
+	const std::string& textFilter() const
+	{
+		return text_;
+	}
+	bool useRegex() const
+	{
+		return useRegex_;
+	}
 
 private:
 	std::string type_, cat_, text_;
@@ -97,22 +122,49 @@ std::pair<std::string, bool> parseStringSearch(std::string_view text, bool regex
 bool stringLess(const StringEntry& a, const StringEntry& b, int col);
 
 /// Filtered, sorted rows of a StringsTable (lazy, follows its revision).
-class StringsProxy
-{
+class StringsProxy {
 public:
 	explicit StringsProxy(const StringsTable* source): src_(source) {}
-	StringsFilter& filter() { dirty_ = true; return filter_; }
-	const StringsFilter& filter() const { return filter_; }
-	void setTypeFilter(std::string_view t) { filter().setTypeFilter(t); }
-	void setCategoryFilter(std::string_view c) { filter().setCategoryFilter(c); }
-	void setTextFilter(std::string_view t, bool useRegex = false) { filter().setTextFilter(t, useRegex); }
+	StringsFilter& filter()
+	{
+		dirty_ = true;
+		return filter_;
+	}
+	const StringsFilter& filter() const
+	{
+		return filter_;
+	}
+	void setTypeFilter(std::string_view t)
+	{
+		filter().setTypeFilter(t);
+	}
+	void setCategoryFilter(std::string_view c)
+	{
+		filter().setCategoryFilter(c);
+	}
+	void setTextFilter(std::string_view t, bool useRegex = false)
+	{
+		filter().setTextFilter(t, useRegex);
+	}
 	void sortBy(int col, bool ascending);
-	int sortColumn() const { return sortCol_; }
-	bool sortAscending() const { return asc_; }
-	void invalidate() { dirty_ = true; }
+	int sortColumn() const
+	{
+		return sortCol_;
+	}
+	bool sortAscending() const
+	{
+		return asc_;
+	}
+	void invalidate()
+	{
+		dirty_ = true;
+	}
 	std::size_t rowCount() const;
 	std::size_t sourceRow(std::size_t row) const;
-	const StringEntry& entry(std::size_t row) const { return src_->entry(sourceRow(row)); }
+	const StringEntry& entry(std::size_t row) const
+	{
+		return src_->entry(sourceRow(row));
+	}
 
 private:
 	void refresh() const;
@@ -145,16 +197,27 @@ std::string constantToolTip(const ConstantEntry& e, int col);
 /// Row colour by label kind (0xRRGGBB): crypto amber, magic blue, float green; 0 = default.
 uint32_t constantLabelColor(ConstantLabel k);
 
-class ConstantsTable
-{
+class ConstantsTable {
 public:
 	/// Every entry is (re)labelled by ConstantLabeler.
 	void setConstants(std::vector<ConstantEntry> entries);
 	void clear();
-	std::size_t size() const { return entries_.size(); }
-	const ConstantEntry& entry(std::size_t row) const { return entries_[row]; }
-	const std::vector<ConstantEntry>& entries() const { return entries_; }
-	uint64_t revision() const { return revision_; }
+	std::size_t size() const
+	{
+		return entries_.size();
+	}
+	const ConstantEntry& entry(std::size_t row) const
+	{
+		return entries_[row];
+	}
+	const std::vector<ConstantEntry>& entries() const
+	{
+		return entries_;
+	}
+	uint64_t revision() const
+	{
+		return revision_;
+	}
 	/// "Address,Size,Hex,Decimal,Label,Refs" + every row (label quoted).
 	std::string exportCsv() const;
 
@@ -177,20 +240,42 @@ struct ConstantsFilter
 
 bool constantLess(const ConstantEntry& a, const ConstantEntry& b, int col);
 
-class ConstantsProxy
-{
+class ConstantsProxy {
 public:
 	explicit ConstantsProxy(const ConstantsTable* source): src_(source) {}
-	void setTextFilter(std::string_view text) { filter_.text = std::string(text); dirty_ = true; }
-	void setKindFilter(std::optional<ConstantLabel> kind) { filter_.kind = kind; dirty_ = true; }
-	const ConstantsFilter& filter() const { return filter_; }
+	void setTextFilter(std::string_view text)
+	{
+		filter_.text = std::string(text);
+		dirty_ = true;
+	}
+	void setKindFilter(std::optional<ConstantLabel> kind)
+	{
+		filter_.kind = kind;
+		dirty_ = true;
+	}
+	const ConstantsFilter& filter() const
+	{
+		return filter_;
+	}
 	void sortBy(int col, bool ascending);
-	int sortColumn() const { return sortCol_; }
-	bool sortAscending() const { return asc_; }
-	void invalidate() { dirty_ = true; }
+	int sortColumn() const
+	{
+		return sortCol_;
+	}
+	bool sortAscending() const
+	{
+		return asc_;
+	}
+	void invalidate()
+	{
+		dirty_ = true;
+	}
 	std::size_t rowCount() const;
 	std::size_t sourceRow(std::size_t row) const;
-	const ConstantEntry& entry(std::size_t row) const { return src_->entry(sourceRow(row)); }
+	const ConstantEntry& entry(std::size_t row) const
+	{
+		return src_->entry(sourceRow(row));
+	}
 
 private:
 	void refresh() const;

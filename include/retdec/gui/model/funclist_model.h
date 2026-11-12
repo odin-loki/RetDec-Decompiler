@@ -88,16 +88,27 @@ std::string functionToolTip(const FunctionEntry& e, int col);
  * is open while a decompile finishes) keeps the address and asks
  * rowForAddress() again.
  */
-class FunctionList
-{
+class FunctionList {
 public:
 	void setFunctions(std::vector<FunctionEntry> fns);
 	void clearAll();
 
-	const std::vector<FunctionEntry>& functions() const { return fns_; }
-	std::size_t size() const { return fns_.size(); }
-	bool empty() const { return fns_.empty(); }
-	const FunctionEntry& entry(std::size_t row) const { return fns_[row]; }
+	const std::vector<FunctionEntry>& functions() const
+	{
+		return fns_;
+	}
+	std::size_t size() const
+	{
+		return fns_.size();
+	}
+	bool empty() const
+	{
+		return fns_.empty();
+	}
+	const FunctionEntry& entry(std::size_t row) const
+	{
+		return fns_[row];
+	}
 
 	/// Row holding @p address, or -1.
 	int rowForAddress(uint64_t address) const;
@@ -119,7 +130,10 @@ public:
 	bool clearAnnotation(uint64_t address);
 
 	/// Bumped by every change; views cache against it.
-	uint64_t revision() const { return revision_; }
+	uint64_t revision() const
+	{
+		return revision_;
+	}
 
 	/// (address, oldName, newName) after a successful rename.
 	std::function<void(uint64_t, const std::string&, const std::string&)> onRenamed;

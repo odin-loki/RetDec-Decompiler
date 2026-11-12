@@ -37,7 +37,8 @@ ConsoleLineKind classifyConsoleLine(std::string_view text)
 	if (text.starts_with("==> ")) return ConsoleLineKind::Banner;
 	if (text.starts_with("<== ")) return ConsoleLineKind::Footer;
 	if (text.starts_with("[INFO]") || text.starts_with("[OK]")) return ConsoleLineKind::Plain;
-	if (containsCI(text, "error") || containsCI(text, "fatal") || containsCI(text, "abort")) return ConsoleLineKind::Error;
+	if (containsCI(text, "error") || containsCI(text, "fatal") || containsCI(text, "abort"))
+		return ConsoleLineKind::Error;
 	if (containsCI(text, "warn") || containsCI(text, "deprecated")) return ConsoleLineKind::Warning;
 	return ConsoleLineKind::Plain;
 }
@@ -119,8 +120,10 @@ std::string sanitizeUtf8(std::string_view b)
 		for (int k = 1; ok && k < len; ++k)
 		{
 			const unsigned char cc = static_cast<unsigned char>(b[i + static_cast<std::size_t>(k)]);
-			if ((cc & 0xC0) != 0x80) ok = false;
-			else cp = (cp << 6) | (cc & 0x3F);
+			if ((cc & 0xC0) != 0x80)
+				ok = false;
+			else
+				cp = (cp << 6) | (cc & 0x3F);
 		}
 		if (ok)
 		{
@@ -151,8 +154,15 @@ std::string isoTimestampNow()
 #else
 	localtime_r(&t, &tm);
 #endif
-	return std::format("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour,
-					   tm.tm_min, tm.tm_sec, static_cast<int>(ms));
+	return std::format(
+		"{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}",
+		tm.tm_year + 1900,
+		tm.tm_mon + 1,
+		tm.tm_mday,
+		tm.tm_hour,
+		tm.tm_min,
+		tm.tm_sec,
+		static_cast<int>(ms));
 }
 
 std::string formatCommandLine(std::string_view tool, const std::vector<std::string>& args)
@@ -177,8 +187,8 @@ std::string formatCommandLine(std::string_view tool, const std::vector<std::stri
 	return cmd;
 }
 
-std::vector<std::string> formatBanner(std::string_view tool, const std::vector<std::string>& args, std::string_view cwd,
-                                      std::string_view timestamp)
+std::vector<std::string> formatBanner(
+	std::string_view tool, const std::vector<std::string>& args, std::string_view cwd, std::string_view timestamp)
 {
 	std::vector<std::string> out;
 	out.push_back(std::format("==> [{}] {}", timestamp, formatCommandLine(tool, args)));
@@ -191,17 +201,26 @@ std::string formatFooter(std::string_view tool, int exitCode, int64_t elapsedMs)
 	return std::format("<== {} finished (exit={}, time={} ms)", tool, exitCode, elapsedMs);
 }
 
-std::string formatCommandLogEntry(std::string_view tool, const std::vector<std::string>& args, std::string_view cwd,
-                                  int exitCode, int64_t elapsedMs, std::string_view outputTail, std::string_view timestamp)
+std::string formatCommandLogEntry(
+	std::string_view tool,
+	const std::vector<std::string>& args,
+	std::string_view cwd,
+	int exitCode,
+	int64_t elapsedMs,
+	std::string_view outputTail,
+	std::string_view timestamp)
 {
-	std::string s = std::format("[{}] {}\n  cwd: {}\n  exit: {}  time: {} ms\n  cmd:", timestamp, tool, cwd, exitCode, elapsedMs);
+	std::string s =
+		std::format("[{}] {}\n  cwd: {}\n  exit: {}  time: {} ms\n  cmd:", timestamp, tool, cwd, exitCode, elapsedMs);
 	for (const std::string& a: args)
 	{
 		s += ' ';
 		s += a;
 	}
 	s += '\n';
-	const bool tailBlank = std::all_of(outputTail.begin(), outputTail.end(), [](char c) { return std::isspace(static_cast<unsigned char>(c)); });
+	const bool tailBlank = std::all_of(outputTail.begin(), outputTail.end(), [](char c) {
+		return std::isspace(static_cast<unsigned char>(c));
+	});
 	if (!tailBlank)
 	{
 		s += "  --- output (tail) ---\n";

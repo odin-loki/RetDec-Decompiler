@@ -97,8 +97,8 @@ EdgeSet findBackEdges(const std::vector<uint64_t>& nodes, const Adjacency& succ,
 	return back;
 }
 
-std::unordered_map<uint64_t, int> longestPathRanks(
-	const std::vector<uint64_t>& nodes, const Adjacency& succ, const EdgeSet& backEdges)
+std::unordered_map<uint64_t, int>
+longestPathRanks(const std::vector<uint64_t>& nodes, const Adjacency& succ, const EdgeSet& backEdges)
 {
 	std::unordered_map<uint64_t, int> indeg, rank;
 	std::unordered_set<uint64_t> known(nodes.begin(), nodes.end());
@@ -137,7 +137,8 @@ std::unordered_map<uint64_t, int> longestPathRanks(
 	return rank;
 }
 
-void barycentricSweep(std::vector<std::vector<uint64_t>>& levels, const Adjacency& pred, const Adjacency& succ, int sweeps)
+void barycentricSweep(
+	std::vector<std::vector<uint64_t>>& levels, const Adjacency& pred, const Adjacency& succ, int sweeps)
 {
 	auto pass = [](std::vector<uint64_t>& lvl, const std::vector<uint64_t>& ref, const Adjacency& nb) {
 		std::unordered_map<uint64_t, int> pos;
@@ -192,8 +193,12 @@ int countCrossings(const std::vector<std::vector<uint64_t>>& levels, const Adjac
 	return crossings;
 }
 
-LayeredLayout layeredLayout(const std::vector<uint64_t>& nodes, const std::vector<GPoint>& sizes,
-	const std::vector<EdgeRef>& edges, std::optional<uint64_t> entry, const LayeredOptions& opt)
+LayeredLayout layeredLayout(
+	const std::vector<uint64_t>& nodes,
+	const std::vector<GPoint>& sizes,
+	const std::vector<EdgeRef>& edges,
+	std::optional<uint64_t> entry,
+	const LayeredOptions& opt)
 {
 	LayeredLayout out;
 	if (nodes.empty()) return out;
@@ -307,7 +312,8 @@ LayeredLayout layeredLayout(const std::vector<uint64_t>& nodes, const std::vecto
 
 // ── SCC ──────────────────────────────────────────────────────────────────────
 
-std::vector<std::vector<uint64_t>> stronglyConnectedComponents(const std::vector<uint64_t>& nodes, const Adjacency& succ)
+std::vector<std::vector<uint64_t>>
+stronglyConnectedComponents(const std::vector<uint64_t>& nodes, const Adjacency& succ)
 {
 	std::vector<std::vector<uint64_t>> result;
 	std::unordered_map<uint64_t, int> index, lowlink;
@@ -427,7 +433,11 @@ std::unordered_set<uint64_t> neighbourhood(uint64_t start, int hops, const Graph
 
 // ── Force-directed ───────────────────────────────────────────────────────────
 
-void forceDirectedLayout(std::vector<ForceNode>& nodes, const std::vector<EdgeRef>& edges, int iterations, size_t gridThreshold,
+void forceDirectedLayout(
+	std::vector<ForceNode>& nodes,
+	const std::vector<EdgeRef>& edges,
+	int iterations,
+	size_t gridThreshold,
 	double idealEdge)
 {
 	if (nodes.empty() || iterations <= 0) return;

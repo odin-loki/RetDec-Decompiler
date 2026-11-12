@@ -102,11 +102,11 @@ uint32_t stringCategoryColor(StringCategory c)
 {
 	switch (c)
 	{
-	case StringCategory::CryptoConst: return 0xe6a23c; // amber
-	case StringCategory::URL: return 0x89b4fa;         // blue
+	case StringCategory::CryptoConst: return 0xe6a23c;  // amber
+	case StringCategory::URL: return 0x89b4fa;          // blue
 	case StringCategory::FormatString: return 0xa6e3a1; // green
-	case StringCategory::FilePath: return 0xf9e2af;    // yellow
-	case StringCategory::RegEx: return 0xcba6f7;       // mauve
+	case StringCategory::FilePath: return 0xf9e2af;     // yellow
+	case StringCategory::RegEx: return 0xcba6f7;        // mauve
 	default: return 0;
 	}
 }
@@ -149,7 +149,12 @@ std::string StringsTable::exportCsv() const
 			val += c;
 		}
 		csv += std::format(
-			"0x{:016x},{},{},\"{}\",{}\n", e.address, stringTypeName(e.type), stringCategoryName(e.category), val, e.refCount);
+			"0x{:016x},{},{},\"{}\",{}\n",
+			e.address,
+			stringTypeName(e.type),
+			stringCategoryName(e.category),
+			val,
+			e.refCount);
 	}
 	return csv;
 }

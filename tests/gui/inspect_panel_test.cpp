@@ -39,15 +39,21 @@ protected:
 		dir = retdec::gui::test::scratchDir("inspect_panel");
 		std::ofstream(dir / "x.bin") << "binary";
 		panel = std::make_unique<ui::InspectPanel>(h.ui, h.ui.root());
-		panel->onCliToolFinished = [this](const std::string& tool, const std::vector<std::string>& args, const std::string&, int exitCode,
-		                                  int64_t, const std::string& tail) {
+		panel->onCliToolFinished = [this](
+									   const std::string& tool,
+									   const std::vector<std::string>& args,
+									   const std::string&,
+									   int exitCode,
+									   int64_t,
+									   const std::string& tail) {
 			finished.push_back(tool + " " + std::to_string(exitCode));
 			lastArgs = args;
 			lastTail = tail;
 		};
-		panel->onProcessStarted = [this](const std::string& label, const std::vector<std::string>&, const std::string&) {
-			started.push_back(label);
-		};
+		panel->onProcessStarted =
+			[this](const std::string& label, const std::vector<std::string>&, const std::string&) {
+				started.push_back(label);
+			};
 		panel->onProcessOutput = [this](const std::string& label, const std::string& out, const std::string&) {
 			outputs.push_back(label + ":" + out);
 		};
@@ -58,7 +64,10 @@ protected:
 		panel->onRequestOpenBinary = [this](const std::string& p) { opened.push_back(p); };
 		h.frame();
 	}
-	bool waitIdle() { return h.pumpUntil([this] { return !panel->busy(); }, 10'000); }
+	bool waitIdle()
+	{
+		return h.pumpUntil([this] { return !panel->busy(); }, 10'000);
+	}
 
 	HeadlessUi h;
 	fs::path dir;
@@ -125,8 +134,12 @@ TEST_F(InspectPanelTest, SpawnErrorIsReported)
 #if !defined(_WIN32)
 TEST_F(InspectPanelTest, RunsFileinfoAndShowsSummaryAndJson)
 {
-	const auto fi = script(dir, "fileinfo",
-	                       "echo '{\"fileFormat\":\"ELF\",\"architecture\":\"x86\",\"sha256\":\"aa11\",\"md5\":\"bb22\",\"crc32\":\"cc33\",\"fileSize\":6}'\n");
+	const auto fi = script(
+		dir,
+		"fileinfo",
+		"echo "
+		"'{\"fileFormat\":\"ELF\",\"architecture\":\"x86\",\"sha256\":\"aa11\",\"md5\":\"bb22\",\"crc32\":\"cc33\","
+		"\"fileSize\":6}'\n");
 	panel->runFileinfo((dir / "x.bin").string(), fi.string());
 	EXPECT_EQ(panel->statusText(), "Running retdec-fileinfo\xE2\x80\xA6");
 	EXPECT_TRUE(h.ui.disabled(panel->refreshButton()));
@@ -184,8 +197,11 @@ TEST_F(InspectPanelTest, NonZeroExitAndBadJson)
 
 TEST_F(InspectPanelTest, UnpackerRunsAndOpensResult)
 {
-	const auto un = script(dir, "unpacker", "out=\"\"\nwhile [ $# -gt 0 ]; do if [ \"$1\" = -o ]; then out=\"$2\"; fi; shift; done\n"
-	                                         "echo packed > \"$out\"\necho done\n");
+	const auto un = script(
+		dir,
+		"unpacker",
+		"out=\"\"\nwhile [ $# -gt 0 ]; do if [ \"$1\" = -o ]; then out=\"$2\"; fi; shift; done\n"
+		"echo packed > \"$out\"\necho done\n");
 	panel->runFileinfo((dir / "x.bin").string(), "");
 	panel->setUnpackerExecutable(un.string());
 	panel->setAutoOpen(true);

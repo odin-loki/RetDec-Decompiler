@@ -40,8 +40,8 @@ namespace dlg {
 /// A row: fixed-width "Label:" (180 px, as the Qt makeRow) then whatever the
 /// caller adds; returns the row (add the editor to it). @p hint, when given,
 /// becomes the row's tooltip.
-fuse::ui::NodeHandle formRow(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent, std::string_view label,
-                             std::string_view hint = {});
+fuse::ui::NodeHandle
+formRow(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent, std::string_view label, std::string_view hint = {});
 /// Bold section title followed by a rule (Qt makeSeparator).
 fuse::ui::NodeHandle sectionHeader(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent, std::string_view title);
 /// Dim, wrapping explanatory text.
@@ -80,18 +80,34 @@ void ensureDialogStyles(fuse::ui::UiContext& ui);
 /// (0 = fit the content). Hidden until open(); destroyed with the object.
 class ModalDialog {
 public:
-	ModalDialog(fuse::ui::UiContext& ui, std::string_view title, float width = 0.f, float height = 0.f,
-	            std::string_view id = {});
+	ModalDialog(
+		fuse::ui::UiContext& ui,
+		std::string_view title,
+		float width = 0.f,
+		float height = 0.f,
+		std::string_view id = {});
 	~ModalDialog();
 	ModalDialog(const ModalDialog&) = delete;
 	ModalDialog& operator=(const ModalDialog&) = delete;
 
-	fuse::ui::UiContext& ui() const { return ui_; }
+	fuse::ui::UiContext& ui() const
+	{
+		return ui_;
+	}
 	/// The card (widgets::dialog's node).
-	fuse::ui::NodeHandle card() const { return card_; }
+	fuse::ui::NodeHandle card() const
+	{
+		return card_;
+	}
 	/// Where content goes (a flex column filling the card).
-	fuse::ui::NodeHandle body() const { return body_; }
-	std::string title() const { return title_; }
+	fuse::ui::NodeHandle body() const
+	{
+		return body_;
+	}
+	std::string title() const
+	{
+		return title_;
+	}
 	void setTitle(std::string_view title);
 
 	void open();
@@ -120,16 +136,34 @@ public:
 	explicit MessageDialog(fuse::ui::UiContext& ui);
 	~MessageDialog();
 
-	void show(std::string_view title, std::string_view text, Kind kind = Kind::Information,
-	          std::function<void()> onClosed = {});
+	void show(
+		std::string_view title,
+		std::string_view text,
+		Kind kind = Kind::Information,
+		std::function<void()> onClosed = {});
 	void close();
-	bool isOpen() const { return dlg_.isOpen(); }
+	bool isOpen() const
+	{
+		return dlg_.isOpen();
+	}
 
-	std::string title() const { return dlg_.title(); }
+	std::string title() const
+	{
+		return dlg_.title();
+	}
 	std::string text() const;
-	Kind kind() const { return kind_; }
-	fuse::ui::NodeHandle okButton() const { return ok_; }
-	fuse::ui::NodeHandle card() const { return dlg_.card(); }
+	Kind kind() const
+	{
+		return kind_;
+	}
+	fuse::ui::NodeHandle okButton() const
+	{
+		return ok_;
+	}
+	fuse::ui::NodeHandle card() const
+	{
+		return dlg_.card();
+	}
 
 private:
 	ModalDialog dlg_;
@@ -148,11 +182,18 @@ public:
 
 	/// Opens with @p initial selected-for-editing; @p onAccepted gets the text
 	/// (untrimmed) on OK / Enter; @p onCancelled runs on Cancel.
-	void show(std::string_view title, std::string_view label, std::string_view initial,
-	          std::function<void(const std::string&)> onAccepted, std::function<void()> onCancelled = {});
+	void show(
+		std::string_view title,
+		std::string_view label,
+		std::string_view initial,
+		std::function<void(const std::string&)> onAccepted,
+		std::function<void()> onCancelled = {});
 	void accept();
 	void reject();
-	bool isOpen() const { return dlg_.isOpen(); }
+	bool isOpen() const
+	{
+		return dlg_.isOpen();
+	}
 
 	/// An inline error line under the field (empty hides it); the dialog stays open.
 	void setError(std::string_view message);
@@ -160,12 +201,27 @@ public:
 
 	std::string text() const;
 	void setText(std::string_view text);
-	std::string title() const { return dlg_.title(); }
+	std::string title() const
+	{
+		return dlg_.title();
+	}
 	std::string label() const;
-	fuse::ui::NodeHandle edit() const { return edit_; }
-	fuse::ui::NodeHandle okButton() const { return ok_; }
-	fuse::ui::NodeHandle cancelButton() const { return cancel_; }
-	fuse::ui::NodeHandle card() const { return dlg_.card(); }
+	fuse::ui::NodeHandle edit() const
+	{
+		return edit_;
+	}
+	fuse::ui::NodeHandle okButton() const
+	{
+		return ok_;
+	}
+	fuse::ui::NodeHandle cancelButton() const
+	{
+		return cancel_;
+	}
+	fuse::ui::NodeHandle card() const
+	{
+		return dlg_.card();
+	}
 
 private:
 	ModalDialog dlg_;
@@ -192,16 +248,29 @@ public:
 	/// @p start is a directory or a file (its directory is listed and, for
 	/// Open / Save, its name pre-filled). @p filter: "*.json;*.txt" (empty =
 	/// all files; ignored for Directory).
-	void show(Mode mode, std::string_view title, std::string_view start, std::string_view filter,
-	          std::function<void(const std::string& path)> onChosen);
+	void show(
+		Mode mode,
+		std::string_view title,
+		std::string_view start,
+		std::string_view filter,
+		std::function<void(const std::string& path)> onChosen);
 	void close();
 	bool isOpen() const;
-	Mode mode() const { return mode_; }
+	Mode mode() const
+	{
+		return mode_;
+	}
 
 	/// The underlying widgets::fileDialog node (invalid before show()).
-	fuse::ui::NodeHandle dialog() const { return dlg_; }
+	fuse::ui::NodeHandle dialog() const
+	{
+		return dlg_;
+	}
 	/// Directory mode: the "Choose this folder" button.
-	fuse::ui::NodeHandle chooseFolderButton() const { return chooseFolder_; }
+	fuse::ui::NodeHandle chooseFolderButton() const
+	{
+		return chooseFolder_;
+	}
 	std::string directory() const;
 	/// Simulates the user accepting @p path (tests, drag and drop): the
 	/// callback runs as if it was picked in the dialog.
@@ -228,8 +297,14 @@ public:
 	explicit MaxMemoryDialog(fuse::ui::UiContext& ui);
 
 	void show(uint64_t currentBytes, std::function<void(uint64_t bytes)> onAccepted);
-	bool isOpen() const { return prompt_.isOpen(); }
-	PromptDialog& prompt() { return prompt_; }
+	bool isOpen() const
+	{
+		return prompt_.isOpen();
+	}
+	PromptDialog& prompt()
+	{
+		return prompt_;
+	}
 
 	/// The status-bar line after accepting ("Next decompile will pass
 	/// --max-memory N" / "… omit --max-memory").
@@ -244,7 +319,10 @@ class PdbFilePrompt {
 public:
 	explicit PdbFilePrompt(fuse::ui::UiContext& ui);
 	void show(std::string_view startDir, std::function<void(const std::string& path)> onChosen);
-	FilePrompt& files() { return files_; }
+	FilePrompt& files()
+	{
+		return files_;
+	}
 	/// "Next decompile will pass --pdb PATH".
 	std::function<void(const std::string& message)> onStatusMessage;
 
@@ -257,7 +335,10 @@ class SignatureFilePrompt {
 public:
 	explicit SignatureFilePrompt(fuse::ui::UiContext& ui);
 	void show(std::string_view startDir, std::function<void(const std::string& path)> onChosen);
-	FilePrompt& files() { return files_; }
+	FilePrompt& files()
+	{
+		return files_;
+	}
 	/// "Next decompile will pass --static-code-sigfile PATH".
 	std::function<void(const std::string& message)> onStatusMessage;
 

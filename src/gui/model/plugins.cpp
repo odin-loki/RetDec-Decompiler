@@ -62,7 +62,8 @@ std::expected<void, std::string> validatePluginDescriptor(const RetdecGuiPluginV
 		return std::unexpected(
 			std::format("API version mismatch (plugin {}, host {})", api->abi_version, RETDEC_GUI_PLUGIN_ABI_VERSION));
 	if (api->struct_size < sizeof(RetdecGuiPluginV1))
-		return std::unexpected(std::format("Descriptor too small ({} bytes, need {})", api->struct_size, sizeof(RetdecGuiPluginV1)));
+		return std::unexpected(
+			std::format("Descriptor too small ({} bytes, need {})", api->struct_size, sizeof(RetdecGuiPluginV1)));
 	if (!api->id || !*api->id) return std::unexpected(std::string("Plugin has no id"));
 	const bool returnsStrings = api->run_stage || api->transform || api->render_panel || api->analyse || api->summary;
 	if (returnsStrings && !api->free_string)
@@ -88,13 +89,9 @@ PluginMetadata pluginMetadataFrom(const RetdecGuiPluginV1& api)
 
 // ─── Plugin ──────────────────────────────────────────────────────────────────
 
-Plugin::Plugin(const RetdecGuiPluginV1* api, std::shared_ptr<void> library, fs::path filePath)
-	: api_(api)
-	, library_(std::move(library))
-	, filePath_(std::move(filePath))
-	, meta_(pluginMetadataFrom(*api))
-{
-}
+Plugin::Plugin(const RetdecGuiPluginV1* api, std::shared_ptr<void> library, fs::path filePath):
+	api_(api), library_(std::move(library)), filePath_(std::move(filePath)), meta_(pluginMetadataFrom(*api))
+{}
 
 std::optional<std::string> Plugin::take(char* p) const
 {
@@ -181,7 +178,8 @@ std::unexpected<std::string> PluginManager::loadError(const fs::path& file, std:
 
 bool PluginManager::enabledByDefault(const std::string& id) const
 {
-	const std::vector<std::string>& list = enabledList_ ? *enabledList_ : AppSettings::instance().plugins.enabledPlugins;
+	const std::vector<std::string>& list =
+		enabledList_ ? *enabledList_ : AppSettings::instance().plugins.enabledPlugins;
 	return list.empty() || std::find(list.begin(), list.end(), id) != list.end();
 }
 
@@ -214,7 +212,8 @@ std::expected<std::string, std::string> PluginManager::loadPlugin(const fs::path
 
 	auto shared = std::make_shared<forge::os::dynlib>(std::move(lib.value));
 	auto entry = shared->get<RetdecGuiPluginEntryV1>(RETDEC_GUI_PLUGIN_ENTRY_SYMBOL);
-	if (!entry) return loadError(filePath, std::string("Not a retdec-gui plugin (no ") + RETDEC_GUI_PLUGIN_ENTRY_SYMBOL + ")");
+	if (!entry)
+		return loadError(filePath, std::string("Not a retdec-gui plugin (no ") + RETDEC_GUI_PLUGIN_ENTRY_SYMBOL + ")");
 	return add(entry(), std::shared_ptr<void>(shared, shared.get()), abs);
 }
 
@@ -244,7 +243,9 @@ int PluginManager::scanAndLoad(const std::vector<std::string>& dirs)
 void PluginManager::unloadPlugin(const std::string& pluginId)
 {
 	const auto find = [this, &pluginId] {
-		return std::find_if(plugins_.begin(), plugins_.end(), [&](const auto& p) { return p->metadata().id == pluginId; });
+		return std::find_if(plugins_.begin(), plugins_.end(), [&](const auto& p) {
+			return p->metadata().id == pluginId;
+		});
 	};
 	if (find() == plugins_.end()) return;
 

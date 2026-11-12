@@ -77,15 +77,39 @@ public:
 	std::expected<void, std::string> fromJson(std::string_view json);
 
 	// Accessors
-	const std::string& binaryPath() const { return binaryPath_; }
-	const std::string& arch() const { return arch_; }
-	const std::string& os() const { return os_; }
-	uint64_t entryPoint() const { return entryPoint_; }
-	const std::string& decompiledPath() const { return decompiledOutputPath_; }
-	const std::string& functionListFilter() const { return functionListFilter_; }
-	int callGraphDepth() const { return callGraphDepth_; }
+	const std::string& binaryPath() const
+	{
+		return binaryPath_;
+	}
+	const std::string& arch() const
+	{
+		return arch_;
+	}
+	const std::string& os() const
+	{
+		return os_;
+	}
+	uint64_t entryPoint() const
+	{
+		return entryPoint_;
+	}
+	const std::string& decompiledPath() const
+	{
+		return decompiledOutputPath_;
+	}
+	const std::string& functionListFilter() const
+	{
+		return functionListFilter_;
+	}
+	int callGraphDepth() const
+	{
+		return callGraphDepth_;
+	}
 	/// "savedAt" of the last load()/fromJson() (empty for a new project).
-	const std::string& savedAt() const { return savedAt_; }
+	const std::string& savedAt() const
+	{
+		return savedAt_;
+	}
 
 	// Mutators (each marks the project modified)
 	void setBinaryPath(std::string p);
@@ -107,11 +131,23 @@ public:
 	void setAnnotation(uint64_t address, const Annotation& ann);
 	std::optional<Annotation> annotation(uint64_t address) const;
 	void clearAnnotation(uint64_t address);
-	const std::map<uint64_t, Annotation>& annotations() const { return annotations_; }
+	const std::map<uint64_t, Annotation>& annotations() const
+	{
+		return annotations_;
+	}
 
-	bool isModified() const { return modified_; }
-	void clearModified() { modified_ = false; }
-	const std::string& lastError() const { return lastError_; }
+	bool isModified() const
+	{
+		return modified_;
+	}
+	void clearModified()
+	{
+		modified_ = false;
+	}
+	const std::string& lastError() const
+	{
+		return lastError_;
+	}
 
 private:
 	std::string binaryPath_;

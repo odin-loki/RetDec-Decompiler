@@ -101,8 +101,8 @@ class MainWindowTest : public ::testing::Test {
 protected:
 	void SetUp() override
 	{
-		dir = retdec::gui::test::scratchDir(std::string("main_window_")
-		                                    + ::testing::UnitTest::GetInstance()->current_test_info()->name());
+		dir = retdec::gui::test::scratchDir(
+			std::string("main_window_") + ::testing::UnitTest::GetInstance()->current_test_info()->name());
 		// Never touch the user's settings.
 		model::AppSettings::instance().setStoragePath(dir / "global-settings.json");
 		settings.setStoragePath(dir / "settings.json");
@@ -126,7 +126,8 @@ protected:
 	{
 		win.reset();
 		win = std::make_unique<ui::MainWindow>(
-			h.ui, ui::MainWindowOptions{.headless = true, .layoutStore = &store, .settings = &settings, .applyTheme = theme});
+			h.ui,
+			ui::MainWindowOptions{.headless = true, .layoutStore = &store, .settings = &settings, .applyTheme = theme});
 		win->onQuitRequested = [this](int code) { quitCode = code; };
 		h.frame(2);
 	}
@@ -330,10 +331,19 @@ TEST_F(MainWindowTest, MenusMatchTheQtWindow)
 {
 	EXPECT_EQ(win->menuTitles(), (std::vector<std::string>{"File", "Analysis", "View", "Tools", "Help"}));
 	const auto file = win->menuLabels("File");
-	for (const char* want: {"Open Binary\xE2\x80\xA6", "Open Project\xE2\x80\xA6", "Recent Files \xE2\x96\xB8", "Save Project",
-	                        "Save Project As\xE2\x80\xA6", "Save Decompiled\xE2\x80\xA6", "Export CMakeLists.txt\xE2\x80\xA6",
-	                        "Export Decompile Bundle\xE2\x80\xA6", "Export Threat Intel\xE2\x80\xA6", "Export As \xE2\x96\xB8",
-	                        "Batch Decompile\xE2\x80\xA6", "Quit"})
+	for (const char* want:
+		 {"Open Binary\xE2\x80\xA6",
+		  "Open Project\xE2\x80\xA6",
+		  "Recent Files \xE2\x96\xB8",
+		  "Save Project",
+		  "Save Project As\xE2\x80\xA6",
+		  "Save Decompiled\xE2\x80\xA6",
+		  "Export CMakeLists.txt\xE2\x80\xA6",
+		  "Export Decompile Bundle\xE2\x80\xA6",
+		  "Export Threat Intel\xE2\x80\xA6",
+		  "Export As \xE2\x96\xB8",
+		  "Batch Decompile\xE2\x80\xA6",
+		  "Quit"})
 		EXPECT_NE(std::find(file.begin(), file.end(), want), file.end()) << want;
 	EXPECT_EQ(win->menuLabels("Analysis").size(), 23u);
 	const auto tools = win->menuLabels("Tools");
@@ -490,9 +500,10 @@ TEST_F(MainWindowTest, EveryTabSwitches)
 
 TEST_F(MainWindowTest, EveryDockToggleWorks)
 {
-	for (auto [d, id]: {std::pair{ui::MainWindow::Dock::Functions, "view.dock_functions"},
-	                    std::pair{ui::MainWindow::Dock::Workspace, "view.dock_workspace"},
-	                    std::pair{ui::MainWindow::Dock::Output, "view.dock_output"}})
+	for (auto [d, id]:
+		 {std::pair{ui::MainWindow::Dock::Functions, "view.dock_functions"},
+		  std::pair{ui::MainWindow::Dock::Workspace, "view.dock_workspace"},
+		  std::pair{ui::MainWindow::Dock::Output, "view.dock_output"}})
 	{
 		EXPECT_TRUE(win->dockOpen(d));
 		EXPECT_TRUE(win->actionChecked(id));
@@ -667,7 +678,10 @@ TEST_F(MainWindowTest, LiveConsoleHandlesPathologicalInputsAndFloods)
 	auto& c = win->liveConsole();
 	c.appendChunk(ui::LiveConsolePanel::Stream::Stdout, "");
 	c.appendChunk(ui::LiveConsolePanel::Stream::Stdout, "\n\n\n");
-	c.appendChunk(ui::LiveConsolePanel::Stream::Stdout, "na\xC3\xAFve \xE2\x82\xAC" "100 \x01\x02\x07 \xff\xfe\n");
+	c.appendChunk(
+		ui::LiveConsolePanel::Stream::Stdout,
+		"na\xC3\xAFve \xE2\x82\xAC"
+		"100 \x01\x02\x07 \xff\xfe\n");
 	c.appendChunk(ui::LiveConsolePanel::Stream::Stdout, std::string(8192, 'A'));
 	c.appendChunk(ui::LiveConsolePanel::Stream::Stdout, "\n");
 	h.frame();
@@ -712,13 +726,15 @@ TEST_F(MainWindowTest, CachedDecompileLoadsInstantlyOnReopen)
 {
 	const fs::path bin = writeFakeBinary("cached.bin", 1024);
 	writeFile(dir / "cached.gui-decompiled.c", "// cached decompile\nint cached_entry(void) { return 42; }\n");
-	writeFile(dir / "cached.gui-decompiled.config.json",
-	          R"({"functions":[{"name":"cached_entry","startAddr":"0x401000","endAddr":"0x401030",)"
-	          R"("callingConvention":"cdecl","fncType":"decompilerDefined"}]})");
+	writeFile(
+		dir / "cached.gui-decompiled.config.json",
+		R"({"functions":[{"name":"cached_entry","startAddr":"0x401000","endAddr":"0x401030",)"
+		R"("callingConvention":"cdecl","fncType":"decompilerDefined"}]})");
 	const auto t0 = std::chrono::steady_clock::now();
 	win->openBinary(bin.string());
 	h.frame();
-	const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+	const auto ms =
+		std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
 	EXPECT_LT(ms, 1000) << "cached open should be near-instant";
 	ASSERT_TRUE(win->loadedArtifacts().has_value());
 	EXPECT_EQ(win->statusDecompileText(), "cached");
@@ -1091,9 +1107,18 @@ TEST_F(MainWindowTest, BothThemesStyleEveryWidgetDrawnPart)
 		bool background; ///< else the text colour
 	};
 	static constexpr Part kBackgrounds[] = {
-		{"docktitle", 0, true},    {"tableheader", 0, true}, {"tab", kStateSelected, true}, {"tabline", 0, true},
-		{"codearea", 0, true},     {"codegutter", 0, true},  {"scrollthumb", 0, true},      {"codeplain", 0, false},
-		{"codekeyword", 0, false}, {"codestring", 0, false}, {"codecomment", 0, false},     {"tableheader", 0, false},
+		{"docktitle", 0, true},
+		{"tableheader", 0, true},
+		{"tab", kStateSelected, true},
+		{"tabline", 0, true},
+		{"codearea", 0, true},
+		{"codegutter", 0, true},
+		{"scrollthumb", 0, true},
+		{"codeplain", 0, false},
+		{"codekeyword", 0, false},
+		{"codestring", 0, false},
+		{"codecomment", 0, false},
+		{"tableheader", 0, false},
 	};
 
 	// Latte: every surface light, every text dark, and the frame mostly light.
@@ -1225,7 +1250,8 @@ TEST_F(MainWindowTest, OsCloseWithNothingToConfirmQuitsAtOnce)
 	fuse::app::Application app{{.name = "retdec-gui-close-test2", .loadSettings = false}};
 	auto& aw = app.createWindow({.title = "RetDec", .width = 800, .height = 600});
 	{
-		ui::MainWindow mw(aw.ui(), ui::MainWindowOptions{.headless = true, .layoutStore = &store, .settings = &settings});
+		ui::MainWindow mw(
+			aw.ui(), ui::MainWindowOptions{.headless = true, .layoutStore = &store, .settings = &settings});
 		mw.attachWindow(aw);
 		// Without onQuitRequested nothing else would end the loop: the window closes.
 		EXPECT_TRUE(aw.userCloseRequest());
@@ -1265,8 +1291,11 @@ TEST_F(MainWindowTest, FilesDroppedOnTheOsWindowOpen)
 
 TEST_F(MainWindowTest, ToolWindowsOpenFromTheToolsMenu)
 {
-	for (auto [id, title]: {std::pair{"tools.signature_studio", "Signature Studio"}, std::pair{"tools.call_graph", "Call Graph"},
-	                        std::pair{"tools.type_hierarchy", "Type Hierarchy"}, std::pair{"tools.ai_assistant", "AI Assistant"}})
+	for (auto [id, title]:
+		 {std::pair{"tools.signature_studio", "Signature Studio"},
+		  std::pair{"tools.call_graph", "Call Graph"},
+		  std::pair{"tools.type_hierarchy", "Type Hierarchy"},
+		  std::pair{"tools.ai_assistant", "AI Assistant"}})
 	{
 		EXPECT_TRUE(win->triggerAction(id));
 		h.frame();
@@ -1274,8 +1303,9 @@ TEST_F(MainWindowTest, ToolWindowsOpenFromTheToolsMenu)
 		win->closeToolWindows();
 		EXPECT_FALSE(win->toolWindowOpen(title));
 	}
-	EXPECT_EQ(win->submenuLabels("Tools", "Visualisation plugins"),
-	          (std::vector<std::string>{"(no visualisation plugins loaded)"}));
+	EXPECT_EQ(
+		win->submenuLabels("Tools", "Visualisation plugins"),
+		(std::vector<std::string>{"(no visualisation plugins loaded)"}));
 	EXPECT_FALSE(win->triggerSubmenu("Tools", "Visualisation plugins", 0));
 	// Compare needs decompiled C first.
 	win->triggerAction("tools.compare");

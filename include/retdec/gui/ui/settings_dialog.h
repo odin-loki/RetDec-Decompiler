@@ -62,19 +62,29 @@ public:
 		kTabCount
 	};
 
-	explicit SettingsDialog(fuse::ui::UiContext& ui,
-	                        model::AppSettings& settings = model::AppSettings::instance(),
-	                        model::PluginManager& plugins = model::PluginManager::instance());
+	explicit SettingsDialog(
+		fuse::ui::UiContext& ui,
+		model::AppSettings& settings = model::AppSettings::instance(),
+		model::PluginManager& plugins = model::PluginManager::instance());
 	~SettingsDialog();
 	SettingsDialog(const SettingsDialog&) = delete;
 	SettingsDialog& operator=(const SettingsDialog&) = delete;
 
 	/// Load the fields from the settings and open the dialog.
 	void show();
-	bool isOpen() const { return dlg_.isOpen(); }
-	std::string windowTitle() const { return "RetDec Settings"; }
+	bool isOpen() const
+	{
+		return dlg_.isOpen();
+	}
+	std::string windowTitle() const
+	{
+		return "RetDec Settings";
+	}
 	/// The Qt dialog's minimum size (720 x 540); the card is 760 x 580.
-	fuse::ui::Size minimumSize() const { return {720.f, 540.f}; }
+	fuse::ui::Size minimumSize() const
+	{
+		return {720.f, 540.f};
+	}
 
 	// ── Buttons ──────────────────────────────────────────────────────────────
 	/// Validate, write, notify, save. False (and a warning) when validation fails.
@@ -113,7 +123,10 @@ public:
 	/// Enable / disable plugin row @p row (saves enabledPlugins immediately).
 	void setPluginEnabled(int row, bool enabled);
 	void selectPlugin(int row);
-	std::vector<std::string> searchPaths() const { return searchPaths_; }
+	std::vector<std::string> searchPaths() const
+	{
+		return searchPaths_;
+	}
 	/// (id, enabled) per row, in order.
 	std::vector<std::pair<std::string, bool>> pluginRows() const;
 	std::string pluginDetail() const;
@@ -133,27 +146,78 @@ public:
 	/// e.g. "themeCombo", "typeConfSpin", "mlModelSha256", "decompileProfileCombo".
 	fuse::ui::NodeHandle field(std::string_view name) const;
 	std::vector<std::string> fieldNames() const;
-	fuse::ui::NodeHandle tabs() const { return tabs_; }
+	fuse::ui::NodeHandle tabs() const
+	{
+		return tabs_;
+	}
 	int currentTab() const;
 	void setCurrentTab(int tab);
 	std::vector<std::string> tabTitles() const;
-	const std::vector<std::string>& llvmPassNames() const { return passNames_; }
-	fuse::ui::NodeHandle llvmPassCheck(std::size_t i) const { return i < passChecks_.size() ? passChecks_[i] : fuse::ui::NodeHandle{}; }
+	const std::vector<std::string>& llvmPassNames() const
+	{
+		return passNames_;
+	}
+	fuse::ui::NodeHandle llvmPassCheck(std::size_t i) const
+	{
+		return i < passChecks_.size() ? passChecks_[i] : fuse::ui::NodeHandle{};
+	}
 	/// The pass-list error label text ("" when the list loaded).
-	std::string llvmPassError() const { return passError_; }
-	fuse::ui::NodeHandle okButton() const { return ok_; }
-	fuse::ui::NodeHandle applyButton() const { return apply_; }
-	fuse::ui::NodeHandle cancelButton() const { return cancel_; }
-	fuse::ui::NodeHandle restoreDefaultsButton() const { return restore_; }
-	fuse::ui::NodeHandle exportButton() const { return export_; }
-	fuse::ui::NodeHandle importButton() const { return import_; }
-	fuse::ui::NodeHandle pluginList() const { return pluginList_; }
-	fuse::ui::NodeHandle pluginEnabledCheck() const { return pluginEnabled_; }
-	fuse::ui::NodeHandle searchPathList() const { return pathList_; }
-	FilePrompt& filePrompt() { return files_; }
-	MessageDialog& message() { return message_; }
-	fuse::ui::NodeHandle card() const { return dlg_.card(); }
-	model::AppSettings& settings() { return settings_; }
+	std::string llvmPassError() const
+	{
+		return passError_;
+	}
+	fuse::ui::NodeHandle okButton() const
+	{
+		return ok_;
+	}
+	fuse::ui::NodeHandle applyButton() const
+	{
+		return apply_;
+	}
+	fuse::ui::NodeHandle cancelButton() const
+	{
+		return cancel_;
+	}
+	fuse::ui::NodeHandle restoreDefaultsButton() const
+	{
+		return restore_;
+	}
+	fuse::ui::NodeHandle exportButton() const
+	{
+		return export_;
+	}
+	fuse::ui::NodeHandle importButton() const
+	{
+		return import_;
+	}
+	fuse::ui::NodeHandle pluginList() const
+	{
+		return pluginList_;
+	}
+	fuse::ui::NodeHandle pluginEnabledCheck() const
+	{
+		return pluginEnabled_;
+	}
+	fuse::ui::NodeHandle searchPathList() const
+	{
+		return pathList_;
+	}
+	FilePrompt& filePrompt()
+	{
+		return files_;
+	}
+	MessageDialog& message()
+	{
+		return message_;
+	}
+	fuse::ui::NodeHandle card() const
+	{
+		return dlg_.card();
+	}
+	model::AppSettings& settings()
+	{
+		return settings_;
+	}
 
 private:
 	void buildGeneral(fuse::ui::NodeHandle page);
@@ -166,16 +230,32 @@ private:
 	void buildPlugins(fuse::ui::NodeHandle page);
 
 	fuse::ui::NodeHandle reg(std::string_view name, fuse::ui::NodeHandle n);
-	fuse::ui::NodeHandle check(fuse::ui::NodeHandle parent, std::string_view name, std::string_view text,
-	                           std::string_view tooltip = {});
-	fuse::ui::NodeHandle spin(fuse::ui::NodeHandle parent, std::string_view name, std::string_view label, float lo,
-	                          float hi, float step, std::string_view hint = {}, std::string_view suffix = {},
-	                          std::string_view specialValue = {});
-	fuse::ui::NodeHandle combo(fuse::ui::NodeHandle parent, std::string_view name, std::string_view label,
-	                           const std::vector<std::string>& items, std::string_view hint = {});
+	fuse::ui::NodeHandle
+	check(fuse::ui::NodeHandle parent, std::string_view name, std::string_view text, std::string_view tooltip = {});
+	fuse::ui::NodeHandle spin(
+		fuse::ui::NodeHandle parent,
+		std::string_view name,
+		std::string_view label,
+		float lo,
+		float hi,
+		float step,
+		std::string_view hint = {},
+		std::string_view suffix = {},
+		std::string_view specialValue = {});
+	fuse::ui::NodeHandle combo(
+		fuse::ui::NodeHandle parent,
+		std::string_view name,
+		std::string_view label,
+		const std::vector<std::string>& items,
+		std::string_view hint = {});
 	/// Label + line edit + "…" browse button that opens the file prompt.
-	fuse::ui::NodeHandle pathRow(fuse::ui::NodeHandle parent, std::string_view name, std::string_view label,
-	                             FilePrompt::Mode mode, std::string_view promptTitle, std::string_view filter);
+	fuse::ui::NodeHandle pathRow(
+		fuse::ui::NodeHandle parent,
+		std::string_view name,
+		std::string_view label,
+		FilePrompt::Mode mode,
+		std::string_view promptTitle,
+		std::string_view filter);
 	void warn(const std::string& text);
 	void refreshPluginList();
 	void refreshSearchPaths();

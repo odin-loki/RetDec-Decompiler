@@ -39,8 +39,7 @@ struct LlvmModuleContextPair
 	LlvmModuleContextPair() = default;
 	LlvmModuleContextPair(std::unique_ptr<llvm::Module> m, std::unique_ptr<llvm::LLVMContext> c):
 		module(std::move(m)), context(std::move(c))
-	{
-	}
+	{}
 	LlvmModuleContextPair(LlvmModuleContextPair&&) = default;
 	~LlvmModuleContextPair()
 	{

@@ -166,7 +166,8 @@ void StringsBrowserPanel::buildTable(Table t, NodeHandle page)
 	ui_.setCss(k.search, "width", isStr ? "240px" : "220px");
 	compact(k.search);
 	ui_.setA11y(k.search, fuse::ui::A11yRole::TextField, isStr ? "Filter strings" : "Filter constants");
-	w::setPlaceholderText(ui_, k.search, isStr ? "Filter strings\xE2\x80\xA6  (text or /regex/)" : "Filter constants\xE2\x80\xA6");
+	w::setPlaceholderText(
+		ui_, k.search, isStr ? "Filter strings\xE2\x80\xA6  (text or /regex/)" : "Filter constants\xE2\x80\xA6");
 	ui_.connect(k.search, SignalKind::TextChanged, [this, isStr](UiContext&, NodeHandle, const SignalArgs&) {
 		if (isStr)
 			applyStringFilter();
@@ -228,7 +229,8 @@ void StringsBrowserPanel::buildTable(Table t, NodeHandle page)
 
 	k.painter = {this, static_cast<int>(t)};
 	k.model.user = &k.painter;
-	k.model.columns = static_cast<fuse::ui::u32>(isStr ? static_cast<int>(model::StrColCount) : static_cast<int>(model::ConstColCount));
+	k.model.columns = static_cast<fuse::ui::u32>(
+		isStr ? static_cast<int>(model::StrColCount) : static_cast<int>(model::ConstColCount));
 	k.model.rows = [](const void* u) {
 		const auto* p = static_cast<const Painter*>(u);
 		return static_cast<fuse::ui::u32>(p->panel->visibleRowCount(static_cast<Table>(p->table)));
@@ -509,7 +511,8 @@ int StringsBrowserPanel::columnAt(Table t, float x) const
 {
 	const NodeHandle table = tables_[idx(t)].table;
 	float at = ui_.contentRect(table).x;
-	const int cols = t == Table::Strings ? static_cast<int>(model::StrColCount) : static_cast<int>(model::ConstColCount);
+	const int cols =
+		t == Table::Strings ? static_cast<int>(model::StrColCount) : static_cast<int>(model::ConstColCount);
 	for (int k = 0; k < cols; ++k)
 	{
 		at += w::tableColumnWidth(ui_, table, static_cast<fuse::ui::u32>(k));
@@ -619,7 +622,11 @@ void StringsBrowserPanel::openExportDialog(Table t)
 	fileDlgTable_ = t;
 	std::error_code ec;
 	fileDlg_ = w::fileDialog(
-		ui_, isStr ? "Export Strings" : "Export Constants", std::filesystem::current_path(ec).generic_string(), "*.csv", true);
+		ui_,
+		isStr ? "Export Strings" : "Export Constants",
+		std::filesystem::current_path(ec).generic_string(),
+		"*.csv",
+		true);
 	const NodeHandle body = w::dialogBody(ui_, fileDlg_);
 	NodeHandle row = ui_.firstChild(body);
 	for (int i = 0; i < 2 && ui_.alive(row); ++i)
@@ -634,7 +641,9 @@ void StringsBrowserPanel::openExportDialog(Table t)
 		const std::string path(a.text);
 		const Table tt = fileDlgTable_;
 		const auto r = tt == Table::Strings ? exportStringsCsv(path) : exportConstantsCsv(path);
-		ui_.setText(tables_[idx(tt)].status, r ? statusText(tt) + "  \xE2\x80\x94  exported to " + path : "Export failed: " + r.error());
+		ui_.setText(
+			tables_[idx(tt)].status,
+			r ? statusText(tt) + "  \xE2\x80\x94  exported to " + path : "Export failed: " + r.error());
 	});
 	w::openDialog(ui_, fileDlg_);
 }

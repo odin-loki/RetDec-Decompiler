@@ -199,7 +199,9 @@ TEST(CodeText, FindForwardBackwardWrapsCaseInsensitive)
 
 TEST(CodeText, FindFunctionLineAndLocate)
 {
-	const auto lines = splitLines("// foo is used\nint foobar(void);\nint foo (int a) {\n  return foo(a);\n}\n// 0x401000\nvoid function_401100(void);");
+	const auto lines = splitLines(
+		"// foo is used\nint foobar(void);\nint foo (int a) {\n  return foo(a);\n}\n// 0x401000\nvoid "
+		"function_401100(void);");
 	EXPECT_EQ(findFunctionLine(lines, "foo"), 2);
 	EXPECT_EQ(findFunctionLine(lines, "bar"), std::nullopt);
 	EXPECT_EQ(locateFunction(lines, 0x401000, "foobar")->line, 1);
@@ -252,12 +254,12 @@ TEST(CodeAddress, JumpTargets)
 	EXPECT_EQ(jumpTarget("0x401000:  jne 0x401020"), 0x401020u);
 	// Qt rule kept: with several 0x tokens the last one is the target.
 	EXPECT_EQ(jumpTarget("0x401000:  jne 0x401020 <main+0x20>"), 0x20u);
-	EXPECT_EQ(jumpTarget("  jmp 0x401050"), 0x401050u);             // no own address
-	EXPECT_EQ(jumpTarget("0x401000:  JMP 0x401050"), 0x401050u);    // case-insensitive
-	EXPECT_FALSE(jumpTarget("0x401000:  mov eax, 0x401050"));       // not a branch
-	EXPECT_FALSE(jumpTarget("0x401000:  jmp 0x401000"));            // to itself
-	EXPECT_FALSE(jumpTarget("0x401000:  call eax"));                // indirect
-	EXPECT_FALSE(jumpTarget("0x401000:  jumper 0x401050"));         // whole word only
+	EXPECT_EQ(jumpTarget("  jmp 0x401050"), 0x401050u);          // no own address
+	EXPECT_EQ(jumpTarget("0x401000:  JMP 0x401050"), 0x401050u); // case-insensitive
+	EXPECT_FALSE(jumpTarget("0x401000:  mov eax, 0x401050"));    // not a branch
+	EXPECT_FALSE(jumpTarget("0x401000:  jmp 0x401000"));         // to itself
+	EXPECT_FALSE(jumpTarget("0x401000:  call eax"));             // indirect
+	EXPECT_FALSE(jumpTarget("0x401000:  jumper 0x401050"));      // whole word only
 	EXPECT_TRUE(isBranchLine("  je 0x10"));
 	EXPECT_EQ(listingAddress("  0x401000:   55  push ebp"), 0x401000u);
 	EXPECT_EQ(listingAddress("401000:\tnop"), 0x401000u);
@@ -288,7 +290,8 @@ TEST(TriPaneSync, LineAddresses)
 TEST(TriPaneSync, BuildMappingByAddress)
 {
 	const auto asmL = splitLines("0x401000: push ebp\n0x401001: mov ebp, esp\n0x401003: ret");
-	const auto irL = splitLines("define void @f() {\n  %a = alloca i32, !insn.addr !0\n  ret void ; 0x401003\n}\n!0 = !{i64 4198401}");
+	const auto irL = splitLines(
+		"define void @f() {\n  %a = alloca i32, !insn.addr !0\n  ret void ; 0x401003\n}\n!0 = !{i64 4198401}");
 	const auto cL = splitLines("void f(void) { // 0x401000\n  return; // 0x401003\n}\n// 0x402000 orphan");
 	const LineMapping m = buildLineMappingByAddress(asmL, irL, cL);
 	ASSERT_NE(m.byAsmLine(1), nullptr);

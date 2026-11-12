@@ -163,7 +163,7 @@ void forEachLine(const fs::path& path, const std::function<bool(std::string_view
 		}
 		buf.erase(0, start);
 	}
-	if (!buf.empty()) (void) emit(buf);
+	if (!buf.empty()) (void)emit(buf);
 }
 
 // ─── LLVM pass presets ───────────────────────────────────────────────────────
@@ -544,8 +544,10 @@ ProcessEnvironment buildDecompilerProcessEnvironment(const AppSettings& settings
 		env["RETDEC_NEURAL_TEMPERATURE"] = std::format("{:.4f}", settings.ml.temperature);
 		env["RETDEC_NEURAL_TOP_P"] = std::format("{:.4f}", settings.ml.topP);
 		env["RETDEC_NEURAL_TOP_K"] = std::to_string(settings.ml.topK);
-		if (settings.analysis.threadCount > 0) env["RETDEC_NEURAL_THREADS"] = std::to_string(settings.analysis.threadCount);
-		if (const std::string sha = trimmed(settings.ml.modelSha256); !sha.empty()) env["RETDEC_NEURAL_MODEL_SHA256"] = sha;
+		if (settings.analysis.threadCount > 0)
+			env["RETDEC_NEURAL_THREADS"] = std::to_string(settings.analysis.threadCount);
+		if (const std::string sha = trimmed(settings.ml.modelSha256); !sha.empty())
+			env["RETDEC_NEURAL_MODEL_SHA256"] = sha;
 	}
 	if (!settings.cuda.useGPU) env["RETDEC_OCL_HOST"] = "0";
 	if (const std::string cache = trimmed(settings.cuda.kernelCacheDir); !cache.empty())
@@ -701,7 +703,8 @@ scanDecompilerLogDiagnosticsIncremental(const fs::path& logPath, uint64_t* ioFil
 	return out;
 }
 
-std::vector<Diagnostic> semanticDetectionDiagnostics(const json::value& configRoot, const AppSettings& settings, int maxEntries)
+std::vector<Diagnostic>
+semanticDetectionDiagnostics(const json::value& configRoot, const AppSettings& settings, int maxEntries)
 {
 	std::vector<Diagnostic> out;
 	if (maxEntries <= 0 || !configRoot.is_obj()) return out;

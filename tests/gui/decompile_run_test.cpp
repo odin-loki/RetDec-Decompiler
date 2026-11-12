@@ -29,7 +29,10 @@ namespace {
 struct TempDir
 {
 	fs::path path;
-	TempDir() { path = fs::path(forge::os::fs::make_temp_dir("retdec-gui-run-").value); }
+	TempDir()
+	{
+		path = fs::path(forge::os::fs::make_temp_dir("retdec-gui-run-").value);
+	}
 	~TempDir()
 	{
 		std::error_code ec;

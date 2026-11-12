@@ -91,52 +91,72 @@ void AnalysisBridge::each(F&& f)
 
 void AnalysisBridge::reportStageStarted(const std::string& stageName)
 {
-	each([&](Listener& l) { if (l.stageStarted) l.stageStarted(stageName); });
+	each([&](Listener& l) {
+		if (l.stageStarted) l.stageStarted(stageName);
+	});
 }
 
 void AnalysisBridge::reportProgress(const std::string& stageName, int percent)
 {
-	each([&](Listener& l) { if (l.progressUpdated) l.progressUpdated(stageName, percent); });
+	each([&](Listener& l) {
+		if (l.progressUpdated) l.progressUpdated(stageName, percent);
+	});
 }
 
 void AnalysisBridge::reportStageCompleted(const std::string& stageName, int64_t elapsedMs)
 {
-	each([&](Listener& l) { if (l.stageCompleted) l.stageCompleted(stageName, elapsedMs); });
+	each([&](Listener& l) {
+		if (l.stageCompleted) l.stageCompleted(stageName, elapsedMs);
+	});
 }
 
 void AnalysisBridge::reportStageError(const std::string& stageName, const std::string& msg)
 {
-	each([&](Listener& l) { if (l.stageErrored) l.stageErrored(stageName, msg); });
+	each([&](Listener& l) {
+		if (l.stageErrored) l.stageErrored(stageName, msg);
+	});
 }
 
 void AnalysisBridge::reportFunctionCount(int count)
 {
-	each([&](Listener& l) { if (l.functionCountChanged) l.functionCountChanged(count); });
+	each([&](Listener& l) {
+		if (l.functionCountChanged) l.functionCountChanged(count);
+	});
 }
 
 void AnalysisBridge::reportInstructionCount(int64_t count)
 {
-	each([&](Listener& l) { if (l.instructionCountChanged) l.instructionCountChanged(count); });
+	each([&](Listener& l) {
+		if (l.instructionCountChanged) l.instructionCountChanged(count);
+	});
 }
 
 void AnalysisBridge::reportThroughput(double fnPerSec, double instrPerSec)
 {
-	each([&](Listener& l) { if (l.throughputChanged) l.throughputChanged(fnPerSec, instrPerSec); });
+	each([&](Listener& l) {
+		if (l.throughputChanged) l.throughputChanged(fnPerSec, instrPerSec);
+	});
 }
 
 void AnalysisBridge::reportAnalysisStarted()
 {
-	each([&](Listener& l) { if (l.analysisStarted) l.analysisStarted(); });
+	each([&](Listener& l) {
+		if (l.analysisStarted) l.analysisStarted();
+	});
 }
 
 void AnalysisBridge::reportAnalysisCompleted(int64_t totalMs)
 {
-	each([&](Listener& l) { if (l.analysisCompleted) l.analysisCompleted(totalMs); });
+	each([&](Listener& l) {
+		if (l.analysisCompleted) l.analysisCompleted(totalMs);
+	});
 }
 
 void AnalysisBridge::reportAnalysisCancelled()
 {
-	each([&](Listener& l) { if (l.analysisCancelled) l.analysisCancelled(); });
+	each([&](Listener& l) {
+		if (l.analysisCancelled) l.analysisCancelled();
+	});
 }
 
 } // namespace retdec::gui::model

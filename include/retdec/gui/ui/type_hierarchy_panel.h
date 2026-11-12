@@ -33,15 +33,17 @@
 
 namespace retdec::gui::ui {
 
-class TypeHierarchyPanel
-{
+class TypeHierarchyPanel {
 public:
 	TypeHierarchyPanel(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent);
 	~TypeHierarchyPanel();
 	TypeHierarchyPanel(const TypeHierarchyPanel&) = delete;
 	TypeHierarchyPanel& operator=(const TypeHierarchyPanel&) = delete;
 
-	fuse::ui::NodeHandle root() const { return m_root; }
+	fuse::ui::NodeHandle root() const
+	{
+		return m_root;
+	}
 	static constexpr const char* kTitle = "Type Hierarchy";
 
 	// ── Data in ──────────────────────────────────────────────────────────────
@@ -63,20 +65,50 @@ public:
 	void activateVtableRow(int row);
 
 	// ── State (tests, main window) ───────────────────────────────────────────
-	int visibleRowCount() const { return int(m_rows.size()); }
+	int visibleRowCount() const
+	{
+		return int(m_rows.size());
+	}
 	/// Cell text of a visible tree row ("" out of range).
 	std::string rowText(int row, int column) const;
 	int rowDepth(int row) const;
 	std::optional<std::string> selectedClass() const;
-	int vtableRowCount() const { return m_vtable.rowCount(); }
-	std::string vtableText(int row, int column) const { return m_vtable.data(row, column); }
-	std::string detailsText() const { return m_details; }
-	bool emptyLabelVisible() const { return m_hierarchy.classes().empty(); }
-	const model::ClassHierarchyModel& hierarchy() const { return m_hierarchy; }
-	const model::VtableModel& vtable() const { return m_vtable; }
-	fuse::ui::NodeHandle searchBox() const { return m_search; }
-	fuse::ui::NodeHandle treeTable() const { return m_tree; }
-	fuse::ui::NodeHandle vtableTable() const { return m_vtableView; }
+	int vtableRowCount() const
+	{
+		return m_vtable.rowCount();
+	}
+	std::string vtableText(int row, int column) const
+	{
+		return m_vtable.data(row, column);
+	}
+	std::string detailsText() const
+	{
+		return m_details;
+	}
+	bool emptyLabelVisible() const
+	{
+		return m_hierarchy.classes().empty();
+	}
+	const model::ClassHierarchyModel& hierarchy() const
+	{
+		return m_hierarchy;
+	}
+	const model::VtableModel& vtable() const
+	{
+		return m_vtable;
+	}
+	fuse::ui::NodeHandle searchBox() const
+	{
+		return m_search;
+	}
+	fuse::ui::NodeHandle treeTable() const
+	{
+		return m_tree;
+	}
+	fuse::ui::NodeHandle vtableTable() const
+	{
+		return m_vtableView;
+	}
 	/// Centre of a visible row of the tree / vtable table in context coordinates (valid after an update).
 	std::optional<fuse::ui::Vec2> treeRowCenter(int row) const;
 	std::optional<fuse::ui::Vec2> vtableRowCenter(int row) const;

@@ -22,8 +22,7 @@
 
 namespace retdec::gui::model {
 
-class AnalysisBridge
-{
+class AnalysisBridge {
 public:
 	/// Unset members are skipped.
 	struct Listener
@@ -42,8 +41,7 @@ public:
 
 	/// Keeps a listener subscribed while alive (move-only). Outliving the
 	/// bridge is fine.
-	class Subscription
-	{
+	class Subscription {
 	public:
 		Subscription() = default;
 		Subscription(Subscription&& o) noexcept;

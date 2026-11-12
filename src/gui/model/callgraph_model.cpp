@@ -20,8 +20,16 @@ namespace retdec::gui::model {
 Rgba callGraphModuleColor(int moduleId)
 {
 	static constexpr Rgba kPalette[] = {
-		catppuccin::blue, catppuccin::green, catppuccin::mauve, catppuccin::yellow, catppuccin::peach,
-		catppuccin::teal, catppuccin::pink, catppuccin::flamingo, catppuccin::rosewater, catppuccin::overlay0,
+		catppuccin::blue,
+		catppuccin::green,
+		catppuccin::mauve,
+		catppuccin::yellow,
+		catppuccin::peach,
+		catppuccin::teal,
+		catppuccin::pink,
+		catppuccin::flamingo,
+		catppuccin::rosewater,
+		catppuccin::overlay0,
 	};
 	if (moduleId < 0) return catppuccin::surface2;
 	return kPalette[size_t(moduleId) % std::size(kPalette)];
@@ -258,10 +266,24 @@ void CallGraphModel::relayout()
 			sn.dashedBorder = true;
 			sn.shadow = false;
 			const std::string& first = m_nodes[m_byAddr[members.front()]].name;
-			sn.texts.push_back(SceneText{std::format("SCC [{}]", members.size()), {sn.rect.x, sn.rect.y + 3.f, sn.rect.w, 18.f},
-				11.f, catppuccin::peach, SceneAlign::Center, true, true});
-			sn.texts.push_back(SceneText{first, {sn.rect.x + 4.f, sn.rect.y + 20.f, sn.rect.w - 8.f, 16.f}, 9.5f,
-				catppuccin::subtext0, SceneAlign::Center, false, true});
+			sn.texts.push_back(
+				SceneText{
+					std::format("SCC [{}]", members.size()),
+					{sn.rect.x, sn.rect.y + 3.f, sn.rect.w, 18.f},
+					11.f,
+					catppuccin::peach,
+					SceneAlign::Center,
+					true,
+					true});
+			sn.texts.push_back(
+				SceneText{
+					first,
+					{sn.rect.x + 4.f, sn.rect.y + 20.f, sn.rect.w - 8.f, 16.f},
+					9.5f,
+					catppuccin::subtext0,
+					SceneAlign::Center,
+					false,
+					true});
 			std::string tip = std::format("SCC: {} mutually recursive functions", members.size());
 			for (size_t k = 0; k < std::min<size_t>(members.size(), 10); ++k)
 				tip += "\n  " + m_nodes[m_byAddr[members[k]]].name;
@@ -292,14 +314,35 @@ void CallGraphModel::relayout()
 			}
 			std::string count = n.instrCount > 0 ? std::to_string(n.instrCount) : std::string();
 			const float countW = count.empty() ? 0.f : 6.f * float(count.size()) + 6.f;
-			sn.texts.push_back(SceneText{n.name, {sn.rect.x + 8.f, sn.rect.y, sn.rect.w - 14.f - countW, sn.rect.h}, 11.f,
-				n.isLibrary ? catppuccin::subtext0 : catppuccin::text, SceneAlign::Left, false, true});
+			sn.texts.push_back(
+				SceneText{
+					n.name,
+					{sn.rect.x + 8.f, sn.rect.y, sn.rect.w - 14.f - countW, sn.rect.h},
+					11.f,
+					n.isLibrary ? catppuccin::subtext0 : catppuccin::text,
+					SceneAlign::Left,
+					false,
+					true});
 			if (!count.empty())
-				sn.texts.push_back(SceneText{count, {sn.rect.x + 4.f, sn.rect.y, sn.rect.w - 10.f, sn.rect.h}, 9.5f,
-					catppuccin::overlay0, SceneAlign::Right, false, true});
-			sn.tooltip = std::format("{}\n{}\n{} instrs{}\n{} caller{}, {} callee{}", n.name, hexAddress(n.address),
-				n.instrCount, n.isLibrary ? "\n[library]" : "", callerCount(n.address),
-				callerCount(n.address) == 1 ? "" : "s", calleeCount(n.address), calleeCount(n.address) == 1 ? "" : "s");
+				sn.texts.push_back(
+					SceneText{
+						count,
+						{sn.rect.x + 4.f, sn.rect.y, sn.rect.w - 10.f, sn.rect.h},
+						9.5f,
+						catppuccin::overlay0,
+						SceneAlign::Right,
+						false,
+						true});
+			sn.tooltip = std::format(
+				"{}\n{}\n{} instrs{}\n{} caller{}, {} callee{}",
+				n.name,
+				hexAddress(n.address),
+				n.instrCount,
+				n.isLibrary ? "\n[library]" : "",
+				callerCount(n.address),
+				callerCount(n.address) == 1 ? "" : "s",
+				calleeCount(n.address),
+				calleeCount(n.address) == 1 ? "" : "s");
 			if (n.moduleId >= 0) sn.tooltip += std::format("\nModule {}", n.moduleId);
 			sn.searchText = n.name;
 		}
@@ -544,14 +587,22 @@ std::string CallGraphModel::exportDot() const
 		" color=\"#45475a\" fontcolor=\"#cdd6f4\" fontname=\"Consolas\"];\n"
 		"  edge [color=\"#89b4fa\" fontcolor=\"#cdd6f4\"];\n\n";
 	for (const auto& n: m_nodes)
-		dot += std::format("  \"{}\" [label=\"{}\\n0x{:x}\"{}];\n", n.address, htmlEscape(n.name), n.address,
+		dot += std::format(
+			"  \"{}\" [label=\"{}\\n0x{:x}\"{}];\n",
+			n.address,
+			htmlEscape(n.name),
+			n.address,
 			n.isLibrary ? " style=dashed" : "");
 	dot += "\n";
 	EdgeSet seen;
 	for (const auto& e: m_edges)
 	{
 		if (!seen.insert({e.callerAddress, e.calleeAddress}).second) continue;
-		dot += std::format("  \"{}\" -> \"{}\" [label=\"{}\"{}];\n", e.callerAddress, e.calleeAddress, e.callCount,
+		dot += std::format(
+			"  \"{}\" -> \"{}\" [label=\"{}\"{}];\n",
+			e.callerAddress,
+			e.calleeAddress,
+			e.callCount,
 			e.isDirect ? "" : " style=dashed");
 	}
 	dot += "}\n";

@@ -28,7 +28,8 @@ constexpr std::string_view kTabTitles = "General\nAnalysis\nCUDA\nML\nRecovery\n
 std::string comboEntryLabels(const std::vector<model::ComboEntry>& items)
 {
 	std::vector<std::string> labels;
-	for (const auto& e: items) labels.push_back(e.label);
+	for (const auto& e: items)
+		labels.push_back(e.label);
 	return dlg::joinLines(labels);
 }
 
@@ -36,9 +37,9 @@ std::string comboEntryLabels(const std::vector<model::ComboEntry>& items)
 
 // ── Construction ─────────────────────────────────────────────────────────────
 
-SettingsDialog::SettingsDialog(UiContext& ui, model::AppSettings& settings, model::PluginManager& plugins)
-	: ui_(ui), settings_(settings), plugins_(plugins), dlg_(ui, "RetDec Settings", 760.f, 580.f, "settingsDialog"),
-	  message_(ui), files_(ui)
+SettingsDialog::SettingsDialog(UiContext& ui, model::AppSettings& settings, model::PluginManager& plugins):
+	ui_(ui), settings_(settings), plugins_(plugins), dlg_(ui, "RetDec Settings", 760.f, 580.f, "settingsDialog"),
+	message_(ui), files_(ui)
 {
 	ui.setCss(dlg_.card(), "min-width", "720px");
 	ui.setCss(dlg_.card(), "min-height", "540px");
@@ -97,16 +98,16 @@ SettingsDialog::SettingsDialog(UiContext& ui, model::AppSettings& settings, mode
 	ui.connect(apply_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { apply(); });
 	ui.connect(restore_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { restoreDefaults(); });
 	ui.connect(export_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
-		files_.show(FilePrompt::Mode::Save, "Export settings", {}, model::kJsonFileFilter,
-		            [this](const std::string& path) {
-			            if (!exportTo(path)) warn("Failed to export settings to:\n" + path);
-		            });
+		files_.show(
+			FilePrompt::Mode::Save, "Export settings", {}, model::kJsonFileFilter, [this](const std::string& path) {
+				if (!exportTo(path)) warn("Failed to export settings to:\n" + path);
+			});
 	});
 	ui.connect(import_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
-		files_.show(FilePrompt::Mode::Open, "Import settings", {}, model::kJsonFileFilter,
-		            [this](const std::string& path) {
-			            if (!importFrom(path)) warn("Failed to import settings from:\n" + path);
-		            });
+		files_.show(
+			FilePrompt::Mode::Open, "Import settings", {}, model::kJsonFileFilter, [this](const std::string& path) {
+				if (!importFrom(path)) warn("Failed to import settings from:\n" + path);
+			});
 	});
 
 	populateFromSettings();
@@ -122,28 +123,41 @@ NodeHandle SettingsDialog::reg(std::string_view name, NodeHandle n)
 	return n;
 }
 
-NodeHandle SettingsDialog::check(NodeHandle parent, std::string_view name, std::string_view text,
-                                 std::string_view tooltip)
+NodeHandle
+SettingsDialog::check(NodeHandle parent, std::string_view name, std::string_view text, std::string_view tooltip)
 {
 	const NodeHandle c = w::checkBox(ui_, parent, text);
 	if (!tooltip.empty()) w::setTooltip(ui_, c, tooltip);
 	return reg(name, c);
 }
 
-NodeHandle SettingsDialog::spin(NodeHandle parent, std::string_view name, std::string_view label, float lo, float hi,
-                                float step, std::string_view hint, std::string_view suffix, std::string_view specialValue)
+NodeHandle SettingsDialog::spin(
+	NodeHandle parent,
+	std::string_view name,
+	std::string_view label,
+	float lo,
+	float hi,
+	float step,
+	std::string_view hint,
+	std::string_view suffix,
+	std::string_view specialValue)
 {
 	const NodeHandle row = dlg::formRow(ui_, parent, label, hint);
 	const NodeHandle s = w::spinBox(ui_, row, lo, hi, lo, step);
 	ui_.setCss(s, "width", "140px");
-	if (!specialValue.empty()) w::setSpecialValueText(ui_, s, specialValue); // shown at the minimum (Qt specialValueText)
+	if (!specialValue.empty())
+		w::setSpecialValueText(ui_, s, specialValue); // shown at the minimum (Qt specialValueText)
 	if (!hint.empty()) w::setTooltip(ui_, s, hint);
 	if (!suffix.empty()) dlg::noteLabel(ui_, row, suffix);
 	return reg(name, s);
 }
 
-NodeHandle SettingsDialog::combo(NodeHandle parent, std::string_view name, std::string_view label,
-                                 const std::vector<std::string>& items, std::string_view hint)
+NodeHandle SettingsDialog::combo(
+	NodeHandle parent,
+	std::string_view name,
+	std::string_view label,
+	const std::vector<std::string>& items,
+	std::string_view hint)
 {
 	const NodeHandle row = dlg::formRow(ui_, parent, label, hint);
 	const NodeHandle c = w::comboBox(ui_, row, dlg::joinLines(items), 0);
@@ -152,8 +166,13 @@ NodeHandle SettingsDialog::combo(NodeHandle parent, std::string_view name, std::
 	return reg(name, c);
 }
 
-NodeHandle SettingsDialog::pathRow(NodeHandle parent, std::string_view name, std::string_view label,
-                                   FilePrompt::Mode mode, std::string_view promptTitle, std::string_view filter)
+NodeHandle SettingsDialog::pathRow(
+	NodeHandle parent,
+	std::string_view name,
+	std::string_view label,
+	FilePrompt::Mode mode,
+	std::string_view promptTitle,
+	std::string_view filter)
 {
 	const NodeHandle row = dlg::formRow(ui_, parent, label);
 	const NodeHandle e = dlg::growEdit(ui_, row);
@@ -166,8 +185,9 @@ NodeHandle SettingsDialog::pathRow(NodeHandle parent, std::string_view name, std
 	ui_.connect(b, SignalKind::Clicked, [this, idx](UiContext&, NodeHandle, const SignalArgs&) {
 		const PathRow& r = pathRows_[idx];
 		const NodeHandle edit = r.edit;
-		files_.show(r.mode, r.title, dlg::editText(ui_, edit), r.filter,
-		            [this, edit](const std::string& p) { dlg::setEditText(ui_, edit, p); });
+		files_.show(r.mode, r.title, dlg::editText(ui_, edit), r.filter, [this, edit](const std::string& p) {
+			dlg::setEditText(ui_, edit, p);
+		});
 	});
 	return reg(name, e);
 }
@@ -206,7 +226,8 @@ NodeHandle SettingsDialog::field(std::string_view name) const
 std::vector<std::string> SettingsDialog::fieldNames() const
 {
 	std::vector<std::string> out;
-	for (const auto& [k, v]: fields_) out.push_back(k);
+	for (const auto& [k, v]: fields_)
+		out.push_back(k);
 	return out;
 }
 
@@ -239,8 +260,12 @@ std::vector<std::string> SettingsDialog::tabTitles() const
 void SettingsDialog::buildGeneral(NodeHandle p)
 {
 	dlg::sectionHeader(ui_, p, "Appearance");
-	combo(p, "themeCombo", "Theme", model::settingsThemeItems(),
-	      "Catppuccin Mocha (dark) or Latte (light); System Default follows the OS when supported");
+	combo(
+		p,
+		"themeCombo",
+		"Theme",
+		model::settingsThemeItems(),
+		"Catppuccin Mocha (dark) or Latte (light); System Default follows the OS when supported");
 
 	const NodeHandle fontRow = dlg::formRow(ui_, p, "Editor font");
 	ui_.setCss(fontRow, "align-items", "start");
@@ -258,11 +283,14 @@ void SettingsDialog::buildGeneral(NodeHandle p)
 		ui_.setRange(fontSizeSpin_, 6.f, 32.f, 1.f);
 		reg("fontSizeSpin", fontSizeSpin_);
 	}
-	ui_.connect(fontPicker_, SignalKind::Submitted, [this](UiContext&, NodeHandle, const SignalArgs&) { onFontPicked(); });
+	ui_.connect(fontPicker_, SignalKind::Submitted, [this](UiContext&, NodeHandle, const SignalArgs&) {
+		onFontPicked();
+	});
 
 	dlg::sectionHeader(ui_, p, "Internationalisation");
 	std::vector<std::string> langs;
-	for (const auto& e: model::settingsLanguageItems()) langs.push_back(e.label);
+	for (const auto& e: model::settingsLanguageItems())
+		langs.push_back(e.label);
 	combo(p, "langCombo", "Language", langs, "Requires restart");
 
 	dlg::sectionHeader(ui_, p, "Editor");
@@ -270,8 +298,11 @@ void SettingsDialog::buildGeneral(NodeHandle p)
 	check(p, "wordWrapCheck", "Word wrap");
 
 	dlg::sectionHeader(ui_, p, "Session");
-	check(p, "restoreCheck", "Restore last session on startup",
-	      "Re-open the last binary from File \xE2\x86\x92 Open Binary when RetDec starts.");
+	check(
+		p,
+		"restoreCheck",
+		"Restore last session on startup",
+		"Re-open the last binary from File \xE2\x86\x92 Open Binary when RetDec starts.");
 }
 
 void SettingsDialog::buildAnalysis(NodeHandle p)
@@ -314,10 +345,12 @@ void SettingsDialog::buildMl(NodeHandle p)
 {
 	dlg::sectionHeader(ui_, p, "Model");
 	pathRow(p, "modelPathEdit", "Model file (.gguf)", FilePrompt::Mode::Open, "Select GGUF model", "*.gguf");
-	dlg::noteLabel(ui_, p,
-	               "When this GGUF path exists on disk, Run Full Analysis sets RETDEC_NEURAL_REFINE on the decompiler "
-	               "child (llama.cpp). Context length and max new tokens come from this tab. CPU device forces "
-	               "RETDEC_NEURAL_N_GPU_LAYERS=0; GPU/Auto use -1. Empty path leaves refinement off.");
+	dlg::noteLabel(
+		ui_,
+		p,
+		"When this GGUF path exists on disk, Run Full Analysis sets RETDEC_NEURAL_REFINE on the decompiler "
+		"child (llama.cpp). Context length and max new tokens come from this tab. CPU device forces "
+		"RETDEC_NEURAL_N_GPU_LAYERS=0; GPU/Auto use -1. Empty path leaves refinement off.");
 	combo(p, "quantCombo", "Quantisation level", model::settingsQuantItems());
 	combo(p, "inferDevCombo", "Inference device", model::settingsInferenceDeviceItems());
 
@@ -332,8 +365,11 @@ void SettingsDialog::buildMl(NodeHandle p)
 	const NodeHandle shaRow = dlg::formRow(ui_, p, "Model SHA-256");
 	const NodeHandle sha = reg("mlModelSha256", dlg::growEdit(ui_, shaRow));
 	w::setPlaceholderText(ui_, sha, "optional SHA-256 of the GGUF");
-	check(p, "mlBatchRefine", "Batch refine (unused)",
-	      "Reserved. Does not set RETDEC_NEURAL_BATCH (removed until real batching exists).");
+	check(
+		p,
+		"mlBatchRefine",
+		"Batch refine (unused)",
+		"Reserved. Does not set RETDEC_NEURAL_BATCH (removed until real batching exists).");
 }
 
 void SettingsDialog::buildRecovery(NodeHandle p)
@@ -367,8 +403,13 @@ void SettingsDialog::buildAdvanced(NodeHandle p)
 	check(p, "dumpSSACheck", "Dump SSA after each stage");
 	check(p, "colorOutCheck", "Colour terminal output");
 	pathRow(p, "irDumpEdit", "IR dump path", FilePrompt::Mode::Directory, "IR dump directory", {});
-	pathRow(p, "intermDirEdit", "Intermediate output dir", FilePrompt::Mode::Directory, "Intermediate output directory",
-	        {});
+	pathRow(
+		p,
+		"intermDirEdit",
+		"Intermediate output dir",
+		FilePrompt::Mode::Directory,
+		"Intermediate output directory",
+		{});
 
 	dlg::sectionHeader(ui_, p, "Output");
 	spin(p, "maxFuncSpin", "Max functions", 0.f, 100000.f, 1.f, "0 = decompile all functions", {}, "All");
@@ -379,11 +420,19 @@ void SettingsDialog::buildDecompiler(NodeHandle p)
 {
 	dlg::sectionHeader(ui_, p, "LLVM pipeline (CLI)");
 	std::vector<std::string> profiles;
-	for (const auto& e: model::settingsProfileItems()) profiles.push_back(e.label);
-	combo(p, "decompileProfileCombo", "Decompile profile", profiles,
-	      "Passed as --profile to retdec-decompiler. Analysis \xE2\x86\x92 Fast decompile overrides to fast for the next run.");
-	check(p, "useCustomLlvmPassesCheck",
-	      "Use custom LLVM pass list when running \"Run Full Analysis\" (adds --llvm-passes-json to retdec-decompiler)");
+	for (const auto& e: model::settingsProfileItems())
+		profiles.push_back(e.label);
+	combo(
+		p,
+		"decompileProfileCombo",
+		"Decompile profile",
+		profiles,
+		"Passed as --profile to retdec-decompiler. Analysis \xE2\x86\x92 Fast decompile overrides to fast for the next "
+		"run.");
+	check(
+		p,
+		"useCustomLlvmPassesCheck",
+		"Use custom LLVM pass list when running \"Run Full Analysis\" (adds --llvm-passes-json to retdec-decompiler)");
 	const NodeHandle btnRow = dlg::hrow(ui_, p);
 	const NodeHandle all = reg("llvmPassesAllBtn", w::button(ui_, btnRow, "Enable all passes"));
 	const NodeHandle none = reg("llvmPassesNoneBtn", w::button(ui_, btnRow, "Disable all passes"));
@@ -393,26 +442,41 @@ void SettingsDialog::buildDecompiler(NodeHandle p)
 	ui_.connect(defs, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { defaultPasses(); });
 
 	dlg::sectionHeader(ui_, p, "Output location");
-	pathRow(p, "decompileOutputDirEdit", "Decompile output directory", FilePrompt::Mode::Directory,
-	        "Decompile output directory", {});
-	dlg::noteLabel(ui_, p,
-	               "Set a folder outside OneDrive to keep large `.gui-decompiled.*` artifacts out of sync. Leave empty "
-	               "to write beside the binary.");
+	pathRow(
+		p,
+		"decompileOutputDirEdit",
+		"Decompile output directory",
+		FilePrompt::Mode::Directory,
+		"Decompile output directory",
+		{});
+	dlg::noteLabel(
+		ui_,
+		p,
+		"Set a folder outside OneDrive to keep large `.gui-decompiled.*` artifacts out of sync. Leave empty "
+		"to write beside the binary.");
 
 	dlg::sectionHeader(ui_, p, "Output language");
 	std::vector<std::string> langs;
-	for (const auto& e: model::settingsOutputLangItems()) langs.push_back(e.label);
+	for (const auto& e: model::settingsOutputLangItems())
+		langs.push_back(e.label);
 	combo(p, "outputLangCombo", "Preferred output language", langs);
-	dlg::noteLabel(ui_, p,
-	               "Passed as --output-lang for native binaries. Managed inputs (.pyc, .class, …) use format-specific "
-	               "emitters.");
+	dlg::noteLabel(
+		ui_,
+		p,
+		"Passed as --output-lang for native binaries. Managed inputs (.pyc, .class, …) use format-specific "
+		"emitters.");
 
 	dlg::sectionHeader(ui_, p, "Console");
 	check(p, "liveConsoleTailCheck", "Stream decompiler log to console (may slow decompile on huge logs)");
 
 	dlg::sectionHeader(ui_, p, "Configuration file");
-	pathRow(p, "decompilerConfigEdit", "Optional --config JSON", FilePrompt::Mode::Open, "Decompiler configuration JSON",
-	        model::kJsonFileFilter);
+	pathRow(
+		p,
+		"decompilerConfigEdit",
+		"Optional --config JSON",
+		FilePrompt::Mode::Open,
+		"Decompiler configuration JSON",
+		model::kJsonFileFilter);
 
 	auto names = model::settingsLlvmPassNames();
 	if (!names)
@@ -427,7 +491,8 @@ void SettingsDialog::buildDecompiler(NodeHandle p)
 	ui_.setCss(list, "min-height", "280px");
 	ui_.setCss(list, "gap", "4px");
 	passChecks_.reserve(passNames_.size());
-	for (const std::string& n: passNames_) passChecks_.push_back(w::checkBox(ui_, list, n, true));
+	for (const std::string& n: passNames_)
+		passChecks_.push_back(w::checkBox(ui_, list, n, true));
 }
 
 void SettingsDialog::buildPlugins(NodeHandle p)
@@ -456,21 +521,30 @@ void SettingsDialog::buildPlugins(NodeHandle p)
 	ui_.setCss(pluginDetail_, "padding", "4px");
 
 	ui_.connect(add, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
-		files_.show(FilePrompt::Mode::Directory, "Plugin search path", {}, {},
-		            [this](const std::string& path) { addSearchPath(path); });
+		files_.show(FilePrompt::Mode::Directory, "Plugin search path", {}, {}, [this](const std::string& path) {
+			addSearchPath(path);
+		});
 	});
-	ui_.connect(remove, SignalKind::Clicked,
-	            [this](UiContext&, NodeHandle, const SignalArgs&) { removeSelectedSearchPath(); });
+	ui_.connect(remove, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+		removeSelectedSearchPath();
+	});
 	ui_.connect(rescan, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { rescanPlugins(); });
 	ui_.connect(install, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
-		files_.show(FilePrompt::Mode::Open, "Install plugin", {}, model::pluginLibraryFilter(),
-		            [this](const std::string& path) {
-			            if (auto r = installPlugin(path); !r) warn(r.error());
-		            });
+		files_.show(
+			FilePrompt::Mode::Open,
+			"Install plugin",
+			{},
+			model::pluginLibraryFilter(),
+			[this](const std::string& path) {
+				if (auto r = installPlugin(path); !r) warn(r.error());
+			});
 	});
-	ui_.connect(unload, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { unloadSelectedPlugin(); });
-	ui_.connect(pluginList_, SignalKind::ValueChanged,
-	            [this](UiContext&, NodeHandle, const SignalArgs& a) { selectPlugin(int(a.value)); });
+	ui_.connect(unload, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+		unloadSelectedPlugin();
+	});
+	ui_.connect(pluginList_, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+		selectPlugin(int(a.value));
+	});
 	ui_.connect(pluginEnabled_, SignalKind::Toggled, [this](UiContext&, NodeHandle, const SignalArgs& a) {
 		setPluginEnabled(dlg::indexOf(ui_, pluginList_), a.flag);
 	});
@@ -566,8 +640,8 @@ void SettingsDialog::populateFromSettings()
 	setChecked("useCustomLlvmPassesCheck", s.decompiler.useCustomLlvmPasses);
 	for (std::size_t i = 0; i < passChecks_.size(); ++i)
 	{
-		const bool disabled = std::find(s.decompiler.llvmPassesDisabled.begin(), s.decompiler.llvmPassesDisabled.end(),
-		                                passNames_[i])
+		const bool disabled =
+			std::find(s.decompiler.llvmPassesDisabled.begin(), s.decompiler.llvmPassesDisabled.end(), passNames_[i])
 			!= s.decompiler.llvmPassesDisabled.end();
 		ui_.setChecked(passChecks_[i], !disabled);
 	}
@@ -589,7 +663,8 @@ void SettingsDialog::applyToSettings()
 	model::AppSettings& s = settings_;
 
 	// General
-	s.general.theme = static_cast<model::GeneralSettings::Theme>(std::clamp(dlg::indexOf(ui_, field("themeCombo")), 0, 2));
+	s.general.theme =
+		static_cast<model::GeneralSettings::Theme>(std::clamp(dlg::indexOf(ui_, field("themeCombo")), 0, 2));
 	if (const std::string fam = w::fontPickerFamily(ui_, fontPicker_); !fam.empty()) s.general.editorFont.family = fam;
 	s.general.fontSize = int(std::lround(ui_.value(fontSizeSpin_)));
 	s.general.editorFont.pointSize = s.general.fontSize;
@@ -620,7 +695,8 @@ void SettingsDialog::applyToSettings()
 
 	// ML
 	s.ml.modelPath = text("modelPathEdit");
-	s.ml.quantLevel = static_cast<model::MLSettings::QuantLevel>(std::clamp(dlg::indexOf(ui_, field("quantCombo")), 0, 5));
+	s.ml.quantLevel =
+		static_cast<model::MLSettings::QuantLevel>(std::clamp(dlg::indexOf(ui_, field("quantCombo")), 0, 5));
 	s.ml.inferenceDevice =
 		static_cast<model::MLSettings::InferenceDevice>(std::clamp(dlg::indexOf(ui_, field("inferDevCombo")), 0, 2));
 	s.ml.temperature = number("tempSpin");
@@ -664,7 +740,8 @@ void SettingsDialog::applyToSettings()
 	if (!passChecks_.empty())
 	{
 		std::vector<bool> on;
-		for (NodeHandle c: passChecks_) on.push_back(ui_.checked(c));
+		for (NodeHandle c: passChecks_)
+			on.push_back(ui_.checked(c));
 		s.decompiler.llvmPassesDisabled = model::settingsDisabledPasses(passNames_, on);
 	}
 	s.decompiler.extraConfigPath = text("decompilerConfigEdit");
@@ -769,12 +846,14 @@ void SettingsDialog::onFontPicked()
 
 void SettingsDialog::enableAllPasses()
 {
-	for (NodeHandle c: passChecks_) ui_.setChecked(c, true);
+	for (NodeHandle c: passChecks_)
+		ui_.setChecked(c, true);
 }
 
 void SettingsDialog::disableAllPasses()
 {
-	for (NodeHandle c: passChecks_) ui_.setChecked(c, false);
+	for (NodeHandle c: passChecks_)
+		ui_.setChecked(c, false);
 }
 
 void SettingsDialog::defaultPasses()

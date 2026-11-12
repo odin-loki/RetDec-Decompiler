@@ -51,7 +51,10 @@ struct DiffCell
 struct SideBySideRow
 {
 	DiffCell left, right;
-	bool changed() const { return left.kind != DiffCellKind::Equal || right.kind != DiffCellKind::Equal; }
+	bool changed() const
+	{
+		return left.kind != DiffCellKind::Equal || right.kind != DiffCellKind::Equal;
+	}
 };
 
 /**
@@ -72,7 +75,10 @@ struct UnifiedRow
 	int rightLine = -1; ///< 0-based, -1 for a delete
 	std::vector<DiffSpan> spans;
 	/// '+', '-' or ' '.
-	char prefix() const { return kind == DiffOpKind::Insert ? '+' : kind == DiffOpKind::Delete ? '-' : ' '; }
+	char prefix() const
+	{
+		return kind == DiffOpKind::Insert ? '+' : kind == DiffOpKind::Delete ? '-' : ' ';
+	}
 };
 
 /// One row per op; within a run of changes the removed lines come first, then
@@ -89,15 +95,20 @@ std::string diffStatsText(const DiffResult& diff);
 
 /// Cyclic Prev/Next over hunk starts. Starts before the first hunk, so Next
 /// goes to the first and Prev to the last.
-class DiffHunkCursor
-{
+class DiffHunkCursor {
 public:
 	void reset(std::vector<int> starts);
 	/// Row of the next / previous hunk, nothing when there are none.
 	std::optional<int> next();
 	std::optional<int> prev();
-	int current() const { return cur_; }
-	std::size_t count() const { return starts_.size(); }
+	int current() const
+	{
+		return cur_;
+	}
+	std::size_t count() const
+	{
+		return starts_.size();
+	}
 
 private:
 	std::vector<int> starts_;

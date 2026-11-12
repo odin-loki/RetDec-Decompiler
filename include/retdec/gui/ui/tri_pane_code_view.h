@@ -82,38 +82,65 @@ public:
 	CodeView(const CodeView&) = delete;
 	CodeView& operator=(const CodeView&) = delete;
 
-	fuse::ui::NodeHandle node() const { return node_; }
-	fuse::ui::UiContext& ui() const { return ui_; }
+	fuse::ui::NodeHandle node() const
+	{
+		return node_;
+	}
+	fuse::ui::UiContext& ui() const
+	{
+		return ui_;
+	}
 
 	// ── Content ──────────────────────────────────────────────────────────────
 	void setText(std::string_view text);
-	void clear() { setText({}); }
+	void clear()
+	{
+		setText({});
+	}
 	std::string text() const;
 	bool isEmpty() const;
 	int lineCount() const;
 	std::string_view line(int i) const;
-	const std::vector<std::string>& lines() const { return lines_; }
+	const std::vector<std::string>& lines() const
+	{
+		return lines_;
+	}
 	/// Shows @p buffer instead of own text (nullptr returns to own text). The
 	/// buffer must outlive the view; call contentChanged() after appending.
 	void setConsoleBuffer(const model::ConsoleBuffer* buffer);
 	void contentChanged();
 
 	void setLang(model::CodeLang lang);
-	model::CodeLang lang() const { return lang_; }
+	model::CodeLang lang() const
+	{
+		return lang_;
+	}
 	/// Token spans of line @p i as painted (empty for console / plain).
 	const std::vector<model::TokenSpan>& tokens(int i) const;
 
 	void setPalette(const CodePalette& p);
-	const CodePalette& palette() const { return palette_; }
+	const CodePalette& palette() const
+	{
+		return palette_;
+	}
 	void setShowGutter(bool on);
 	void setPlaceholder(std::string_view text);
-	std::string_view placeholder() const { return placeholder_; }
+	std::string_view placeholder() const
+	{
+		return placeholder_;
+	}
 	/// Editor font size in px (applyEditorFont).
 	void setFontSize(float px);
 
 	// ── Caret, selection, highlight ──────────────────────────────────────────
-	model::TextPos caret() const { return caret_; }
-	model::TextRange selection() const { return {anchor_, caret_}; }
+	model::TextPos caret() const
+	{
+		return caret_;
+	}
+	model::TextRange selection() const
+	{
+		return {anchor_, caret_};
+	}
 	std::string selectedText() const;
 	/// Moves the caret (selecting from the anchor when @p extend). Programmatic
 	/// moves notify onCaretLineChanged only when @p notify.
@@ -125,14 +152,20 @@ public:
 
 	/// Full-width extra highlight of line @p line (-1 clears).
 	void highlightLine(int line);
-	int highlightedLine() const { return highlight_; }
+	int highlightedLine() const
+	{
+		return highlight_;
+	}
 
 	/// Finds @p query from the current selection (wrap-around); selects and
 	/// centres the match. False when not found.
 	bool find(std::string_view query, bool forward = true, bool caseSensitive = false);
 
 	// ── Scrolling ────────────────────────────────────────────────────────────
-	int firstVisibleLine() const { return first_; }
+	int firstVisibleLine() const
+	{
+		return first_;
+	}
 	/// Scrolls so @p line is the first visible line (clamped). Notifies
 	/// onScrolled when @p notify.
 	void setFirstVisibleLine(int line, bool notify = false);
@@ -144,7 +177,10 @@ public:
 	/// Largest first-visible-line value (the scrollbar maximum).
 	int scrollMax() const;
 	void scrollToEnd();
-	float scrollX() const { return scrollX_; }
+	float scrollX() const
+	{
+		return scrollX_;
+	}
 
 	// ── Events ───────────────────────────────────────────────────────────────
 	/// The caret moved to another line by user input (click, keys). 0-based.
@@ -198,13 +234,25 @@ public:
 	SyncedCodePane(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent, model::CodeLang lang, std::string_view title);
 	~SyncedCodePane();
 
-	fuse::ui::NodeHandle root() const { return root_; }
-	CodeView& editor() { return *view_; }
-	const CodeView& editor() const { return *view_; }
+	fuse::ui::NodeHandle root() const
+	{
+		return root_;
+	}
+	CodeView& editor()
+	{
+		return *view_;
+	}
+	const CodeView& editor() const
+	{
+		return *view_;
+	}
 
 	void setContent(std::string_view text);
 	void setLang(model::CodeLang lang);
-	model::CodeLang lang() const { return view_->lang(); }
+	model::CodeLang lang() const
+	{
+		return view_->lang();
+	}
 	/// 1-based; < 1 clears.
 	void highlightLine(int line);
 	/// 1-based; centres the line and moves the caret there (no notification).
@@ -212,13 +260,25 @@ public:
 	void clearHighlight();
 	/// 1-based highlighted line, -1 when none.
 	int highlightedLine() const;
-	void setEditorFontSize(float px) { view_->setFontSize(px); }
+	void setEditorFontSize(float px)
+	{
+		view_->setFontSize(px);
+	}
 
-	std::string title() const { return title_; }
+	std::string title() const
+	{
+		return title_;
+	}
 	void setTitle(std::string_view title);
 	/// Number of lines (QTextDocument block count: "a\n" has 2).
-	int lineCount() const { return view_->lineCount(); }
-	bool isReadOnly() const { return true; }
+	int lineCount() const
+	{
+		return view_->lineCount();
+	}
+	bool isReadOnly() const
+	{
+		return true;
+	}
 
 	/// User activated a line (1-based).
 	std::function<void(int line)> onLineActivated;
@@ -254,17 +314,29 @@ public:
 	TriPaneCodeView(const TriPaneCodeView&) = delete;
 	TriPaneCodeView& operator=(const TriPaneCodeView&) = delete;
 
-	fuse::ui::NodeHandle root() const { return root_; }
-	std::string panelTitle() const { return "Tri-Pane View"; }
+	fuse::ui::NodeHandle root() const
+	{
+		return root_;
+	}
+	std::string panelTitle() const
+	{
+		return "Tri-Pane View";
+	}
 
 	// ── Content ──────────────────────────────────────────────────────────────
 	void loadFunction(uint64_t address, std::string_view asmText, std::string_view irText, std::string_view cText);
 	void setLineMapping(const model::LineMapping& mapping);
 	/// Derives the mapping from the addresses in the loaded texts.
 	void buildLineMappingFromAddresses();
-	const model::LineMapping& lineMapping() const { return mapping_; }
+	const model::LineMapping& lineMapping() const
+	{
+		return mapping_;
+	}
 	void setOutputLanguage(OutputLang lang);
-	OutputLang outputLanguage() const { return outputLang_; }
+	OutputLang outputLanguage() const
+	{
+		return outputLang_;
+	}
 	/// Applies Settings -> Decompiler -> Output language ("c", "cpp", ...).
 	void syncLanguageFromSettings(std::string_view settingsValue);
 	void applyEditorFont(float px);
@@ -275,15 +347,24 @@ public:
 	void navigateTo(uint64_t address);
 	void navigateBack();
 	void navigateForward();
-	bool canGoBack() const { return history_.canGoBack(); }
-	bool canGoForward() const { return history_.canGoForward(); }
+	bool canGoBack() const
+	{
+		return history_.canGoBack();
+	}
+	bool canGoForward() const
+	{
+		return history_.canGoForward();
+	}
 	/// A function was selected elsewhere: label + history entry.
 	void onFunctionSelected(uint64_t address, std::string_view name);
 
 	// ── Find ─────────────────────────────────────────────────────────────────
 	void showFindBar();
 	void hideFindBar();
-	bool findBarVisible() const { return findShown_; }
+	bool findBarVisible() const
+	{
+		return findShown_;
+	}
 	void setFindText(std::string_view text);
 	/// Finds in all three panes (wrap-around).
 	void findNext();
@@ -295,15 +376,36 @@ public:
 	std::function<void(const std::string& msg, int timeoutMs)> onStatusMessage;
 
 	// ── Test hooks ───────────────────────────────────────────────────────────
-	SyncedCodePane& asmPane() { return *asm_; }
-	SyncedCodePane& irPane() { return *ir_; }
-	SyncedCodePane& cPane() { return *c_; }
+	SyncedCodePane& asmPane()
+	{
+		return *asm_;
+	}
+	SyncedCodePane& irPane()
+	{
+		return *ir_;
+	}
+	SyncedCodePane& cPane()
+	{
+		return *c_;
+	}
 	SyncedCodePane& pane(model::TriPane p);
 	std::string functionLabel() const;
-	fuse::ui::NodeHandle findEdit() const { return findEdit_; }
-	fuse::ui::NodeHandle langCombo() const { return langCombo_; }
-	fuse::ui::NodeHandle backButton() const { return backBtn_; }
-	fuse::ui::NodeHandle forwardButton() const { return fwdBtn_; }
+	fuse::ui::NodeHandle findEdit() const
+	{
+		return findEdit_;
+	}
+	fuse::ui::NodeHandle langCombo() const
+	{
+		return langCombo_;
+	}
+	fuse::ui::NodeHandle backButton() const
+	{
+		return backBtn_;
+	}
+	fuse::ui::NodeHandle forwardButton() const
+	{
+		return fwdBtn_;
+	}
 	/// Simulates the user activating @p line (1-based) in @p pane.
 	void activateLine(model::TriPane pane, int line);
 

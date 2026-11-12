@@ -114,7 +114,10 @@ public:
 	~TemporaryFile();
 	TemporaryFile(const TemporaryFile&) = delete;
 	TemporaryFile& operator=(const TemporaryFile&) = delete;
-	const std::filesystem::path& path() const { return path_; }
+	const std::filesystem::path& path() const
+	{
+		return path_;
+	}
 
 private:
 	std::filesystem::path path_;
@@ -166,12 +169,13 @@ std::string processEnvironmentValue(const ProcessEnvironment& env, const std::st
 
 /// Resolved `<basename>.gui-decompiled.c` path (lexical join, '/' separators).
 /// Empty @p outputDir = beside the binary.
-std::filesystem::path resolveGuiDecompiledCPath(
-	const std::filesystem::path& binaryPath, std::string_view outputDir = {});
+std::filesystem::path
+resolveGuiDecompiledCPath(const std::filesystem::path& binaryPath, std::string_view outputDir = {});
 
 /// Prefer configured @p outputDir, then beside-binary; an existing file's
 /// absolute path, else the preferred default (not made absolute).
-std::filesystem::path locateGuiDecompiledCPath(const std::filesystem::path& binaryPath, std::string_view outputDir = {});
+std::filesystem::path
+locateGuiDecompiledCPath(const std::filesystem::path& binaryPath, std::string_view outputDir = {});
 
 // ─── Log reading ─────────────────────────────────────────────────────────────
 
@@ -188,7 +192,8 @@ struct DecompileLogProgress
  *        "[progress] ... NN%") to a GUI stage and percent. The offset moves to
  *        the end of the file. Nothing when no new line maps to a stage.
  */
-std::optional<DecompileLogProgress> pollDecompileLogProgress(const std::filesystem::path& logPath, uint64_t* ioFileOffset);
+std::optional<DecompileLogProgress>
+pollDecompileLogProgress(const std::filesystem::path& logPath, uint64_t* ioFileOffset);
 
 /// The whole log for the console after a run, or only its tail when huge.
 struct DecompilerLogText

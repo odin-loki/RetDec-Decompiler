@@ -28,7 +28,11 @@ namespace w = fuse::ui::widgets;
 namespace {
 
 FunctionEntry makeFn(
-	uint64_t addr, const std::string& name, float confidence = 0.8f, bool stl = false, bool crypto = false,
+	uint64_t addr,
+	const std::string& name,
+	float confidence = 0.8f,
+	bool stl = false,
+	bool crypto = false,
 	bool isLibrary = false)
 {
 	FunctionEntry e;
@@ -673,8 +677,9 @@ TEST(FunctionListPanelUiTest, ContextMenuGoToAndRedecompile)
 	EXPECT_EQ(redecompile[0].second, "beta");
 
 	// Right-click below the rows: only the export entries.
-	f.h.click({f.h.ui.contentRect(f.panel.tableNode()).x + 20.f, f.h.ui.contentRect(f.panel.tableNode()).bottom() - 5.f},
-			  fuse::ui::MouseButton::Right);
+	f.h.click(
+		{f.h.ui.contentRect(f.panel.tableNode()).x + 20.f, f.h.ui.contentRect(f.panel.tableNode()).bottom() - 5.f},
+		fuse::ui::MouseButton::Right);
 	EXPECT_EQ(f.panel.contextMenuLabels().front(), "Add Tag to Selected\xE2\x80\xA6");
 	f.h.key(fuse::ui::Key::Escape);
 }
@@ -739,7 +744,9 @@ TEST(FunctionListPanelUiTest, CopyAndExport)
 	EXPECT_EQ(clip, f.panel.csvText());
 	EXPECT_EQ(f.panel.statusText(), "3 functions");
 	EXPECT_EQ(f.h.ui.text(f.panel.statusNode()), "Copied 3 functions");
-	EXPECT_EQ(clip.substr(0, clip.find('\n')), "Address,Name,SizeBytes,Instrs,Confidence,CC,STL,Crypto,Algo,Design,Lib,Notes,Tags");
+	EXPECT_EQ(
+		clip.substr(0, clip.find('\n')),
+		"Address,Name,SizeBytes,Instrs,Confidence,CC,STL,Crypto,Algo,Design,Lib,Notes,Tags");
 
 	// Ctrl+C on the table copies the current address.
 	f.h.click(f.panel.cellCenter(1, FnColAddress));
@@ -820,7 +827,8 @@ TEST(FunctionListPanelUiTest, RendersToPng)
 	std::vector<FunctionEntry> fns;
 	for (int i = 0; i < 14; ++i)
 	{
-		auto e = makeFn(0x401000 + 0x40 * i, "function_" + std::to_string(i), 0.1f + 0.065f * i, i % 3 == 0, i % 4 == 1);
+		auto e =
+			makeFn(0x401000 + 0x40 * i, "function_" + std::to_string(i), 0.1f + 0.065f * i, i % 3 == 0, i % 4 == 1);
 		e.patterns.algo = i % 5 == 2;
 		e.patterns.design = i % 6 == 3;
 		e.isLibrary = e.patterns.library = i % 7 == 6;

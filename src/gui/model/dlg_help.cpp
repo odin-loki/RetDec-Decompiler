@@ -35,7 +35,8 @@ std::string aboutMarkdown()
 		   "**Ctrl+S** saves decompiled C; **Ctrl+Shift+S** saves the project. **F5** runs full analysis; "
 		   "**Ctrl+,** opens Settings.\n"
 		   "\n"
-		   "File \xE2\x86\x92 Batch Decompile queues multiple binaries. Tools \xE2\x86\x92 Call Graph / Type Hierarchy / AI Assistant "
+		   "File \xE2\x86\x92 Batch Decompile queues multiple binaries. Tools \xE2\x86\x92 Call Graph / Type Hierarchy "
+		   "/ AI Assistant "
 		   "open in separate windows.\n"
 		   "\n"
 		   "Theme: Catppuccin Latte (light), Mocha (dark), or System Default | FuseUI\n";
@@ -123,7 +124,8 @@ fs::path findDocsDir()
 
 static std::string lower(std::string s)
 {
-	for (char& c: s) c = char(std::tolower(static_cast<unsigned char>(c)));
+	for (char& c: s)
+		c = char(std::tolower(static_cast<unsigned char>(c)));
 	return s;
 }
 

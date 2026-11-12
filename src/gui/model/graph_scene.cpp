@@ -76,7 +76,8 @@ void GraphScene::finalize(float margin)
 	for (SceneEdge& e: edges)
 	{
 		e.polyline = flattenCubicPath(e.points);
-		e.bounds = boundsOf(e.polyline).adjusted(-e.arrowHalfWidth, -e.arrowHalfWidth, e.arrowHalfWidth, e.arrowHalfWidth);
+		e.bounds =
+			boundsOf(e.polyline).adjusted(-e.arrowHalfWidth, -e.arrowHalfWidth, e.arrowHalfWidth, e.arrowHalfWidth);
 		all = all.united(e.bounds);
 	}
 	for (const SceneRegion& r: regions)
@@ -202,7 +203,9 @@ ArrowHead arrowHead(GPoint tip, GPoint from, float length, float halfWidth)
 	dy /= len;
 	const GPoint base{tip.x - dx * length, tip.y - dy * length};
 	const GPoint perp{-dy, dx};
-	return {tip, {base.x + perp.x * halfWidth, base.y + perp.y * halfWidth},
+	return {
+		tip,
+		{base.x + perp.x * halfWidth, base.y + perp.y * halfWidth},
 		{base.x - perp.x * halfWidth, base.y - perp.y * halfWidth}};
 }
 

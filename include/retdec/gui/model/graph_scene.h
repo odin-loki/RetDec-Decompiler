@@ -38,16 +38,34 @@ struct GRect
 	float w = 0.f;
 	float h = 0.f;
 
-	float right() const { return x + w; }
-	float bottom() const { return y + h; }
-	GPoint center() const { return {x + w * 0.5f, y + h * 0.5f}; }
-	bool empty() const { return w <= 0.f || h <= 0.f; }
-	bool contains(GPoint p) const { return p.x >= x && p.y >= y && p.x < x + w && p.y < y + h; }
+	float right() const
+	{
+		return x + w;
+	}
+	float bottom() const
+	{
+		return y + h;
+	}
+	GPoint center() const
+	{
+		return {x + w * 0.5f, y + h * 0.5f};
+	}
+	bool empty() const
+	{
+		return w <= 0.f || h <= 0.f;
+	}
+	bool contains(GPoint p) const
+	{
+		return p.x >= x && p.y >= y && p.x < x + w && p.y < y + h;
+	}
 	bool intersects(const GRect& o) const
 	{
 		return x < o.right() && o.x < right() && y < o.bottom() && o.y < bottom();
 	}
-	GRect adjusted(float l, float t, float r, float b) const { return {x + l, y + t, w - l + r, h - t + b}; }
+	GRect adjusted(float l, float t, float r, float b) const
+	{
+		return {x + l, y + t, w - l + r, h - t + b};
+	}
 	GRect united(const GRect& o) const;
 	friend bool operator==(const GRect&, const GRect&) = default;
 };
@@ -61,11 +79,26 @@ constexpr Rgba rgbaHex(uint32_t rgb, uint8_t alpha = 0xFF)
 {
 	return (rgb << 8) | alpha;
 }
-constexpr uint8_t rgbaR(Rgba c) { return uint8_t(c >> 24); }
-constexpr uint8_t rgbaG(Rgba c) { return uint8_t(c >> 16); }
-constexpr uint8_t rgbaB(Rgba c) { return uint8_t(c >> 8); }
-constexpr uint8_t rgbaA(Rgba c) { return uint8_t(c); }
-constexpr Rgba rgbaWithAlpha(Rgba c, uint8_t a) { return (c & 0xFFFFFF00u) | a; }
+constexpr uint8_t rgbaR(Rgba c)
+{
+	return uint8_t(c >> 24);
+}
+constexpr uint8_t rgbaG(Rgba c)
+{
+	return uint8_t(c >> 16);
+}
+constexpr uint8_t rgbaB(Rgba c)
+{
+	return uint8_t(c >> 8);
+}
+constexpr uint8_t rgbaA(Rgba c)
+{
+	return uint8_t(c);
+}
+constexpr Rgba rgbaWithAlpha(Rgba c, uint8_t a)
+{
+	return (c & 0xFFFFFF00u) | a;
+}
 /// Multiplies the alpha channel by f (0..1).
 Rgba rgbaFade(Rgba c, float f);
 /// "#rrggbb" (alpha dropped).
@@ -187,7 +220,10 @@ struct GraphScene
 	Rgba background = catppuccin::base;
 	GRect bounds; ///< everything, plus the margin passed to finalize()
 
-	bool empty() const { return nodes.empty(); }
+	bool empty() const
+	{
+		return nodes.empty();
+	}
 	void clear();
 	/// Flattens edge paths, computes edge bounds, the scene bounds (+margin) and the id index. Call after building
 	/// or moving items; visibility changes need no finalize.
@@ -229,11 +265,23 @@ struct ViewTransform
 	float zoom = 1.f;
 	GPoint origin;
 
-	GPoint toView(GPoint s) const { return {(s.x - origin.x) * zoom, (s.y - origin.y) * zoom}; }
-	GPoint toScene(GPoint v) const { return {v.x / zoom + origin.x, v.y / zoom + origin.y}; }
-	GRect toViewRect(const GRect& r) const { return {(r.x - origin.x) * zoom, (r.y - origin.y) * zoom, r.w * zoom, r.h * zoom}; }
+	GPoint toView(GPoint s) const
+	{
+		return {(s.x - origin.x) * zoom, (s.y - origin.y) * zoom};
+	}
+	GPoint toScene(GPoint v) const
+	{
+		return {v.x / zoom + origin.x, v.y / zoom + origin.y};
+	}
+	GRect toViewRect(const GRect& r) const
+	{
+		return {(r.x - origin.x) * zoom, (r.y - origin.y) * zoom, r.w * zoom, r.h * zoom};
+	}
 	/// The scene rectangle visible in a viewport of size w x h.
-	GRect visibleScene(float w, float h) const { return {origin.x, origin.y, w / zoom, h / zoom}; }
+	GRect visibleScene(float w, float h) const
+	{
+		return {origin.x, origin.y, w / zoom, h / zoom};
+	}
 
 	static constexpr float kMinZoom = 0.02f;
 	static constexpr float kMaxZoom = 8.f;
@@ -243,7 +291,11 @@ struct ViewTransform
 	void zoomAt(float factor, GPoint anchor);
 	/// Pans so scene point `p` is at the centre of a w x h viewport.
 	void centerOn(GPoint p, float w, float h);
-	void panByView(float dx, float dy) { origin.x -= dx / zoom; origin.y -= dy / zoom; }
+	void panByView(float dx, float dy)
+	{
+		origin.x -= dx / zoom;
+		origin.y -= dy / zoom;
+	}
 };
 
 } // namespace retdec::gui::model

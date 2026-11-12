@@ -74,7 +74,9 @@ struct CfgGraphData
 
 /// Collapses non-branching chains (Qt CFGScene::compressChains). `members` (optional) receives, per kept head id,
 /// the ids folded into it (head first).
-CfgGraphData compressChains(const std::vector<BasicBlockData>& blocks, const std::vector<CFGEdgeData>& edges,
+CfgGraphData compressChains(
+	const std::vector<BasicBlockData>& blocks,
+	const std::vector<CFGEdgeData>& edges,
 	std::unordered_map<uint64_t, std::vector<uint64_t>>* members = nullptr);
 
 /// Entry block: the first isEntry block, else the first block without predecessors, else the first block.
@@ -88,7 +90,8 @@ struct NaturalLoop
 };
 /// Natural loops of the DFS back edges from the entry (loops sharing a header are merged), ordered by header
 /// position in `blocks`.
-std::vector<NaturalLoop> detectNaturalLoops(const std::vector<BasicBlockData>& blocks, const std::vector<CFGEdgeData>& edges);
+std::vector<NaturalLoop>
+detectNaturalLoops(const std::vector<BasicBlockData>& blocks, const std::vector<CFGEdgeData>& edges);
 /// When no block has a loop id, marks headers and assigns loop ids from detectNaturalLoops (innermost loop wins).
 /// Returns the number of loops assigned (0 when the data already had loop information).
 int annotateLoops(std::vector<BasicBlockData>& blocks, const std::vector<CFGEdgeData>& edges);
@@ -116,12 +119,14 @@ struct CfgLayout
 
 /// Full CFG layout: compression, back edges, layered layout, edge routing (ports spread along block edges, back
 /// edges arcing left), loop regions, and the drawable scene.
-CfgLayout layoutCfg(const std::vector<BasicBlockData>& blocks, const std::vector<CFGEdgeData>& edges,
+CfgLayout layoutCfg(
+	const std::vector<BasicBlockData>& blocks,
+	const std::vector<CFGEdgeData>& edges,
 	const CfgLayoutOptions& options = {});
 
 /// Graphviz DOT of a CFG (record-like boxes with the instructions, edges coloured / styled by kind).
-std::string cfgToDot(const std::vector<BasicBlockData>& blocks, const std::vector<CFGEdgeData>& edges,
-	const std::string& title = "cfg");
+std::string cfgToDot(
+	const std::vector<BasicBlockData>& blocks, const std::vector<CFGEdgeData>& edges, const std::string& title = "cfg");
 
 } // namespace retdec::gui::model
 

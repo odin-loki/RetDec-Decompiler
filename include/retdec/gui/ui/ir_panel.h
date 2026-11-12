@@ -40,24 +40,42 @@ public:
 	IRPanel(const IRPanel&) = delete;
 	IRPanel& operator=(const IRPanel&) = delete;
 
-	fuse::ui::NodeHandle root() const { return root_; }
-	std::string panelTitle() const { return "IR (SSA)"; }
+	fuse::ui::NodeHandle root() const
+	{
+		return root_;
+	}
+	std::string panelTitle() const
+	{
+		return "IR (SSA)";
+	}
 
 	/// Stores @p text as the IR of @p stage ("Module" -> module, anything else
 	/// -> function), shows it, and selects the stage in the combo when it
 	/// names one ("Function" / "Module"; e.g. "SSA" leaves the combo alone).
 	void setIRText(std::string_view text, std::string_view stage = "SSA");
 	void setStage(Stage s);
-	Stage stage() const { return stage_; }
-	std::string functionIr() const { return functionIr_; }
-	std::string moduleIr() const { return moduleIr_; }
+	Stage stage() const
+	{
+		return stage_;
+	}
+	std::string functionIr() const
+	{
+		return functionIr_;
+	}
+	std::string moduleIr() const
+	{
+		return moduleIr_;
+	}
 	void onFunctionSelected(uint64_t address, std::string_view name);
 	void applyEditorFont(float px);
 	void clear();
 
 	void showFindBar();
 	void hideFindBar();
-	bool findBarVisible() const { return findShown_; }
+	bool findBarVisible() const
+	{
+		return findShown_;
+	}
 	void setFindText(std::string_view text);
 	void findNext();
 	void findPrevious();
@@ -67,13 +85,31 @@ public:
 	std::function<void(uint64_t address)> onAddressActivated;
 
 	// Test hooks.
-	CodeView& view() { return *view_; }
-	EmptyState& emptyState() { return *empty_; }
-	bool emptyStateShown() const { return emptyShown_; }
+	CodeView& view()
+	{
+		return *view_;
+	}
+	EmptyState& emptyState()
+	{
+		return *empty_;
+	}
+	bool emptyStateShown() const
+	{
+		return emptyShown_;
+	}
 	std::string functionLabel() const;
-	fuse::ui::NodeHandle stageCombo() const { return stageCombo_; }
-	fuse::ui::NodeHandle findEdit() const { return findEdit_; }
-	ContextMenu& contextMenu() { return menu_; }
+	fuse::ui::NodeHandle stageCombo() const
+	{
+		return stageCombo_;
+	}
+	fuse::ui::NodeHandle findEdit() const
+	{
+		return findEdit_;
+	}
+	ContextMenu& contextMenu()
+	{
+		return menu_;
+	}
 
 private:
 	bool handleEvent(fuse::ui::EventContext& ec, const fuse::ui::Event& e);

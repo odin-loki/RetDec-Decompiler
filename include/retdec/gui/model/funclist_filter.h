@@ -49,7 +49,10 @@ struct FunctionFilter
 	bool stl = false, crypto = false, algo = false, design = false, lib = false;
 	std::string classFilter;
 
-	bool anyPattern() const { return stl || crypto || algo || design || lib; }
+	bool anyPattern() const
+	{
+		return stl || crypto || algo || design || lib;
+	}
 	bool accepts(const FunctionEntry& e) const;
 };
 
@@ -64,8 +67,7 @@ bool functionLess(const FunctionEntry& a, const FunctionEntry& b, int col, bool 
  * so it is always in step with the list it watches. Sorting is stable;
  * sortColumn() < 0 keeps the source order.
  */
-class FunctionListProxy
-{
+class FunctionListProxy {
 public:
 	explicit FunctionListProxy(const FunctionList* source);
 
@@ -75,15 +77,27 @@ public:
 	void setPatternFilter(bool stl, bool crypto, bool algo, bool design, bool lib);
 	void setClassFilter(std::string_view className);
 	void setFilter(FunctionFilter f);
-	const FunctionFilter& filter() const { return filter_; }
+	const FunctionFilter& filter() const
+	{
+		return filter_;
+	}
 
 	void sortBy(int col, bool ascending);
-	int sortColumn() const { return sortCol_; }
-	bool sortAscending() const { return asc_; }
+	int sortColumn() const
+	{
+		return sortCol_;
+	}
+	bool sortAscending() const
+	{
+		return asc_;
+	}
 	void setDemangleNames(bool on);
 
 	/// Forces a recompute (the source changed without a revision bump).
-	void invalidate() { dirty_ = true; }
+	void invalidate()
+	{
+		dirty_ = true;
+	}
 
 	std::size_t rowCount() const;
 	/// Index into the source list of view row @p row.

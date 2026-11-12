@@ -35,7 +35,8 @@ struct DecompileBundleInput
 };
 
 /// Build @p zipPath from the decompiler sidecars next to @p in.cPath.
-std::expected<void, std::string> exportDecompileBundle(const DecompileBundleInput& in, const std::filesystem::path& zipPath);
+std::expected<void, std::string>
+exportDecompileBundle(const DecompileBundleInput& in, const std::filesystem::path& zipPath);
 
 /// "executable: X\ncwd: Y\ncommand: a b c\n" (cwd line only when set).
 std::string formatDecompilerCommandText(const DecompileBundleInput& in);

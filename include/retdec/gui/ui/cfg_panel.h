@@ -36,15 +36,17 @@
 
 namespace retdec::gui::ui {
 
-class CfgPanel
-{
+class CfgPanel {
 public:
 	CfgPanel(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent);
 	~CfgPanel();
 	CfgPanel(const CfgPanel&) = delete;
 	CfgPanel& operator=(const CfgPanel&) = delete;
 
-	fuse::ui::NodeHandle root() const { return m_root; }
+	fuse::ui::NodeHandle root() const
+	{
+		return m_root;
+	}
 	static constexpr const char* kTitle = "Control Flow Graph";
 
 	// ── Data in ──────────────────────────────────────────────────────────────
@@ -60,7 +62,10 @@ public:
 	/// Expand chains (or, when expanded and large, compress again) — the toolbar button.
 	void toggleChains();
 	void setChainsExpanded(bool expanded);
-	bool chainsExpanded() const { return m_forceUncompressed; }
+	bool chainsExpanded() const
+	{
+		return m_forceUncompressed;
+	}
 	void setMinimapVisible(bool on);
 	/// Highlights matching blocks (address or instruction text; glob or substring), selects and centres the first.
 	/// Returns the number of matches. Empty clears.
@@ -76,21 +81,51 @@ public:
 	std::expected<void, std::string> exportTo(GraphExportFormat format, const std::filesystem::path& path);
 
 	// ── State (tests, main window) ───────────────────────────────────────────
-	bool isCompressed() const { return m_layout.compressed; }
-	int nodeCount() const { return m_layout.nodeCount; } ///< blocks drawn
-	int blockCount() const { return int(m_blocks.size()); }
+	bool isCompressed() const
+	{
+		return m_layout.compressed;
+	}
+	int nodeCount() const
+	{
+		return m_layout.nodeCount;
+	} ///< blocks drawn
+	int blockCount() const
+	{
+		return int(m_blocks.size());
+	}
 	bool emptyStateVisible() const;
 	std::string functionLabel() const;
 	std::string infoLabel() const;
 	std::string expandChainsLabel() const;
-	uint64_t functionAddress() const { return m_funcAddress; }
-	const model::CfgLayout& layout() const { return m_layout; }
-	GraphView& view() { return *m_view; }
-	fuse::ui::NodeHandle searchBox() const { return m_search; }
+	uint64_t functionAddress() const
+	{
+		return m_funcAddress;
+	}
+	const model::CfgLayout& layout() const
+	{
+		return m_layout;
+	}
+	GraphView& view()
+	{
+		return *m_view;
+	}
+	fuse::ui::NodeHandle searchBox() const
+	{
+		return m_search;
+	}
 	fuse::ui::NodeHandle button(GraphExportFormat f) const;
-	fuse::ui::NodeHandle fitButton() const { return m_fitBtn; }
-	fuse::ui::NodeHandle resetButton() const { return m_resetBtn; }
-	fuse::ui::NodeHandle expandChainsButton() const { return m_chainsBtn; }
+	fuse::ui::NodeHandle fitButton() const
+	{
+		return m_fitBtn;
+	}
+	fuse::ui::NodeHandle resetButton() const
+	{
+		return m_resetBtn;
+	}
+	fuse::ui::NodeHandle expandChainsButton() const
+	{
+		return m_chainsBtn;
+	}
 
 	// ── Events out ───────────────────────────────────────────────────────────
 	/// A block was clicked: its start address (Qt blockNavigationRequested).

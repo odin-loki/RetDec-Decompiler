@@ -41,18 +41,29 @@ forge::json::value parseJson(const std::string& s)
 
 // ─── Ported: ProgressPanel ───────────────────────────────────────────────────
 
-class ProgressPanelTest : public ::testing::Test
-{
+class ProgressPanelTest : public ::testing::Test {
 protected:
-	void SetUp() override { panel = std::make_unique<ProgressPanel>(h.ui, h.ui.root()); }
-	void TearDown() override { h.frame(); }
+	void SetUp() override
+	{
+		panel = std::make_unique<ProgressPanel>(h.ui, h.ui.root());
+	}
+	void TearDown() override
+	{
+		h.frame();
+	}
 	Headless h;
 	std::unique_ptr<ProgressPanel> panel;
 };
 
-TEST_F(ProgressPanelTest, ConstructsWithoutCrash) { EXPECT_NE(panel.get(), nullptr); }
+TEST_F(ProgressPanelTest, ConstructsWithoutCrash)
+{
+	EXPECT_NE(panel.get(), nullptr);
+}
 
-TEST_F(ProgressPanelTest, PanelTitleIsProgress) { EXPECT_EQ(panel->panelTitle(), "Progress"); }
+TEST_F(ProgressPanelTest, PanelTitleIsProgress)
+{
+	EXPECT_EQ(panel->panelTitle(), "Progress");
+}
 
 TEST_F(ProgressPanelTest, SetStagePending)
 {
@@ -240,8 +251,7 @@ TEST_F(ProgressPanelTest, ExportJsonFunctionCountMatchesSet)
 
 // ─── Ported: AnalysisBridge signal emission ──────────────────────────────────
 
-class ProgressBridgeTest : public ::testing::Test
-{
+class ProgressBridgeTest : public ::testing::Test {
 protected:
 	void SetUp() override
 	{
@@ -357,8 +367,7 @@ TEST_F(ProgressBridgeTest, SubscriptionLifetime)
 
 // ─── Ported: connectBridge integration ───────────────────────────────────────
 
-class ProgressBridgeIntegrationTest : public ::testing::Test
-{
+class ProgressBridgeIntegrationTest : public ::testing::Test {
 protected:
 	void SetUp() override
 	{
@@ -520,9 +529,19 @@ TEST(ProgressTrackerTest, TimingsWaterfallAndJson)
 	t.setInstructionCount(70);
 	const std::string json = t.exportJson();
 	// Keys sorted, four-space indent (the Qt QJsonDocument::Indented layout).
-	EXPECT_EQ(json.substr(0, json.find("\"stages\"")), "{\n    \"elapsed_ms\": 150,\n    \"function_count\": 3,\n    \"instruction_count\": 70,\n    ");
-	EXPECT_NE(json.find("        {\n            \"elapsed_ms\": 120,\n            \"name\": \"Binary loading\",\n            \"state\": \"done\"\n        },"), std::string::npos);
-	EXPECT_NE(json.find("\"timeline\": [\n        {\n            \"duration_ms\": 120,\n            \"name\": \"Binary loading\",\n            \"start_ms\": 0\n        },"), std::string::npos);
+	EXPECT_EQ(
+		json.substr(0, json.find("\"stages\"")),
+		"{\n    \"elapsed_ms\": 150,\n    \"function_count\": 3,\n    \"instruction_count\": 70,\n    ");
+	EXPECT_NE(
+		json.find(
+			"        {\n            \"elapsed_ms\": 120,\n            \"name\": \"Binary loading\",\n            "
+			"\"state\": \"done\"\n        },"),
+		std::string::npos);
+	EXPECT_NE(
+		json.find(
+			"\"timeline\": [\n        {\n            \"duration_ms\": 120,\n            \"name\": \"Binary "
+			"loading\",\n            \"start_ms\": 0\n        },"),
+		std::string::npos);
 	EXPECT_EQ(json.back(), '\n');
 	const auto v = forge::json::parse(json);
 	EXPECT_EQ(v["timeline"].arr().size(), 2u);
@@ -584,7 +603,8 @@ TEST(ProgressPanelUiTest, ErrorTooltipCancelAndRender)
 	int64_t now = 0;
 	panel.setClock([&] { return now; });
 	panel.analysisStarted();
-	const char* names[] = {"Binary loading", "RTTI reconstruction", "String detection", "SSA construction", "Variable recovery"};
+	const char* names[] = {
+		"Binary loading", "RTTI reconstruction", "String detection", "SSA construction", "Variable recovery"};
 	const int64_t durations[] = {120, 340, 80, 900, 450};
 	for (int i = 0; i < 5; ++i)
 	{

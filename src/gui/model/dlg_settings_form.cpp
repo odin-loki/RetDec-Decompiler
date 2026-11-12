@@ -26,7 +26,11 @@ const std::vector<std::string>& settingsThemeItems()
 const std::vector<ComboEntry>& settingsLanguageItems()
 {
 	static const std::vector<ComboEntry> k{
-		{"English (en)", "en"}, {"German (de)", "de"}, {"French (fr)", "fr"}, {"Spanish (es)", "es"}, {"Chinese (zh)", "zh"}};
+		{"English (en)", "en"},
+		{"German (de)", "de"},
+		{"French (fr)", "fr"},
+		{"Spanish (es)", "es"},
+		{"Chinese (zh)", "zh"}};
 	return k;
 }
 
@@ -105,15 +109,16 @@ std::vector<std::string> settingsEditorFontFamilies(std::string_view current)
 		out.push_back(std::move(s));
 	};
 	add(std::string(dlgTrim(current)));
-	for (const char* f: {"Cascadia Code,JetBrains Mono,Consolas",
-						 "JetBrains Mono",
-						 "Cascadia Code",
-						 "Consolas",
-						 "Fira Code",
-						 "Source Code Pro",
-						 "DejaVu Sans Mono",
-						 "Menlo",
-						 "Monospace"})
+	for (const char* f:
+		 {"Cascadia Code,JetBrains Mono,Consolas",
+		  "JetBrains Mono",
+		  "Cascadia Code",
+		  "Consolas",
+		  "Fira Code",
+		  "Source Code Pro",
+		  "DejaVu Sans Mono",
+		  "Menlo",
+		  "Monospace"})
 		add(f);
 	return out;
 }

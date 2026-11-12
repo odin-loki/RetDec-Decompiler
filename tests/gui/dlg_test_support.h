@@ -57,7 +57,8 @@ struct DlgUi
 
 	void step(int frames = 2)
 	{
-		for (int i = 0; i < frames; ++i) ui.update(1.f / 60.f);
+		for (int i = 0; i < frames; ++i)
+			ui.update(1.f / 60.f);
 	}
 
 	/// Press and release the pointer over the centre of @p n, as a user click.
@@ -113,8 +114,10 @@ struct DlgUi
 		r.setGlyphAtlas(ui.atlas().pixels(), ui.atlas().size());
 		r.render(ui.drawList(), img);
 		std::filesystem::path dir;
-		if (const char* d = std::getenv("RETDEC_GUI_TEST_PNG_DIR"); d && *d) dir = d;
-		else dir = std::filesystem::temp_directory_path() / "retdec-gui-dlg-png";
+		if (const char* d = std::getenv("RETDEC_GUI_TEST_PNG_DIR"); d && *d)
+			dir = d;
+		else
+			dir = std::filesystem::temp_directory_path() / "retdec-gui-dlg-png";
 		std::error_code ec;
 		std::filesystem::create_directories(dir, ec);
 		const std::string path = (dir / (std::string(name) + ".png")).string();
@@ -136,7 +139,8 @@ inline std::filesystem::path makeTempDir(std::string_view tag)
 {
 	static int counter = 0;
 	const auto base = std::filesystem::temp_directory_path()
-		/ ("retdec-dlg-" + std::string(tag) + "-" + std::to_string(std::random_device{}()) + "-" + std::to_string(++counter));
+					/ ("retdec-dlg-" + std::string(tag) + "-" + std::to_string(std::random_device{}()) + "-"
+					   + std::to_string(++counter));
 	std::error_code ec;
 	std::filesystem::remove_all(base, ec);
 	std::filesystem::create_directories(base, ec);

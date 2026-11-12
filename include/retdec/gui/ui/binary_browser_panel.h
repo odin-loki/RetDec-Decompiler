@@ -39,8 +39,14 @@ public:
 	BinaryBrowserPanel(const BinaryBrowserPanel&) = delete;
 	BinaryBrowserPanel& operator=(const BinaryBrowserPanel&) = delete;
 
-	fuse::ui::NodeHandle root() const { return root_; }
-	std::string panelTitle() const { return "Binary Browser"; }
+	fuse::ui::NodeHandle root() const
+	{
+		return root_;
+	}
+	std::string panelTitle() const
+	{
+		return "Binary Browser";
+	}
 
 	/// New binary: shows a "Run Inspect or wait for fileinfo…" hint row.
 	void loadBinary(std::string_view path);
@@ -63,14 +69,32 @@ public:
 	std::function<void(const std::string& range)> onDecompileRangeRequested;
 
 	// Test hooks.
-	int rowCount() const { return int(rows_.size()); }
+	int rowCount() const
+	{
+		return int(rows_.size());
+	}
 	std::string cellText(int row, int col) const;
 	std::string hexHeaderText() const;
-	std::string hexText() const { return hex_->text(); }
-	std::string binaryPath() const { return binaryPath_; }
-	fuse::ui::NodeHandle table() const { return table_; }
-	CodeView& hexView() { return *hex_; }
-	ContextMenu& contextMenu() { return menu_; }
+	std::string hexText() const
+	{
+		return hex_->text();
+	}
+	std::string binaryPath() const
+	{
+		return binaryPath_;
+	}
+	fuse::ui::NodeHandle table() const
+	{
+		return table_;
+	}
+	CodeView& hexView()
+	{
+		return *hex_;
+	}
+	ContextMenu& contextMenu()
+	{
+		return menu_;
+	}
 
 private:
 	struct Row

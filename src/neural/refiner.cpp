@@ -198,8 +198,8 @@ std::string cacheKeyHex(const std::string& prompt, const GenerationConfig& gen, 
 	blob += prompt;
 	// An internal cache key, not a published digest (the N9 manifest's
 	// input/output hashes stay SHA-256): Forge's BLAKE3, 64 hex digits.
-	return forge::hash::blake3::hex(forge::hash::blake3::of(
-		{reinterpret_cast<const std::uint8_t*>(blob.data()), blob.size()}));
+	return forge::hash::blake3::hex(
+		forge::hash::blake3::of({reinterpret_cast<const std::uint8_t*>(blob.data()), blob.size()}));
 }
 
 bool readCacheFile(const std::string& dir, const std::string& key, std::string* out)

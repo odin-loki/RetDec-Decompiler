@@ -52,7 +52,8 @@ bool isWordChar(char c)
 	return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
 }
 
-std::optional<TextRange> scanForward(const std::vector<std::string>& lines, std::string_view q, TextPos from, TextPos stop, bool cs)
+std::optional<TextRange>
+scanForward(const std::vector<std::string>& lines, std::string_view q, TextPos from, TextPos stop, bool cs)
 {
 	for (int l = std::max(0, from.line); l < static_cast<int>(lines.size()) && l <= stop.line; ++l)
 	{
@@ -66,7 +67,8 @@ std::optional<TextRange> scanForward(const std::vector<std::string>& lines, std:
 	return std::nullopt;
 }
 
-std::optional<TextRange> scanBackward(const std::vector<std::string>& lines, std::string_view q, TextPos before, TextPos stop, bool cs)
+std::optional<TextRange>
+scanBackward(const std::vector<std::string>& lines, std::string_view q, TextPos before, TextPos stop, bool cs)
 {
 	// Matches must end at or before `before`.
 	for (int l = std::min(before.line, static_cast<int>(lines.size()) - 1); l >= 0 && l >= stop.line; --l)
@@ -131,7 +133,9 @@ std::string textInRange(const std::vector<std::string>& lines, const TextRange& 
 	if (lines.empty() || a == b) return {};
 	a.line = std::clamp(a.line, 0, static_cast<int>(lines.size()) - 1);
 	b.line = std::clamp(b.line, 0, static_cast<int>(lines.size()) - 1);
-	auto clampCol = [&](const TextPos& p) { return static_cast<std::size_t>(std::clamp(p.col, 0, static_cast<int>(lines[p.line].size()))); };
+	auto clampCol = [&](const TextPos& p) {
+		return static_cast<std::size_t>(std::clamp(p.col, 0, static_cast<int>(lines[p.line].size())));
+	};
 	if (a.line == b.line) return lines[a.line].substr(clampCol(a), clampCol(b) - clampCol(a));
 	std::string r = lines[a.line].substr(clampCol(a));
 	for (int i = a.line + 1; i < b.line; ++i)
@@ -144,7 +148,8 @@ std::string textInRange(const std::vector<std::string>& lines, const TextRange& 
 	return r;
 }
 
-std::optional<TextRange> findText(const std::vector<std::string>& lines, std::string_view query, const TextRange& from, const FindOptions& opt)
+std::optional<TextRange>
+findText(const std::vector<std::string>& lines, std::string_view query, const TextRange& from, const FindOptions& opt)
 {
 	if (query.empty() || lines.empty()) return std::nullopt;
 	const TextPos begin = std::min(from.begin, from.end), end = std::max(from.begin, from.end);

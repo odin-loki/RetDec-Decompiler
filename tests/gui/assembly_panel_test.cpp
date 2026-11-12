@@ -14,20 +14,21 @@
 #include <memory>
 
 using namespace retdec::gui;
-using retdec::gui::test::HeadlessUi;
 using fuse::ui::Key;
+using retdec::gui::test::HeadlessUi;
 
 namespace {
-const char* kDsm = "; function: main at 0x401000 -- 0x401020\n"
-                   "0x401000:   55                        push ebp\n"
-                   "0x401001:   89 e5                     mov ebp, esp\n"
-                   "0x401003:   e8 f8 00 00 00            call 0x401100 <helper>\n"
-                   "0x401008:   75 06                     jne 0x401010\n"
-                   "0x40100a:   c3                        ret\n"
-                   "0x401010:   31 c0                     xor eax, eax\n"
-                   "\n"
-                   "; function: helper at 0x401100 -- 0x401110\n"
-                   "0x401100:   c3                        ret\n";
+const char* kDsm =
+	"; function: main at 0x401000 -- 0x401020\n"
+	"0x401000:   55                        push ebp\n"
+	"0x401001:   89 e5                     mov ebp, esp\n"
+	"0x401003:   e8 f8 00 00 00            call 0x401100 <helper>\n"
+	"0x401008:   75 06                     jne 0x401010\n"
+	"0x40100a:   c3                        ret\n"
+	"0x401010:   31 c0                     xor eax, eax\n"
+	"\n"
+	"; function: helper at 0x401100 -- 0x401110\n"
+	"0x401100:   c3                        ret\n";
 }
 
 class AssemblyPanelTest : public ::testing::Test {
@@ -44,7 +45,10 @@ protected:
 		const float lh = std::ceil(h.ui.computed(panel->view().node()).fontSize * 1.35f);
 		return r.y + lh * (float(line - panel->view().firstVisibleLine()) + 0.5f);
 	}
-	float lineX() { return h.ui.contentRect(panel->view().node()).x + 120.f; }
+	float lineX()
+	{
+		return h.ui.contentRect(panel->view().node()).x + 120.f;
+	}
 	HeadlessUi h;
 	std::unique_ptr<ui::AssemblyPanel> panel;
 	std::vector<uint64_t> activated;
@@ -58,8 +62,10 @@ TEST_F(AssemblyPanelTest, EmptyStateThenText)
 	panel->setAssemblyText(kDsm);
 	EXPECT_FALSE(panel->emptyStateShown());
 	EXPECT_EQ(model::tokenAt(panel->view().tokens(1), 0), model::TokenKind::Address);
-	EXPECT_EQ(model::tokenAt(panel->view().tokens(1), std::string_view(kDsm).find("push") - std::string_view(kDsm).find("0x401000:")),
-	          model::TokenKind::Mnemonic);
+	EXPECT_EQ(
+		model::tokenAt(
+			panel->view().tokens(1), std::string_view(kDsm).find("push") - std::string_view(kDsm).find("0x401000:")),
+		model::TokenKind::Mnemonic);
 	EXPECT_EQ(model::tokenAt(panel->view().tokens(0), 0), model::TokenKind::Comment);
 	panel->clear();
 	EXPECT_TRUE(panel->emptyStateShown());
@@ -70,7 +76,7 @@ TEST_F(AssemblyPanelTest, NavigateToScrollsAndPendingAddressAppliesLater)
 {
 	panel->navigateTo(0x401100);
 	EXPECT_EQ(panel->functionLabel(), "Address: 0x401100");
-	panel->setAssemblyText(kDsm); // address requested before text arrived
+	panel->setAssemblyText(kDsm);     // address requested before text arrived
 	EXPECT_EQ(panel->caretLine(), 9); // the listing line of 0x401100, not the call mentioning it
 	panel->onAddressNavigated(0x401010);
 	EXPECT_EQ(panel->caretLine(), 6);

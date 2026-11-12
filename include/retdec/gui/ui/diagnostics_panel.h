@@ -37,8 +37,14 @@ public:
 	DiagnosticsPanel(const DiagnosticsPanel&) = delete;
 	DiagnosticsPanel& operator=(const DiagnosticsPanel&) = delete;
 
-	fuse::ui::NodeHandle root() const { return root_; }
-	std::string panelTitle() const { return "Diagnostics"; }
+	fuse::ui::NodeHandle root() const
+	{
+		return root_;
+	}
+	std::string panelTitle() const
+	{
+		return "Diagnostics";
+	}
 
 	// ── Data in ──────────────────────────────────────────────────────────────
 	void addDiagnostic(model::Diagnostic d);
@@ -48,11 +54,17 @@ public:
 	void clear();
 	/// Cap on retained entries (minimum 100).
 	void setMaxEntries(int n);
-	int maxEntries() const { return int(store_.maxEntries()); }
+	int maxEntries() const
+	{
+		return int(store_.maxEntries());
+	}
 
 	// ── Filtering / export ───────────────────────────────────────────────────
 	void setSeverityFilter(model::SeverityFilter f);
-	model::SeverityFilter severityFilter() const { return filter_; }
+	model::SeverityFilter severityFilter() const
+	{
+		return filter_;
+	}
 	void setTextFilter(std::string_view text);
 	/// Visible rows as TSV ("Severity\tStage\tMessage").
 	std::string visibleTsv() const;
@@ -70,17 +82,41 @@ public:
 	std::function<void()> onErrorAdded;
 
 	// ── Test hooks ───────────────────────────────────────────────────────────
-	int totalCount() const { return int(store_.size()); }
-	int visibleCount() const { return int(rows_.size()); }
-	const model::Diagnostic& visibleAt(int row) const { return store_.at(rows_[std::size_t(row)]); }
+	int totalCount() const
+	{
+		return int(store_.size());
+	}
+	int visibleCount() const
+	{
+		return int(rows_.size());
+	}
+	const model::Diagnostic& visibleAt(int row) const
+	{
+		return store_.at(rows_[std::size_t(row)]);
+	}
 	/// Cell text as the table shows it.
 	std::string cellText(int row, int col) const;
 	std::string countText() const;
-	fuse::ui::NodeHandle table() const { return table_; }
-	fuse::ui::NodeHandle filterCombo() const { return combo_; }
-	fuse::ui::NodeHandle searchEdit() const { return search_; }
-	fuse::ui::NodeHandle copyButton() const { return copyBtn_; }
-	fuse::ui::NodeHandle saveButton() const { return saveBtn_; }
+	fuse::ui::NodeHandle table() const
+	{
+		return table_;
+	}
+	fuse::ui::NodeHandle filterCombo() const
+	{
+		return combo_;
+	}
+	fuse::ui::NodeHandle searchEdit() const
+	{
+		return search_;
+	}
+	fuse::ui::NodeHandle copyButton() const
+	{
+		return copyBtn_;
+	}
+	fuse::ui::NodeHandle saveButton() const
+	{
+		return saveBtn_;
+	}
 
 private:
 	bool handleEvent(fuse::ui::EventContext& ec, const fuse::ui::Event& e);

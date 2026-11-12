@@ -43,8 +43,14 @@ public:
 	LiveConsolePanel(const LiveConsolePanel&) = delete;
 	LiveConsolePanel& operator=(const LiveConsolePanel&) = delete;
 
-	fuse::ui::NodeHandle root() const { return root_; }
-	std::string panelTitle() const { return "Console"; }
+	fuse::ui::NodeHandle root() const
+	{
+		return root_;
+	}
+	std::string panelTitle() const
+	{
+		return "Console";
+	}
 
 	// ── Live sources (the Qt attachProcess / detachProcess) ─────────────────
 	/// Registers a running tool; @p label names it ("retdec-decompiler").
@@ -54,7 +60,10 @@ public:
 	/// Any thread: queues output of @p source (shown on a later flush tick).
 	void pushOutput(uint64_t source, Stream stream, std::string_view bytes);
 	/// The feed itself, for producers that may outlive the panel (thread-safe).
-	std::shared_ptr<model::ConsoleFeed> feed() const { return feed_; }
+	std::shared_ptr<model::ConsoleFeed> feed() const
+	{
+		return feed_;
+	}
 
 	// ── Direct text ingress ──────────────────────────────────────────────────
 	void appendBanner(std::string_view tool, const std::vector<std::string>& args, std::string_view cwd);
@@ -70,18 +79,39 @@ public:
 	int maxBlocks() const;
 	/// Flush timer rate, clamped to 2..250 Hz.
 	void setFlushHz(int hz);
-	int flushHz() const { return flushHz_; }
+	int flushHz() const
+	{
+		return flushHz_;
+	}
 	/// Bytes inserted per stream per flush tick (minimum 4 KiB, default 16 KiB).
 	void setMaxBytesPerFlush(int bytes);
-	int maxBytesPerFlush() const { return maxBytesPerFlush_; }
+	int maxBytesPerFlush() const
+	{
+		return maxBytesPerFlush_;
+	}
 	void setAutoScroll(bool on);
-	bool autoScroll() const { return autoScroll_; }
+	bool autoScroll() const
+	{
+		return autoScroll_;
+	}
 
-	bool isEmpty() const { return buffer_.isEmpty(); }
-	std::string text() const { return buffer_.text(); }
+	bool isEmpty() const
+	{
+		return buffer_.isEmpty();
+	}
+	std::string text() const
+	{
+		return buffer_.text();
+	}
 	/// Lines held (QPlainTextEdit::blockCount semantics).
-	int blockCount() const { return int(buffer_.lineCount()); }
-	const model::ConsoleBuffer& buffer() const { return buffer_; }
+	int blockCount() const
+	{
+		return int(buffer_.lineCount());
+	}
+	const model::ConsoleBuffer& buffer() const
+	{
+		return buffer_;
+	}
 
 	// ── Actions ──────────────────────────────────────────────────────────────
 	/// Drains pending source output (one capped tick).
@@ -89,20 +119,41 @@ public:
 	void copyAll();
 	/// Saves the whole buffer (UTF-8). False on error, see lastError().
 	bool saveAs(const std::filesystem::path& path);
-	std::string lastError() const { return lastError_; }
+	std::string lastError() const
+	{
+		return lastError_;
+	}
 	/// Opens a save dialog and saves there (status label reports the result).
 	void saveAsDialog();
 	/// Erases all output and pending bytes.
 	void clear();
 
 	// ── Test hooks ───────────────────────────────────────────────────────────
-	CodeView& view() { return *view_; }
+	CodeView& view()
+	{
+		return *view_;
+	}
 	std::string statusText() const;
-	fuse::ui::NodeHandle copyButton() const { return copyBtn_; }
-	fuse::ui::NodeHandle saveButton() const { return saveBtn_; }
-	fuse::ui::NodeHandle clearButton() const { return clearBtn_; }
-	fuse::ui::NodeHandle autoScrollCheck() const { return autoChk_; }
-	fuse::ui::NodeHandle saveDialog() const { return saveDlg_; }
+	fuse::ui::NodeHandle copyButton() const
+	{
+		return copyBtn_;
+	}
+	fuse::ui::NodeHandle saveButton() const
+	{
+		return saveBtn_;
+	}
+	fuse::ui::NodeHandle clearButton() const
+	{
+		return clearBtn_;
+	}
+	fuse::ui::NodeHandle autoScrollCheck() const
+	{
+		return autoChk_;
+	}
+	fuse::ui::NodeHandle saveDialog() const
+	{
+		return saveDlg_;
+	}
 
 private:
 	bool handleEvent(fuse::ui::EventContext& ec, const fuse::ui::Event& e);

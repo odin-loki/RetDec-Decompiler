@@ -26,26 +26,83 @@ namespace w = fuse::ui::widgets;
 
 // ─── Ported: CategoryDetector ────────────────────────────────────────────────
 
-TEST(StringsBrowserTest, IsFormatString_Printf) { EXPECT_TRUE(CategoryDetector::isFormatString("Hello %s, count=%d")); }
-TEST(StringsBrowserTest, IsFormatString_Float) { EXPECT_TRUE(CategoryDetector::isFormatString("Value: %.2f")); }
-TEST(StringsBrowserTest, IsFormatString_Negative) { EXPECT_FALSE(CategoryDetector::isFormatString("Hello World")); }
-TEST(StringsBrowserTest, IsURL_Http) { EXPECT_TRUE(CategoryDetector::isURL("http://example.com/path")); }
-TEST(StringsBrowserTest, IsURL_Https) { EXPECT_TRUE(CategoryDetector::isURL("https://api.example.com/v1")); }
-TEST(StringsBrowserTest, IsURL_Ftp) { EXPECT_TRUE(CategoryDetector::isURL("ftp://files.example.com")); }
-TEST(StringsBrowserTest, IsURL_Negative) { EXPECT_FALSE(CategoryDetector::isURL("not a url")); }
-TEST(StringsBrowserTest, IsFilePath_Unix) { EXPECT_TRUE(CategoryDetector::isFilePath("/usr/lib/libssl.so")); }
-TEST(StringsBrowserTest, IsFilePath_Windows) { EXPECT_TRUE(CategoryDetector::isFilePath("C:\\Windows\\System32\\ntdll.dll")); }
-TEST(StringsBrowserTest, IsFilePath_UNC) { EXPECT_TRUE(CategoryDetector::isFilePath("\\\\server\\share\\file.txt")); }
-TEST(StringsBrowserTest, IsFilePath_Proc) { EXPECT_TRUE(CategoryDetector::isFilePath("/proc/self/maps")); }
-TEST(StringsBrowserTest, IsFilePath_Negative) { EXPECT_FALSE(CategoryDetector::isFilePath("Hello World")); }
-TEST(StringsBrowserTest, IsRegEx_WithMetachars) { EXPECT_TRUE(CategoryDetector::isRegEx("^[a-z]+\\d{2,4}$")); }
-TEST(StringsBrowserTest, IsRegEx_Negative) { EXPECT_FALSE(CategoryDetector::isRegEx("plain text string")); }
-TEST(StringsBrowserTest, IsCryptoConst_SHA) { EXPECT_TRUE(CategoryDetector::isCryptoConst("SHA256")); }
-TEST(StringsBrowserTest, IsCryptoConst_PEM) { EXPECT_TRUE(CategoryDetector::isCryptoConst("BEGIN CERTIFICATE")); }
-TEST(StringsBrowserTest, IsCryptoConst_Negative) { EXPECT_FALSE(CategoryDetector::isCryptoConst("filename.txt")); }
+TEST(StringsBrowserTest, IsFormatString_Printf)
+{
+	EXPECT_TRUE(CategoryDetector::isFormatString("Hello %s, count=%d"));
+}
+TEST(StringsBrowserTest, IsFormatString_Float)
+{
+	EXPECT_TRUE(CategoryDetector::isFormatString("Value: %.2f"));
+}
+TEST(StringsBrowserTest, IsFormatString_Negative)
+{
+	EXPECT_FALSE(CategoryDetector::isFormatString("Hello World"));
+}
+TEST(StringsBrowserTest, IsURL_Http)
+{
+	EXPECT_TRUE(CategoryDetector::isURL("http://example.com/path"));
+}
+TEST(StringsBrowserTest, IsURL_Https)
+{
+	EXPECT_TRUE(CategoryDetector::isURL("https://api.example.com/v1"));
+}
+TEST(StringsBrowserTest, IsURL_Ftp)
+{
+	EXPECT_TRUE(CategoryDetector::isURL("ftp://files.example.com"));
+}
+TEST(StringsBrowserTest, IsURL_Negative)
+{
+	EXPECT_FALSE(CategoryDetector::isURL("not a url"));
+}
+TEST(StringsBrowserTest, IsFilePath_Unix)
+{
+	EXPECT_TRUE(CategoryDetector::isFilePath("/usr/lib/libssl.so"));
+}
+TEST(StringsBrowserTest, IsFilePath_Windows)
+{
+	EXPECT_TRUE(CategoryDetector::isFilePath("C:\\Windows\\System32\\ntdll.dll"));
+}
+TEST(StringsBrowserTest, IsFilePath_UNC)
+{
+	EXPECT_TRUE(CategoryDetector::isFilePath("\\\\server\\share\\file.txt"));
+}
+TEST(StringsBrowserTest, IsFilePath_Proc)
+{
+	EXPECT_TRUE(CategoryDetector::isFilePath("/proc/self/maps"));
+}
+TEST(StringsBrowserTest, IsFilePath_Negative)
+{
+	EXPECT_FALSE(CategoryDetector::isFilePath("Hello World"));
+}
+TEST(StringsBrowserTest, IsRegEx_WithMetachars)
+{
+	EXPECT_TRUE(CategoryDetector::isRegEx("^[a-z]+\\d{2,4}$"));
+}
+TEST(StringsBrowserTest, IsRegEx_Negative)
+{
+	EXPECT_FALSE(CategoryDetector::isRegEx("plain text string"));
+}
+TEST(StringsBrowserTest, IsCryptoConst_SHA)
+{
+	EXPECT_TRUE(CategoryDetector::isCryptoConst("SHA256"));
+}
+TEST(StringsBrowserTest, IsCryptoConst_PEM)
+{
+	EXPECT_TRUE(CategoryDetector::isCryptoConst("BEGIN CERTIFICATE"));
+}
+TEST(StringsBrowserTest, IsCryptoConst_Negative)
+{
+	EXPECT_FALSE(CategoryDetector::isCryptoConst("filename.txt"));
+}
 
-TEST(StringsBrowserTest, Classify_URL) { EXPECT_EQ(CategoryDetector::classify("https://google.com"), StringCategory::URL); }
-TEST(StringsBrowserTest, Classify_FilePath) { EXPECT_EQ(CategoryDetector::classify("/etc/passwd"), StringCategory::FilePath); }
+TEST(StringsBrowserTest, Classify_URL)
+{
+	EXPECT_EQ(CategoryDetector::classify("https://google.com"), StringCategory::URL);
+}
+TEST(StringsBrowserTest, Classify_FilePath)
+{
+	EXPECT_EQ(CategoryDetector::classify("/etc/passwd"), StringCategory::FilePath);
+}
 TEST(StringsBrowserTest, Classify_FormatString)
 {
 	EXPECT_EQ(CategoryDetector::classify("Error: %s (code %d)"), StringCategory::FormatString);
@@ -54,7 +111,10 @@ TEST(StringsBrowserTest, Classify_Crypto)
 {
 	EXPECT_EQ(CategoryDetector::classify("AES-256-CBC key initialised"), StringCategory::CryptoConst);
 }
-TEST(StringsBrowserTest, Classify_Plain) { EXPECT_EQ(CategoryDetector::classify("Hello, World!"), StringCategory::Plain); }
+TEST(StringsBrowserTest, Classify_Plain)
+{
+	EXPECT_EQ(CategoryDetector::classify("Hello, World!"), StringCategory::Plain);
+}
 
 // ─── Ported: ConstantLabeler ─────────────────────────────────────────────────
 

@@ -15,24 +15,25 @@
 #include <memory>
 
 using namespace retdec::gui;
-using retdec::gui::test::HeadlessUi;
 using fuse::ui::Key;
 using fuse::ui::kModCtrl;
 using fuse::ui::kModShift;
+using retdec::gui::test::HeadlessUi;
 
 namespace {
-const char* kSource = "#include <stdio.h>\n"
-                      "\n"
-                      "// Address range: 0x401000 - 0x401030\n"
-                      "int helper(int a) {\n"
-                      "    return a + 1; // 0x401004\n"
-                      "}\n"
-                      "\n"
-                      "int main(void) {\n"
-                      "    int x = helper(2);\n"
-                      "    printf(\"%d\\n\", x);\n"
-                      "    return function_401200(x);\n"
-                      "}\n";
+const char* kSource =
+	"#include <stdio.h>\n"
+	"\n"
+	"// Address range: 0x401000 - 0x401030\n"
+	"int helper(int a) {\n"
+	"    return a + 1; // 0x401004\n"
+	"}\n"
+	"\n"
+	"int main(void) {\n"
+	"    int x = helper(2);\n"
+	"    printf(\"%d\\n\", x);\n"
+	"    return function_401200(x);\n"
+	"}\n";
 }
 
 class DecompiledCPanelTest : public ::testing::Test {
@@ -97,7 +98,7 @@ TEST_F(DecompiledCPanelTest, FunctionLabelAndScrollToFunction)
 	EXPECT_EQ(panel->view().caret().line, 7);
 	panel->scrollToFunction("helper", -1); // by name: `\bhelper\s*\(` definition
 	EXPECT_EQ(panel->view().caret().line, 3);
-	panel->scrollToFunction(0x401200, "");  // function_401200
+	panel->scrollToFunction(0x401200, ""); // function_401200
 	EXPECT_EQ(panel->view().caret().line, 10);
 	panel->scrollToFunction(0x401000, "nope"); // 0x401000 comment
 	EXPECT_EQ(panel->view().caret().line, 2);

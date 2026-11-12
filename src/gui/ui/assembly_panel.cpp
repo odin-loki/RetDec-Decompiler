@@ -52,9 +52,13 @@ AssemblyPanel::AssemblyPanel(UiContext& ui, NodeHandle parent): ui_(ui), menu_(u
 	setShown(ui, searchBar_, false);
 
 	auto* self = this;
-	ui.connect(goToBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->goToAddress(); });
+	ui.connect(goToBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) {
+		self->goToAddress();
+	});
 	ui.connect(findBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->find(); });
-	ui.connect(searchEdit_, SignalKind::Submitted, [self](UiContext&, NodeHandle, const SignalArgs&) { self->submitSearch(); });
+	ui.connect(searchEdit_, SignalKind::Submitted, [self](UiContext&, NodeHandle, const SignalArgs&) {
+		self->submitSearch();
+	});
 	view_->onContextMenu = [self](Vec2 at, int line) { self->openContextMenu(at, line); };
 
 	updateEmptyState();
@@ -149,7 +153,10 @@ void AssemblyPanel::showSearch(SearchMode mode)
 {
 	mode_ = mode;
 	ui_.setText(searchLabel_, mode == SearchMode::GoTo ? "Go to:" : "Find:");
-	w::setPlaceholderText(ui_, searchEdit_, mode == SearchMode::GoTo ? "Go to address (hex)\xE2\x80\xA6" : "Find in disassembly\xE2\x80\xA6");
+	w::setPlaceholderText(
+		ui_,
+		searchEdit_,
+		mode == SearchMode::GoTo ? "Go to address (hex)\xE2\x80\xA6" : "Find in disassembly\xE2\x80\xA6");
 	searchShown_ = true;
 	setShown(ui_, searchBar_, true);
 	setLineEditText(ui_, searchEdit_, "");
@@ -198,7 +205,8 @@ bool AssemblyPanel::followJump()
 	const std::string_view line = view_->line(view_->caret().line);
 	const auto target = model::jumpTarget(line);
 	if (!target) return false;
-	if (const auto current = model::parseFirstAddress(line); current && *current != *target) navStack_.push_back(*current);
+	if (const auto current = model::parseFirstAddress(line); current && *current != *target)
+		navStack_.push_back(*current);
 	navigateTo(*target);
 	return true;
 }
@@ -221,8 +229,8 @@ void AssemblyPanel::openContextMenu(Vec2 at, int line)
 	const auto addr = line >= 0 ? model::parseFirstAddress(view_->line(line)) : std::nullopt;
 	auto* self = this;
 	menu_.open(root_, at, addressMenuActions(ui_, addr, [self](uint64_t a) {
-		           if (self->onAddressActivated) self->onAddressActivated(a);
-	           }));
+				   if (self->onAddressActivated) self->onAddressActivated(a);
+			   }));
 }
 
 } // namespace retdec::gui::ui

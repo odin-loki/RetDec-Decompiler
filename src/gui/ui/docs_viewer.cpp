@@ -47,7 +47,8 @@ bool DocsViewer::show(std::function<void()> onClosed)
 	onClosed_ = std::move(onClosed);
 	std::vector<std::string> titles;
 	titles.reserve(docs_.size());
-	for (const model::DocEntry& d: docs_) titles.push_back(d.title);
+	for (const model::DocEntry& d: docs_)
+		titles.push_back(d.title);
 	dlg::setListItems(ui, list_, titles);
 	current_ = -1;
 	dlg_.open();

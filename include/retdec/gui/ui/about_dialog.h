@@ -22,14 +22,32 @@ public:
 	/// Opens the dialog; @p onClosed runs when OK closes it.
 	void show(std::function<void()> onClosed = {});
 	void close();
-	bool isOpen() const { return dlg_.isOpen(); }
+	bool isOpen() const
+	{
+		return dlg_.isOpen();
+	}
 
-	std::string title() const { return dlg_.title(); }
+	std::string title() const
+	{
+		return dlg_.title();
+	}
 	/// The Markdown shown (model::aboutMarkdown()).
-	const std::string& markdown() const { return markdown_; }
-	fuse::ui::NodeHandle okButton() const { return ok_; }
-	fuse::ui::NodeHandle markdownNode() const { return view_; }
-	fuse::ui::NodeHandle card() const { return dlg_.card(); }
+	const std::string& markdown() const
+	{
+		return markdown_;
+	}
+	fuse::ui::NodeHandle okButton() const
+	{
+		return ok_;
+	}
+	fuse::ui::NodeHandle markdownNode() const
+	{
+		return view_;
+	}
+	fuse::ui::NodeHandle card() const
+	{
+		return dlg_.card();
+	}
 
 private:
 	ModalDialog dlg_;

@@ -19,8 +19,7 @@ namespace retdec::gui::model {
 
 /// Classifies a string literal. Priority: crypto, URL, file path, printf
 /// format, regular expression, plain.
-class CategoryDetector
-{
+class CategoryDetector {
 public:
 	static StringCategory classify(std::string_view value);
 
@@ -40,8 +39,7 @@ public:
 /// Fills hexStr (bare upper-case hex, zero padded to the constant's width),
 /// decStr, label and labelKind of a constant. Priority: magic number, crypto
 /// constant, IEEE-754 special, port number.
-class ConstantLabeler
-{
+class ConstantLabeler {
 public:
 	static void label(ConstantEntry& entry);
 

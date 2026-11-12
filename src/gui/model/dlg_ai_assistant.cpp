@@ -48,9 +48,9 @@ uint32_t chatRoleColor(ChatRole role)
 {
 	switch (role)
 	{
-		case ChatRole::User: return 0x44aaff;
-		case ChatRole::Assistant: return 0xaaffaa;
-		default: return 0x888888;
+	case ChatRole::User: return 0x44aaff;
+	case ChatRole::Assistant: return 0xaaffaa;
+	default: return 0x888888;
 	}
 }
 
@@ -81,12 +81,18 @@ namespace {
 class NeuralBackend final : public AssistantBackend {
 public:
 	explicit NeuralBackend(std::unique_ptr<retdec::neural::Inference> inf): inf_(std::move(inf)) {}
-	bool loadModel(const std::string& path, int ctx) override { return inf_ && inf_->loadModel(path, ctx); }
+	bool loadModel(const std::string& path, int ctx) override
+	{
+		return inf_ && inf_->loadModel(path, ctx);
+	}
 	void unloadModel() override
 	{
 		if (inf_) inf_->unloadModel();
 	}
-	bool isLoaded() const override { return inf_ && inf_->isLoaded(); }
+	bool isLoaded() const override
+	{
+		return inf_ && inf_->isLoaded();
+	}
 	AssistantGenerationResult generate(
 		const std::string& prompt,
 		const AssistantGenerationParams& p,
@@ -136,8 +142,8 @@ AssistantBackendFactory defaultAssistantBackendFactory()
 struct InferenceWorker::State
 {
 	std::mutex m;
-	std::mutex cbM; ///< guards `ready` (cleared by the destructor while a detached thread may still push)
-	std::condition_variable cv;      ///< jobs / stop
+	std::mutex cbM;             ///< guards `ready` (cleared by the destructor while a detached thread may still push)
+	std::condition_variable cv; ///< jobs / stop
 	std::condition_variable eventCv; ///< events / idle / exited
 	std::deque<std::function<void()>> jobs;
 	std::vector<InferenceEvent> events;
@@ -237,9 +243,10 @@ struct InferenceWorker::State
 			reuseKv = true;
 		}
 		const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-		push({.kind = InferenceEvent::Kind::Complete,
-			  .tokens = r.tokensGenerated,
-			  .tokPerSec = secs > 0.0 && r.tokensGenerated > 0 ? r.tokensGenerated / secs : 0.0});
+		push(
+			{.kind = InferenceEvent::Kind::Complete,
+			 .tokens = r.tokensGenerated,
+			 .tokPerSec = secs > 0.0 && r.tokensGenerated > 0 ? r.tokensGenerated / secs : 0.0});
 	}
 
 	void doLoad(const std::string& path, bool useGpu, int ctxLen)

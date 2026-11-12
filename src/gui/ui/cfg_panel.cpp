@@ -68,19 +68,19 @@ CfgPanel::CfgPanel(UiContext& ui, NodeHandle parent): m_ui(ui)
 	m_view = std::make_unique<GraphView>(ui, m_body);
 
 	// ── Wiring ───────────────────────────────────────────────────────────────
-	auto onClick = [&](NodeHandle n, auto fn) {
-		ui.connect(n, SignalKind::Clicked, fn);
-	};
+	auto onClick = [&](NodeHandle n, auto fn) { ui.connect(n, SignalKind::Clicked, fn); };
 	onClick(m_fitBtn, [this](UiContext&, NodeHandle, const SignalArgs&) { fitView(); });
 	onClick(m_resetBtn, [this](UiContext&, NodeHandle, const SignalArgs&) { resetZoom(); });
 	onClick(m_chainsBtn, [this](UiContext&, NodeHandle, const SignalArgs&) { toggleChains(); });
 	onClick(m_svgBtn, [this](UiContext&, NodeHandle, const SignalArgs&) { requestExport(GraphExportFormat::Svg); });
 	onClick(m_pngBtn, [this](UiContext&, NodeHandle, const SignalArgs&) { requestExport(GraphExportFormat::Png); });
 	onClick(m_dotBtn, [this](UiContext&, NodeHandle, const SignalArgs&) { requestExport(GraphExportFormat::Dot); });
-	ui.connect(m_minimapCheck, SignalKind::Toggled,
-		[this](UiContext&, NodeHandle, const SignalArgs& a) { m_view->setMinimapVisible(a.flag); });
-	ui.connect(m_search, SignalKind::TextChanged,
-		[this](UiContext&, NodeHandle, const SignalArgs& a) { search(std::string(a.text)); });
+	ui.connect(m_minimapCheck, SignalKind::Toggled, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+		m_view->setMinimapVisible(a.flag);
+	});
+	ui.connect(m_search, SignalKind::TextChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+		search(std::string(a.text));
+	});
 	ui.connect(m_search, SignalKind::Submitted, [this](UiContext&, NodeHandle, const SignalArgs&) { nextMatch(); });
 
 	m_view->onNodeClicked = [this](uint64_t id) { blockClicked(id); };
@@ -149,8 +149,8 @@ void CfgPanel::refreshLabels()
 	m_ui.setText(m_funcLabel, functionLabel());
 	m_ui.setText(m_infoLabel, infoLabel());
 	m_ui.setText(m_chainsBtn, expandChainsLabel());
-	m_ui.setText(m_matchLabel,
-		m_matches.empty() ? std::string() : std::format("{}/{}", m_matchIndex + 1, m_matches.size()));
+	m_ui.setText(
+		m_matchLabel, m_matches.empty() ? std::string() : std::format("{}/{}", m_matchIndex + 1, m_matches.size()));
 }
 
 std::string CfgPanel::functionLabel() const
@@ -253,9 +253,12 @@ void CfgPanel::blockClicked(uint64_t id)
 	if (it != m_layout.addressOf.end() && onBlockActivated) onBlockActivated(it->second);
 	// Clicking a compressed chain expands the graph (Qt: queued after the click).
 	if (chain)
-		m_ui.post([](UiContext& ui, NodeHandle n, uint64_t self, uint64_t) {
-			if (ui.alive(n)) reinterpret_cast<CfgPanel*>(self)->setChainsExpanded(true);
-		}, m_root, reinterpret_cast<uint64_t>(this));
+		m_ui.post(
+			[](UiContext& ui, NodeHandle n, uint64_t self, uint64_t) {
+				if (ui.alive(n)) reinterpret_cast<CfgPanel*>(self)->setChainsExpanded(true);
+			},
+			m_root,
+			reinterpret_cast<uint64_t>(this));
 }
 
 std::vector<std::string> CfgPanel::blockMenuItems(uint64_t blockId) const

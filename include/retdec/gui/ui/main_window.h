@@ -191,8 +191,14 @@ public:
 	MainWindow(const MainWindow&) = delete;
 	MainWindow& operator=(const MainWindow&) = delete;
 
-	fuse::ui::UiContext& ui() const { return ui_; }
-	fuse::ui::NodeHandle root() const { return root_; }
+	fuse::ui::UiContext& ui() const
+	{
+		return ui_;
+	}
+	fuse::ui::NodeHandle root() const
+	{
+		return root_;
+	}
 
 	// ── Project management ───────────────────────────────────────────────────
 	void openBinary(const std::string& path);
@@ -205,8 +211,14 @@ public:
 	/// Drag and drop: opens the first existing regular file; others are reported
 	/// in the status bar. True when one was opened.
 	bool dropFiles(const std::vector<std::string>& paths);
-	model::ProjectFile* project() const { return project_.get(); }
-	const std::string& lastProjectSavePath() const { return lastProjectSavePath_; }
+	model::ProjectFile* project() const
+	{
+		return project_.get();
+	}
+	const std::string& lastProjectSavePath() const
+	{
+		return lastProjectSavePath_;
+	}
 
 	// ── Analysis lifecycle ───────────────────────────────────────────────────
 	/// Qt startAnalysis(): progress UI only (no process).
@@ -216,23 +228,39 @@ public:
 	/// F5. Opens a file prompt first when nothing is loaded.
 	void runFullAnalysis();
 	void redecompileSelectedFunction();
-	bool analysisRunning() const { return analysisRunning_; }
+	bool analysisRunning() const
+	{
+		return analysisRunning_;
+	}
 	bool decompilerRunning() const;
-	bool batchRunning() const { return batchRunning_; }
+	bool batchRunning() const
+	{
+		return batchRunning_;
+	}
 	/// Batch-decompile @p paths one after the other (File → Batch Decompile…'s Start).
 	void startBatchDecompile(const std::vector<std::string>& paths);
 	/// Loads `<binary>.gui-decompiled.c` + sidecars when present and fresh enough.
 	bool tryLoadCachedDecompile(const std::string& binaryPath);
 	/// Loads the artefacts of @p cPath and populates every panel.
-	bool loadDecompileArtifacts(const std::filesystem::path& cPath, std::optional<uint64_t> reselectAddress = std::nullopt);
-	const std::optional<model::DecompileArtifacts>& loadedArtifacts() const { return loadedArtifacts_; }
+	bool
+	loadDecompileArtifacts(const std::filesystem::path& cPath, std::optional<uint64_t> reselectAddress = std::nullopt);
+	const std::optional<model::DecompileArtifacts>& loadedArtifacts() const
+	{
+		return loadedArtifacts_;
+	}
 	/// Shows @p address / @p name in Assembly, IR, CFG, Synced and C (function selection).
 	void showFunction(uint64_t address, const std::string& name);
 	/// Selects @p address in the function list when known, raises @p documentTab.
 	void navigateToAddress(uint64_t address, int documentTab);
 	/// Per-run options of the Analysis menu (C style, raw, PDB, ...).
-	model::NextRunOptions& nextRunOptions() { return nextRun_; }
-	bool fastDecompile() const { return fastDecompile_; }
+	model::NextRunOptions& nextRunOptions()
+	{
+		return nextRun_;
+	}
+	bool fastDecompile() const
+	{
+		return fastDecompile_;
+	}
 	void setFastDecompile(bool on);
 
 	// ── Status bar ───────────────────────────────────────────────────────────
@@ -248,14 +276,32 @@ public:
 	void showStatusMessage(const std::string& message, int timeoutMs = 0);
 
 	// ── CI / headless ────────────────────────────────────────────────────────
-	void setFastDecompilePreset(bool on) { setFastDecompile(on); }
+	void setFastDecompilePreset(bool on)
+	{
+		setFastDecompile(on);
+	}
 	/// Quit (onQuitRequested with the decompiler's exit status) once the run
 	/// ends; the run then matches a plain CLI invocation (no saved overrides).
-	void enableQuitWhenDecompileFinishes(bool on) { quitWhenDecompileFinishes_ = on; }
-	bool quitWhenDecompileFinishes() const { return quitWhenDecompileFinishes_; }
-	void runDecompileForBenchmark() { runFullAnalysis(); }
-	int64_t lastDecompileSubprocessMs() const { return lastDecompileSubprocessMs_; }
-	std::optional<int> lastDecompileExitCode() const { return lastExitCode_; }
+	void enableQuitWhenDecompileFinishes(bool on)
+	{
+		quitWhenDecompileFinishes_ = on;
+	}
+	bool quitWhenDecompileFinishes() const
+	{
+		return quitWhenDecompileFinishes_;
+	}
+	void runDecompileForBenchmark()
+	{
+		runFullAnalysis();
+	}
+	int64_t lastDecompileSubprocessMs() const
+	{
+		return lastDecompileSubprocessMs_;
+	}
+	std::optional<int> lastDecompileExitCode() const
+	{
+		return lastExitCode_;
+	}
 	/// One poll of the running decompiler (what the timer does).
 	void pollDecompile();
 
@@ -263,7 +309,10 @@ public:
 	/// Theme, editor font, word wrap / line numbers, output language, Target
 	/// panel, plugin menus — runs on every AppSettings change.
 	void applySettings();
-	ThemeKind theme() const { return theme_; }
+	ThemeKind theme() const
+	{
+		return theme_;
+	}
 	/// Writes the layout keys into the store (no file write; the store saves
 	/// when dirty). Cheap enough to call every loop iteration.
 	void snapshotLayout();
@@ -274,7 +323,10 @@ public:
 	void resetLayout();
 	/// Current window size (main.cpp reports resizes; persisted by saveLayout).
 	void setWindowSize(unsigned width, unsigned height);
-	fuse::ui::Size windowSize() const { return windowSize_; }
+	fuse::ui::Size windowSize() const
+	{
+		return windowSize_;
+	}
 	/// File → Quit / the window's close request: confirms a running analysis
 	/// and unsaved project changes, saves the layout, then onQuitRequested(0).
 	void requestQuit();
@@ -316,7 +368,10 @@ public:
 	fuse::ui::NodeHandle openMenu(std::string_view title);
 	/// The global key handler (menu shortcuts). True when an action ran.
 	bool handleShortcut(fuse::ui::Key key, fuse::ui::u8 mods);
-	const std::vector<std::string>& recentFiles() const { return recentFiles_; }
+	const std::vector<std::string>& recentFiles() const
+	{
+		return recentFiles_;
+	}
 	void addRecentFile(const std::string& path);
 	void clearRecentFiles();
 
@@ -332,13 +387,22 @@ public:
 	bool dockOpen(Dock d) const;
 	void setDockOpen(Dock d, bool open);
 	/// The View menu's dock toggle.
-	void toggleDock(Dock d) { setDockOpen(d, !dockOpen(d)); }
-	int centralStackIndex() const { return centralIndex_; }
+	void toggleDock(Dock d)
+	{
+		setDockOpen(d, !dockOpen(d));
+	}
+	int centralStackIndex() const
+	{
+		return centralIndex_;
+	}
 	bool triageBannerVisible() const;
 	std::vector<std::string> documentTabTitles() const;
 	std::vector<std::string> workspaceTabTitles() const;
 	std::vector<std::string> outputTabTitles() const;
-	std::string windowTitle() const { return title_; }
+	std::string windowTitle() const
+	{
+		return title_;
+	}
 
 	// ── Events out ───────────────────────────────────────────────────────────
 	/// File → Quit, the end of a --headless-decompile run (exit status), ...
@@ -349,65 +413,206 @@ public:
 	std::function<void(unsigned width, unsigned height)> onResizeRequested;
 
 	// ── Test hooks ───────────────────────────────────────────────────────────
-	fuse::ui::NodeHandle menuBarNode() const { return menuBar_; }
-	fuse::ui::NodeHandle toolBarNode() const { return toolBar_; }
+	fuse::ui::NodeHandle menuBarNode() const
+	{
+		return menuBar_;
+	}
+	fuse::ui::NodeHandle toolBarNode() const
+	{
+		return toolBar_;
+	}
 	fuse::ui::NodeHandle toolButton(std::string_view actionId) const;
-	fuse::ui::NodeHandle dockAreaNode() const { return dockArea_; }
+	fuse::ui::NodeHandle dockAreaNode() const
+	{
+		return dockArea_;
+	}
 	fuse::ui::NodeHandle dockNode(Dock d) const;
-	fuse::ui::NodeHandle documentTabsNode() const { return docTabs_; }
-	fuse::ui::NodeHandle workspaceTabsNode() const { return wsTabs_; }
-	fuse::ui::NodeHandle outputTabsNode() const { return outTabs_; }
-	fuse::ui::NodeHandle startPageNode() const { return startPage_; }
-	fuse::ui::NodeHandle statusBarNode() const { return statusBar_; }
-	fuse::ui::NodeHandle startOpenBinaryButton() const { return startOpenBinary_; }
-	fuse::ui::NodeHandle startOpenProjectButton() const { return startOpenProject_; }
+	fuse::ui::NodeHandle documentTabsNode() const
+	{
+		return docTabs_;
+	}
+	fuse::ui::NodeHandle workspaceTabsNode() const
+	{
+		return wsTabs_;
+	}
+	fuse::ui::NodeHandle outputTabsNode() const
+	{
+		return outTabs_;
+	}
+	fuse::ui::NodeHandle startPageNode() const
+	{
+		return startPage_;
+	}
+	fuse::ui::NodeHandle statusBarNode() const
+	{
+		return statusBar_;
+	}
+	fuse::ui::NodeHandle startOpenBinaryButton() const
+	{
+		return startOpenBinary_;
+	}
+	fuse::ui::NodeHandle startOpenProjectButton() const
+	{
+		return startOpenProject_;
+	}
 	std::string statusFileText() const;
 	std::string statusStageText() const;
 	std::string statusFunctionCountText() const;
 	std::string statusDecompileText() const;
-	bool statusDecompileVisible() const { return decompileStateShown_; }
+	bool statusDecompileVisible() const
+	{
+		return decompileStateShown_;
+	}
 	std::string statusElapsedText() const;
 	std::string statusNeuralText() const;
 	std::string statusMessageText() const;
-	bool progressBarVisible() const { return progressShown_; }
+	bool progressBarVisible() const
+	{
+		return progressShown_;
+	}
 	float progressBarValue() const;
 
-	FunctionListPanel& functionList() { return *functionList_; }
-	DecompiledCPanel& decompiledC() { return *decompiledC_; }
-	AssemblyPanel& assembly() { return *assembly_; }
-	IRPanel& irPanel() { return *ir_; }
-	CfgPanel& cfgPanel() { return *cfg_; }
-	TriPaneCodeView& triPane() { return *triPane_; }
-	TriageBanner& triageBanner() { return *triage_; }
-	StringsBrowserPanel& strings() { return *strings_; }
-	InspectPanel& inspect() { return *inspect_; }
-	BinaryBrowserPanel& binaryBrowser() { return *binary_; }
-	TargetPanel& target() { return *target_; }
-	LiveConsolePanel& liveConsole() { return *console_; }
-	DiagnosticsPanel& diagnostics() { return *diagnostics_; }
-	CommandLogPanel& commandLog() { return *commandLog_; }
-	ProgressPanel& progressPanel() { return *progress_; }
-	CallGraphPanel& callGraph() { return *callGraph_; }
-	TypeHierarchyPanel& typeHierarchy() { return *typeHierarchy_; }
-	SignatureStudioPanel& signatureStudio() { return *sigStudio_; }
-	AIAssistantPanel& aiAssistant() { return *ai_; }
-	DiffPanel& comparePanel() { return *compare_; }
-	EmptyState& startEmptyState() { return *startEmpty_; }
+	FunctionListPanel& functionList()
+	{
+		return *functionList_;
+	}
+	DecompiledCPanel& decompiledC()
+	{
+		return *decompiledC_;
+	}
+	AssemblyPanel& assembly()
+	{
+		return *assembly_;
+	}
+	IRPanel& irPanel()
+	{
+		return *ir_;
+	}
+	CfgPanel& cfgPanel()
+	{
+		return *cfg_;
+	}
+	TriPaneCodeView& triPane()
+	{
+		return *triPane_;
+	}
+	TriageBanner& triageBanner()
+	{
+		return *triage_;
+	}
+	StringsBrowserPanel& strings()
+	{
+		return *strings_;
+	}
+	InspectPanel& inspect()
+	{
+		return *inspect_;
+	}
+	BinaryBrowserPanel& binaryBrowser()
+	{
+		return *binary_;
+	}
+	TargetPanel& target()
+	{
+		return *target_;
+	}
+	LiveConsolePanel& liveConsole()
+	{
+		return *console_;
+	}
+	DiagnosticsPanel& diagnostics()
+	{
+		return *diagnostics_;
+	}
+	CommandLogPanel& commandLog()
+	{
+		return *commandLog_;
+	}
+	ProgressPanel& progressPanel()
+	{
+		return *progress_;
+	}
+	CallGraphPanel& callGraph()
+	{
+		return *callGraph_;
+	}
+	TypeHierarchyPanel& typeHierarchy()
+	{
+		return *typeHierarchy_;
+	}
+	SignatureStudioPanel& signatureStudio()
+	{
+		return *sigStudio_;
+	}
+	AIAssistantPanel& aiAssistant()
+	{
+		return *ai_;
+	}
+	DiffPanel& comparePanel()
+	{
+		return *compare_;
+	}
+	EmptyState& startEmptyState()
+	{
+		return *startEmpty_;
+	}
 
-	MessageDialog& messageBox() { return *message_; }
-	FilePrompt& filePrompt() { return *files_; }
-	SettingsDialog& settingsDialog() { return *settingsDlg_; }
-	BatchDecompileDialog& batchDialog() { return *batchDlg_; }
-	RunStageDialog& runStageDialog() { return *runStageDlg_; }
-	CStyleDialog& cStyleDialog() { return *cStyleDlg_; }
-	RawOptionsDialog& rawOptionsDialog() { return *rawDlg_; }
-	GotoAddressDialog& gotoAddressDialog() { return *gotoDlg_; }
-	GotoLineDialog& gotoLineDialog() { return *gotoLineDlg_; }
-	MaxMemoryDialog& maxMemoryDialog() { return *maxMemDlg_; }
-	AboutDialog& aboutDialog() { return *aboutDlg_; }
-	ShortcutsDialog& shortcutsDialog() { return *shortcutsDlg_; }
-	DocsViewer& docsViewer() { return *docsDlg_; }
-	ContextMenu& triageMenu() { return *triageMenu_; }
+	MessageDialog& messageBox()
+	{
+		return *message_;
+	}
+	FilePrompt& filePrompt()
+	{
+		return *files_;
+	}
+	SettingsDialog& settingsDialog()
+	{
+		return *settingsDlg_;
+	}
+	BatchDecompileDialog& batchDialog()
+	{
+		return *batchDlg_;
+	}
+	RunStageDialog& runStageDialog()
+	{
+		return *runStageDlg_;
+	}
+	CStyleDialog& cStyleDialog()
+	{
+		return *cStyleDlg_;
+	}
+	RawOptionsDialog& rawOptionsDialog()
+	{
+		return *rawDlg_;
+	}
+	GotoAddressDialog& gotoAddressDialog()
+	{
+		return *gotoDlg_;
+	}
+	GotoLineDialog& gotoLineDialog()
+	{
+		return *gotoLineDlg_;
+	}
+	MaxMemoryDialog& maxMemoryDialog()
+	{
+		return *maxMemDlg_;
+	}
+	AboutDialog& aboutDialog()
+	{
+		return *aboutDlg_;
+	}
+	ShortcutsDialog& shortcutsDialog()
+	{
+		return *shortcutsDlg_;
+	}
+	DocsViewer& docsViewer()
+	{
+		return *docsDlg_;
+	}
+	ContextMenu& triageMenu()
+	{
+		return *triageMenu_;
+	}
 	/// The three-button question box (quit confirmation / unsaved changes).
 	bool questionOpen() const;
 	std::string questionText() const;
@@ -505,8 +710,11 @@ private:
 	void warn(const std::string& title, const std::string& text);
 	void info(const std::string& title, const std::string& text);
 	void copyText(const std::string& text, const std::string& what);
-	void askQuestion(const std::string& title, const std::string& text, std::vector<std::string> buttons,
-	                 std::function<void(int)> onAnswer);
+	void askQuestion(
+		const std::string& title,
+		const std::string& text,
+		std::vector<std::string> buttons,
+		std::function<void(int)> onAnswer);
 	void finishQuit();
 	std::string fileDialogStartDir() const;
 	void rememberLastOpenDir(const std::string& filePath);
@@ -516,9 +724,11 @@ private:
 	void loadLayoutStore();
 
 	// decompiling (main_window_decompile.cpp)
-	bool launchDecompilerForBinary(const std::string& absBinary, const std::string& arch,
-	                               const std::vector<std::string>& selectedFunctions = {},
-	                               const std::vector<std::string>& selectedRanges = {});
+	bool launchDecompilerForBinary(
+		const std::string& absBinary,
+		const std::string& arch,
+		const std::vector<std::string>& selectedFunctions = {},
+		const std::vector<std::string>& selectedRanges = {});
 	void onDecompileFinished();
 	void finishExternalDecompileUi();
 	void processNextBatchItem();
@@ -532,8 +742,8 @@ private:
 	void stopElapsedTimer();
 	void stopPollTimer();
 	void headlessFail(int exitCode, const std::string& message);
-	void writeHeadlessDecompileReport(int64_t decompileMs, int exitCode, const std::string& outputPath,
-	                                  const std::vector<std::string>& args = {});
+	void writeHeadlessDecompileReport(
+		int64_t decompileMs, int exitCode, const std::string& outputPath, const std::vector<std::string>& args = {});
 	void resetDecompileUiForOpen();
 
 	fuse::ui::UiContext& ui_;

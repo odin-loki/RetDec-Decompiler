@@ -403,8 +403,8 @@ OptimizeCase5Simplest) {
 /// Case (2) would give `if (i >= i) break; i = i + 1;` -- the condition reads
 /// the old i where it read the new one. (The real loop was Newton's method,
 /// `if (fabs(next - guess) < eps) break`, and became `fabs(0.0)`.)
-TEST_F(PreWhileTrueLoopConvOptimizerTests,
-Case2IsNotDoneWhenTheLoopEndReadsTheUpdatedVariable) {
+TEST_F(PreWhileTrueLoopConvOptimizerTests, Case2IsNotDoneWhenTheLoopEndReadsTheUpdatedVariable)
+{
 	ShPtr<Variable> varTmp(Variable::create("tmp", IntType::create(32)));
 	testFunc->addLocalVar(varTmp);
 	ShPtr<Variable> varI(Variable::create("i", IntType::create(32)));
@@ -412,11 +412,9 @@ Case2IsNotDoneWhenTheLoopEndReadsTheUpdatedVariable) {
 	ShPtr<BreakStmt> breakIf(BreakStmt::create());
 	ShPtr<Expression> ifCond(GtEqOpExpr::create(varI, varTmp));
 	ShPtr<IfStmt> ifStmt(IfStmt::create(ifCond, breakIf));
-	ShPtr<AssignStmt> assignITmp1(AssignStmt::create(varI,
-		AddOpExpr::create(varTmp, ConstInt::create(1, 32)), ifStmt));
+	ShPtr<AssignStmt> assignITmp1(AssignStmt::create(varI, AddOpExpr::create(varTmp, ConstInt::create(1, 32)), ifStmt));
 	ShPtr<AssignStmt> assignTmpI(AssignStmt::create(varTmp, varI, assignITmp1));
-	ShPtr<WhileLoopStmt> whileLoop(WhileLoopStmt::create(
-		ConstBool::create(true), assignTmpI));
+	ShPtr<WhileLoopStmt> whileLoop(WhileLoopStmt::create(ConstBool::create(true), assignTmpI));
 	ShPtr<AssignStmt> assignI1(AssignStmt::create(varI, ConstInt::create(1, 32), whileLoop));
 	ShPtr<VarDefStmt> varDefI(VarDefStmt::create(varI, ShPtr<Expression>(), assignI1));
 	ShPtr<VarDefStmt> varDefTmp(VarDefStmt::create(varTmp, ShPtr<Expression>(), varDefI));
@@ -426,12 +424,12 @@ Case2IsNotDoneWhenTheLoopEndReadsTheUpdatedVariable) {
 
 	Optimizer::optimize<PreWhileTrueLoopConvOptimizer>(module, va);
 
-	EXPECT_EQ(assignTmpI, whileLoop->getBody()) <<
-		"expected the loop to be left alone, got `" << whileLoop->getBody() << "`";
+	EXPECT_EQ(assignTmpI, whileLoop->getBody())
+		<< "expected the loop to be left alone, got `" << whileLoop->getBody() << "`";
 	EXPECT_EQ(assignITmp1, assignTmpI->getSuccessor());
 	EXPECT_EQ(ifStmt, assignITmp1->getSuccessor());
-	EXPECT_EQ(varTmp, cast<GtEqOpExpr>(ifStmt->getFirstIfCond())->getSecondOperand()) <<
-		"got `" << ifStmt->getFirstIfCond() << "`";
+	EXPECT_EQ(varTmp, cast<GtEqOpExpr>(ifStmt->getFirstIfCond())->getSecondOperand())
+		<< "got `" << ifStmt->getFirstIfCond() << "`";
 }
 
 /// The other half of the same defect:
@@ -447,8 +445,8 @@ Case2IsNotDoneWhenTheLoopEndReadsTheUpdatedVariable) {
 ///
 /// returns 101. After case (2) the update runs after the exit test, so it
 /// would return 100.
-TEST_F(PreWhileTrueLoopConvOptimizerTests,
-Case2IsNotDoneWhenTheUpdatedVariableIsReadAfterTheLoop) {
+TEST_F(PreWhileTrueLoopConvOptimizerTests, Case2IsNotDoneWhenTheUpdatedVariableIsReadAfterTheLoop)
+{
 	ShPtr<Variable> varTmp(Variable::create("tmp", IntType::create(32)));
 	testFunc->addLocalVar(varTmp);
 	ShPtr<Variable> varI(Variable::create("i", IntType::create(32)));
@@ -456,12 +454,10 @@ Case2IsNotDoneWhenTheUpdatedVariableIsReadAfterTheLoop) {
 	ShPtr<BreakStmt> breakIf(BreakStmt::create());
 	ShPtr<Expression> ifCond(EqOpExpr::create(varTmp, ConstInt::create(100, 32)));
 	ShPtr<IfStmt> ifStmt(IfStmt::create(ifCond, breakIf));
-	ShPtr<AssignStmt> assignITmp1(AssignStmt::create(varI,
-		AddOpExpr::create(varTmp, ConstInt::create(1, 32)), ifStmt));
+	ShPtr<AssignStmt> assignITmp1(AssignStmt::create(varI, AddOpExpr::create(varTmp, ConstInt::create(1, 32)), ifStmt));
 	ShPtr<AssignStmt> assignTmpI(AssignStmt::create(varTmp, varI, assignITmp1));
 	ShPtr<ReturnStmt> returnI(ReturnStmt::create(varI));
-	ShPtr<WhileLoopStmt> whileLoop(WhileLoopStmt::create(
-		ConstBool::create(true), assignTmpI, returnI));
+	ShPtr<WhileLoopStmt> whileLoop(WhileLoopStmt::create(ConstBool::create(true), assignTmpI, returnI));
 	ShPtr<AssignStmt> assignI1(AssignStmt::create(varI, ConstInt::create(1, 32), whileLoop));
 	ShPtr<VarDefStmt> varDefI(VarDefStmt::create(varI, ShPtr<Expression>(), assignI1));
 	ShPtr<VarDefStmt> varDefTmp(VarDefStmt::create(varTmp, ShPtr<Expression>(), varDefI));
@@ -471,8 +467,8 @@ Case2IsNotDoneWhenTheUpdatedVariableIsReadAfterTheLoop) {
 
 	Optimizer::optimize<PreWhileTrueLoopConvOptimizer>(module, va);
 
-	EXPECT_EQ(assignTmpI, whileLoop->getBody()) <<
-		"expected the loop to be left alone, got `" << whileLoop->getBody() << "`";
+	EXPECT_EQ(assignTmpI, whileLoop->getBody())
+		<< "expected the loop to be left alone, got `" << whileLoop->getBody() << "`";
 	EXPECT_EQ(assignITmp1, assignTmpI->getSuccessor());
 	EXPECT_EQ(ifStmt, assignITmp1->getSuccessor());
 	EXPECT_EQ(varDefTmp, testFunc->getBody());
@@ -488,8 +484,8 @@ Case2IsNotDoneWhenTheUpdatedVariableIsReadAfterTheLoop) {
 /// place to `tmp == 100 || i == 7`, which case (2) must not touch because it
 /// reads the new i. Run through OptimizerManager, the pass has to see the
 /// rewritten condition.
-TEST_F(PreWhileTrueLoopConvOptimizerTests,
-OptimizerManagerDoesNotHandThePassAStaleValueAnalysis) {
+TEST_F(PreWhileTrueLoopConvOptimizerTests, OptimizerManagerDoesNotHandThePassAStaleValueAnalysis)
+{
 	ShPtr<Variable> varTmp(Variable::create("tmp", IntType::create(32)));
 	testFunc->addLocalVar(varTmp);
 	ShPtr<Variable> varI(Variable::create("i", IntType::create(32)));
@@ -497,11 +493,9 @@ OptimizerManagerDoesNotHandThePassAStaleValueAnalysis) {
 	ShPtr<BreakStmt> breakIf(BreakStmt::create());
 	ShPtr<Expression> ifCond(EqOpExpr::create(varTmp, ConstInt::create(100, 32)));
 	ShPtr<IfStmt> ifStmt(IfStmt::create(ifCond, breakIf));
-	ShPtr<AssignStmt> assignITmp1(AssignStmt::create(varI,
-		AddOpExpr::create(varTmp, ConstInt::create(1, 32)), ifStmt));
+	ShPtr<AssignStmt> assignITmp1(AssignStmt::create(varI, AddOpExpr::create(varTmp, ConstInt::create(1, 32)), ifStmt));
 	ShPtr<AssignStmt> assignTmpI(AssignStmt::create(varTmp, varI, assignITmp1));
-	ShPtr<WhileLoopStmt> whileLoop(WhileLoopStmt::create(
-		ConstBool::create(true), assignTmpI));
+	ShPtr<WhileLoopStmt> whileLoop(WhileLoopStmt::create(ConstBool::create(true), assignTmpI));
 	ShPtr<AssignStmt> assignI1(AssignStmt::create(varI, ConstInt::create(1, 32), whileLoop));
 	ShPtr<VarDefStmt> varDefI(VarDefStmt::create(varI, ShPtr<Expression>(), assignI1));
 	ShPtr<VarDefStmt> varDefTmp(VarDefStmt::create(varTmp, ShPtr<Expression>(), varDefI));
@@ -515,8 +509,7 @@ OptimizerManagerDoesNotHandThePassAStaleValueAnalysis) {
 	ASSERT_FALSE(cachingVa->getValueData(ifStmt)->isDirRead(varI));
 
 	// The in-place rewrite that pass does not report.
-	ifStmt->setFirstIfCond(OrOpExpr::create(ifCond,
-		EqOpExpr::create(varI, ConstInt::create(7, 32))));
+	ifStmt->setFirstIfCond(OrOpExpr::create(ifCond, EqOpExpr::create(varI, ConstInt::create(7, 32))));
 
 	std::string sink;
 	llvm::raw_string_ostream sinkStream(sink);
@@ -530,13 +523,13 @@ OptimizerManagerDoesNotHandThePassAStaleValueAnalysis) {
 		false);
 	om.optimize(module);
 
-	EXPECT_EQ(assignTmpI, whileLoop->getBody()) <<
-		"expected the loop to be left alone, got `" << whileLoop->getBody() << "`";
+	EXPECT_EQ(assignTmpI, whileLoop->getBody())
+		<< "expected the loop to be left alone, got `" << whileLoop->getBody() << "`";
 	EXPECT_EQ(ifStmt, assignITmp1->getSuccessor());
 	auto cond = cast<OrOpExpr>(ifStmt->getFirstIfCond());
 	ASSERT_TRUE(cond) << "got `" << ifStmt->getFirstIfCond() << "`";
-	EXPECT_EQ(varTmp, cast<EqOpExpr>(cond->getFirstOperand())->getFirstOperand()) <<
-		"got `" << ifStmt->getFirstIfCond() << "`";
+	EXPECT_EQ(varTmp, cast<EqOpExpr>(cond->getFirstOperand())->getFirstOperand())
+		<< "got `" << ifStmt->getFirstIfCond() << "`";
 }
 
 } // namespace tests

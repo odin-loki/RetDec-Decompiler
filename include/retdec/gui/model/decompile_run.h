@@ -87,24 +87,54 @@ public:
 	/// Cancelled. No-op when not running.
 	void cancel();
 
-	State state() const { return state_; }
-	bool running() const { return state_ == State::Running; }
+	State state() const
+	{
+		return state_;
+	}
+	bool running() const
+	{
+		return state_ == State::Running;
+	}
 	/// The exit code once Finished (128+signal when killed by one; 124 on timeout), else nothing.
 	std::optional<int> exitCode() const;
 	/// Signal that ended the process (POSIX), 0 otherwise.
-	int termSignal() const { return termSignal_; }
-	bool timedOut() const { return timedOut_; }
+	int termSignal() const
+	{
+		return termSignal_;
+	}
+	bool timedOut() const
+	{
+		return timedOut_;
+	}
 	/// Why the run failed to start (FailedToStart), else empty.
-	const std::string& errorString() const { return error_; }
+	const std::string& errorString() const
+	{
+		return error_;
+	}
 	/// Wall time since start(), frozen when the run ends.
 	std::chrono::milliseconds elapsed() const;
 	/// Peak resident memory of the child in bytes once ended (0 = unknown).
-	std::uint64_t peakRssBytes() const { return peakRss_; }
+	std::uint64_t peakRssBytes() const
+	{
+		return peakRss_;
+	}
 
-	const std::filesystem::path& logPath() const { return logPath_; }
-	const std::filesystem::path& executable() const { return spec_.executable; }
-	const std::vector<std::string>& arguments() const { return spec_.arguments; }
-	const std::filesystem::path& workingDirectory() const { return spec_.workingDirectory; }
+	const std::filesystem::path& logPath() const
+	{
+		return logPath_;
+	}
+	const std::filesystem::path& executable() const
+	{
+		return spec_.executable;
+	}
+	const std::vector<std::string>& arguments() const
+	{
+		return spec_.arguments;
+	}
+	const std::filesystem::path& workingDirectory() const
+	{
+		return spec_.workingDirectory;
+	}
 
 private:
 	struct Worker;

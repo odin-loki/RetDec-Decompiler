@@ -23,13 +23,19 @@ namespace {
 struct TempDir
 {
 	fs::path path;
-	TempDir() { path = fs::path(forge::os::fs::make_temp_dir("retdec-gui-launch-").value); }
+	TempDir()
+	{
+		path = fs::path(forge::os::fs::make_temp_dir("retdec-gui-launch-").value);
+	}
 	~TempDir()
 	{
 		std::error_code ec;
 		fs::remove_all(path, ec);
 	}
-	fs::path file(const std::string& name) const { return path / name; }
+	fs::path file(const std::string& name) const
+	{
+		return path / name;
+	}
 };
 
 void writeFile(const fs::path& p, std::string_view data, bool append = false)
@@ -85,8 +91,7 @@ TEST(DecompilerLaunch, ResolveGuiDecompiledCPathCustomDir)
 		m::resolveGuiDecompiledCPath("C:/OneDrive/Desktop/foo.exe", "D:/retdec-out").generic_string(),
 		"D:/retdec-out/foo.gui-decompiled.c");
 	// Whitespace around the configured directory is ignored.
-	EXPECT_EQ(
-		m::resolveGuiDecompiledCPath("/x/foo.exe", "  /out  ").generic_string(), "/out/foo.gui-decompiled.c");
+	EXPECT_EQ(m::resolveGuiDecompiledCPath("/x/foo.exe", "  /out  ").generic_string(), "/out/foo.gui-decompiled.c");
 	// A binary with no directory part.
 	EXPECT_EQ(m::resolveGuiDecompiledCPath("foo.exe", "").generic_string(), "foo.gui-decompiled.c");
 }
@@ -113,7 +118,8 @@ TEST(DecompilerLaunch, LocateGuiDecompiledCPathFallsBackToBesideBinary)
 	const fs::path beside = m::resolveGuiDecompiledCPath(binPath, "");
 	writeFile(beside, "int x;");
 
-	EXPECT_EQ(m::locateGuiDecompiledCPath(binPath, "C:/nonexistent-output-dir"), fs::absolute(beside).lexically_normal());
+	EXPECT_EQ(
+		m::locateGuiDecompiledCPath(binPath, "C:/nonexistent-output-dir"), fs::absolute(beside).lexically_normal());
 }
 
 TEST(DecompilerLaunch, LocateGuiDecompiledCPathNothingExistsReturnsPreferred)
@@ -121,7 +127,8 @@ TEST(DecompilerLaunch, LocateGuiDecompiledCPathNothingExistsReturnsPreferred)
 	EXPECT_EQ(
 		m::locateGuiDecompiledCPath("/nonexistent/app.exe", "/nonexistent-out").generic_string(),
 		"/nonexistent-out/app.gui-decompiled.c");
-	EXPECT_EQ(m::locateGuiDecompiledCPath("/nonexistent/app.exe", "").generic_string(), "/nonexistent/app.gui-decompiled.c");
+	EXPECT_EQ(
+		m::locateGuiDecompiledCPath("/nonexistent/app.exe", "").generic_string(), "/nonexistent/app.gui-decompiled.c");
 }
 
 TEST(DecompilerLaunch, BuildsBaselineArguments)
@@ -163,8 +170,18 @@ TEST(DecompilerLaunch, BaselineArgvIsExactlyTheQtOne)
 	req.outputPath = "C:/bin/sample.gui-decompiled.c";
 	req.arch = "x86-64";
 	const std::vector<std::string> expected = {
-		"C:/bin/sample.exe", "-o", "C:/bin/sample.gui-decompiled.c", "-f", "plain", "-s", "--output-lang", "c",
-		"-a", "x86-64", "--profile", "balanced"};
+		"C:/bin/sample.exe",
+		"-o",
+		"C:/bin/sample.gui-decompiled.c",
+		"-f",
+		"plain",
+		"-s",
+		"--output-lang",
+		"c",
+		"-a",
+		"x86-64",
+		"--profile",
+		"balanced"};
 	EXPECT_EQ(buildArgs(req, true), expected);
 }
 
@@ -220,16 +237,66 @@ TEST(DecompilerLaunch, FullArgvOrderMatchesQt)
 	req.silent = false;
 
 	const std::vector<std::string> expected = {
-		"--config", cfg.string(), "/b", "-o", "/o.c", "-f", "plain", "--output-lang", "python", "-a", "arm", "--profile",
-		"quality", "--disable-static-code-detection", "--backend-no-opts", "--print-after-all", "--print-before-all",
-		"--backend-emit-cfg", "--backend-emit-cg", "-k", "--select-functions", "main,f", "--select-ranges",
-		"0x1-0x2,0x3-0x4", "--select-decode-only", "--raw-entry-point", "0xabc", "-p", pdb.string(),
-		"--backend-var-renamer", "simple", "--static-code-sigfile", sig.string(), "--cleanup", "--try-emulation",
-		"--max-memory", "1024", "--backend-keep-library-funcs", "--backend-keep-all-brackets",
-		"--backend-no-time-varying-info", "--backend-no-var-renaming", "--backend-no-compound-operators",
-		"--backend-no-symbolic-names", "--backend-call-info-obtainer", "pessim", "-e", "big", "-b", "64",
-		"--raw-section-vma", "0x1000", "-m", "raw", "--no-memory-limit", "--backend-disabled-opts", "a",
-		"--backend-enabled-opts", "b", "--ar-index", "3"};
+		"--config",
+		cfg.string(),
+		"/b",
+		"-o",
+		"/o.c",
+		"-f",
+		"plain",
+		"--output-lang",
+		"python",
+		"-a",
+		"arm",
+		"--profile",
+		"quality",
+		"--disable-static-code-detection",
+		"--backend-no-opts",
+		"--print-after-all",
+		"--print-before-all",
+		"--backend-emit-cfg",
+		"--backend-emit-cg",
+		"-k",
+		"--select-functions",
+		"main,f",
+		"--select-ranges",
+		"0x1-0x2,0x3-0x4",
+		"--select-decode-only",
+		"--raw-entry-point",
+		"0xabc",
+		"-p",
+		pdb.string(),
+		"--backend-var-renamer",
+		"simple",
+		"--static-code-sigfile",
+		sig.string(),
+		"--cleanup",
+		"--try-emulation",
+		"--max-memory",
+		"1024",
+		"--backend-keep-library-funcs",
+		"--backend-keep-all-brackets",
+		"--backend-no-time-varying-info",
+		"--backend-no-var-renaming",
+		"--backend-no-compound-operators",
+		"--backend-no-symbolic-names",
+		"--backend-call-info-obtainer",
+		"pessim",
+		"-e",
+		"big",
+		"-b",
+		"64",
+		"--raw-section-vma",
+		"0x1000",
+		"-m",
+		"raw",
+		"--no-memory-limit",
+		"--backend-disabled-opts",
+		"a",
+		"--backend-enabled-opts",
+		"b",
+		"--ar-index",
+		"3"};
 	EXPECT_EQ(buildArgs(req), expected);
 }
 
@@ -289,9 +356,10 @@ TEST(DecompilerLaunch, CustomLlvmPassesDropDisabledAndProfile)
 
 	auto preset = m::loadLlvmPassPreset(false);
 	ASSERT_TRUE(preset.has_value()) << preset.error();
-	EXPECT_EQ(doc.arr().size(), static_cast<std::size_t>(std::count_if(preset->begin(), preset->end(), [](const std::string& s) {
-				  return s != "retdec-decoder";
-			  })));
+	EXPECT_EQ(
+		doc.arr().size(),
+		static_cast<std::size_t>(
+			std::count_if(preset->begin(), preset->end(), [](const std::string& s) { return s != "retdec-decoder"; })));
 }
 
 TEST(DecompilerLaunch, NoPassesFileWhenNotRequested)
@@ -588,8 +656,10 @@ TEST(DecompilerLaunch, InteractiveOclCacheAndProfileEnv)
 	EXPECT_EQ(env.at("RETDEC_PROFILE_JSON"), "1");
 
 	const auto headless = m::buildDecompilerProcessEnvironment(st, false);
-	EXPECT_EQ(m::processEnvironmentValue(headless, "RETDEC_PROFILE_JSON"), forge::os::getenv("RETDEC_PROFILE_JSON", ""));
-	EXPECT_EQ(m::processEnvironmentValue(headless, "RETDEC_OCL_CACHE_DIR"), forge::os::getenv("RETDEC_OCL_CACHE_DIR", ""));
+	EXPECT_EQ(
+		m::processEnvironmentValue(headless, "RETDEC_PROFILE_JSON"), forge::os::getenv("RETDEC_PROFILE_JSON", ""));
+	EXPECT_EQ(
+		m::processEnvironmentValue(headless, "RETDEC_OCL_CACHE_DIR"), forge::os::getenv("RETDEC_OCL_CACHE_DIR", ""));
 }
 
 TEST(DecompilerLaunch, InteractiveNeuralSha256)
@@ -733,7 +803,8 @@ TEST(DecompilerLaunch, PollLogProgressParsesRunningPhase)
 {
 	TempDir tmp;
 	const fs::path log = tmp.file("decompile.log");
-	writeFile(log, "Running phase: Initialization ( 0.01s )\nRunning phase: Input binary to LLVM IR decoding ( 1.23s )\n");
+	writeFile(
+		log, "Running phase: Initialization ( 0.01s )\nRunning phase: Input binary to LLVM IR decoding ( 1.23s )\n");
 
 	uint64_t offset = 0;
 	const auto prog = m::pollDecompileLogProgress(log, &offset);

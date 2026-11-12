@@ -32,7 +32,10 @@ public:
 	ZipWriter(const ZipWriter&) = delete;
 	ZipWriter& operator=(const ZipWriter&) = delete;
 
-	bool isOpen() const { return open_; }
+	bool isOpen() const
+	{
+		return open_;
+	}
 
 	/// Add an on-disk file under @p entryName (forward slashes, no leading slash).
 	std::expected<void, std::string> addFile(const std::filesystem::path& diskPath, std::string_view entryName);
@@ -44,7 +47,10 @@ public:
 	std::expected<void, std::string> close();
 
 	/// Last error message (also returned by the failing call).
-	const std::string& errorString() const { return error_; }
+	const std::string& errorString() const
+	{
+		return error_;
+	}
 
 	/// Names added so far, in order.
 	std::vector<std::string> entryNames() const;

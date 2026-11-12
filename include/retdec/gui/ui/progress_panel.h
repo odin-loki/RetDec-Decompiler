@@ -41,8 +41,7 @@
 
 namespace retdec::gui::ui {
 
-class ProgressPanel
-{
+class ProgressPanel {
 public:
 	static constexpr std::string_view kTitle = "Progress";
 	using StageState = model::StageState;
@@ -52,8 +51,14 @@ public:
 	ProgressPanel(const ProgressPanel&) = delete;
 	ProgressPanel& operator=(const ProgressPanel&) = delete;
 
-	fuse::ui::NodeHandle root() const { return root_; }
-	std::string_view panelTitle() const { return kTitle; }
+	fuse::ui::NodeHandle root() const
+	{
+		return root_;
+	}
+	std::string_view panelTitle() const
+	{
+		return kTitle;
+	}
 
 	/// Replays @p bridge's reports here (queued to the UI thread). One bridge
 	/// at a time; nullptr disconnects. The UiContext must outlive the bridge's
@@ -72,7 +77,10 @@ public:
 	/// Wall-time budget in seconds (Settings, max analysis time); 0 = none.
 	void setAnalysisBudgetSecs(int secs);
 	void resetAll();
-	void clear() { resetAll(); }
+	void clear()
+	{
+		resetAll();
+	}
 
 	// ── pipeline events (what the bridge delivers; callable directly) ───────
 	void stageStarted(std::string_view stageName);
@@ -84,14 +92,23 @@ public:
 	void analysisCancelled();
 
 	// ── export ──────────────────────────────────────────────────────────────
-	std::string exportJson() const { return tracker_.exportJson(); }
+	std::string exportJson() const
+	{
+		return tracker_.exportJson();
+	}
 	std::expected<void, std::string> exportJsonTo(const std::string& path) const;
 	/// The Export JSON button: clipboard, onExportRequested, save dialog.
 	void exportClicked();
 
-	const model::ProgressTracker& tracker() const { return tracker_; }
+	const model::ProgressTracker& tracker() const
+	{
+		return tracker_;
+	}
 	/// Clock for the elapsed time (tests); default steady_clock.
-	void setClock(model::ProgressTracker::Clock clock) { tracker_.setClock(std::move(clock)); }
+	void setClock(model::ProgressTracker::Clock clock)
+	{
+		tracker_.setClock(std::move(clock));
+	}
 	/// What the 1-second tick does (also called by the timer).
 	void tick();
 
@@ -110,21 +127,60 @@ public:
 	};
 	/// Nodes of stage @p name (all invalid when unknown).
 	StageRowNodes stageRow(std::string_view name) const;
-	fuse::ui::NodeHandle overallBar() const { return overallBar_; }
-	fuse::ui::NodeHandle percentLabel() const { return pctLabel_; }
-	fuse::ui::NodeHandle functionCountLabel() const { return fnCountLabel_; }
-	fuse::ui::NodeHandle instructionLabel() const { return instrLabel_; }
-	fuse::ui::NodeHandle elapsedLabel() const { return elapsedLabel_; }
-	fuse::ui::NodeHandle functionRateLabel() const { return fnRateLabel_; }
-	fuse::ui::NodeHandle instructionRateLabel() const { return instrRateLabel_; }
-	fuse::ui::NodeHandle waterfallNode() const { return waterfall_; }
-	fuse::ui::NodeHandle exportButton() const { return exportBtn_; }
-	fuse::ui::NodeHandle fileDialogNode() const { return fileDlg_; }
+	fuse::ui::NodeHandle overallBar() const
+	{
+		return overallBar_;
+	}
+	fuse::ui::NodeHandle percentLabel() const
+	{
+		return pctLabel_;
+	}
+	fuse::ui::NodeHandle functionCountLabel() const
+	{
+		return fnCountLabel_;
+	}
+	fuse::ui::NodeHandle instructionLabel() const
+	{
+		return instrLabel_;
+	}
+	fuse::ui::NodeHandle elapsedLabel() const
+	{
+		return elapsedLabel_;
+	}
+	fuse::ui::NodeHandle functionRateLabel() const
+	{
+		return fnRateLabel_;
+	}
+	fuse::ui::NodeHandle instructionRateLabel() const
+	{
+		return instrRateLabel_;
+	}
+	fuse::ui::NodeHandle waterfallNode() const
+	{
+		return waterfall_;
+	}
+	fuse::ui::NodeHandle exportButton() const
+	{
+		return exportBtn_;
+	}
+	fuse::ui::NodeHandle fileDialogNode() const
+	{
+		return fileDlg_;
+	}
 	/// Tooltip text of the elapsed label (budget warning), "" when none.
-	const std::string& elapsedToolTip() const { return elapsedTip_; }
-	model::BudgetLevel budgetState() const { return budget_; }
+	const std::string& elapsedToolTip() const
+	{
+		return elapsedTip_;
+	}
+	model::BudgetLevel budgetState() const
+	{
+		return budget_;
+	}
 	/// Waterfall bars as last painted.
-	std::vector<model::WaterfallBar> waterfallBars() const { return tracker_.waterfall(); }
+	std::vector<model::WaterfallBar> waterfallBars() const
+	{
+		return tracker_.waterfall();
+	}
 
 private:
 	struct Row

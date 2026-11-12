@@ -57,8 +57,14 @@ public:
 	SignatureStudioPanel(const SignatureStudioPanel&) = delete;
 	SignatureStudioPanel& operator=(const SignatureStudioPanel&) = delete;
 
-	fuse::ui::NodeHandle root() const { return root_; }
-	std::string panelTitle() const { return "Signature Studio"; }
+	fuse::ui::NodeHandle root() const
+	{
+		return root_;
+	}
+	std::string panelTitle() const
+	{
+		return "Signature Studio";
+	}
 
 	/// A binary was opened: express fields are reset, empty fields get
 	/// defaults (model::sigStudioDefaultsForBinary).
@@ -83,7 +89,10 @@ public:
 	/// Block up to @p timeout for the running tool, then poll() (tests, shutdown).
 	bool waitForTool(std::chrono::milliseconds timeout);
 
-	void setToolResolver(ToolResolver r) { tools_ = std::move(r); }
+	void setToolResolver(ToolResolver r)
+	{
+		tools_ = std::move(r);
+	}
 
 	/// The log pane's text.
 	std::string log() const;
@@ -96,29 +105,87 @@ public:
 	std::function<void(const std::string& message, int timeoutMs)> onStatusMessage;
 
 	// ── Test hooks ───────────────────────────────────────────────────────────
-	fuse::ui::NodeHandle tabs() const { return tabs_; }
+	fuse::ui::NodeHandle tabs() const
+	{
+		return tabs_;
+	}
 	void setCurrentTab(int tab);
-	fuse::ui::NodeHandle expressLibEdit() const { return expressLib_; }
-	fuse::ui::NodeHandle expressOutEdit() const { return expressOut_; }
-	fuse::ui::NodeHandle expressRunButton() const { return expressRun_; }
-	fuse::ui::NodeHandle arArchiveEdit() const { return arArchive_; }
-	fuse::ui::NodeHandle arOutDirEdit() const { return arOut_; }
-	fuse::ui::NodeHandle arRunButton() const { return arRun_; }
-	fuse::ui::NodeHandle machoFileEdit() const { return machoFile_; }
-	fuse::ui::NodeHandle machoOutDirEdit() const { return machoOut_; }
-	fuse::ui::NodeHandle machoRunButton() const { return machoRun_; }
-	fuse::ui::NodeHandle bin2patInEdit() const { return b2pIn_; }
-	fuse::ui::NodeHandle bin2patOutEdit() const { return b2pOut_; }
-	fuse::ui::NodeHandle bin2patRunButton() const { return b2pRun_; }
-	fuse::ui::NodeHandle pat2yaraInEdit() const { return p2yIn_; }
-	fuse::ui::NodeHandle pat2yaraOutEdit() const { return p2yOut_; }
-	fuse::ui::NodeHandle pat2yaraRunButton() const { return p2yRun_; }
-	fuse::ui::NodeHandle useAsStaticButton() const { return useAsStatic_; }
-	FilePrompt& filePrompt() { return files_; }
+	fuse::ui::NodeHandle expressLibEdit() const
+	{
+		return expressLib_;
+	}
+	fuse::ui::NodeHandle expressOutEdit() const
+	{
+		return expressOut_;
+	}
+	fuse::ui::NodeHandle expressRunButton() const
+	{
+		return expressRun_;
+	}
+	fuse::ui::NodeHandle arArchiveEdit() const
+	{
+		return arArchive_;
+	}
+	fuse::ui::NodeHandle arOutDirEdit() const
+	{
+		return arOut_;
+	}
+	fuse::ui::NodeHandle arRunButton() const
+	{
+		return arRun_;
+	}
+	fuse::ui::NodeHandle machoFileEdit() const
+	{
+		return machoFile_;
+	}
+	fuse::ui::NodeHandle machoOutDirEdit() const
+	{
+		return machoOut_;
+	}
+	fuse::ui::NodeHandle machoRunButton() const
+	{
+		return machoRun_;
+	}
+	fuse::ui::NodeHandle bin2patInEdit() const
+	{
+		return b2pIn_;
+	}
+	fuse::ui::NodeHandle bin2patOutEdit() const
+	{
+		return b2pOut_;
+	}
+	fuse::ui::NodeHandle bin2patRunButton() const
+	{
+		return b2pRun_;
+	}
+	fuse::ui::NodeHandle pat2yaraInEdit() const
+	{
+		return p2yIn_;
+	}
+	fuse::ui::NodeHandle pat2yaraOutEdit() const
+	{
+		return p2yOut_;
+	}
+	fuse::ui::NodeHandle pat2yaraRunButton() const
+	{
+		return p2yRun_;
+	}
+	fuse::ui::NodeHandle useAsStaticButton() const
+	{
+		return useAsStatic_;
+	}
+	FilePrompt& filePrompt()
+	{
+		return files_;
+	}
 
 private:
-	fuse::ui::NodeHandle fileRow(fuse::ui::NodeHandle form, std::string_view label, FilePrompt::Mode mode,
-	                             std::string_view promptTitle, std::string_view filter);
+	fuse::ui::NodeHandle fileRow(
+		fuse::ui::NodeHandle form,
+		std::string_view label,
+		FilePrompt::Mode mode,
+		std::string_view promptTitle,
+		std::string_view filter);
 	bool start(std::expected<model::SigToolCommand, std::string> cmd);
 	void appendLog(std::string_view text);
 	void setBusy(bool on);

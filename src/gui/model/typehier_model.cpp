@@ -182,8 +182,7 @@ std::string ClassHierarchyModel::data(int node, int column) const
 	switch (column)
 	{
 	case ColName: return c->isAbstract ? c->name + " [abstract]" : c->name;
-	case ColInherits:
-	{
+	case ColInherits: {
 		if (c->bases.empty()) return "—";
 		std::string s;
 		for (const auto& b: c->bases)
@@ -263,8 +262,8 @@ bool ClassHierarchyModel::subtreeMatches(int node, std::string_view filter, std:
 	return hit;
 }
 
-std::vector<ClassHierarchyModel::Row> ClassHierarchyModel::visibleRows(
-	std::string_view filter, const std::unordered_set<int>& collapsed) const
+std::vector<ClassHierarchyModel::Row>
+ClassHierarchyModel::visibleRows(std::string_view filter, const std::unordered_set<int>& collapsed) const
 {
 	std::vector<Row> rows;
 	std::vector<int8_t> memo(m_nodes.size(), -1);
@@ -308,8 +307,7 @@ std::string VtableModel::data(int row, int column) const
 	case 0: return std::to_string(s->index);
 	case 1: return s->funcName;
 	case 2: return s->funcAddress ? hexAddress(s->funcAddress) : "—";
-	case 3:
-	{
+	case 3: {
 		std::string flags;
 		if (s->isPure) flags += "pure";
 		if (s->isOverride) flags += flags.empty() ? "override" : " override";

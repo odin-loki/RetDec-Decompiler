@@ -53,8 +53,8 @@ std::filesystem::path findDocsDir();
 /// A Markdown file of the docs directory.
 struct DocEntry
 {
-	std::string title;            ///< path relative to the docs dir, '/' separated ("gui/FUSEUI_PORT.md")
-	std::filesystem::path path;   ///< absolute
+	std::string title;          ///< path relative to the docs dir, '/' separated ("gui/FUSEUI_PORT.md")
+	std::filesystem::path path; ///< absolute
 };
 /// Every *.md under @p dir (recursive), README.md first, the Qt viewer's
 /// WINDOWS_NATIVE_BUILD.md next, then the rest sorted case-insensitively.

@@ -73,7 +73,7 @@ bool endsWithCi(std::string_view s, std::string_view suffix)
 	if (s.size() < suffix.size()) return false;
 	for (std::size_t i = 0; i < suffix.size(); ++i)
 		if (std::tolower(static_cast<unsigned char>(s[s.size() - suffix.size() + i]))
-		    != std::tolower(static_cast<unsigned char>(suffix[i])))
+			!= std::tolower(static_cast<unsigned char>(suffix[i])))
 			return false;
 	return true;
 }
@@ -137,8 +137,11 @@ void MainWindow::copyText(const std::string& text, const std::string& what)
 	showStatusMessage("Copied " + what, 3000);
 }
 
-void MainWindow::askQuestion(const std::string& title, const std::string& text, std::vector<std::string> buttons,
-                             std::function<void(int)> onAnswer)
+void MainWindow::askQuestion(
+	const std::string& title,
+	const std::string& text,
+	std::vector<std::string> buttons,
+	std::function<void(int)> onAnswer)
 {
 	Question& q = *question_;
 	q.dlg.setTitle(title);
@@ -152,7 +155,9 @@ void MainWindow::askQuestion(const std::string& title, const std::string& text, 
 		const NodeHandle b = w::button(ui_, q.buttons, buttons[i]);
 		if (i == 0) ui_.addClass(b, "primary");
 		const int index = int(i);
-		ui_.connect(b, SignalKind::Clicked, [this, index](UiContext&, NodeHandle, const SignalArgs&) { answerQuestion(index); });
+		ui_.connect(b, SignalKind::Clicked, [this, index](UiContext&, NodeHandle, const SignalArgs&) {
+			answerQuestion(index);
+		});
 		q.buttonNodes.push_back(b);
 	}
 	q.onAnswer = std::move(onAnswer);
@@ -371,12 +376,16 @@ void MainWindow::onOpenBinary()
 
 void MainWindow::onOpenProject()
 {
-	files_->show(FilePrompt::Mode::Open, "Open RetDec Project", fileDialogStartDir(), "*.retdec",
-	             [this](const std::string& path) {
-		             if (path.empty()) return;
-		             rememberLastOpenDir(path);
-		             openProject(path);
-	             });
+	files_->show(
+		FilePrompt::Mode::Open,
+		"Open RetDec Project",
+		fileDialogStartDir(),
+		"*.retdec",
+		[this](const std::string& path) {
+			if (path.empty()) return;
+			rememberLastOpenDir(path);
+			openProject(path);
+		});
 }
 
 void MainWindow::onSaveProject()
@@ -427,35 +436,40 @@ void MainWindow::onExportCMake()
 	std::error_code ec;
 	if (cAbs.empty() || !fs::exists(cAbs, ec))
 	{
-		info("Export CMake", std::format("No decompiled C file found:\n{}\n\nRun Analysis \xE2\x86\x92 Run Full Analysis first.",
-		                                 cAbs.string()));
+		info(
+			"Export CMake",
+			std::format(
+				"No decompiled C file found:\n{}\n\nRun Analysis \xE2\x86\x92 Run Full Analysis first.",
+				cAbs.string()));
 		return;
 	}
 	const std::string defaultCmake = (fs::absolute(cAbs).parent_path() / "CMakeLists.txt").string();
-	files_->show(FilePrompt::Mode::Save, "Export CMakeLists.txt", defaultCmake, {}, [this, cAbs](const std::string& path) {
-		if (path.empty()) return;
-		const fs::path cmakeDir = fs::absolute(path).parent_path();
-		std::string rel = fs::absolute(cAbs).lexically_relative(cmakeDir).generic_string();
-		if (rel.empty()) rel = fs::absolute(cAbs).generic_string();
-		std::string target = cAbs.stem().string();
-		for (char& c: target)
-			if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') c = '_';
-		if (target.empty() || target[0] == '_') target = "retdec_recovered";
-		if (std::isdigit(static_cast<unsigned char>(target[0]))) target = "t_" + target;
-		const std::string content = std::format(
-			"# Skeleton to build recovered C produced by RetDec \xE2\x80\x94 adjust flags and toolchain.\n"
-			"cmake_minimum_required(VERSION 3.16)\n"
-			"project({0} LANGUAGES C)\n"
-			"add_executable({0} \"{1}\")\n"
-			"target_compile_features({0} PRIVATE c_std_11)\n",
-			target, rel);
-		if (auto r = forge::os::write_file(path, content); !r)
-		{
-			warn("Export CMake", r.err.what);
-			return;
-		}
-		showStatusMessage("Wrote " + path, 5000);
-	});
+	files_->show(
+		FilePrompt::Mode::Save, "Export CMakeLists.txt", defaultCmake, {}, [this, cAbs](const std::string& path) {
+			if (path.empty()) return;
+			const fs::path cmakeDir = fs::absolute(path).parent_path();
+			std::string rel = fs::absolute(cAbs).lexically_relative(cmakeDir).generic_string();
+			if (rel.empty()) rel = fs::absolute(cAbs).generic_string();
+			std::string target = cAbs.stem().string();
+			for (char& c: target)
+				if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') c = '_';
+			if (target.empty() || target[0] == '_') target = "retdec_recovered";
+			if (std::isdigit(static_cast<unsigned char>(target[0]))) target = "t_" + target;
+			const std::string content = std::format(
+				"# Skeleton to build recovered C produced by RetDec \xE2\x80\x94 adjust flags and toolchain.\n"
+				"cmake_minimum_required(VERSION 3.16)\n"
+				"project({0} LANGUAGES C)\n"
+				"add_executable({0} \"{1}\")\n"
+				"target_compile_features({0} PRIVATE c_std_11)\n",
+				target,
+				rel);
+			if (auto r = forge::os::write_file(path, content); !r)
+			{
+				warn("Export CMake", r.err.what);
+				return;
+			}
+			showStatusMessage("Wrote " + path, 5000);
+		});
 }
 
 void MainWindow::onExportDecompileBundle()
@@ -466,30 +480,34 @@ void MainWindow::onExportDecompileBundle()
 	const bool hasOnDisk = !cGuess.empty() && fs::exists(cGuess, ec);
 	if (!hasLoaded && !hasOnDisk)
 	{
-		info("Export Decompile Bundle", "No decompiled artifacts found.\n\nRun Analysis \xE2\x86\x92 Run Full Analysis first.");
+		info(
+			"Export Decompile Bundle",
+			"No decompiled artifacts found.\n\nRun Analysis \xE2\x86\x92 Run Full Analysis first.");
 		return;
 	}
 	const fs::path cPath = (hasLoaded && !loadedArtifacts_->cPath.empty()) ? loadedArtifacts_->cPath : cGuess;
-	const std::string defaultZip = (fs::absolute(cPath).parent_path() / (cPath.stem().string() + "-bundle.zip")).string();
-	files_->show(FilePrompt::Mode::Save, "Export Decompile Bundle", defaultZip, "*.zip", [this, cPath](const std::string& zip) {
-		if (zip.empty()) return;
-		model::DecompileBundleInput in;
-		in.cPath = cPath;
-		in.decompilerExe = lastDecompilerExe_;
-		in.decompilerArgs = lastDecompilerArgs_;
-		in.decompilerCwd = lastDecompilerCwd_;
-		std::error_code e;
-		if (run_ && fs::exists(run_->logPath(), e))
-			in.logFilePath = run_->logPath();
-		else if (!console_->isEmpty())
-			in.logInline = console_->text();
-		if (auto r = model::exportDecompileBundle(in, zip); !r)
-		{
-			warn("Export Decompile Bundle", r.error());
-			return;
-		}
-		showStatusMessage("Exported bundle " + zip, 5000);
-	});
+	const std::string defaultZip =
+		(fs::absolute(cPath).parent_path() / (cPath.stem().string() + "-bundle.zip")).string();
+	files_->show(
+		FilePrompt::Mode::Save, "Export Decompile Bundle", defaultZip, "*.zip", [this, cPath](const std::string& zip) {
+			if (zip.empty()) return;
+			model::DecompileBundleInput in;
+			in.cPath = cPath;
+			in.decompilerExe = lastDecompilerExe_;
+			in.decompilerArgs = lastDecompilerArgs_;
+			in.decompilerCwd = lastDecompilerCwd_;
+			std::error_code e;
+			if (run_ && fs::exists(run_->logPath(), e))
+				in.logFilePath = run_->logPath();
+			else if (!console_->isEmpty())
+				in.logInline = console_->text();
+			if (auto r = model::exportDecompileBundle(in, zip); !r)
+			{
+				warn("Export Decompile Bundle", r.error());
+				return;
+			}
+			showStatusMessage("Exported bundle " + zip, 5000);
+		});
 }
 
 void MainWindow::onExportThreatIntel()
@@ -500,7 +518,9 @@ void MainWindow::onExportThreatIntel()
 	const bool hasOnDisk = !cGuess.empty() && fs::exists(cGuess, ec);
 	if (!hasLoaded && !hasOnDisk)
 	{
-		info("Export Threat Intel", "No decompiled artifacts found.\n\nRun Analysis \xE2\x86\x92 Run Full Analysis first.");
+		info(
+			"Export Threat Intel",
+			"No decompiled artifacts found.\n\nRun Analysis \xE2\x86\x92 Run Full Analysis first.");
 		return;
 	}
 	if (intelRun_ && intelRun_->running())
@@ -512,8 +532,10 @@ void MainWindow::onExportThreatIntel()
 	const fs::path python = model::resolvePythonInterpreter();
 	if (script.empty() || python.empty())
 	{
-		warn("Export Threat Intel", "Could not locate retdec_export_intel.py or a Python interpreter.\n"
-		                            "Use a full RetDec install with scripts/ on disk.");
+		warn(
+			"Export Threat Intel",
+			"Could not locate retdec_export_intel.py or a Python interpreter.\n"
+			"Use a full RetDec install with scripts/ on disk.");
 		return;
 	}
 	const fs::path cPath = (hasLoaded && !loadedArtifacts_->cPath.empty()) ? loadedArtifacts_->cPath : cGuess;
@@ -523,75 +545,86 @@ void MainWindow::onExportThreatIntel()
 		info("Export Threat Intel", "Missing decompiler config sidecar:\n" + configPath.string());
 		return;
 	}
-	const std::string defaultJson = (fs::absolute(cPath).parent_path() / (cPath.stem().string() + "-intel.json")).string();
-	files_->show(FilePrompt::Mode::Save, "Export Threat Intel", defaultJson, "*.json",
-	             [this, script, python, cPath, configPath](const std::string& outPath) {
-		             if (outPath.empty()) return;
-		             std::vector<std::string> args = {script.string(), "--c", cPath.string(), "--config",
-		                                              configPath.string(), "-o", outPath};
-		             if (project_ && !project_->binaryPath().empty())
-		             {
-			             args.push_back("--binary");
-			             args.push_back(project_->binaryPath());
-		             }
-		             intelFileinfo_.reset();
-		             if (!inspect_->fileinfoJson().empty())
-		             {
-			             std::error_code e;
-			             const fs::path tmp = fs::temp_directory_path(e)
-			                                  / std::format("retdec-fileinfo-{}.json", forge::os::pid());
-			             if (forge::os::write_file(tmp.string(), inspect_->fileinfoJson()))
-			             {
-				             intelFileinfo_ = std::make_unique<model::TemporaryFile>(tmp);
-				             args.push_back("--fileinfo");
-				             args.push_back(tmp.string());
-			             }
-		             }
-		             model::DecompileRunSpec spec;
-		             spec.executable = python;
-		             spec.arguments = args;
-		             spec.workingDirectory = script.parent_path();
-		             spec.timeoutMs = 300000; // the Qt kExternalScriptWaitMs ceiling
-		             intelRun_ = std::make_unique<model::DecompileRun>();
-		             console_->appendBanner("retdec_export_intel", args, spec.workingDirectory.string());
-		             if (auto r = intelRun_->start(spec); !r)
-		             {
-			             warn("Export Threat Intel", r.error());
-			             intelRun_.reset();
-			             return;
-		             }
-		             intelOutPath_ = outPath;
-		             showStatusMessage("Exporting threat intel\xE2\x80\xA6");
-		             if (intelTimerOn_) ui_.cancelTimer(intelTimer_);
-		             intelTimerOn_ = true;
-		             intelTimer_ = ui_.startTimer(0.2f, true, [this](UiContext&) {
-			             if (!intelRun_ || !intelRun_->poll()) return;
-			             ui_.cancelTimer(intelTimer_);
-			             intelTimerOn_ = false;
-			             const auto log = model::readDecompilerLogForConsole(intelRun_->logPath());
-			             if (!log.text.empty()) console_->appendChunk(LiveConsolePanel::Stream::Stdout, log.text);
-			             const int code = intelRun_->exitCode().value_or(-1);
-			             const int64_t ms = intelRun_->elapsed().count();
-			             console_->appendFooter("retdec_export_intel", code, ms);
-			             commandLog_->appendRun("retdec_export_intel", intelRun_->arguments(),
-			                                    intelRun_->workingDirectory().string(), code, ms,
-			                                    model::readDecompilerLogTail(intelRun_->logPath()));
-			             const bool timedOut = intelRun_->timedOut();
-			             const auto state = intelRun_->state();
-			             const std::string err = intelRun_->errorString();
-			             intelRun_.reset();
-			             intelFileinfo_.reset();
-			             if (state == model::DecompileRun::State::FailedToStart)
-				             warn("Export Threat Intel", err);
-			             else if (timedOut)
-				             warn("Export Threat Intel",
-				                  "Export did not finish within 300 s and was stopped.\nSee Console for details.");
-			             else if (code != 0)
-				             warn("Export Threat Intel", std::format("Export failed (exit {}).\nSee Console for details.", code));
-			             else
-				             showStatusMessage("Exported threat intel " + intelOutPath_, 5000);
-		             });
-	             });
+	const std::string defaultJson =
+		(fs::absolute(cPath).parent_path() / (cPath.stem().string() + "-intel.json")).string();
+	files_->show(
+		FilePrompt::Mode::Save,
+		"Export Threat Intel",
+		defaultJson,
+		"*.json",
+		[this, script, python, cPath, configPath](const std::string& outPath) {
+			if (outPath.empty()) return;
+			std::vector<std::string> args = {
+				script.string(), "--c", cPath.string(), "--config", configPath.string(), "-o", outPath};
+			if (project_ && !project_->binaryPath().empty())
+			{
+				args.push_back("--binary");
+				args.push_back(project_->binaryPath());
+			}
+			intelFileinfo_.reset();
+			if (!inspect_->fileinfoJson().empty())
+			{
+				std::error_code e;
+				const fs::path tmp =
+					fs::temp_directory_path(e) / std::format("retdec-fileinfo-{}.json", forge::os::pid());
+				if (forge::os::write_file(tmp.string(), inspect_->fileinfoJson()))
+				{
+					intelFileinfo_ = std::make_unique<model::TemporaryFile>(tmp);
+					args.push_back("--fileinfo");
+					args.push_back(tmp.string());
+				}
+			}
+			model::DecompileRunSpec spec;
+			spec.executable = python;
+			spec.arguments = args;
+			spec.workingDirectory = script.parent_path();
+			spec.timeoutMs = 300000; // the Qt kExternalScriptWaitMs ceiling
+			intelRun_ = std::make_unique<model::DecompileRun>();
+			console_->appendBanner("retdec_export_intel", args, spec.workingDirectory.string());
+			if (auto r = intelRun_->start(spec); !r)
+			{
+				warn("Export Threat Intel", r.error());
+				intelRun_.reset();
+				return;
+			}
+			intelOutPath_ = outPath;
+			showStatusMessage("Exporting threat intel\xE2\x80\xA6");
+			if (intelTimerOn_) ui_.cancelTimer(intelTimer_);
+			intelTimerOn_ = true;
+			intelTimer_ = ui_.startTimer(0.2f, true, [this](UiContext&) {
+				if (!intelRun_ || !intelRun_->poll()) return;
+				ui_.cancelTimer(intelTimer_);
+				intelTimerOn_ = false;
+				const auto log = model::readDecompilerLogForConsole(intelRun_->logPath());
+				if (!log.text.empty()) console_->appendChunk(LiveConsolePanel::Stream::Stdout, log.text);
+				const int code = intelRun_->exitCode().value_or(-1);
+				const int64_t ms = intelRun_->elapsed().count();
+				console_->appendFooter("retdec_export_intel", code, ms);
+				commandLog_->appendRun(
+					"retdec_export_intel",
+					intelRun_->arguments(),
+					intelRun_->workingDirectory().string(),
+					code,
+					ms,
+					model::readDecompilerLogTail(intelRun_->logPath()));
+				const bool timedOut = intelRun_->timedOut();
+				const auto state = intelRun_->state();
+				const std::string err = intelRun_->errorString();
+				intelRun_.reset();
+				intelFileinfo_.reset();
+				if (state == model::DecompileRun::State::FailedToStart)
+					warn("Export Threat Intel", err);
+				else if (timedOut)
+					warn(
+						"Export Threat Intel",
+						"Export did not finish within 300 s and was stopped.\nSee Console for details.");
+				else if (code != 0)
+					warn(
+						"Export Threat Intel", std::format("Export failed (exit {}).\nSee Console for details.", code));
+				else
+					showStatusMessage("Exported threat intel " + intelOutPath_, 5000);
+			});
+		});
 }
 
 void MainWindow::onExportAs(const std::string& pluginId)
@@ -605,25 +638,29 @@ void MainWindow::onExportAs(const std::string& pluginId)
 		return;
 	}
 	const std::string ext = plug->fileExtension();
-	files_->show(FilePrompt::Mode::Save, "Export As", fileDialogStartDir(), ext.empty() ? std::string() : "*" + ext,
-	             [this, pluginId](const std::string& path) {
-		             if (path.empty()) return;
-		             const model::Plugin* p = model::PluginManager::instance().findPlugin(pluginId);
-		             if (!p) return; // unloaded while the dialog was open
-		             auto out = p->transform(decompiledC_->documentText());
-		             if (!out)
-		             {
-			             warn("Export As", out.error());
-			             return;
-		             }
-		             if (auto r = forge::os::write_file(path, *out); !r)
-		             {
-			             warn("Export As", r.err.what);
-			             return;
-		             }
-		             rememberLastOpenDir(path);
-		             showStatusMessage("Exported " + path, 5000);
-	             });
+	files_->show(
+		FilePrompt::Mode::Save,
+		"Export As",
+		fileDialogStartDir(),
+		ext.empty() ? std::string() : "*" + ext,
+		[this, pluginId](const std::string& path) {
+			if (path.empty()) return;
+			const model::Plugin* p = model::PluginManager::instance().findPlugin(pluginId);
+			if (!p) return; // unloaded while the dialog was open
+			auto out = p->transform(decompiledC_->documentText());
+			if (!out)
+			{
+				warn("Export As", out.error());
+				return;
+			}
+			if (auto r = forge::os::write_file(path, *out); !r)
+			{
+				warn("Export As", r.err.what);
+				return;
+			}
+			rememberLastOpenDir(path);
+			showStatusMessage("Exported " + path, 5000);
+		});
 }
 
 void MainWindow::onBatchDecompile()
@@ -639,9 +676,11 @@ void MainWindow::onBatchDecompile()
 		showStatusMessage("Decompiler already running", 2500);
 		return;
 	}
-	batchDlg_->show([this](const std::vector<std::string>& paths) {
-		if (!paths.empty()) startBatchDecompile(paths);
-	}, fileDialogStartDir());
+	batchDlg_->show(
+		[this](const std::vector<std::string>& paths) {
+			if (!paths.empty()) startBatchDecompile(paths);
+		},
+		fileDialogStartDir());
 }
 
 // ─── Analysis menu ───────────────────────────────────────────────────────────
@@ -685,25 +724,30 @@ void MainWindow::onRunStage()
 		choose();
 		return;
 	}
-	files_->show(FilePrompt::Mode::Open, "Open Binary", fileDialogStartDir(), {}, [this, choose](const std::string& path) {
-		if (path.empty()) return;
-		openBinary(path);
-		if (project_) choose();
-	});
+	files_->show(
+		FilePrompt::Mode::Open, "Open Binary", fileDialogStartDir(), {}, [this, choose](const std::string& path) {
+			if (path.empty()) return;
+			openBinary(path);
+			if (project_) choose();
+		});
 }
 
 void MainWindow::onConfigure()
 {
 	std::string start = settings_.decompiler.extraConfigPath;
 	if (start.empty() && project_) start = fs::path(project_->binaryPath()).parent_path().string();
-	files_->show(FilePrompt::Mode::Open, "Decompiler configuration JSON", start, model::kJsonFileFilter,
-	             [this](const std::string& path) {
-		             if (path.empty()) return;
-		             settings_.decompiler.extraConfigPath = path;
-		             (void)settings_.save();
-		             settings_.notifySettingsChanged();
-		             showStatusMessage("Decompiler --config: " + path, 5000);
-	             });
+	files_->show(
+		FilePrompt::Mode::Open,
+		"Decompiler configuration JSON",
+		start,
+		model::kJsonFileFilter,
+		[this](const std::string& path) {
+			if (path.empty()) return;
+			settings_.decompiler.extraConfigPath = path;
+			(void)settings_.save();
+			settings_.notifySettingsChanged();
+			showStatusMessage("Decompiler --config: " + path, 5000);
+		});
 }
 
 // ─── Tools menu ──────────────────────────────────────────────────────────────
@@ -721,27 +765,32 @@ void MainWindow::onCompare()
 		info("Compare", "The Decompiled C view is empty. Run decompilation first.");
 		return;
 	}
-	files_->show(FilePrompt::Mode::Open, "Compare with file", fileDialogStartDir(), "*.c;*.cpp;*.h;*.hpp",
-	             [this](const std::string& rightPath) {
-		             if (rightPath.empty()) return;
-		             rememberLastOpenDir(rightPath);
-		             auto r = forge::os::read_file(rightPath);
-		             if (!r)
-		             {
-			             warn("Compare", r.err.what);
-			             return;
-		             }
-		             compare_->setDiff(decompiledC_->documentText(), r.value, fs::path(rightPath).filename().string());
-		             toolWindow("Compare", 1100.f, 700.f).dlg->setTitle("Compare \xE2\x80\x94 Decompiled C vs file");
-		             showToolWindow("Compare");
-	             });
+	files_->show(
+		FilePrompt::Mode::Open,
+		"Compare with file",
+		fileDialogStartDir(),
+		"*.c;*.cpp;*.h;*.hpp",
+		[this](const std::string& rightPath) {
+			if (rightPath.empty()) return;
+			rememberLastOpenDir(rightPath);
+			auto r = forge::os::read_file(rightPath);
+			if (!r)
+			{
+				warn("Compare", r.err.what);
+				return;
+			}
+			compare_->setDiff(decompiledC_->documentText(), r.value, fs::path(rightPath).filename().string());
+			toolWindow("Compare", 1100.f, 700.f).dlg->setTitle("Compare \xE2\x80\x94 Decompiled C vs file");
+			showToolWindow("Compare");
+		});
 }
 
 void MainWindow::onCompareRefined()
 {
 	fs::path orig = decompilerOutputPath_;
 	if (orig.empty() && project_)
-		orig = model::locateGuiDecompiledCPath(fs::absolute(project_->binaryPath()), settings_.decompiler.decompileOutputDir);
+		orig = model::locateGuiDecompiledCPath(
+			fs::absolute(project_->binaryPath()), settings_.decompiler.decompileOutputDir);
 	const fs::path refined = orig.string() + ".refined.c";
 	std::error_code ec;
 	if (orig.empty() || !fs::exists(orig, ec) || !fs::exists(refined, ec))
@@ -774,8 +823,8 @@ void MainWindow::onCopyFunctionC()
 		showStatusMessage("Select a function in the Functions list.", 4000);
 		return;
 	}
-	std::string snippet = model::extractCForFunction(loadedArtifacts_->cPath, entry->startLine, entry->endLine,
-	                                                 entry->name.empty() ? entry->rawName : entry->name);
+	std::string snippet = model::extractCForFunction(
+		loadedArtifacts_->cPath, entry->startLine, entry->endLine, entry->name.empty() ? entry->rawName : entry->name);
 	auto blank = [](const std::string& s) {
 		return std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isspace(c); });
 	};
@@ -902,10 +951,11 @@ void MainWindow::onGotoLine()
 void MainWindow::onTriageMoreActions(Vec2 anchor)
 {
 	std::vector<MenuAction> items;
-	items.push_back({"Re-run fileinfo", project_ != nullptr, [this] {
-		                 if (project_)
-			                 inspect_->runFileinfo(project_->binaryPath(), model::resolveRetdecFileinfoExecutable().string());
-	                 }});
+	items.push_back(
+		{"Re-run fileinfo", project_ != nullptr, [this] {
+			 if (project_)
+				 inspect_->runFileinfo(project_->binaryPath(), model::resolveRetdecFileinfoExecutable().string());
+		 }});
 	items.push_back({"Open in Inspect panel", true, [this] { focusWorkspaceTab(kWsInspect); }});
 	items.push_back({"Configure decompiler\xE2\x80\xA6", true, [this] { onConfigure(); }});
 	const auto& fi = inspect_->fileinfo();
@@ -917,39 +967,40 @@ void MainWindow::onTriageMoreActions(Vec2 anchor)
 	items.push_back({"Copy CRC32", true, [this, crc] { copyText(crc, "CRC32"); }});
 	const std::string all = fi ? model::formatHashesForClipboard(*fi) : std::string();
 	items.push_back({"Copy all hashes", true, [this, all] {
-		                 if (all.empty())
-			                 showStatusMessage("No fileinfo hashes yet.", 3000);
-		                 else
-			                 copyText(all, "file hashes");
-	                 }});
+						 if (all.empty())
+							 showStatusMessage("No fileinfo hashes yet.", 3000);
+						 else
+							 copyText(all, "file hashes");
+					 }});
 	if (project_ && !project_->binaryPath().empty())
 	{
 		const std::string p = project_->binaryPath();
 		items.push_back({"Copy binary path", true, [this, p] { copyText(p, "binary path"); }});
 	}
 	items.push_back({"Open backend graph files\xE2\x80\xA6", true, [this] {
-		                 if (decompilerOutputPath_.empty())
-		                 {
-			                 showStatusMessage("No decompile output yet.", 3000);
-			                 return;
-		                 }
-		                 const fs::path dir = fs::absolute(decompilerOutputPath_).parent_path();
-		                 const std::string stem = decompilerOutputPath_.stem().string();
-		                 int dots = 0;
-		                 std::error_code ec;
-		                 for (const auto& de: fs::directory_iterator(dir, ec))
-		                 {
-			                 const std::string n = de.path().filename().string();
-			                 if (n == stem + ".cg.dot" || (n.starts_with(stem + ".cfg.") && n.ends_with(".dot"))) ++dots;
-		                 }
-		                 if (dots == 0)
-		                 {
-			                 showStatusMessage("No backend CFG/CG DOT files next to the decompiled C.", 4000);
-			                 return;
-		                 }
-		                 openInFileManager(dir);
-		                 showStatusMessage(std::format("Opened {} ({} graph file(s))", dir.string(), dots), 4000);
-	                 }});
+						 if (decompilerOutputPath_.empty())
+						 {
+							 showStatusMessage("No decompile output yet.", 3000);
+							 return;
+						 }
+						 const fs::path dir = fs::absolute(decompilerOutputPath_).parent_path();
+						 const std::string stem = decompilerOutputPath_.stem().string();
+						 int dots = 0;
+						 std::error_code ec;
+						 for (const auto& de: fs::directory_iterator(dir, ec))
+						 {
+							 const std::string n = de.path().filename().string();
+							 if (n == stem + ".cg.dot" || (n.starts_with(stem + ".cfg.") && n.ends_with(".dot")))
+								 ++dots;
+						 }
+						 if (dots == 0)
+						 {
+							 showStatusMessage("No backend CFG/CG DOT files next to the decompiled C.", 4000);
+							 return;
+						 }
+						 openInFileManager(dir);
+						 showStatusMessage(std::format("Opened {} ({} graph file(s))", dir.string(), dots), 4000);
+					 }});
 	triageMenu_->open(root_, anchor, std::move(items));
 }
 
@@ -1003,8 +1054,13 @@ void MainWindow::applyEditorFont()
 	assembly_->applyEditorFont(px);
 	ir_->applyEditorFont(px);
 	triPane_->applyEditorFont(px);
-	for (CodeView* v: {&decompiledC_->view(), &assembly_->view(), &ir_->view(), &triPane_->asmPane().editor(),
-	                   &triPane_->irPane().editor(), &triPane_->cPane().editor()})
+	for (CodeView* v:
+		 {&decompiledC_->view(),
+		  &assembly_->view(),
+		  &ir_->view(),
+		  &triPane_->asmPane().editor(),
+		  &triPane_->irPane().editor(),
+		  &triPane_->cPane().editor()})
 		v->setShowGutter(g.showLineNumbers);
 }
 
@@ -1013,7 +1069,8 @@ void MainWindow::applySettings()
 	if (opts_.applyTheme)
 	{
 		const ThemeKind want = themeKindFor(settings_.general.theme);
-		const bool first = !ui_.hasClass(ui_.root(), "retdec-theme-mocha") && !ui_.hasClass(ui_.root(), "retdec-theme-latte");
+		const bool first =
+			!ui_.hasClass(ui_.root(), "retdec-theme-mocha") && !ui_.hasClass(ui_.root(), "retdec-theme-latte");
 		if (first || want != theme_)
 		{
 			if (auto r = applyTheme(ui_, want))
@@ -1022,9 +1079,16 @@ void MainWindow::applySettings()
 				diagnostics_->addMessage(model::Severity::Warning, "theme", r.error());
 		}
 		const CodePalette pal = codePaletteFor(theme_);
-		for (CodeView* v: {&decompiledC_->view(), &assembly_->view(), &ir_->view(), &triPane_->asmPane().editor(),
-		                   &triPane_->irPane().editor(), &triPane_->cPane().editor(), &console_->view(),
-		                   &commandLog_->view(), &binary_->hexView()})
+		for (CodeView* v:
+			 {&decompiledC_->view(),
+			  &assembly_->view(),
+			  &ir_->view(),
+			  &triPane_->asmPane().editor(),
+			  &triPane_->irPane().editor(),
+			  &triPane_->cPane().editor(),
+			  &console_->view(),
+			  &commandLog_->view(),
+			  &binary_->hexView()})
 			v->setPalette(pal);
 	}
 	applyEditorFont();
@@ -1044,43 +1108,49 @@ void MainWindow::requestQuit()
 	auto afterRun = [this] {
 		if (project_ && project_->isModified())
 		{
-			askQuestion("Unsaved Changes", "You have unsaved project changes. Save before quitting?",
-			            {"Save", "Discard", "Cancel"}, [this](int b) {
-				            if (b == 2) return;
-				            if (b == 1)
-				            {
-					            finishQuit();
-					            return;
-				            }
-				            if (!lastProjectSavePath_.empty())
-				            {
-					            if (saveProject(lastProjectSavePath_)) finishQuit();
-					            return;
-				            }
-				            const fs::path bin(project_->binaryPath());
-				            const std::string start = (bin.parent_path() / (bin.stem().string() + ".retdec")).string();
-				            files_->show(FilePrompt::Mode::Save, "Save Project", start, "*.retdec",
-				                         [this](const std::string& chosen) {
-					                         if (chosen.empty()) return;
-					                         std::string path = chosen;
-					                         if (!endsWithCi(path, ".retdec")) path += ".retdec";
-					                         if (!saveProject(path)) return;
-					                         lastProjectSavePath_ = fs::absolute(path).string();
-					                         finishQuit();
-				                         });
-			            });
+			askQuestion(
+				"Unsaved Changes",
+				"You have unsaved project changes. Save before quitting?",
+				{"Save", "Discard", "Cancel"},
+				[this](int b) {
+					if (b == 2) return;
+					if (b == 1)
+					{
+						finishQuit();
+						return;
+					}
+					if (!lastProjectSavePath_.empty())
+					{
+						if (saveProject(lastProjectSavePath_)) finishQuit();
+						return;
+					}
+					const fs::path bin(project_->binaryPath());
+					const std::string start = (bin.parent_path() / (bin.stem().string() + ".retdec")).string();
+					files_->show(
+						FilePrompt::Mode::Save, "Save Project", start, "*.retdec", [this](const std::string& chosen) {
+							if (chosen.empty()) return;
+							std::string path = chosen;
+							if (!endsWithCi(path, ".retdec")) path += ".retdec";
+							if (!saveProject(path)) return;
+							lastProjectSavePath_ = fs::absolute(path).string();
+							finishQuit();
+						});
+				});
 			return;
 		}
 		finishQuit();
 	};
 	if (analysisRunning_)
 	{
-		askQuestion("Quit", "A decompilation or analysis run is in progress. Quit anyway?", {"Yes", "No"},
-		            [this, afterRun](int b) {
-			            if (b != 0) return;
-			            stopAnalysis();
-			            afterRun();
-		            });
+		askQuestion(
+			"Quit",
+			"A decompilation or analysis run is in progress. Quit anyway?",
+			{"Yes", "No"},
+			[this, afterRun](int b) {
+				if (b != 0) return;
+				stopAnalysis();
+				afterRun();
+			});
 		return;
 	}
 	afterRun();
@@ -1099,7 +1169,8 @@ bool MainWindow::handleWindowCloseRequest()
 void MainWindow::attachWindow(fuse::app::AppWindow& window)
 {
 	window.setCloseRequestHandler([this](fuse::app::AppWindow&) { return handleWindowCloseRequest(); });
-	window.setFileDropHandler([this](fuse::app::AppWindow&, const fuse::app::FileDrop& drop) { dropFiles(drop.paths); });
+	window.setFileDropHandler(
+		[this](fuse::app::AppWindow&, const fuse::app::FileDrop& drop) { dropFiles(drop.paths); });
 }
 
 void MainWindow::detachWindow(fuse::app::AppWindow& window)

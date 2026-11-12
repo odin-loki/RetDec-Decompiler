@@ -29,7 +29,10 @@ namespace {
 struct TempDir
 {
 	fs::path path;
-	TempDir() { path = fs::path(forge::os::fs::make_temp_dir("retdec-gui-settings-").value); }
+	TempDir()
+	{
+		path = fs::path(forge::os::fs::make_temp_dir("retdec-gui-settings-").value);
+	}
 	~TempDir()
 	{
 		std::error_code ec;
@@ -45,8 +48,14 @@ std::string readAll(const fs::path& p)
 
 class SettingsTest : public ::testing::Test {
 protected:
-	void SetUp() override { AppSettings::instance().resetToDefaults(); }
-	void TearDown() override { AppSettings::instance().resetToDefaults(); }
+	void SetUp() override
+	{
+		AppSettings::instance().resetToDefaults();
+	}
+	void TearDown() override
+	{
+		AppSettings::instance().resetToDefaults();
+	}
 	TempDir tmp;
 };
 
@@ -400,7 +409,8 @@ TEST_F(SettingsTest, LoadMissingFileKeepsDefaultsAndBadFileFails)
 
 TEST_F(SettingsTest, LoadFillsMissingKeysWithDefaults)
 {
-	std::ofstream(tmp.path / "partial.json") << R"({"ML": {"topK": 12, "temperature": "0.3"}, "Decompiler": {"outputLang": "cxx"}})";
+	std::ofstream(tmp.path / "partial.json")
+		<< R"({"ML": {"topK": 12, "temperature": "0.3"}, "Decompiler": {"outputLang": "cxx"}})";
 	AppSettings s;
 	s.setStoragePath(tmp.path / "partial.json");
 	ASSERT_TRUE(s.load().has_value());
@@ -421,7 +431,7 @@ TEST_F(SettingsTest, SaveIsAtomic)
 	int files = 0;
 	for (const auto& e: fs::directory_iterator(tmp.path))
 	{
-		(void) e;
+		(void)e;
 		++files;
 	}
 	EXPECT_EQ(files, 1);
@@ -567,7 +577,10 @@ const RetdecGuiPluginV1& visualisationPlugin()
 /// Plugin manager that ignores AppSettings' enabled list.
 struct Manager : m::PluginManager
 {
-	Manager() { setEnabledList(std::vector<std::string>{}); }
+	Manager()
+	{
+		setEnabledList(std::vector<std::string>{});
+	}
 };
 
 } // namespace

@@ -166,7 +166,8 @@ void FunctionListPanel::build(NodeHandle parent)
 	ui_.setCss(emptyState_, "gap", "6px");
 	const NodeHandle et = w::label(ui_, emptyState_, "No functions yet");
 	ui_.setCss(et, "font-size", "16px");
-	const NodeHandle eh = w::label(ui_, emptyState_, "Open a binary and run analysis (F5) to populate the function list.");
+	const NodeHandle eh =
+		w::label(ui_, emptyState_, "Open a binary and run analysis (F5) to populate the function list.");
 	ui_.addClass(eh, "dim");
 
 	host_ = ui_.create(ui_.registry().find(FunclistHost::kName), area);
@@ -197,7 +198,8 @@ void FunctionListPanel::build(NodeHandle parent)
 	{
 		w::setTableColumnWidth(ui_, table_, static_cast<fuse::ui::u32>(c), kWidths[c]);
 		painters_[static_cast<std::size_t>(c)] = {this, c};
-		delegates_[static_cast<std::size_t>(c)] = {&painters_[static_cast<std::size_t>(c)], &FunctionListPanel::paintCell};
+		delegates_[static_cast<std::size_t>(c)] = {
+			&painters_[static_cast<std::size_t>(c)], &FunctionListPanel::paintCell};
 		w::setTableDelegate(ui_, table_, static_cast<fuse::ui::u32>(c), &delegates_[static_cast<std::size_t>(c)]);
 	}
 	// Qt ExtendedSelection; double click / Enter activate.
@@ -211,7 +213,8 @@ void FunctionListPanel::build(NodeHandle parent)
 	ui_.connect(table_, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) {
 		if (applyingSelection_) return;
 		const int row = static_cast<int>(a.value);
-		if (row >= 0 && static_cast<std::size_t>(row) < proxy_.rowCount()) current_ = proxy_.entry(static_cast<std::size_t>(row)).address;
+		if (row >= 0 && static_cast<std::size_t>(row) < proxy_.rowCount())
+			current_ = proxy_.entry(static_cast<std::size_t>(row)).address;
 	});
 	ui_.connect(table_, SignalKind::SelectionChanged, [this](UiContext&, NodeHandle, const SignalArgs&) {
 		if (applyingSelection_) return;
@@ -476,7 +479,8 @@ void FunctionListPanel::applySelectionToTable()
 	applyingSelection_ = true;
 	w::tableClearSelection(ui_, table_);
 	for (std::size_t r = 0; r < proxy_.rowCount(); ++r)
-		if (selected_.count(proxy_.entry(r).address)) w::setTableRowSelected(ui_, table_, static_cast<fuse::ui::u32>(r), true);
+		if (selected_.count(proxy_.entry(r).address))
+			w::setTableRowSelected(ui_, table_, static_cast<fuse::ui::u32>(r), true);
 	ui_.setValue(table_, current_ ? static_cast<float>(proxy_.rowForAddress(*current_)) : -1.f, false);
 	applyingSelection_ = false;
 }
@@ -816,7 +820,9 @@ void FunctionListPanel::buildPrompt()
 	const NodeHandle ok = w::button(ui_, buttons, "OK");
 	ui_.addClass(ok, "primary");
 	const NodeHandle cancel = w::button(ui_, buttons, "Cancel");
-	auto accept = [this](UiContext& u, NodeHandle, const SignalArgs&) { applyPrompt(std::string(u.text(promptEdit_))); };
+	auto accept = [this](UiContext& u, NodeHandle, const SignalArgs&) {
+		applyPrompt(std::string(u.text(promptEdit_)));
+	};
 	ui_.connect(ok, SignalKind::Clicked, accept);
 	ui_.connect(promptEdit_, SignalKind::Submitted, accept);
 	ui_.connect(cancel, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { cancelPrompt(); });
@@ -955,11 +961,7 @@ void FunctionListPanel::openExportDialog(bool json)
 	const std::string dir = std::filesystem::current_path(ec).generic_string();
 	fileDlgJson_ = json;
 	fileDlg_ = w::fileDialog(
-		ui_,
-		json ? "Export Function List (JSON)" : "Export Function List (CSV)",
-		dir,
-		json ? "*.json" : "*.csv",
-		true);
+		ui_, json ? "Export Function List (JSON)" : "Export Function List (CSV)", dir, json ? "*.json" : "*.csv", true);
 	// Pre-fill the file name (third row of the dialog body: label + line edit).
 	const NodeHandle body = w::dialogBody(ui_, fileDlg_);
 	NodeHandle row = ui_.firstChild(body);
@@ -975,7 +977,8 @@ void FunctionListPanel::openExportDialog(bool json)
 		const std::string path(a.text);
 		const auto r = fileDlgJson_ ? exportJson(path) : exportCsv(path);
 		ui_.setText(
-			status_, r ? std::format("Exported {} functions to {}", proxy_.rowCount(), path) : "Export failed: " + r.error());
+			status_,
+			r ? std::format("Exported {} functions to {}", proxy_.rowCount(), path) : "Export failed: " + r.error());
 	});
 	w::openDialog(ui_, fileDlg_);
 }
@@ -1043,10 +1046,12 @@ void FunctionListPanel::paintCell(
 		const Rect track{cell.x - 2.f, cell.y + 4.f, cell.w + 4.f, cell.h - 8.f};
 		dl.rect(track, pc.tint(Color::rgb(P.surface0)), 3.f);
 		const Rect fill{track.x, track.y, std::round(track.w * conf), track.h};
-		if (fill.w > 0.f) dl.rect(fill, pc.tint(Color::rgb(tierColor(P, model::confidenceTier(conf)), 200.f / 255.f)), 3.f);
+		if (fill.w > 0.f)
+			dl.rect(fill, pc.tint(Color::rgb(tierColor(P, model::confidenceTier(conf)), 200.f / 255.f)), 3.f);
 		// Text on the bar's fill where it covers the middle, body text over the track.
 		const uint32_t textColor = conf >= 0.5f ? P.onAccent : P.text;
-		ui.paintString(dl, text, track, pc.tint(Color::rgb(textColor)), fs - 2.f, fuse::ui::TextAlignment::Center, pc.node.index);
+		ui.paintString(
+			dl, text, track, pc.tint(Color::rgb(textColor)), fs - 2.f, fuse::ui::TextAlignment::Center, pc.node.index);
 		break;
 	}
 	case model::FnColPatterns: {
@@ -1060,10 +1065,18 @@ void FunctionListPanel::paintCell(
 			if (model::patternActive(e.patterns, i))
 			{
 				dl.rect(r, pc.tint(Color::rgb(badge.rgb)), 2.f);
-				ui.paintString(dl, badge.label, r, pc.tint(Color::rgb(kBadgeText)), 8.f, fuse::ui::TextAlignment::Center, pc.node.index);
+				ui.paintString(
+					dl,
+					badge.label,
+					r,
+					pc.tint(Color::rgb(kBadgeText)),
+					8.f,
+					fuse::ui::TextAlignment::Center,
+					pc.node.index);
 			}
 			else
-				dl.roundedRect(r, pc.tint(Color::rgb(P.surface0)), {2.f, 2.f, 2.f, 2.f}, pc.tint(Color::rgb(P.surface1)), 0.5f);
+				dl.roundedRect(
+					r, pc.tint(Color::rgb(P.surface0)), {2.f, 2.f, 2.f, 2.f}, pc.tint(Color::rgb(P.surface1)), 0.5f);
 			x += kBadge + kSpacing;
 		}
 		break;
@@ -1082,7 +1095,14 @@ void FunctionListPanel::paintCell(
 		}
 		// Qt: Address and Name in the monospace face.
 		const bool mono = col == model::FnColAddress || col == model::FnColName;
-		ui.paintString(dl, text, cell, pc.tint(Color::rgb(color)), fs, fuse::ui::TextAlignment::Start, pc.node.index,
+		ui.paintString(
+			dl,
+			text,
+			cell,
+			pc.tint(Color::rgb(color)),
+			fs,
+			fuse::ui::TextAlignment::Start,
+			pc.node.index,
 			mono ? styledFont(ui, pc.node, true, false) : nullptr);
 		break;
 	}

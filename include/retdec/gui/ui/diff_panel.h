@@ -38,8 +38,7 @@
 
 namespace retdec::gui::ui {
 
-class DiffPanel
-{
+class DiffPanel {
 public:
 	static constexpr std::string_view kTitle = "Diff / Compare";
 
@@ -54,7 +53,10 @@ public:
 	DiffPanel(const DiffPanel&) = delete;
 	DiffPanel& operator=(const DiffPanel&) = delete;
 
-	fuse::ui::NodeHandle root() const { return root_; }
+	fuse::ui::NodeHandle root() const
+	{
+		return root_;
+	}
 
 	// ── data in ─────────────────────────────────────────────────────────────
 	/// Diffs @p before against @p after and shows it; @p stageName labels the
@@ -66,25 +68,49 @@ public:
 	void selectStage(int index);
 	void clear();
 
-	const model::DiffResult& currentDiff() const { return diff_; }
-	const std::vector<model::DiffStage>& stages() const { return stages_; }
+	const model::DiffResult& currentDiff() const
+	{
+		return diff_;
+	}
+	const std::vector<model::DiffStage>& stages() const
+	{
+		return stages_;
+	}
 
 	// ── view ────────────────────────────────────────────────────────────────
 	void setViewMode(ViewMode m);
-	ViewMode viewMode() const { return mode_; }
+	ViewMode viewMode() const
+	{
+		return mode_;
+	}
 	/// Next / previous hunk (cyclic). Returns the row scrolled to, -1 if none.
 	int nextHunk();
 	int prevHunk();
 	/// Top visible row of the panes.
-	int firstVisibleRow() const { return first_; }
+	int firstVisibleRow() const
+	{
+		return first_;
+	}
 	/// Highlighted row (the hunk jumped to, or the clicked row), -1 = none.
-	int cursorRow() const { return cursorRow_; }
+	int cursorRow() const
+	{
+		return cursorRow_;
+	}
 	void scrollToRow(int row);
-	std::string statsText() const { return model::diffStatsText(diff_); }
+	std::string statsText() const
+	{
+		return model::diffStatsText(diff_);
+	}
 
 	// ── export ──────────────────────────────────────────────────────────────
-	std::string unifiedText() const { return diff_.toUnifiedDiff("before", "after"); }
-	std::string htmlText() const { return diff_.toHtml(); }
+	std::string unifiedText() const
+	{
+		return diff_.toUnifiedDiff("before", "after");
+	}
+	std::string htmlText() const
+	{
+		return diff_.toHtml();
+	}
 	std::expected<void, std::string> exportUnified(const std::string& path) const;
 	std::expected<void, std::string> exportHtml(const std::string& path) const;
 	void openExportDialog(bool html);
@@ -97,23 +123,71 @@ public:
 	std::function<bool(const std::string&)> clipboardWriter;
 
 	// ── test hooks ──────────────────────────────────────────────────────────
-	const std::vector<model::SideBySideRow>& sideBySideRows() const { return sbs_; }
-	const std::vector<model::UnifiedRow>& unifiedRows() const { return uni_; }
+	const std::vector<model::SideBySideRow>& sideBySideRows() const
+	{
+		return sbs_;
+	}
+	const std::vector<model::UnifiedRow>& unifiedRows() const
+	{
+		return uni_;
+	}
 	std::size_t rowCount() const;
-	fuse::ui::NodeHandle leftPane() const { return leftPane_; }
-	fuse::ui::NodeHandle rightPane() const { return rightPane_; }
-	fuse::ui::NodeHandle unifiedPane() const { return uniPane_; }
-	fuse::ui::NodeHandle leftLabel() const { return leftLabel_; }
-	fuse::ui::NodeHandle rightLabel() const { return rightLabel_; }
-	fuse::ui::NodeHandle statsNode() const { return stats_; }
-	fuse::ui::NodeHandle stageCombo() const { return stageCombo_; }
-	fuse::ui::NodeHandle modeCombo() const { return modeCombo_; }
-	fuse::ui::NodeHandle prevButton() const { return prevBtn_; }
-	fuse::ui::NodeHandle nextButton() const { return nextBtn_; }
-	fuse::ui::NodeHandle copyButton() const { return copyBtn_; }
-	fuse::ui::NodeHandle exportUnifiedButton() const { return exportUBtn_; }
-	fuse::ui::NodeHandle exportHtmlButton() const { return exportHBtn_; }
-	fuse::ui::NodeHandle fileDialogNode() const { return fileDlg_; }
+	fuse::ui::NodeHandle leftPane() const
+	{
+		return leftPane_;
+	}
+	fuse::ui::NodeHandle rightPane() const
+	{
+		return rightPane_;
+	}
+	fuse::ui::NodeHandle unifiedPane() const
+	{
+		return uniPane_;
+	}
+	fuse::ui::NodeHandle leftLabel() const
+	{
+		return leftLabel_;
+	}
+	fuse::ui::NodeHandle rightLabel() const
+	{
+		return rightLabel_;
+	}
+	fuse::ui::NodeHandle statsNode() const
+	{
+		return stats_;
+	}
+	fuse::ui::NodeHandle stageCombo() const
+	{
+		return stageCombo_;
+	}
+	fuse::ui::NodeHandle modeCombo() const
+	{
+		return modeCombo_;
+	}
+	fuse::ui::NodeHandle prevButton() const
+	{
+		return prevBtn_;
+	}
+	fuse::ui::NodeHandle nextButton() const
+	{
+		return nextBtn_;
+	}
+	fuse::ui::NodeHandle copyButton() const
+	{
+		return copyBtn_;
+	}
+	fuse::ui::NodeHandle exportUnifiedButton() const
+	{
+		return exportUBtn_;
+	}
+	fuse::ui::NodeHandle exportHtmlButton() const
+	{
+		return exportHBtn_;
+	}
+	fuse::ui::NodeHandle fileDialogNode() const
+	{
+		return fileDlg_;
+	}
 	/// Rows that fit in a pane.
 	int visibleRows() const;
 

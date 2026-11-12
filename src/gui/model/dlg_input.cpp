@@ -13,8 +13,10 @@ namespace retdec::gui::model {
 std::string_view dlgTrim(std::string_view s)
 {
 	auto ws = [](char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v'; };
-	while (!s.empty() && ws(s.front())) s.remove_prefix(1);
-	while (!s.empty() && ws(s.back())) s.remove_suffix(1);
+	while (!s.empty() && ws(s.front()))
+		s.remove_prefix(1);
+	while (!s.empty() && ws(s.back()))
+		s.remove_suffix(1);
 	return s;
 }
 
@@ -28,9 +30,12 @@ std::optional<uint64_t> dlgParseUnsigned(std::string_view text, int base)
 	for (char c: text)
 	{
 		int d = -1;
-		if (c >= '0' && c <= '9') d = c - '0';
-		else if (c >= 'a' && c <= 'z') d = c - 'a' + 10;
-		else if (c >= 'A' && c <= 'Z') d = c - 'A' + 10;
+		if (c >= '0' && c <= '9')
+			d = c - '0';
+		else if (c >= 'a' && c <= 'z')
+			d = c - 'a' + 10;
+		else if (c >= 'A' && c <= 'Z')
+			d = c - 'A' + 10;
 		if (d < 0 || d >= base) return std::nullopt;
 		if (v > (std::numeric_limits<uint64_t>::max() - uint64_t(d)) / uint64_t(base)) return std::nullopt;
 		v = v * uint64_t(base) + uint64_t(d);
@@ -61,7 +66,8 @@ std::optional<int> dlgParseInt(std::string_view text)
 	if (text.empty() || text.front() == '+' || text.front() == '-') return std::nullopt;
 	const auto u = dlgParseUnsigned(text, 10);
 	if (!u) return std::nullopt;
-	const uint64_t lim = neg ? uint64_t(std::numeric_limits<int>::max()) + 1 : uint64_t(std::numeric_limits<int>::max());
+	const uint64_t lim =
+		neg ? uint64_t(std::numeric_limits<int>::max()) + 1 : uint64_t(std::numeric_limits<int>::max());
 	if (*u > lim) return std::nullopt;
 	return neg ? int(-int64_t(*u)) : int(*u);
 }
@@ -84,8 +90,10 @@ std::expected<uint64_t, std::string> dlgParseEntryPoint(std::string_view text)
 	const std::string_view t = dlgTrim(text);
 	if (t.empty()) return uint64_t{0};
 	std::optional<uint64_t> v;
-	if (t.size() >= 2 && t[0] == '0' && (t[1] == 'x' || t[1] == 'X')) v = dlgParseUnsigned(t.substr(2), 16);
-	else v = dlgParseUnsigned(t, 10);
+	if (t.size() >= 2 && t[0] == '0' && (t[1] == 'x' || t[1] == 'X'))
+		v = dlgParseUnsigned(t.substr(2), 16);
+	else
+		v = dlgParseUnsigned(t, 10);
 	if (!v) return std::unexpected(std::string("Invalid entry point (use 0x… hex or decimal)."));
 	return *v;
 }

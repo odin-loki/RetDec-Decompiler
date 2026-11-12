@@ -34,15 +34,17 @@
 
 namespace retdec::gui::ui {
 
-class CallGraphPanel
-{
+class CallGraphPanel {
 public:
 	CallGraphPanel(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent);
 	~CallGraphPanel();
 	CallGraphPanel(const CallGraphPanel&) = delete;
 	CallGraphPanel& operator=(const CallGraphPanel&) = delete;
 
-	fuse::ui::NodeHandle root() const { return m_root; }
+	fuse::ui::NodeHandle root() const
+	{
+		return m_root;
+	}
 	static constexpr const char* kTitle = "Call Graph";
 
 	// ── Data in ──────────────────────────────────────────────────────────────
@@ -84,26 +86,71 @@ public:
 	std::expected<void, std::string> exportTo(GraphExportFormat format, const std::filesystem::path& path);
 
 	// ── State (tests, main window) ───────────────────────────────────────────
-	const model::CallGraphModel& graph() const { return m_model; }
-	GraphView& view() { return *m_view; }
-	int visibleNodeCount() const { return m_model.visibleNodeCount(); }
+	const model::CallGraphModel& graph() const
+	{
+		return m_model;
+	}
+	GraphView& view()
+	{
+		return *m_view;
+	}
+	int visibleNodeCount() const
+	{
+		return m_model.visibleNodeCount();
+	}
 	std::string infoLabel() const;
 	std::string focusLabel() const;
 	bool clearFocusEnabled() const;
 	/// Module combo items ("All modules", "Module N", ...).
 	std::vector<std::string> moduleItems() const;
-	fuse::ui::NodeHandle nameFilterBox() const { return m_nameFilter; }
-	fuse::ui::NodeHandle minCallsSpin() const { return m_minCalls; }
-	fuse::ui::NodeHandle depthSpin() const { return m_depth; }
-	fuse::ui::NodeHandle hideLibraryCheck() const { return m_hideLib; }
-	fuse::ui::NodeHandle moduleCombo() const { return m_module; }
-	fuse::ui::NodeHandle hopsSpin() const { return m_hops; }
-	fuse::ui::NodeHandle clearFocusButton() const { return m_clearFocus; }
-	fuse::ui::NodeHandle layoutCombo() const { return m_layoutCombo; }
-	fuse::ui::NodeHandle findBox() const { return m_find; }
-	fuse::ui::NodeHandle collapseSccsCheck() const { return m_collapse; }
-	fuse::ui::NodeHandle fitButton() const { return m_fitBtn; }
-	fuse::ui::NodeHandle resetButton() const { return m_resetBtn; }
+	fuse::ui::NodeHandle nameFilterBox() const
+	{
+		return m_nameFilter;
+	}
+	fuse::ui::NodeHandle minCallsSpin() const
+	{
+		return m_minCalls;
+	}
+	fuse::ui::NodeHandle depthSpin() const
+	{
+		return m_depth;
+	}
+	fuse::ui::NodeHandle hideLibraryCheck() const
+	{
+		return m_hideLib;
+	}
+	fuse::ui::NodeHandle moduleCombo() const
+	{
+		return m_module;
+	}
+	fuse::ui::NodeHandle hopsSpin() const
+	{
+		return m_hops;
+	}
+	fuse::ui::NodeHandle clearFocusButton() const
+	{
+		return m_clearFocus;
+	}
+	fuse::ui::NodeHandle layoutCombo() const
+	{
+		return m_layoutCombo;
+	}
+	fuse::ui::NodeHandle findBox() const
+	{
+		return m_find;
+	}
+	fuse::ui::NodeHandle collapseSccsCheck() const
+	{
+		return m_collapse;
+	}
+	fuse::ui::NodeHandle fitButton() const
+	{
+		return m_fitBtn;
+	}
+	fuse::ui::NodeHandle resetButton() const
+	{
+		return m_resetBtn;
+	}
 	fuse::ui::NodeHandle button(GraphExportFormat f) const;
 
 	/// Context-menu lines for a node ("-" = separator), and running line `index` (as picking it does).

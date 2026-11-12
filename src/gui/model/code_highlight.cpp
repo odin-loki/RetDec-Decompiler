@@ -52,97 +52,182 @@ bool inList(const std::string_view (&list)[N], std::string_view w)
 
 // ── Word lists (the Qt highlighter's rule sets) ─────────────────────────────
 
-constexpr std::string_view kCKeywords[] = {
-	"auto",   "break",  "case",   "const",    "continue", "default", "do",      "double",
-	"else",   "enum",   "extern", "float",    "for",      "goto",    "if",      "inline",
-	"int",    "long",   "register", "return", "short",    "signed",  "sizeof",  "static",
-	"struct", "switch", "typedef", "union",   "unsigned", "void",    "volatile", "while"};
+constexpr std::string_view kCKeywords[] = {"auto",     "break",  "case",     "const",  "continue", "default", "do",
+										   "double",   "else",   "enum",     "extern", "float",    "for",     "goto",
+										   "if",       "inline", "int",      "long",   "register", "return",  "short",
+										   "signed",   "sizeof", "static",   "struct", "switch",   "typedef", "union",
+										   "unsigned", "void",   "volatile", "while"};
 
 constexpr std::string_view kCxxKeywords[] = {
-	"auto",     "break",     "case",      "catch",    "class",    "const",     "constexpr", "continue",
-	"default",  "delete",    "do",        "double",   "else",     "enum",      "explicit",  "extern",
-	"false",    "float",     "for",       "friend",   "goto",     "if",        "inline",    "int",
-	"long",     "mutable",   "namespace", "new",      "nullptr",  "operator",  "private",   "protected",
-	"public",   "register",  "return",    "short",    "signed",   "sizeof",    "static",    "struct",
-	"switch",   "template",  "this",      "throw",    "true",     "try",       "typedef",   "typeid",
-	"typename", "union",     "unsigned",  "using",    "virtual",  "void",      "volatile",  "while",
-	"override", "final",     "noexcept",  "static_cast", "reinterpret_cast", "const_cast"};
+	"auto",
+	"break",
+	"case",
+	"catch",
+	"class",
+	"const",
+	"constexpr",
+	"continue",
+	"default",
+	"delete",
+	"do",
+	"double",
+	"else",
+	"enum",
+	"explicit",
+	"extern",
+	"false",
+	"float",
+	"for",
+	"friend",
+	"goto",
+	"if",
+	"inline",
+	"int",
+	"long",
+	"mutable",
+	"namespace",
+	"new",
+	"nullptr",
+	"operator",
+	"private",
+	"protected",
+	"public",
+	"register",
+	"return",
+	"short",
+	"signed",
+	"sizeof",
+	"static",
+	"struct",
+	"switch",
+	"template",
+	"this",
+	"throw",
+	"true",
+	"try",
+	"typedef",
+	"typeid",
+	"typename",
+	"union",
+	"unsigned",
+	"using",
+	"virtual",
+	"void",
+	"volatile",
+	"while",
+	"override",
+	"final",
+	"noexcept",
+	"static_cast",
+	"reinterpret_cast",
+	"const_cast"};
 
 constexpr std::string_view kCTypes[] = {
-	"uint8_t", "uint16_t", "uint32_t", "uint64_t", "int8_t",  "int16_t", "int32_t", "int64_t",
-	"size_t",  "ptrdiff_t", "uintptr_t", "intptr_t", "bool",  "wchar_t", "char"};
+	"uint8_t",
+	"uint16_t",
+	"uint32_t",
+	"uint64_t",
+	"int8_t",
+	"int16_t",
+	"int32_t",
+	"int64_t",
+	"size_t",
+	"ptrdiff_t",
+	"uintptr_t",
+	"intptr_t",
+	"bool",
+	"wchar_t",
+	"char"};
 
 constexpr std::string_view kCSharpKeywords[] = {
-	"abstract", "as",       "base",      "bool",     "break",    "byte",     "case",     "catch",
-	"char",     "checked",  "class",     "const",    "continue", "decimal",  "default",  "delegate",
-	"do",       "double",   "else",      "enum",     "event",    "explicit", "extern",   "false",
-	"finally",  "fixed",    "float",     "for",      "foreach",  "goto",     "if",       "implicit",
-	"in",       "int",      "interface", "internal", "is",       "lock",     "long",     "namespace",
-	"new",      "null",     "object",    "operator", "out",      "override", "params",   "private",
-	"protected", "public",  "readonly",  "ref",      "return",   "sbyte",    "sealed",   "short",
-	"sizeof",   "stackalloc", "static",  "string",   "struct",   "switch",   "this",     "throw",
-	"true",     "try",      "typeof",    "uint",     "ulong",    "unchecked", "unsafe",  "ushort",
-	"using",    "virtual",  "void",      "volatile", "while",    "var",      "async",    "await",
-	"yield",    "get",      "set",       "value",    "partial"};
+	"abstract", "as",      "base",    "bool",       "break",    "byte",     "case",      "catch",     "char",
+	"checked",  "class",   "const",   "continue",   "decimal",  "default",  "delegate",  "do",        "double",
+	"else",     "enum",    "event",   "explicit",   "extern",   "false",    "finally",   "fixed",     "float",
+	"for",      "foreach", "goto",    "if",         "implicit", "in",       "int",       "interface", "internal",
+	"is",       "lock",    "long",    "namespace",  "new",      "null",     "object",    "operator",  "out",
+	"override", "params",  "private", "protected",  "public",   "readonly", "ref",       "return",    "sbyte",
+	"sealed",   "short",   "sizeof",  "stackalloc", "static",   "string",   "struct",    "switch",    "this",
+	"throw",    "true",    "try",     "typeof",     "uint",     "ulong",    "unchecked", "unsafe",    "ushort",
+	"using",    "virtual", "void",    "volatile",   "while",    "var",      "async",     "await",     "yield",
+	"get",      "set",     "value",   "partial"};
 
 constexpr std::string_view kJavaKeywords[] = {
-	"abstract", "assert",    "boolean",   "break",      "byte",     "case",      "catch",   "char",
-	"class",    "const",     "continue",  "default",    "do",       "double",    "else",    "enum",
-	"extends",  "final",     "finally",   "float",      "for",      "goto",      "if",      "implements",
-	"import",   "instanceof", "int",      "interface",  "long",     "native",    "new",     "null",
-	"package",  "private",   "protected", "public",     "return",   "short",     "static",  "strictfp",
-	"super",    "switch",    "synchronized", "this",    "throw",    "throws",    "transient", "true",
-	"false",    "try",       "void",      "volatile",   "while",    "var",       "sealed",  "permits",
-	"record",   "yield"};
+	"abstract",  "assert",    "boolean", "break",    "byte",   "case",       "catch",        "char",       "class",
+	"const",     "continue",  "default", "do",       "double", "else",       "enum",         "extends",    "final",
+	"finally",   "float",     "for",     "goto",     "if",     "implements", "import",       "instanceof", "int",
+	"interface", "long",      "native",  "new",      "null",   "package",    "private",      "protected",  "public",
+	"return",    "short",     "static",  "strictfp", "super",  "switch",     "synchronized", "this",       "throw",
+	"throws",    "transient", "true",    "false",    "try",    "void",       "volatile",     "while",      "var",
+	"sealed",    "permits",   "record",  "yield"};
 
-constexpr std::string_view kPythonKeywords[] = {
-	"False", "None",   "True",    "and",      "as",     "assert", "async", "await", "break",
-	"class", "continue", "def",   "del",      "elif",   "else",   "except", "finally", "for",
-	"from",  "global", "if",      "import",   "in",     "is",     "lambda", "nonlocal", "not",
-	"or",    "pass",   "raise",   "return",   "try",    "while",  "with",  "yield"};
+constexpr std::string_view kPythonKeywords[] = {"False",  "None",     "True",  "and",    "as",       "assert",
+												"async",  "await",    "break", "class",  "continue", "def",
+												"del",    "elif",     "else",  "except", "finally",  "for",
+												"from",   "global",   "if",    "import", "in",       "is",
+												"lambda", "nonlocal", "not",   "or",     "pass",     "raise",
+												"return", "try",      "while", "with",   "yield"};
 
 constexpr std::string_view kPythonBuiltins[] = {
-	"int",       "str",        "float",    "bytes",    "bool",     "list",        "dict",         "set",
-	"tuple",     "type",       "object",   "complex",  "bytearray", "memoryview", "range",        "slice",
-	"frozenset", "property",   "classmethod", "staticmethod", "super", "print",   "len",          "zip",
-	"map",       "filter",     "enumerate", "sorted",  "reversed", "any",         "all",          "min",
-	"max",       "abs",        "round",    "open",     "input",    "iter",        "next",         "repr",
-	"isinstance", "issubclass", "hasattr", "getattr",  "setattr",  "delattr",     "vars",         "dir",
-	"id",        "hash",       "callable", "chr",      "ord",      "hex",         "bin",          "oct",
+	"int",        "str",        "float",       "bytes",        "bool",      "list",       "dict",  "set",
+	"tuple",      "type",       "object",      "complex",      "bytearray", "memoryview", "range", "slice",
+	"frozenset",  "property",   "classmethod", "staticmethod", "super",     "print",      "len",   "zip",
+	"map",        "filter",     "enumerate",   "sorted",       "reversed",  "any",        "all",   "min",
+	"max",        "abs",        "round",       "open",         "input",     "iter",       "next",  "repr",
+	"isinstance", "issubclass", "hasattr",     "getattr",      "setattr",   "delattr",    "vars",  "dir",
+	"id",         "hash",       "callable",    "chr",          "ord",       "hex",        "bin",   "oct",
 	"self"};
 
-constexpr std::string_view kLuaKeywords[] = {
-	"and", "break", "do",   "else", "elseif", "end",    "false",  "for",  "function", "goto", "if",
-	"in",  "local", "nil",  "not",  "or",     "repeat", "return", "then", "true",     "until", "while"};
+constexpr std::string_view kLuaKeywords[] = {"and",      "break",  "do",   "else", "elseif", "end",  "false", "for",
+											 "function", "goto",   "if",   "in",   "local",  "nil",  "not",   "or",
+											 "repeat",   "return", "then", "true", "until",  "while"};
 
-constexpr std::string_view kIrKeywords[] = {
-	"define",     "declare",   "call",      "ret",          "br",          "load",       "store",     "alloca",
-	"getelementptr", "icmp",   "fcmp",      "phi",          "select",      "switch",     "unreachable", "add",
-	"sub",        "mul",       "div",       "udiv",         "sdiv",        "urem",       "srem",      "and",
-	"or",         "xor",       "shl",       "lshr",         "ashr",        "trunc",      "zext",      "sext",
-	"bitcast",    "inttoptr",  "ptrtoint",  "fadd",         "fsub",        "fmul",       "fdiv",      "frem",
-	"fptrunc",    "fpext",     "fptoui",    "fptosi",       "uitofp",      "sitofp",     "global",    "constant",
-	"private",    "internal",  "external",  "dso_local",    "nsw",         "nuw",        "inbounds",  "align",
-	"eq",         "ne",        "ugt",       "uge",          "ult",         "ule",        "sgt",       "sge",
-	"slt",        "sle",       "to",        "tail",         "invoke",      "landingpad", "extractvalue", "insertvalue"};
+constexpr std::string_view kIrKeywords[] = {"define",       "declare",    "call",     "ret",           "br",
+											"load",         "store",      "alloca",   "getelementptr", "icmp",
+											"fcmp",         "phi",        "select",   "switch",        "unreachable",
+											"add",          "sub",        "mul",      "div",           "udiv",
+											"sdiv",         "urem",       "srem",     "and",           "or",
+											"xor",          "shl",        "lshr",     "ashr",          "trunc",
+											"zext",         "sext",       "bitcast",  "inttoptr",      "ptrtoint",
+											"fadd",         "fsub",       "fmul",     "fdiv",          "frem",
+											"fptrunc",      "fpext",      "fptoui",   "fptosi",        "uitofp",
+											"sitofp",       "global",     "constant", "private",       "internal",
+											"external",     "dso_local",  "nsw",      "nuw",           "inbounds",
+											"align",        "eq",         "ne",       "ugt",           "uge",
+											"ult",          "ule",        "sgt",      "sge",           "slt",
+											"sle",          "to",         "tail",     "invoke",        "landingpad",
+											"extractvalue", "insertvalue"};
 
 constexpr std::string_view kIrTypes[] = {
 	"void", "float", "double", "ptr", "half", "label", "metadata", "x86_fp80", "fp128", "token"};
 
 constexpr std::string_view kAsmSizeWords[] = {
-	"ptr", "byte", "word", "dword", "qword", "tword", "xmmword", "ymmword", "zmmword", "short", "near", "far", "offset", "rel"};
+	"ptr",
+	"byte",
+	"word",
+	"dword",
+	"qword",
+	"tword",
+	"xmmword",
+	"ymmword",
+	"zmmword",
+	"short",
+	"near",
+	"far",
+	"offset",
+	"rel"};
 
 constexpr std::string_view kAsmPrefixes[] = {"rep", "repe", "repz", "repne", "repnz", "lock"};
 
 bool isAsmRegister(std::string_view word)
 {
 	const std::string w = lower(word);
-	static constexpr std::string_view named[] = {
-		"rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp", "rip", "eip", "ip",  "cs",  "ds", "es", "fs",
-		"gs",  "ss",  "sp",  "bp",  "si",  "di",  "spl", "bpl", "sil", "dil", "lr",  "pc",  "fp", "xzr", "wzr"};
+	static constexpr std::string_view named[] = {"rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp", "rip", "eip",
+												 "ip",  "cs",  "ds",  "es",  "fs",  "gs",  "ss",  "sp",  "bp",  "si",
+												 "di",  "spl", "bpl", "sil", "dil", "lr",  "pc",  "fp",  "xzr", "wzr"};
 	if (inList(named, w)) return true;
 	if (w.size() == 2 && w[0] >= 'a' && w[0] <= 'd' && (w[1] == 'x' || w[1] == 'h' || w[1] == 'l')) return true;
-	if (w.size() == 3 && w[0] == 'e' && std::isalpha(static_cast<unsigned char>(w[1])) && std::isalpha(static_cast<unsigned char>(w[2])))
+	if (w.size() == 3 && w[0] == 'e' && std::isalpha(static_cast<unsigned char>(w[1]))
+		&& std::isalpha(static_cast<unsigned char>(w[2])))
 	{
 		// eax, ebx, ecx, edx, esi, edi, ebp, esp (the Qt rule was e[a-z]{2})
 		static constexpr std::string_view e32[] = {"eax", "ebx", "ecx", "edx", "esi", "edi", "ebp", "esp"};
@@ -238,7 +323,8 @@ public:
 				continue;
 			}
 			// Strings.
-			if (c == '"' || (c == '\'' && singleQuoteStrings()) || (lang_ == CodeLang::CSharp && c == '@' && i + 1 < s_.size() && s_[i + 1] == '"'))
+			if (c == '"' || (c == '\'' && singleQuoteStrings())
+				|| (lang_ == CodeLang::CSharp && c == '@' && i + 1 < s_.size() && s_[i + 1] == '"'))
 			{
 				i = string(i);
 				continue;
@@ -263,16 +349,21 @@ public:
 				}
 			}
 			// Numbers.
-			if (isDigit(c) || (c == '-' && negativeNumberAllowed() && i + 1 < s_.size() && isDigit(s_[i + 1]) && (i == 0 || !isIdentChar(s_[i - 1]))))
+			if (isDigit(c)
+				|| (c == '-' && negativeNumberAllowed() && i + 1 < s_.size() && isDigit(s_[i + 1])
+					&& (i == 0 || !isIdentChar(s_[i - 1]))))
 			{
 				i = number(i);
 				continue;
 			}
 			// Identifiers.
-			if (isIdentStart(c) || (lang_ == CodeLang::Asm && (c == '.' || c == '$') && i + 1 < s_.size() && isIdentStart(s_[i + 1])))
+			if (isIdentStart(c)
+				|| (lang_ == CodeLang::Asm && (c == '.' || c == '$') && i + 1 < s_.size() && isIdentStart(s_[i + 1])))
 			{
 				std::size_t e = i + 1;
-				while (e < s_.size() && (isIdentChar(s_[e]) || ((lang_ == CodeLang::Asm || lang_ == CodeLang::IR) && (s_[e] == '.' || s_[e] == '$'))))
+				while (e < s_.size()
+					   && (isIdentChar(s_[e])
+						   || ((lang_ == CodeLang::Asm || lang_ == CodeLang::IR) && (s_[e] == '.' || s_[e] == '$'))))
 					++e;
 				const TokenKind k = classifyWord(s_.substr(i, e - i));
 				if (k != TokenKind::Text) push(i, e - i, k);
@@ -334,11 +425,14 @@ private:
 			const char c = s_[i];
 			if (quote)
 			{
-				if (c == '\\') ++i;
-				else if (c == quote) quote = 0;
+				if (c == '\\')
+					++i;
+				else if (c == quote)
+					quote = 0;
 				continue;
 			}
-			if (c == '"') quote = c;
+			if (c == '"')
+				quote = c;
 			else if (c == '/' && i + 1 < s_.size() && (s_[i + 1] == '/' || s_[i + 1] == '*'))
 				return i;
 		}
@@ -356,7 +450,8 @@ private:
 		const std::string_view word = s_.substr(first, e - first);
 		std::string_view digits = word;
 		if (digits.size() > 2 && digits[0] == '0' && (digits[1] == 'x' || digits[1] == 'X')) digits.remove_prefix(2);
-		const bool isAddr = !digits.empty() && std::all_of(digits.begin(), digits.end(), isHex) && (word.size() >= 4 || word.starts_with("0x"));
+		const bool isAddr = !digits.empty() && std::all_of(digits.begin(), digits.end(), isHex)
+						 && (word.size() >= 4 || word.starts_with("0x"));
 		push(first, e + 1 - first, isAddr ? TokenKind::Address : TokenKind::Label);
 		std::size_t i = e + 1;
 		if (!isAddr) return i;
@@ -366,7 +461,8 @@ private:
 			std::size_t j = i;
 			while (j < s_.size() && (s_[j] == ' ' || s_[j] == '\t'))
 				++j;
-			if (j + 2 <= s_.size() && isHex(s_[j]) && isHex(s_[j + 1]) && (j + 2 == s_.size() || s_[j + 2] == ' ' || s_[j + 2] == '\t'))
+			if (j + 2 <= s_.size() && isHex(s_[j]) && isHex(s_[j + 1])
+				&& (j + 2 == s_.size() || s_[j + 2] == ' ' || s_[j + 2] == '\t'))
 			{
 				push(j, 2, TokenKind::Number);
 				i = j + 2;
@@ -418,7 +514,8 @@ private:
 			while (j < s_.size() && (isDigit(s_[j]) || s_[j] == '.'))
 				++j;
 			// e+10 exponents
-			if (j < s_.size() && (s_[j] == 'e' || s_[j] == 'E') && j + 1 < s_.size() && (isDigit(s_[j + 1]) || s_[j + 1] == '+' || s_[j + 1] == '-'))
+			if (j < s_.size() && (s_[j] == 'e' || s_[j] == 'E') && j + 1 < s_.size()
+				&& (isDigit(s_[j + 1]) || s_[j + 1] == '+' || s_[j + 1] == '-'))
 			{
 				j += 2;
 				while (j < s_.size() && isDigit(s_[j]))

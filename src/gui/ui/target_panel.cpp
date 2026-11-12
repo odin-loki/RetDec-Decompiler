@@ -19,8 +19,8 @@ using namespace fuse::ui;
 
 // ── DecompilerConfigEditor ───────────────────────────────────────────────────
 
-DecompilerConfigEditor::DecompilerConfigEditor(UiContext& ui)
-	: dlg_(ui, "Edit", 720.f, 520.f, "decompilerConfigEditor"), message_(ui)
+DecompilerConfigEditor::DecompilerConfigEditor(UiContext& ui):
+	dlg_(ui, "Edit", 720.f, 520.f, "decompilerConfigEditor"), message_(ui)
 {
 	edit_ = w::codeEdit(ui, dlg_.body(), "", w::CodeLanguage::Plain);
 	ui.setCss(edit_, "flex-grow", "1");
@@ -91,8 +91,8 @@ void DecompilerConfigEditor::setText(std::string_view text)
 
 // ── TargetPanel ──────────────────────────────────────────────────────────────
 
-TargetPanel::TargetPanel(UiContext& ui, NodeHandle parent, model::AppSettings& settings)
-	: ui_(ui), settings_(settings), message_(ui), files_(ui), editor_(ui)
+TargetPanel::TargetPanel(UiContext& ui, NodeHandle parent, model::AppSettings& settings):
+	ui_(ui), settings_(settings), message_(ui), files_(ui), editor_(ui)
 {
 	dlg::ensureDialogStyles(ui);
 	handler_.handle = [this](EventContext& ec, const Event& e) { return handleEvent(ec, e); };
@@ -103,9 +103,11 @@ TargetPanel::TargetPanel(UiContext& ui, NodeHandle parent, model::AppSettings& s
 	ui.setCss(body, "gap", "4px");
 
 	hint_ = dlg::noteLabel(
-		ui, body,
+		ui,
+		body,
 		"Overrides live in the .retdec project. Non-empty Architecture is passed as -a to retdec-decompiler. Optional "
-		"Decompiler JSON sets --config (same as Analysis \xE2\x86\x92 Configure\xE2\x80\xA6). Enter in a target field or Alt+A applies.");
+		"Decompiler JSON sets --config (same as Analysis \xE2\x86\x92 Configure\xE2\x80\xA6). Enter in a target field "
+		"or Alt+A applies.");
 
 	w::label(ui, body, "Binary");
 	binary_ = w::label(ui, body, "—");
@@ -143,11 +145,18 @@ TargetPanel::TargetPanel(UiContext& ui, NodeHandle parent, model::AppSettings& s
 	w::setTooltip(ui, editCfg_, "Edit current JSON when a path is set. Alt+E.");
 
 	ui.connect(apply_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { apply(); });
-	ui.connect(browse_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { browseDecompilerConfig(); });
-	ui.connect(bundled_, SignalKind::Clicked,
-	           [this](UiContext&, NodeHandle, const SignalArgs&) { useBundledDecompilerConfig(); });
-	ui.connect(clearCfg_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { clearDecompilerConfig(); });
-	ui.connect(editCfg_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { editDecompilerConfig(); });
+	ui.connect(browse_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+		browseDecompilerConfig();
+	});
+	ui.connect(bundled_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+		useBundledDecompilerConfig();
+	});
+	ui.connect(clearCfg_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+		clearDecompilerConfig();
+	});
+	ui.connect(editCfg_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+		editDecompilerConfig();
+	});
 
 	clear();
 }
@@ -182,7 +191,8 @@ bool TargetPanel::handleEvent(EventContext& ec, const Event& e)
 
 void TargetPanel::setFieldsEnabled(bool on)
 {
-	for (NodeHandle n: {arch_, os_, entry_, apply_}) ui_.setDisabled(n, !on);
+	for (NodeHandle n: {arch_, os_, entry_, apply_})
+		ui_.setDisabled(n, !on);
 	// --config is global (AppSettings): usable without a project.
 	ui_.setDisabled(browse_, false);
 	ui_.setDisabled(clearCfg_, false);
@@ -284,8 +294,12 @@ void TargetPanel::browseDecompilerConfig()
 {
 	const std::string start =
 		model::targetConfigBrowseStart(settings_.decompiler.extraConfigPath, project_ ? binaryText() : std::string());
-	files_.show(FilePrompt::Mode::Open, "Decompiler configuration JSON", start, model::kJsonFileFilter,
-	            [this](const std::string& path) { setDecompilerConfig(path); });
+	files_.show(
+		FilePrompt::Mode::Open,
+		"Decompiler configuration JSON",
+		start,
+		model::kJsonFileFilter,
+		[this](const std::string& path) { setDecompilerConfig(path); });
 }
 
 void TargetPanel::setDecompilerConfig(const std::filesystem::path& path)
@@ -300,8 +314,10 @@ void TargetPanel::useBundledDecompilerConfig()
 	const std::filesystem::path bundled = model::resolveBundledDecompilerConfigPath();
 	if (bundled.empty())
 	{
-		warn("Bundled config", "Could not find share/retdec/decompiler-config.json next to retdec-decompiler.",
-		     MessageDialog::Kind::Information);
+		warn(
+			"Bundled config",
+			"Could not find share/retdec/decompiler-config.json next to retdec-decompiler.",
+			MessageDialog::Kind::Information);
 		return;
 	}
 	(void)model::setDecompilerConfigPath(settings_, bundled);

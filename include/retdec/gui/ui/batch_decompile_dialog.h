@@ -31,10 +31,16 @@ public:
 	void show(std::function<void(const std::vector<std::string>& paths)> onStart, std::string_view startDir = {});
 	void start();
 	void reject();
-	bool isOpen() const { return dlg_.isOpen(); }
+	bool isOpen() const
+	{
+		return dlg_.isOpen();
+	}
 
 	/// The list, in order (absolute paths).
-	const std::vector<std::string>& binaryPaths() const { return paths_; }
+	const std::vector<std::string>& binaryPaths() const
+	{
+		return paths_;
+	}
 	/// Add paths as the Add… file prompt does (absolute, duplicates skipped).
 	void addPaths(const std::vector<std::string>& paths);
 	/// Remove the selected row (no-op without a selection).
@@ -43,17 +49,47 @@ public:
 	void setSelectedRow(int row);
 	int selectedRow() const;
 	bool startEnabled() const;
-	bool hintVisible() const { return hintShown_; }
+	bool hintVisible() const
+	{
+		return hintShown_;
+	}
 
-	std::string title() const { return dlg_.title(); }
-	fuse::ui::NodeHandle list() const { return list_; }
-	fuse::ui::NodeHandle addButton() const { return add_; }
-	fuse::ui::NodeHandle removeButton() const { return remove_; }
-	fuse::ui::NodeHandle clearButton() const { return clear_; }
-	fuse::ui::NodeHandle startButton() const { return start_; }
-	fuse::ui::NodeHandle cancelButton() const { return cancel_; }
-	FilePrompt& filePrompt() { return files_; }
-	fuse::ui::NodeHandle card() const { return dlg_.card(); }
+	std::string title() const
+	{
+		return dlg_.title();
+	}
+	fuse::ui::NodeHandle list() const
+	{
+		return list_;
+	}
+	fuse::ui::NodeHandle addButton() const
+	{
+		return add_;
+	}
+	fuse::ui::NodeHandle removeButton() const
+	{
+		return remove_;
+	}
+	fuse::ui::NodeHandle clearButton() const
+	{
+		return clear_;
+	}
+	fuse::ui::NodeHandle startButton() const
+	{
+		return start_;
+	}
+	fuse::ui::NodeHandle cancelButton() const
+	{
+		return cancel_;
+	}
+	FilePrompt& filePrompt()
+	{
+		return files_;
+	}
+	fuse::ui::NodeHandle card() const
+	{
+		return dlg_.card();
+	}
 
 private:
 	void refresh();

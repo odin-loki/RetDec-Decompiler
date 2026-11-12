@@ -32,15 +32,22 @@ public:
 	TriageBanner(const TriageBanner&) = delete;
 	TriageBanner& operator=(const TriageBanner&) = delete;
 
-	fuse::ui::NodeHandle root() const { return root_; }
+	fuse::ui::NodeHandle root() const
+	{
+		return root_;
+	}
 
 	/// Shows the banner for @p path (badges reset to "…" until setMetadata);
 	/// an empty path hides it.
 	void setBinary(std::string_view path);
 	/// Empty values show "—"; @p sizeBytes <= 0 keeps the current size badge;
 	/// a non-empty @p packerName shows the packed badge.
-	void setMetadata(std::string_view format, std::string_view arch, std::string_view os, int64_t sizeBytes,
-	                 std::string_view packerName = {});
+	void setMetadata(
+		std::string_view format,
+		std::string_view arch,
+		std::string_view os,
+		int64_t sizeBytes,
+		std::string_view packerName = {});
 	/// setMetadata from parsed fileinfo.
 	void setFileinfo(const model::FileinfoInfo& info, int64_t sizeBytes = 0);
 	/// Greys the action buttons out (e.g. while a child process runs).
@@ -48,8 +55,14 @@ public:
 	/// What ✕ does: hides and reports onDismissed.
 	void dismiss();
 
-	bool isHidden() const { return hidden_; }
-	bool actionsEnabled() const { return actionsEnabled_; }
+	bool isHidden() const
+	{
+		return hidden_;
+	}
+	bool actionsEnabled() const
+	{
+		return actionsEnabled_;
+	}
 
 	std::function<void()> onUnpackRequested;
 	std::function<void()> onDecompileRequested;
@@ -61,19 +74,43 @@ public:
 
 	// Test hooks.
 	std::string titleText() const;
-	std::string titleTooltip() const { return titleTooltip_; }
+	std::string titleTooltip() const
+	{
+		return titleTooltip_;
+	}
 	std::string formatText() const;
 	std::string archText() const;
 	std::string osText() const;
 	std::string sizeText() const;
 	std::string packerText() const;
-	bool packerShown() const { return packerShown_; }
-	fuse::ui::NodeHandle unpackButton() const { return unpackBtn_; }
-	fuse::ui::NodeHandle decompileButton() const { return decompileBtn_; }
-	fuse::ui::NodeHandle moreButton() const { return moreBtn_; }
-	fuse::ui::NodeHandle closeButton() const { return closeBtn_; }
-	fuse::ui::NodeHandle archBadge() const { return archBadge_; }
-	fuse::ui::NodeHandle osBadge() const { return osBadge_; }
+	bool packerShown() const
+	{
+		return packerShown_;
+	}
+	fuse::ui::NodeHandle unpackButton() const
+	{
+		return unpackBtn_;
+	}
+	fuse::ui::NodeHandle decompileButton() const
+	{
+		return decompileBtn_;
+	}
+	fuse::ui::NodeHandle moreButton() const
+	{
+		return moreBtn_;
+	}
+	fuse::ui::NodeHandle closeButton() const
+	{
+		return closeBtn_;
+	}
+	fuse::ui::NodeHandle archBadge() const
+	{
+		return archBadge_;
+	}
+	fuse::ui::NodeHandle osBadge() const
+	{
+		return osBadge_;
+	}
 
 private:
 	fuse::ui::UiContext& ui_;

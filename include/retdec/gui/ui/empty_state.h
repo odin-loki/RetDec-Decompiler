@@ -26,7 +26,10 @@ public:
 	EmptyState(const EmptyState&) = delete;
 	EmptyState& operator=(const EmptyState&) = delete;
 
-	fuse::ui::NodeHandle root() const { return root_; }
+	fuse::ui::NodeHandle root() const
+	{
+		return root_;
+	}
 
 	void setTitle(std::string_view title);
 	/// An empty hint hides the hint line.
@@ -37,8 +40,14 @@ public:
 	std::string title() const;
 	std::string hint() const;
 	std::string icon() const;
-	bool hintShown() const { return hintShown_; }
-	bool iconShown() const { return iconShown_; }
+	bool hintShown() const
+	{
+		return hintShown_;
+	}
+	bool iconShown() const
+	{
+		return iconShown_;
+	}
 
 private:
 	fuse::ui::UiContext& ui_;
@@ -59,8 +68,8 @@ struct PanelEventHandler
 /// Creates a panel root ("retdec-panel": a flex column filling its parent)
 /// whose events go to @p handler (owned by the panel; must outlive the node or
 /// be detached with releasePanelRoot).
-fuse::ui::NodeHandle createPanelRoot(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent, PanelEventHandler* handler,
-                                     std::string_view cssClass = {});
+fuse::ui::NodeHandle createPanelRoot(
+	fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent, PanelEventHandler* handler, std::string_view cssClass = {});
 
 /// Detaches the handler and destroys the panel's subtree (panel destructors).
 void releasePanelRoot(fuse::ui::UiContext& ui, fuse::ui::NodeHandle root);

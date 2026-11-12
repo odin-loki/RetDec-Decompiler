@@ -45,20 +45,47 @@ public:
 	void show(const model::CStyleOptions& current, std::function<void(const model::CStyleOptions&)> onAccepted);
 	void accept();
 	void reject();
-	bool isOpen() const { return dlg_.isOpen(); }
+	bool isOpen() const
+	{
+		return dlg_.isOpen();
+	}
 
 	/// What the fields hold now.
 	model::CStyleOptions options() const;
 	void load(const model::CStyleOptions& o);
 
-	std::string title() const { return dlg_.title(); }
-	fuse::ui::NodeHandle check(Check c) const { return checks_[std::size_t(c)]; }
-	fuse::ui::NodeHandle callInfoCombo() const { return callInfo_; }
-	fuse::ui::NodeHandle disabledOptsEdit() const { return disabled_; }
-	fuse::ui::NodeHandle enabledOptsEdit() const { return enabled_; }
-	fuse::ui::NodeHandle okButton() const { return ok_; }
-	fuse::ui::NodeHandle cancelButton() const { return cancel_; }
-	fuse::ui::NodeHandle card() const { return dlg_.card(); }
+	std::string title() const
+	{
+		return dlg_.title();
+	}
+	fuse::ui::NodeHandle check(Check c) const
+	{
+		return checks_[std::size_t(c)];
+	}
+	fuse::ui::NodeHandle callInfoCombo() const
+	{
+		return callInfo_;
+	}
+	fuse::ui::NodeHandle disabledOptsEdit() const
+	{
+		return disabled_;
+	}
+	fuse::ui::NodeHandle enabledOptsEdit() const
+	{
+		return enabled_;
+	}
+	fuse::ui::NodeHandle okButton() const
+	{
+		return ok_;
+	}
+	fuse::ui::NodeHandle cancelButton() const
+	{
+		return cancel_;
+	}
+	fuse::ui::NodeHandle card() const
+	{
+		return dlg_.card();
+	}
 
 	std::function<void(const std::string& message, int timeoutMs)> onStatusMessage;
 

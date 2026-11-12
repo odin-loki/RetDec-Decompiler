@@ -84,8 +84,8 @@ CodePalette codePaletteFor(ThemeKind kind);
 std::expected<ThemeKind, std::string> applyTheme(fuse::ui::UiContext& ui, ThemeKind kind);
 
 /// applyTheme(ui, themeKindFor(settings.general.theme)).
-std::expected<ThemeKind, std::string> applyThemeFromSettings(
-	fuse::ui::UiContext& ui, const model::AppSettings& settings = model::AppSettings::instance());
+std::expected<ThemeKind, std::string>
+applyThemeFromSettings(fuse::ui::UiContext& ui, const model::AppSettings& settings = model::AppSettings::instance());
 
 /// The theme last applied to @p ui by applyTheme (Mocha when none was).
 ThemeKind currentTheme(const fuse::ui::UiContext& ui);

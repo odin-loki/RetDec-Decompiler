@@ -91,29 +91,83 @@ TEST_F(DlgSettingsDialog, HasEveryTabAndButton)
 {
 	ui::SettingsDialog dlg(t.ui, settings, plugins);
 	const auto tabs = dlg.tabTitles();
-	const std::vector<std::string> expected{"General", "Analysis", "CUDA", "ML", "Recovery", "Advanced", "Decompiler",
-	                                        "Plugins"};
+	const std::vector<std::string> expected{
+		"General", "Analysis", "CUDA", "ML", "Recovery", "Advanced", "Decompiler", "Plugins"};
 	EXPECT_EQ(tabs, expected);
 	dlg.show();
 	t.step();
-	for (auto b: {dlg.okButton(), dlg.applyButton(), dlg.cancelButton(), dlg.restoreDefaultsButton(),
-	              dlg.exportButton(), dlg.importButton()})
+	for (auto b:
+		 {dlg.okButton(),
+		  dlg.applyButton(),
+		  dlg.cancelButton(),
+		  dlg.restoreDefaultsButton(),
+		  dlg.exportButton(),
+		  dlg.importButton()})
 		EXPECT_TRUE(t.shown(b));
 	EXPECT_EQ(std::string(t.ui.text(dlg.restoreDefaultsButton())), "Restore Defaults");
 	// Every Qt field exists.
-	for (const char* name: {"themeCombo", "fontCombo", "fontSizeSpin", "langCombo", "lineNumCheck", "wordWrapCheck",
-	                        "restoreCheck", "enableTypingCheck", "enableCxxCheck", "typeConfSpin", "patternConfSpin",
-	                        "recovConfSpin", "maxTimeSpin", "threadCountSpin", "clDeviceCombo", "useGPUCheck",
-	                        "wgSizeSpin", "kernelCacheEdit", "kernelCacheBtn", "clProfilingCheck", "modelPathEdit",
-	                        "modelPathBtn", "quantCombo", "inferDevCombo", "tempSpin", "topPSpin", "topKSpin",
-	                        "maxTokensSpin", "contextLenSpin", "streamCheck", "mlModelSha256", "mlBatchRefine",
-	                        "detectSTLCheck", "detectVirtCheck", "stlConfSpin", "concurConfSpin", "verbCombo",
-	                        "dumpIRCheck", "dumpSSACheck", "colorOutCheck", "irDumpEdit", "intermDirEdit",
-	                        "maxFuncSpin", "demangleCheck", "decompileProfileCombo", "useCustomLlvmPassesCheck",
-	                        "llvmPassesAllBtn", "llvmPassesNoneBtn", "llvmPassesDefaultBtn", "decompileOutputDirEdit",
-	                        "decompileOutputDirBtn", "outputLangCombo", "liveConsoleTailCheck", "decompilerConfigEdit",
-	                        "decompilerConfigBtn", "pluginSearchPaths", "pluginSearchAdd", "pluginSearchRemove",
-	                        "pluginSearchRescan", "installPluginBtn", "unloadPluginBtn"})
+	for (const char* name:
+		 {"themeCombo",
+		  "fontCombo",
+		  "fontSizeSpin",
+		  "langCombo",
+		  "lineNumCheck",
+		  "wordWrapCheck",
+		  "restoreCheck",
+		  "enableTypingCheck",
+		  "enableCxxCheck",
+		  "typeConfSpin",
+		  "patternConfSpin",
+		  "recovConfSpin",
+		  "maxTimeSpin",
+		  "threadCountSpin",
+		  "clDeviceCombo",
+		  "useGPUCheck",
+		  "wgSizeSpin",
+		  "kernelCacheEdit",
+		  "kernelCacheBtn",
+		  "clProfilingCheck",
+		  "modelPathEdit",
+		  "modelPathBtn",
+		  "quantCombo",
+		  "inferDevCombo",
+		  "tempSpin",
+		  "topPSpin",
+		  "topKSpin",
+		  "maxTokensSpin",
+		  "contextLenSpin",
+		  "streamCheck",
+		  "mlModelSha256",
+		  "mlBatchRefine",
+		  "detectSTLCheck",
+		  "detectVirtCheck",
+		  "stlConfSpin",
+		  "concurConfSpin",
+		  "verbCombo",
+		  "dumpIRCheck",
+		  "dumpSSACheck",
+		  "colorOutCheck",
+		  "irDumpEdit",
+		  "intermDirEdit",
+		  "maxFuncSpin",
+		  "demangleCheck",
+		  "decompileProfileCombo",
+		  "useCustomLlvmPassesCheck",
+		  "llvmPassesAllBtn",
+		  "llvmPassesNoneBtn",
+		  "llvmPassesDefaultBtn",
+		  "decompileOutputDirEdit",
+		  "decompileOutputDirBtn",
+		  "outputLangCombo",
+		  "liveConsoleTailCheck",
+		  "decompilerConfigEdit",
+		  "decompilerConfigBtn",
+		  "pluginSearchPaths",
+		  "pluginSearchAdd",
+		  "pluginSearchRemove",
+		  "pluginSearchRescan",
+		  "installPluginBtn",
+		  "unloadPluginBtn"})
 		EXPECT_TRUE(t.ui.alive(dlg.field(name))) << name;
 }
 
@@ -243,7 +297,8 @@ TEST_F(DlgSettingsDialog, EditAndOkWritesSettings)
 	model::AppSettings reloaded;
 	reloaded.setStoragePath(dir / "settings.json");
 	ASSERT_TRUE(reloaded.load());
-	EXPECT_EQ(static_cast<const model::SettingsSections&>(reloaded), static_cast<const model::SettingsSections&>(settings));
+	EXPECT_EQ(
+		static_cast<const model::SettingsSections&>(reloaded), static_cast<const model::SettingsSections&>(settings));
 }
 
 TEST_F(DlgSettingsDialog, CancelWritesNothing)
@@ -376,14 +431,18 @@ TEST_F(DlgSettingsDialog, LlvmPassButtons)
 	dlg.setCurrentTab(ui::SettingsDialog::Decompiler);
 	t.click(dlg.field("useCustomLlvmPassesCheck"));
 	t.click(dlg.field("llvmPassesNoneBtn"));
-	for (std::size_t i = 0; i < n; ++i) EXPECT_FALSE(t.ui.checked(dlg.llvmPassCheck(i)));
+	for (std::size_t i = 0; i < n; ++i)
+		EXPECT_FALSE(t.ui.checked(dlg.llvmPassCheck(i)));
 	t.ui.setChecked(dlg.llvmPassCheck(0), true);
 	ASSERT_TRUE(dlg.apply());
 	EXPECT_TRUE(settings.decompiler.useCustomLlvmPasses);
 	EXPECT_EQ(settings.decompiler.llvmPassesDisabled.size(), n - 1);
-	EXPECT_EQ(std::find(settings.decompiler.llvmPassesDisabled.begin(), settings.decompiler.llvmPassesDisabled.end(),
-	                    dlg.llvmPassNames()[0]),
-	          settings.decompiler.llvmPassesDisabled.end());
+	EXPECT_EQ(
+		std::find(
+			settings.decompiler.llvmPassesDisabled.begin(),
+			settings.decompiler.llvmPassesDisabled.end(),
+			dlg.llvmPassNames()[0]),
+		settings.decompiler.llvmPassesDisabled.end());
 
 	t.click(dlg.field("llvmPassesDefaultBtn"));
 	EXPECT_FALSE(t.ui.checked(dlg.field("useCustomLlvmPassesCheck")));

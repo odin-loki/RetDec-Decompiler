@@ -73,7 +73,8 @@ model::CStyleOptions CStyleDialog::options() const
 	return o;
 }
 
-void CStyleDialog::show(const model::CStyleOptions& current, std::function<void(const model::CStyleOptions&)> onAccepted)
+void CStyleDialog::show(
+	const model::CStyleOptions& current, std::function<void(const model::CStyleOptions&)> onAccepted)
 {
 	onAccepted_ = std::move(onAccepted);
 	load(current);

@@ -114,7 +114,7 @@ typedef struct RetdecGuiPluginV1
 	uint32_t abi_version; /**< RETDEC_GUI_PLUGIN_ABI_VERSION */
 
 	/* Metadata */
-	const char* id;          /**< unique, e.g. "com.example.myplugin" (required) */
+	const char* id; /**< unique, e.g. "com.example.myplugin" (required) */
 	const char* name;
 	const char* version;
 	const char* description;
@@ -206,16 +206,43 @@ class Plugin {
 public:
 	Plugin(const RetdecGuiPluginV1* api, std::shared_ptr<void> library, std::filesystem::path filePath);
 
-	const PluginMetadata& metadata() const { return meta_; }
-	const std::filesystem::path& filePath() const { return filePath_; }
-	const RetdecGuiPluginV1& api() const { return *api_; }
-	bool enabled() const { return enabled_; }
-	void setEnabled(bool on) { enabled_ = on; }
+	const PluginMetadata& metadata() const
+	{
+		return meta_;
+	}
+	const std::filesystem::path& filePath() const
+	{
+		return filePath_;
+	}
+	const RetdecGuiPluginV1& api() const
+	{
+		return *api_;
+	}
+	bool enabled() const
+	{
+		return enabled_;
+	}
+	void setEnabled(bool on)
+	{
+		enabled_ = on;
+	}
 
-	bool isDecompiler() const { return (meta_.kinds & RETDEC_GUI_PLUGIN_DECOMPILER) && api_->run_stage; }
-	bool isOutput() const { return (meta_.kinds & RETDEC_GUI_PLUGIN_OUTPUT) && api_->transform; }
-	bool isVisualisation() const { return (meta_.kinds & RETDEC_GUI_PLUGIN_VISUALISATION) && api_->render_panel; }
-	bool isAnalysis() const { return (meta_.kinds & RETDEC_GUI_PLUGIN_ANALYSIS) && api_->analyse; }
+	bool isDecompiler() const
+	{
+		return (meta_.kinds & RETDEC_GUI_PLUGIN_DECOMPILER) && api_->run_stage;
+	}
+	bool isOutput() const
+	{
+		return (meta_.kinds & RETDEC_GUI_PLUGIN_OUTPUT) && api_->transform;
+	}
+	bool isVisualisation() const
+	{
+		return (meta_.kinds & RETDEC_GUI_PLUGIN_VISUALISATION) && api_->render_panel;
+	}
+	bool isAnalysis() const
+	{
+		return (meta_.kinds & RETDEC_GUI_PLUGIN_ANALYSIS) && api_->analyse;
+	}
 
 	// DECOMPILER
 	std::string insertAfterStage() const;
@@ -274,7 +301,8 @@ public:
 	std::expected<std::string, std::string> loadPlugin(const std::filesystem::path& filePath);
 
 	/// Register a descriptor that is already in this process (built-in plugins, tests).
-	std::expected<std::string, std::string> registerPlugin(const RetdecGuiPluginV1* api, std::string label = "<built-in>");
+	std::expected<std::string, std::string>
+	registerPlugin(const RetdecGuiPluginV1* api, std::string label = "<built-in>");
 
 	/// Shut down and unload a plugin by id (no-op when unknown).
 	void unloadPlugin(const std::string& pluginId);
@@ -285,7 +313,10 @@ public:
 	void setEnabled(const std::string& pluginId, bool enabled);
 
 	/// All loaded plugins in dependency order.
-	const std::vector<std::unique_ptr<Plugin>>& plugins() const { return plugins_; }
+	const std::vector<std::unique_ptr<Plugin>>& plugins() const
+	{
+		return plugins_;
+	}
 	const Plugin* findPlugin(const std::string& id) const;
 
 	/// Enabled plugins of a kind, in dependency order.
@@ -299,7 +330,10 @@ public:
 	void runAnalysisPlugins(PipelineContext& ctx) const;
 
 	/// Ids allowed to be enabled (empty = all). Defaults to AppSettings plugins.enabledPlugins.
-	void setEnabledList(std::optional<std::vector<std::string>> ids) { enabledList_ = std::move(ids); }
+	void setEnabledList(std::optional<std::vector<std::string>> ids)
+	{
+		enabledList_ = std::move(ids);
+	}
 
 	// Listeners
 	std::vector<std::function<void(const std::string& id)>> onLoaded;

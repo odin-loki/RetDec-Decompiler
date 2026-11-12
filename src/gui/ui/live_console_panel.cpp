@@ -39,13 +39,18 @@ LiveConsolePanel::LiveConsolePanel(UiContext& ui, NodeHandle parent): ui_(ui)
 	view_ = std::make_unique<CodeView>(ui, root_, model::CodeLang::Plain);
 	view_->setShowGutter(false);
 	view_->setConsoleBuffer(&buffer_);
-	view_->setPlaceholder("Live output from retdec-decompiler / retdec-fileinfo / retdec-unpacker will appear here as it runs.");
+	view_->setPlaceholder(
+		"Live output from retdec-decompiler / retdec-fileinfo / retdec-unpacker will appear here as it runs.");
 
 	auto* self = this;
 	ui.connect(copyBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->copyAll(); });
-	ui.connect(saveBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->saveAsDialog(); });
+	ui.connect(saveBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) {
+		self->saveAsDialog();
+	});
 	ui.connect(clearBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->clear(); });
-	ui.connect(autoChk_, SignalKind::Toggled, [self](UiContext& c, NodeHandle n, const SignalArgs&) { self->autoScroll_ = c.checked(n); });
+	ui.connect(autoChk_, SignalKind::Toggled, [self](UiContext& c, NodeHandle n, const SignalArgs&) {
+		self->autoScroll_ = c.checked(n);
+	});
 	startTimer();
 }
 
@@ -213,8 +218,10 @@ void LiveConsolePanel::saveAsDialog()
 		ui_.connect(saveDlg_, SignalKind::Submitted, [self](UiContext& c, NodeHandle, const SignalArgs& a) {
 			if (a.text.empty()) return;
 			const std::string path(a.text);
-			if (self->saveAs(path)) c.setText(self->status_, std::format("saved {}", path));
-			else c.setText(self->status_, std::format("save error: {}", self->lastError_));
+			if (self->saveAs(path))
+				c.setText(self->status_, std::format("saved {}", path));
+			else
+				c.setText(self->status_, std::format("save error: {}", self->lastError_));
 		});
 	}
 	w::openDialog(ui_, saveDlg_);

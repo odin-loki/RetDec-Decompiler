@@ -58,15 +58,21 @@ std::string isoTimestampNow();
 std::string formatCommandLine(std::string_view tool, const std::vector<std::string>& args);
 
 /// "==> [ts] tool args" and, when @p cwd is non-empty, "==>   cwd: <cwd>".
-std::vector<std::string> formatBanner(std::string_view tool, const std::vector<std::string>& args, std::string_view cwd,
-                                      std::string_view timestamp);
+std::vector<std::string> formatBanner(
+	std::string_view tool, const std::vector<std::string>& args, std::string_view cwd, std::string_view timestamp);
 
 /// "<== tool finished (exit=N, time=M ms)".
 std::string formatFooter(std::string_view tool, int exitCode, int64_t elapsedMs);
 
 /// One command-log record (ends with an empty line).
-std::string formatCommandLogEntry(std::string_view tool, const std::vector<std::string>& args, std::string_view cwd,
-                                  int exitCode, int64_t elapsedMs, std::string_view outputTail, std::string_view timestamp);
+std::string formatCommandLogEntry(
+	std::string_view tool,
+	const std::vector<std::string>& args,
+	std::string_view cwd,
+	int exitCode,
+	int64_t elapsedMs,
+	std::string_view outputTail,
+	std::string_view timestamp);
 
 /**
  * Append-only line buffer with QPlainTextEdit semantics: always at least one
@@ -87,17 +93,38 @@ public:
 	void clear();
 
 	void setMaxLines(std::size_t n);
-	std::size_t maxLines() const { return maxLines_; }
+	std::size_t maxLines() const
+	{
+		return maxLines_;
+	}
 
-	bool isEmpty() const { return lines_.size() == 1 && lines_.front().empty(); }
-	std::size_t lineCount() const { return lines_.size(); }
-	const std::string& line(std::size_t i) const { return lines_[i]; }
-	ConsoleLineKind kind(std::size_t i) const { return kinds_[i]; }
+	bool isEmpty() const
+	{
+		return lines_.size() == 1 && lines_.front().empty();
+	}
+	std::size_t lineCount() const
+	{
+		return lines_.size();
+	}
+	const std::string& line(std::size_t i) const
+	{
+		return lines_[i];
+	}
+	ConsoleLineKind kind(std::size_t i) const
+	{
+		return kinds_[i];
+	}
 	std::string text() const;
 	/// Total lines ever dropped from the top (views keep their scroll anchored).
-	std::uint64_t droppedLines() const { return dropped_; }
+	std::uint64_t droppedLines() const
+	{
+		return dropped_;
+	}
 	/// Bumped on every change.
-	std::uint64_t revision() const { return revision_; }
+	std::uint64_t revision() const
+	{
+		return revision_;
+	}
 
 private:
 	void trim();

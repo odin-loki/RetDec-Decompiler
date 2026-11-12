@@ -34,8 +34,9 @@ struct DlgSignatureStudio : ::testing::Test
 	std::filesystem::path fakeTool(const std::string& name)
 	{
 		const auto p = dir / name;
-		std::ofstream(p) << "#!/bin/sh\necho \"tool $0 args: $*\"\n"
-		                    "while [ $# -gt 0 ]; do if [ \"$1\" = -o ]; then echo out > \"$2\"; fi; shift; done\nexit 0\n";
+		std::ofstream(p)
+			<< "#!/bin/sh\necho \"tool $0 args: $*\"\n"
+			   "while [ $# -gt 0 ]; do if [ \"$1\" = -o ]; then echo out > \"$2\"; fi; shift; done\nexit 0\n";
 		std::filesystem::permissions(p, std::filesystem::perms::owner_all);
 		return p;
 	}
@@ -79,8 +80,8 @@ TEST_F(DlgSignatureStudio, MissingFieldsAndToolsAreLogged)
 	EXPECT_NE(p.log().find("Express: set library input and YARA output path."), std::string::npos);
 	p.setActiveBinary("/x/lib.a");
 	EXPECT_FALSE(p.runExpress());
-	EXPECT_NE(p.log().find("Express: Python 3 or retdec-signature-from-library-creator.py not found."),
-	          std::string::npos);
+	EXPECT_NE(
+		p.log().find("Express: Python 3 or retdec-signature-from-library-creator.py not found."), std::string::npos);
 	t.type(p.bin2patInEdit(), "/x/obj.o");
 	EXPECT_FALSE(p.runBin2pat());
 	EXPECT_NE(p.log().find("Tool not found: retdec-bin2pat"), std::string::npos);

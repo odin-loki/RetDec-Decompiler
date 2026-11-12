@@ -58,8 +58,7 @@ enum class CallGraphLayoutMode : uint8_t
 	Layered,       ///< callers above callees (Sugiyama)
 };
 
-class CallGraphModel
-{
+class CallGraphModel {
 public:
 	void loadGraph(std::vector<CallGraphNode> nodes, std::vector<CallEdge> edges);
 	void clearGraph();
@@ -70,24 +69,54 @@ public:
 	void setHideLibrary(bool hide);
 	void setModuleFilter(int moduleId); ///< -1 = all modules
 	void setMaxDepth(int depth);        ///< -1 = unlimited; 0 = roots only
-	const std::string& nameFilter() const { return m_nameFilter; }
-	int minCallCount() const { return m_minCallCount; }
-	bool hideLibrary() const { return m_hideLibrary; }
-	int moduleFilter() const { return m_moduleFilter; }
-	int maxDepth() const { return m_maxDepth; }
+	const std::string& nameFilter() const
+	{
+		return m_nameFilter;
+	}
+	int minCallCount() const
+	{
+		return m_minCallCount;
+	}
+	bool hideLibrary() const
+	{
+		return m_hideLibrary;
+	}
+	int moduleFilter() const
+	{
+		return m_moduleFilter;
+	}
+	int maxDepth() const
+	{
+		return m_maxDepth;
+	}
 
 	// ── Focus mode ───────────────────────────────────────────────────────────
 	void setFocusNode(uint64_t address, int hops);
 	void clearFocus();
-	bool isFocused() const { return m_focused; }
-	uint64_t focusAddress() const { return m_focusAddress; }
-	int focusHops() const { return m_focusHops; }
+	bool isFocused() const
+	{
+		return m_focused;
+	}
+	uint64_t focusAddress() const
+	{
+		return m_focusAddress;
+	}
+	int focusHops() const
+	{
+		return m_focusHops;
+	}
 
 	// ── Layout ───────────────────────────────────────────────────────────────
 	void setLayoutMode(CallGraphLayoutMode mode); ///< relayouts
-	CallGraphLayoutMode layoutMode() const { return m_mode; }
+	CallGraphLayoutMode layoutMode() const
+	{
+		return m_mode;
+	}
 	void setCollapseSccs(bool collapse); ///< relayouts
-	bool collapseSccs() const { return m_collapseSccs; }
+	bool collapseSccs() const
+	{
+		return m_collapseSccs;
+	}
 
 	// ── Queries ──────────────────────────────────────────────────────────────
 	/// Visible plain function nodes (SCC super-nodes are not counted, as in Qt).
@@ -95,21 +124,39 @@ public:
 	int visibleSccCount() const;
 	bool isNodeVisible(uint64_t address) const;
 	const CallGraphNode* node(uint64_t address) const;
-	const std::vector<CallGraphNode>& nodes() const { return m_nodes; }
-	const std::vector<CallEdge>& edges() const { return m_edges; }
+	const std::vector<CallGraphNode>& nodes() const
+	{
+		return m_nodes;
+	}
+	const std::vector<CallEdge>& edges() const
+	{
+		return m_edges;
+	}
 	std::optional<int> depthOf(uint64_t address) const;
 	/// Sorted distinct module ids (>= 0).
 	std::vector<int> moduleIds() const;
-	bool truncated() const { return int(m_nodes.size()) > callgraph::kMaxNodes; }
+	bool truncated() const
+	{
+		return int(m_nodes.size()) > callgraph::kMaxNodes;
+	}
 	/// Collapsed SCCs: super-node id (representative address) -> member addresses.
-	const std::unordered_map<uint64_t, std::vector<uint64_t>>& sccGroups() const { return m_sccMembers; }
-	bool isSccNode(uint64_t sceneId) const { return m_sccMembers.count(sceneId) > 0; }
+	const std::unordered_map<uint64_t, std::vector<uint64_t>>& sccGroups() const
+	{
+		return m_sccMembers;
+	}
+	bool isSccNode(uint64_t sceneId) const
+	{
+		return m_sccMembers.count(sceneId) > 0;
+	}
 	/// The scene node showing `address` (itself, or its SCC super-node), if drawn.
 	std::optional<uint64_t> sceneNodeFor(uint64_t address) const;
 	int callerCount(uint64_t address) const;
 	int calleeCount(uint64_t address) const;
 
-	const GraphScene& scene() const { return m_scene; }
+	const GraphScene& scene() const
+	{
+		return m_scene;
+	}
 
 	/// Graphviz DOT of every node and (deduplicated) edge, Qt format.
 	std::string exportDot() const;

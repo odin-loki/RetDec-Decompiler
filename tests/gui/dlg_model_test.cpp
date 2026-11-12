@@ -144,7 +144,9 @@ TEST(DlgRunOptions, NextRunOptionsReachTheCommandLine)
 	EXPECT_EQ(req.maxMemoryBytes, 1u << 20);
 	auto args = buildDecompilerArguments(req, false);
 	ASSERT_TRUE(args);
-	auto has = [&](std::string_view a) { return std::find(args->args.begin(), args->args.end(), a) != args->args.end(); };
+	auto has = [&](std::string_view a) {
+		return std::find(args->args.begin(), args->args.end(), a) != args->args.end();
+	};
 	EXPECT_TRUE(has("--backend-keep-all-brackets"));
 	EXPECT_TRUE(has("--backend-keep-library-funcs"));
 	EXPECT_TRUE(has("--ar-name"));
@@ -285,7 +287,8 @@ TEST(DlgSettingsForm, PassListAndValidation)
 	EXPECT_TRUE(validateSettingsForApply(d));
 	EXPECT_TRUE(fs::is_directory(dir / "x" / "y"));
 	d.extraConfigPath = (dir / "none.json").string();
-	EXPECT_EQ(validateSettingsForApply(d).error(), "Decompiler configuration file does not exist:\n" + d.extraConfigPath);
+	EXPECT_EQ(
+		validateSettingsForApply(d).error(), "Decompiler configuration file does not exist:\n" + d.extraConfigPath);
 	fs::remove_all(dir);
 
 	PluginMetadata m;

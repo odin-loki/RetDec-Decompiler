@@ -83,7 +83,8 @@ std::expected<void, std::string> exportDecompileBundle(const DecompileBundleInpu
 			if (!it->is_regular_file(ec)) continue;
 			const std::string name = it->path().filename().string();
 			const std::string cfgPrefix = stem + ".cfg.";
-			const bool cfgDot = name.size() >= cfgPrefix.size() + 4 && name.starts_with(cfgPrefix) && name.ends_with(".dot");
+			const bool cfgDot =
+				name.size() >= cfgPrefix.size() + 4 && name.starts_with(cfgPrefix) && name.ends_with(".dot");
 			if (cfgDot || name == stem + ".cg.dot") dots.push_back(name);
 		}
 		std::sort(dots.begin(), dots.end());

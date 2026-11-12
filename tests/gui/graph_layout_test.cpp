@@ -181,7 +181,9 @@ TEST(GraphLayoutTest, ForceDirectedPullsNeighboursTogether)
 		fn.push_back({i, float(i * 37 % 200) - 100.f, float(i * 91 % 200) - 100.f});
 	// two triangles, no edges between them
 	forceDirectedLayout(fn, E({{0, 1}, {1, 2}, {2, 0}, {3, 4}, {4, 5}, {5, 3}}), 60);
-	auto dist = [&](int a, int b) { return std::hypot(fn[size_t(a)].x - fn[size_t(b)].x, fn[size_t(a)].y - fn[size_t(b)].y); };
+	auto dist = [&](int a, int b) {
+		return std::hypot(fn[size_t(a)].x - fn[size_t(b)].x, fn[size_t(a)].y - fn[size_t(b)].y);
+	};
 	EXPECT_LT(dist(0, 1), dist(0, 4) + 1.f);
 	for (int i = 0; i < 6; ++i)
 		for (int j = i + 1; j < 6; ++j)

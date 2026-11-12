@@ -97,7 +97,9 @@ std::string cfgBlockTooltip(const BasicBlockData& b, int maxLines)
 
 // ── Chain compression ────────────────────────────────────────────────────────
 
-CfgGraphData compressChains(const std::vector<BasicBlockData>& in, const std::vector<CFGEdgeData>& inEdges,
+CfgGraphData compressChains(
+	const std::vector<BasicBlockData>& in,
+	const std::vector<CFGEdgeData>& inEdges,
 	std::unordered_map<uint64_t, std::vector<uint64_t>>* members)
 {
 	CfgGraphData out;
@@ -134,7 +136,7 @@ CfgGraphData compressChains(const std::vector<BasicBlockData>& in, const std::ve
 		std::vector<uint64_t> chain{b.id};
 		uint64_t cur = b.id;
 		while (succ[cur].size() == 1 && suppressible.count(succ[cur][0]) && !visited.count(succ[cur][0])
-			&& byId.count(succ[cur][0]))
+			   && byId.count(succ[cur][0]))
 		{
 			cur = succ[cur][0];
 			visited.insert(cur);
@@ -186,7 +188,8 @@ uint64_t cfgEntryBlock(const std::vector<BasicBlockData>& blocks, const std::vec
 
 // ── Loops ────────────────────────────────────────────────────────────────────
 
-std::vector<NaturalLoop> detectNaturalLoops(const std::vector<BasicBlockData>& blocks, const std::vector<CFGEdgeData>& edges)
+std::vector<NaturalLoop>
+detectNaturalLoops(const std::vector<BasicBlockData>& blocks, const std::vector<CFGEdgeData>& edges)
 {
 	std::vector<uint64_t> ids;
 	std::unordered_map<uint64_t, size_t> order;
@@ -245,7 +248,9 @@ int annotateLoops(std::vector<BasicBlockData>& blocks, const std::vector<CFGEdge
 	std::vector<size_t> idx(loops.size());
 	for (size_t i = 0; i < idx.size(); ++i)
 		idx[i] = i;
-	std::stable_sort(idx.begin(), idx.end(), [&](size_t a, size_t b) { return loops[a].body.size() > loops[b].body.size(); });
+	std::stable_sort(idx.begin(), idx.end(), [&](size_t a, size_t b) {
+		return loops[a].body.size() > loops[b].body.size();
+	});
 	for (size_t i: idx)
 	{
 		for (uint64_t id: loops[i].body)
@@ -270,15 +275,15 @@ SceneNode makeBlockNode(const BasicBlockData& b, int maxPreview)
 	n.fill = catppuccin::surface0;
 	n.hoverFill = catppuccin::surface1;
 	n.border = b.isLoopHeader ? catppuccin::blue
-		: b.isEntry           ? catppuccin::green
-		: b.isExit            ? catppuccin::red
+			 : b.isEntry      ? catppuccin::green
+			 : b.isExit       ? catppuccin::red
 							  : catppuccin::surface1;
 	n.hoverBorder = (b.isLoopHeader || b.isEntry || b.isExit) ? 0 : catppuccin::overlay2;
 	n.borderWidth = 1.5f;
 	n.dashedBorder = chain;
 	n.headerFill = b.isLoopHeader ? rgbaWithAlpha(catppuccin::blue, 80)
-		: b.isEntry               ? rgbaWithAlpha(catppuccin::green, 60)
-		: b.isExit                ? rgbaWithAlpha(catppuccin::red, 60)
+				 : b.isEntry      ? rgbaWithAlpha(catppuccin::green, 60)
+				 : b.isExit       ? rgbaWithAlpha(catppuccin::red, 60)
 								  : catppuccin::mantle;
 	n.headerHeight = cfg::kHeaderH;
 	n.tooltip = cfgBlockTooltip(b);
@@ -295,23 +300,42 @@ void addBlockTexts(SceneNode& n, const BasicBlockData& b, int maxPreview)
 {
 	const GRect& r = n.rect;
 	const float w = r.w - cfg::kPadX * 2.f;
-	n.texts.push_back(SceneText{cfgBlockHeaderText(b), {r.x + cfg::kPadX, r.y, w, cfg::kHeaderH}, cfg::kTextSize,
-		catppuccin::subtext1, SceneAlign::Left, true, true});
+	n.texts.push_back(
+		SceneText{
+			cfgBlockHeaderText(b),
+			{r.x + cfg::kPadX, r.y, w, cfg::kHeaderH},
+			cfg::kTextSize,
+			catppuccin::subtext1,
+			SceneAlign::Left,
+			true,
+			true});
 	const int shown = std::min<int>(int(b.instrs.size()), maxPreview);
 	for (int i = 0; i < shown; ++i)
-		n.texts.push_back(SceneText{b.instrs[size_t(i)].text,
-			{r.x + cfg::kPadX, r.y + cfg::kHeaderH + float(i) * cfg::kInstrH, w, cfg::kInstrH}, cfg::kTextSize,
-			isChainSummary(b) ? catppuccin::overlay2 : catppuccin::text, SceneAlign::Left, false, true});
+		n.texts.push_back(
+			SceneText{
+				b.instrs[size_t(i)].text,
+				{r.x + cfg::kPadX, r.y + cfg::kHeaderH + float(i) * cfg::kInstrH, w, cfg::kInstrH},
+				cfg::kTextSize,
+				isChainSummary(b) ? catppuccin::overlay2 : catppuccin::text,
+				SceneAlign::Left,
+				false,
+				true});
 	if (int(b.instrs.size()) > maxPreview)
-		n.texts.push_back(SceneText{std::format("  … {} more", int(b.instrs.size()) - maxPreview),
-			{r.x + cfg::kPadX, r.y + cfg::kHeaderH + float(shown) * cfg::kInstrH, w, cfg::kInstrH}, cfg::kTextSize,
-			catppuccin::overlay0, SceneAlign::Left, false, true});
+		n.texts.push_back(
+			SceneText{
+				std::format("  … {} more", int(b.instrs.size()) - maxPreview),
+				{r.x + cfg::kPadX, r.y + cfg::kHeaderH + float(shown) * cfg::kInstrH, w, cfg::kInstrH},
+				cfg::kTextSize,
+				catppuccin::overlay0,
+				SceneAlign::Left,
+				false,
+				true});
 }
 
 } // namespace
 
-CfgLayout layoutCfg(const std::vector<BasicBlockData>& blocksIn, const std::vector<CFGEdgeData>& edgesIn,
-	const CfgLayoutOptions& opt)
+CfgLayout layoutCfg(
+	const std::vector<BasicBlockData>& blocksIn, const std::vector<CFGEdgeData>& edgesIn, const CfgLayoutOptions& opt)
 {
 	CfgLayout out;
 	if (blocksIn.empty()) return out;
@@ -408,13 +432,15 @@ CfgLayout layoutCfg(const std::vector<BasicBlockData>& blocksIn, const std::vect
 				const float kb = outgoing ? rectOf[routed[b].e->to].center().x : rectOf[routed[b].e->from].center().x;
 				if (ka != kb) return ka < kb;
 				// true branch left of false branch when stacked
-				return int(routed[a].e->kind == EdgeKind::FalseBranch) < int(routed[b].e->kind == EdgeKind::FalseBranch);
+				return int(routed[a].e->kind == EdgeKind::FalseBranch)
+					 < int(routed[b].e->kind == EdgeKind::FalseBranch);
 			});
 			const float span = std::min(r.w * 0.6f, 36.f * float(list.size() - 1));
 			for (size_t k = 0; k < list.size(); ++k)
 			{
-				const float x = list.size() == 1 ? r.center().x
-												 : r.center().x - span * 0.5f + span * float(k) / float(list.size() - 1);
+				const float x = list.size() == 1
+								  ? r.center().x
+								  : r.center().x - span * 0.5f + span * float(k) / float(list.size() - 1);
 				(outgoing ? fromX : toX)[list[k]] = x;
 			}
 		}
@@ -460,7 +486,12 @@ CfgLayout layoutCfg(const std::vector<BasicBlockData>& blocksIn, const std::vect
 	if (opt.showLoopRegions)
 	{
 		static constexpr Rgba kLoopColors[] = {
-			catppuccin::blue, catppuccin::mauve, catppuccin::teal, catppuccin::yellow, catppuccin::peach, catppuccin::green};
+			catppuccin::blue,
+			catppuccin::mauve,
+			catppuccin::teal,
+			catppuccin::yellow,
+			catppuccin::peach,
+			catppuccin::green};
 		std::map<int, GRect> loopRects;
 		for (const auto& b: blocks)
 		{
@@ -490,13 +521,15 @@ CfgLayout layoutCfg(const std::vector<BasicBlockData>& blocksIn, const std::vect
 
 // ── DOT ──────────────────────────────────────────────────────────────────────
 
-std::string cfgToDot(const std::vector<BasicBlockData>& blocks, const std::vector<CFGEdgeData>& edges, const std::string& title)
+std::string
+cfgToDot(const std::vector<BasicBlockData>& blocks, const std::vector<CFGEdgeData>& edges, const std::string& title)
 {
 	std::string dot = std::format("digraph \"{}\" {{\n", graphDotEscape(title));
-	dot += "  graph [bgcolor=\"#1e1e2e\" fontcolor=\"#cdd6f4\" fontname=\"Consolas\" splines=true];\n"
-		   "  node [shape=box style=\"rounded,filled\" fillcolor=\"#313244\" color=\"#45475a\" fontcolor=\"#cdd6f4\""
-		   " fontname=\"Consolas\" fontsize=10];\n"
-		   "  edge [color=\"#a6adc8\"];\n\n";
+	dot +=
+		"  graph [bgcolor=\"#1e1e2e\" fontcolor=\"#cdd6f4\" fontname=\"Consolas\" splines=true];\n"
+		"  node [shape=box style=\"rounded,filled\" fillcolor=\"#313244\" color=\"#45475a\" fontcolor=\"#cdd6f4\""
+		" fontname=\"Consolas\" fontsize=10];\n"
+		"  edge [color=\"#a6adc8\"];\n\n";
 	for (const auto& b: blocks)
 	{
 		std::string label = cfgBlockHeaderText(b) + "\n";
@@ -526,7 +559,11 @@ std::string cfgToDot(const std::vector<BasicBlockData>& blocks, const std::vecto
 	dot += "\n";
 	for (const auto& e: edges)
 	{
-		dot += std::format("  \"0x{:x}\" -> \"0x{:x}\" [color=\"{}\"{}];\n", e.from, e.to, rgbaCss(cfgEdgeColor(e.kind)),
+		dot += std::format(
+			"  \"0x{:x}\" -> \"0x{:x}\" [color=\"{}\"{}];\n",
+			e.from,
+			e.to,
+			rgbaCss(cfgEdgeColor(e.kind)),
 			cfgEdgeDashed(e.kind) ? " style=dashed" : "");
 	}
 	dot += "}\n";

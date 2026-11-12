@@ -77,7 +77,14 @@ DiagnosticsPanel::DiagnosticsPanel(UiContext& ui, NodeHandle parent): ui_(ui)
 	w::setTableActivation(ui, table_, true); // double click / Enter navigate
 
 	delegate_.user = this;
-	delegate_.paint = [](const void* u, const PaintContext& pc, DrawList& dl, Rect cell, u32 row, u32 col, std::string_view text, bool) {
+	delegate_.paint = [](const void* u,
+						 const PaintContext& pc,
+						 DrawList& dl,
+						 Rect cell,
+						 u32 row,
+						 u32 col,
+						 std::string_view text,
+						 bool) {
 		const auto* self = static_cast<const DiagnosticsPanel*>(u);
 		if (row >= self->rows_.size()) return;
 		const model::Severity sev = self->store_.at(self->rows_[row]).severity;
@@ -86,12 +93,21 @@ DiagnosticsPanel::DiagnosticsPanel(UiContext& ui, NodeHandle parent): ui_(ui)
 		if (col == 0)
 		{
 			const float iw = fs + 6.f;
-			pc.ui.paintString(dl, model::severityIcon(sev), {cell.x, cell.y, iw, cell.h}, c, fs, TextAlignment::Start, pc.node.index);
+			pc.ui.paintString(
+				dl, model::severityIcon(sev), {cell.x, cell.y, iw, cell.h}, c, fs, TextAlignment::Start, pc.node.index);
 			cell.x += iw;
 			cell.w = std::max(0.f, cell.w - iw);
 		}
 		// Address column: monospace (a delegate paints with the view's face unless told otherwise).
-		pc.ui.paintString(dl, text, cell, c, fs, TextAlignment::Start, pc.node.index, col == 3 ? styledFont(pc.ui, pc.node, true, false) : nullptr);
+		pc.ui.paintString(
+			dl,
+			text,
+			cell,
+			c,
+			fs,
+			TextAlignment::Start,
+			pc.node.index,
+			col == 3 ? styledFont(pc.ui, pc.node, true, false) : nullptr);
 	};
 	for (u32 c = 0; c < kColumns; ++c)
 		w::setTableDelegate(ui, table_, c, &delegate_);
@@ -105,9 +121,15 @@ DiagnosticsPanel::DiagnosticsPanel(UiContext& ui, NodeHandle parent): ui_(ui)
 		self->text_ = std::string(a.text);
 		self->refilter();
 	});
-	ui.connect(copyBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->copyVisible(); });
-	ui.connect(saveBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->saveVisible(); });
-	ui.connect(table_, SignalKind::Activated, [self](UiContext&, NodeHandle, const SignalArgs& a) { self->activateRow(int(a.value)); });
+	ui.connect(copyBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) {
+		self->copyVisible();
+	});
+	ui.connect(saveBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) {
+		self->saveVisible();
+	});
+	ui.connect(table_, SignalKind::Activated, [self](UiContext&, NodeHandle, const SignalArgs& a) {
+		self->activateRow(int(a.value));
+	});
 	ui.connect(table_, SignalKind::Toggled, [self](UiContext&, NodeHandle, const SignalArgs& a) {
 		self->sortCol_ = int(a.value);
 		self->sortAsc_ = a.flag;
@@ -197,7 +219,8 @@ void DiagnosticsPanel::addDiagnostic(model::Diagnostic d)
 	if (isError && onErrorAdded) onErrorAdded();
 }
 
-void DiagnosticsPanel::addMessage(model::Severity severity, std::string_view stage, std::string_view message, uint64_t address)
+void DiagnosticsPanel::addMessage(
+	model::Severity severity, std::string_view stage, std::string_view message, uint64_t address)
 {
 	model::Diagnostic d;
 	d.severity = severity;
@@ -267,7 +290,8 @@ void DiagnosticsPanel::saveVisible()
 	if (!ui_.alive(saveDlg_))
 	{
 		std::error_code ec;
-		saveDlg_ = w::fileDialog(ui_, "Save diagnostics", std::filesystem::current_path(ec).string(), "*.tsv;*.txt", true);
+		saveDlg_ =
+			w::fileDialog(ui_, "Save diagnostics", std::filesystem::current_path(ec).string(), "*.tsv;*.txt", true);
 		auto* self = this;
 		ui_.connect(saveDlg_, SignalKind::Submitted, [self](UiContext&, NodeHandle, const SignalArgs& a) {
 			if (!a.text.empty()) self->saveVisibleTo(std::filesystem::path(std::string(a.text)));

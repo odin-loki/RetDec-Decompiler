@@ -47,7 +47,8 @@ bool containsCi(std::string_view s, std::string_view p)
 
 bool CategoryDetector::isFormatString(std::string_view v)
 {
-	static const std::regex re(R"(%[-+0 #]?\d*(\.\d+)?[diouxXeEfgGaAcsSpn%])", std::regex::ECMAScript | std::regex::icase);
+	static const std::regex re(
+		R"(%[-+0 #]?\d*(\.\d+)?[diouxXeEfgGaAcsSpn%])", std::regex::ECMAScript | std::regex::icase);
 	return std::regex_search(v.begin(), v.end(), re);
 }
 
@@ -64,12 +65,25 @@ bool CategoryDetector::isFilePath(std::string_view v)
 	if (v.front() == '/') return true;
 	if (v.size() >= 3 && v[1] == ':' && (v[2] == '\\' || v[2] == '/')) return true;
 	if (v.starts_with("\\\\")) return true;
-	for (std::string_view p: {"/proc/", "/sys/", "/dev/", "/etc/", "/usr/", "/var/", "C:\\", "C:/", "%SystemRoot%", "%AppData%", "%TEMP%"})
+	for (std::string_view p:
+		 {"/proc/", "/sys/", "/dev/", "/etc/", "/usr/", "/var/", "C:\\", "C:/", "%SystemRoot%", "%AppData%", "%TEMP%"})
 		if (startsWithCi(v, p)) return true;
 	if (v.find('/') != std::string_view::npos || v.find('\\') != std::string_view::npos)
 	{
 		for (std::string_view e:
-			 {".exe", ".dll", ".so", ".dylib", ".sys", ".conf", ".cfg", ".ini", ".log", ".txt", ".xml", ".json", ".yaml"})
+			 {".exe",
+			  ".dll",
+			  ".so",
+			  ".dylib",
+			  ".sys",
+			  ".conf",
+			  ".cfg",
+			  ".ini",
+			  ".log",
+			  ".txt",
+			  ".xml",
+			  ".json",
+			  ".yaml"})
 			if (endsWithCi(v, e)) return true;
 	}
 	return false;
@@ -87,10 +101,27 @@ bool CategoryDetector::isRegEx(std::string_view v)
 bool CategoryDetector::isCryptoConst(std::string_view v)
 {
 	static constexpr std::string_view kKeywords[] = {
-		"SHA",       "MD5",        "AES",           "RSA",      "HMAC",           "PBKDF",
-		"BLAKE",     "ChaCha",     "Poly1305",      "ECDSA",    "secp256k1",      "Curve25519",
-		"BEGIN CERTIFICATE",       "BEGIN RSA",     "BEGIN PRIVATE KEY",          "BEGIN PUBLIC KEY",
-		"BEGIN EC",  "BEGIN OPENSSH",               "iv=",      "salt=",          "key=",
+		"SHA",
+		"MD5",
+		"AES",
+		"RSA",
+		"HMAC",
+		"PBKDF",
+		"BLAKE",
+		"ChaCha",
+		"Poly1305",
+		"ECDSA",
+		"secp256k1",
+		"Curve25519",
+		"BEGIN CERTIFICATE",
+		"BEGIN RSA",
+		"BEGIN PRIVATE KEY",
+		"BEGIN PUBLIC KEY",
+		"BEGIN EC",
+		"BEGIN OPENSSH",
+		"iv=",
+		"salt=",
+		"key=",
 	};
 	for (std::string_view kw: kKeywords)
 		if (containsCi(v, kw)) return true;
@@ -150,27 +181,13 @@ const std::unordered_map<uint32_t, const char*>& magic32()
 const std::unordered_map<uint32_t, const char*>& crypto32()
 {
 	static const std::unordered_map<uint32_t, const char*> m = {
-		{0x428a2f98, "SHA256_K[0]"},
-		{0x71374491, "SHA256_K[1]"},
-		{0xb5c0fbcf, "SHA256_K[2]"},
-		{0xe9b5dba5, "SHA256_K[3]"},
-		{0x3956c25b, "SHA256_K[4]"},
-		{0x59f111f1, "SHA256_K[5]"},
-		{0x923f82a4, "SHA256_K[6]"},
-		{0xab1c5ed5, "SHA256_K[7]"},
-		{0xd807aa98, "SHA256_K[8]"},
-		{0x12835b01, "SHA256_K[9]"},
-		{0x01000000, "AES Rcon[1]"},
-		{0x02000000, "AES Rcon[2]"},
-		{0x04000000, "AES Rcon[3]"},
-		{0x08000000, "AES Rcon[4]"},
-		{0x10000000, "AES Rcon[5]"},
-		{0x1B000000, "AES Rcon[6]"},
-		{0x36000000, "AES Rcon[7]"},
-		{0xEDB88320, "CRC32 poly (LE)"},
-		{0x04C11DB7, "CRC32 poly (BE)"},
-		{0xd76aa478, "MD5_T[1]"},
-		{0xe8c7b756, "MD5_T[2]"},
+		{0x428a2f98, "SHA256_K[0]"},     {0x71374491, "SHA256_K[1]"}, {0xb5c0fbcf, "SHA256_K[2]"},
+		{0xe9b5dba5, "SHA256_K[3]"},     {0x3956c25b, "SHA256_K[4]"}, {0x59f111f1, "SHA256_K[5]"},
+		{0x923f82a4, "SHA256_K[6]"},     {0xab1c5ed5, "SHA256_K[7]"}, {0xd807aa98, "SHA256_K[8]"},
+		{0x12835b01, "SHA256_K[9]"},     {0x01000000, "AES Rcon[1]"}, {0x02000000, "AES Rcon[2]"},
+		{0x04000000, "AES Rcon[3]"},     {0x08000000, "AES Rcon[4]"}, {0x10000000, "AES Rcon[5]"},
+		{0x1B000000, "AES Rcon[6]"},     {0x36000000, "AES Rcon[7]"}, {0xEDB88320, "CRC32 poly (LE)"},
+		{0x04C11DB7, "CRC32 poly (BE)"}, {0xd76aa478, "MD5_T[1]"},    {0xe8c7b756, "MD5_T[2]"},
 		{5381, "DJB2 hash seed"},
 	};
 	return m;
@@ -184,8 +201,12 @@ const std::unordered_map<uint32_t, const char*>& float32()
 		{0x3F000000, "0.5f"},
 		{0x40490FDB, "\xCF\x80 (3.14159\xE2\x80\xA6)"},
 		{0x402DF854, "e (2.71828\xE2\x80\xA6)"},
-		{0x3FB504F3, "\xE2\x88\x9A" "2/2"},
-		{0x3F3504F3, "\xE2\x88\x9A" "2-1"},
+		{0x3FB504F3,
+		 "\xE2\x88\x9A"
+		 "2/2"},
+		{0x3F3504F3,
+		 "\xE2\x88\x9A"
+		 "2-1"},
 		{0x7F800000, "+Inf"},
 		{0xFF800000, "-Inf"},
 		{0x7FC00000, "NaN"},

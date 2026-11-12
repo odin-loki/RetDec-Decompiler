@@ -63,8 +63,12 @@ BinaryBrowserPanel::BinaryBrowserPanel(UiContext& ui, NodeHandle parent): ui_(ui
 	hex_->setPlaceholder("Select a section to view its hex dump\xE2\x80\xA6");
 
 	auto* self = this;
-	ui.connect(table_, SignalKind::ValueChanged, [self](UiContext&, NodeHandle, const SignalArgs& a) { self->showHexForRow(int(a.value)); });
-	ui.connect(table_, SignalKind::Activated, [self](UiContext&, NodeHandle, const SignalArgs& a) { self->activateRow(int(a.value)); });
+	ui.connect(table_, SignalKind::ValueChanged, [self](UiContext&, NodeHandle, const SignalArgs& a) {
+		self->showHexForRow(int(a.value));
+	});
+	ui.connect(table_, SignalKind::Activated, [self](UiContext&, NodeHandle, const SignalArgs& a) {
+		self->activateRow(int(a.value));
+	});
 }
 
 BinaryBrowserPanel::~BinaryBrowserPanel()
@@ -187,7 +191,8 @@ void BinaryBrowserPanel::showHexForRow(int row)
 	ui_.setText(hexHeader_, std::format("Hex View \xE2\x80\x94 {} @ file 0x{:x} ({} bytes)", r.name, r.offset, size));
 	std::string dump = model::formatHexDump(*bytes, r.offset);
 	if (size > kMaxHexBytes)
-		dump += std::format("\n\xE2\x80\xA6 [showing first {} KiB of {} KiB]", kMaxHexBytes / 1024, (size + 1023) / 1024);
+		dump +=
+			std::format("\n\xE2\x80\xA6 [showing first {} KiB of {} KiB]", kMaxHexBytes / 1024, (size + 1023) / 1024);
 	hex_->setText(dump);
 }
 
@@ -210,14 +215,15 @@ void BinaryBrowserPanel::openContextMenu(Vec2 at, int row)
 	auto* self = this;
 	std::vector<MenuAction> actions;
 	actions.push_back({"Decompile this range\xE2\x80\xA6", true, [self, range] {
-		                   if (self->onDecompileRangeRequested) self->onDecompileRangeRequested(range);
-	                   }});
-	actions.push_back({"Copy start address", true, [self, start] { self->ui_.setClipboardText(model::formatAddressHex(start)); }});
+						   if (self->onDecompileRangeRequested) self->onDecompileRangeRequested(range);
+					   }});
+	actions.push_back(
+		{"Copy start address", true, [self, start] { self->ui_.setClipboardText(model::formatAddressHex(start)); }});
 	actions.push_back({"Copy VMA range", true, [self, range] { self->ui_.setClipboardText(range); }});
 	actions.push_back({"Copy hex snippet", true, [self, r, size] {
-		                   auto bytes = model::readFileRange(self->binaryPath_, r.offset, std::min<uint64_t>(size, 64));
-		                   if (bytes && !bytes->empty()) self->ui_.setClipboardText(model::hexSnippet(*bytes));
-	                   }});
+						   auto bytes = model::readFileRange(self->binaryPath_, r.offset, std::min<uint64_t>(size, 64));
+						   if (bytes && !bytes->empty()) self->ui_.setClipboardText(model::hexSnippet(*bytes));
+					   }});
 	menu_.open(root_, at, std::move(actions));
 }
 

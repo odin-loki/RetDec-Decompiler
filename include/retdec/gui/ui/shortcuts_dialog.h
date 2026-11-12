@@ -23,15 +23,27 @@ public:
 
 	void show(std::function<void()> onClosed = {});
 	void close();
-	bool isOpen() const { return dlg_.isOpen(); }
+	bool isOpen() const
+	{
+		return dlg_.isOpen();
+	}
 
-	std::string title() const { return dlg_.title(); }
+	std::string title() const
+	{
+		return dlg_.title();
+	}
 	/// (keys, action) of every row shown, in order.
 	std::vector<std::pair<std::string, std::string>> rows() const;
 	/// Group titles shown, in order.
 	std::vector<std::string> groups() const;
-	fuse::ui::NodeHandle closeButton() const { return close_; }
-	fuse::ui::NodeHandle card() const { return dlg_.card(); }
+	fuse::ui::NodeHandle closeButton() const
+	{
+		return close_;
+	}
+	fuse::ui::NodeHandle card() const
+	{
+		return dlg_.card();
+	}
 
 private:
 	ModalDialog dlg_;

@@ -78,8 +78,9 @@ fuse::ui::Image makeIcon(int size)
 			const bool leftBar = std::abs(u - 0.28f) * size < t * 0.5f && v > 0.2f && v < 0.8f;
 			const bool rightBar = std::abs(u - 0.72f) * size < t * 0.5f && v > 0.2f && v < 0.8f;
 			const bool caps = (std::abs(v - 0.2f) * size < t * 0.5f || std::abs(v - 0.8f) * size < t * 0.5f)
-			                  && ((u > 0.28f && u < 0.38f) || (u > 0.62f && u < 0.72f));
-			const bool notch = std::abs(v - 0.5f) * size < t * 0.5f && ((u > 0.18f && u < 0.28f) || (u > 0.72f && u < 0.82f));
+						   && ((u > 0.28f && u < 0.38f) || (u > 0.62f && u < 0.72f));
+			const bool notch =
+				std::abs(v - 0.5f) * size < t * 0.5f && ((u > 0.18f && u < 0.28f) || (u > 0.72f && u < 0.82f));
 			const bool dot = std::abs(u - 0.5f) * size < t * 0.6f && std::abs(v - 0.5f) * size < t * 0.6f;
 			if (leftBar || rightBar || caps || notch) px = fg;
 			if (dot) px = fg2;
@@ -116,9 +117,10 @@ int main(int argc, char** argv)
 	fuse::app::Application app{{.name = "retdec-gui", .argc = launch.argc, .argv = launch.argvPtrs.data()}};
 	const double w = app.settings().number("window.width", ui::MainWindow::kDefaultWidth);
 	const double h = app.settings().number("window.height", ui::MainWindow::kDefaultHeight);
-	auto& win = app.createWindow({.title = "RetDec \xE2\x80\x94 Retargetable Decompiler",
-	                              .width = std::clamp(unsigned(w), 640u, 8192u),
-	                              .height = std::clamp(unsigned(h), 480u, 8192u)});
+	auto& win = app.createWindow(
+		{.title = "RetDec \xE2\x80\x94 Retargetable Decompiler",
+		 .width = std::clamp(unsigned(w), 640u, 8192u),
+		 .height = std::clamp(unsigned(h), 480u, 8192u)});
 	ui::bindSystemClipboard(win.ui());
 
 	std::optional<fuse::app::NativePlatform> native;
@@ -169,7 +171,9 @@ int main(int argc, char** argv)
 	else if (launch.headlessExitMs > 0)
 	{
 		fuse::app::Application* appp = &app;
-		win.ui().startTimer(float(launch.headlessExitMs) / 1000.f, false, [appp](fuse::ui::UiContext&) { appp->quit(0); });
+		win.ui().startTimer(float(launch.headlessExitMs) / 1000.f, false, [appp](fuse::ui::UiContext&) {
+			appp->quit(0);
+		});
 	}
 
 	while (true)

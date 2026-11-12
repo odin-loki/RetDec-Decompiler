@@ -28,7 +28,8 @@ bool iequals(std::string_view a, std::string_view b)
 {
 	if (a.size() != b.size()) return false;
 	for (std::size_t i = 0; i < a.size(); ++i)
-		if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i]))) return false;
+		if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i])))
+			return false;
 	return true;
 }
 
@@ -221,10 +222,14 @@ std::expected<FileinfoInfo, std::string> parseFileinfoJson(std::string_view json
 		const fj::value& v = kv->second;
 		if (v.is_obj() || v.is_arr()) continue;
 		std::string val;
-		if (v.is_str()) val = v.str();
-		else if (v.is_num()) val = numberText(v.num());
-		else if (v.is_bool()) val = v.b() ? "true" : "false";
-		else if (v.is_null()) val = "null";
+		if (v.is_str())
+			val = v.str();
+		else if (v.is_num())
+			val = numberText(v.num());
+		else if (v.is_bool())
+			val = v.b() ? "true" : "false";
+		else if (v.is_null())
+			val = "null";
 		addRow(k, std::move(val));
 	}
 
@@ -263,14 +268,18 @@ std::string formatHashesForClipboard(const FileinfoInfo& info)
 
 // ── Files ────────────────────────────────────────────────────────────────────
 
-std::expected<std::vector<uint8_t>, std::string> readFileRange(const std::filesystem::path& path, uint64_t offset, uint64_t size)
+std::expected<std::vector<uint8_t>, std::string>
+readFileRange(const std::filesystem::path& path, uint64_t offset, uint64_t size)
 {
 	std::FILE* f = std::fopen(path.string().c_str(), "rb");
 	if (!f) return std::unexpected(std::format("Cannot open binary: {}", path.string()));
 	struct Closer
 	{
 		std::FILE* f;
-		~Closer() { std::fclose(f); }
+		~Closer()
+		{
+			std::fclose(f);
+		}
 	} closer{f};
 #if defined(_WIN32)
 	if (_fseeki64(f, static_cast<long long>(offset), SEEK_SET) != 0)
@@ -297,8 +306,10 @@ std::string formatHexDump(const std::vector<uint8_t>& data, uint64_t fileOffset)
 		out += std::format("{:08x}  ", fileOffset + i);
 		for (std::size_t j = 0; j < kBytesPerLine; ++j)
 		{
-			if (j < lineLen) out += std::format("{:02x} ", data[i + j]);
-			else out += "   ";
+			if (j < lineLen)
+				out += std::format("{:02x} ", data[i + j]);
+			else
+				out += "   ";
 			if (j == 7) out += ' ';
 		}
 		out += ' ';
@@ -439,7 +450,8 @@ void InspectModel::cancelAll()
 	cancel(InspectTool::Unpacker);
 }
 
-std::expected<void, std::string> InspectModel::start(InspectTool kind, std::string tool, std::string exe, std::vector<std::string> args)
+std::expected<void, std::string>
+InspectModel::start(InspectTool kind, std::string tool, std::string exe, std::vector<std::string> args)
 {
 	auto w = std::make_shared<Worker>();
 	std::string cwd;
@@ -467,7 +479,8 @@ std::expected<void, std::string> InspectModel::start(InspectTool kind, std::stri
 		sp.stop = st;
 		const auto t0 = std::chrono::steady_clock::now();
 		auto r = forge::os::spawn_wait(sp);
-		run.elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+		run.elapsedMs =
+			std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
 		if (!r)
 		{
 			run.exitCode = -1;
@@ -499,15 +512,16 @@ std::expected<void, std::string> InspectModel::startFileinfo(std::string_view bi
 	return start(InspectTool::Fileinfo, "retdec-fileinfo", std::string(fileinfoExe), fileinfoArgs(binary));
 }
 
-std::expected<void, std::string> InspectModel::startUnpacker(std::string_view binary, std::string_view unpackerExe,
-                                                             std::string_view outPath, bool brute)
+std::expected<void, std::string>
+InspectModel::startUnpacker(std::string_view binary, std::string_view unpackerExe, std::string_view outPath, bool brute)
 {
 	if (unpackerExe.empty()) return std::unexpected(std::string("retdec-unpacker not found."));
 	if (binary.empty()) return std::unexpected(std::string("No binary loaded."));
 	if (outPath.empty()) return std::unexpected(std::string("Set an unpack output path."));
 	if (running(InspectTool::Unpacker)) return std::unexpected(std::string("retdec-unpacker is already running."));
 	cancel(InspectTool::Unpacker);
-	return start(InspectTool::Unpacker, "retdec-unpacker", std::string(unpackerExe), unpackerArgs(binary, outPath, brute));
+	return start(
+		InspectTool::Unpacker, "retdec-unpacker", std::string(unpackerExe), unpackerArgs(binary, outPath, brute));
 }
 
 std::vector<ToolRun> InspectModel::poll()

@@ -49,8 +49,7 @@ inline const fuse::text::Font& bundledFont()
 /// A headless UiContext (no window) sized like a docked panel.
 class HeadlessUi {
 public:
-	explicit HeadlessUi(fuse::ui::Size viewport = {1000.f, 700.f})
-		: ui({.viewport = viewport, .font = &bundledFont()})
+	explicit HeadlessUi(fuse::ui::Size viewport = {1000.f, 700.f}): ui({.viewport = viewport, .font = &bundledFont()})
 	{
 		fuse::ui::widgets::install(ui);
 		ui.registerBundledFonts(); // "monospace", bold faces, symbol fallback (as AppWindow)
@@ -92,7 +91,10 @@ public:
 		frame();
 	}
 
-	void click(fuse::ui::NodeHandle n) { clickAt(center(n)); }
+	void click(fuse::ui::NodeHandle n)
+	{
+		clickAt(center(n));
+	}
 
 	void doubleClickAt(fuse::ui::Vec2 p)
 	{

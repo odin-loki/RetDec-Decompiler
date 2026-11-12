@@ -35,17 +35,17 @@ const char* roleClass(model::ChatRole r)
 {
 	switch (r)
 	{
-		case model::ChatRole::User: return "retdec-chat-user";
-		case model::ChatRole::Assistant: return "retdec-chat-assistant";
-		default: return "retdec-chat-system";
+	case model::ChatRole::User: return "retdec-chat-user";
+	case model::ChatRole::Assistant: return "retdec-chat-assistant";
+	default: return "retdec-chat-system";
 	}
 }
 
 } // namespace
 
-AIAssistantPanel::AIAssistantPanel(UiContext& ui, NodeHandle parent, model::AssistantBackendFactory factory,
-                                   model::AppSettings& settings)
-	: ui_(ui), settings_(settings), files_(ui)
+AIAssistantPanel::AIAssistantPanel(
+	UiContext& ui, NodeHandle parent, model::AssistantBackendFactory factory, model::AppSettings& settings):
+	ui_(ui), settings_(settings), files_(ui)
 {
 	dlg::ensureDialogStyles(ui);
 	if (!ui.hasClass(ui.root(), "retdec-toggle-styled"))
@@ -121,23 +121,31 @@ AIAssistantPanel::AIAssistantPanel(UiContext& ui, NodeHandle parent, model::Assi
 	}
 
 	ui.connect(loadBtn_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { browseModel(); });
-	ui.connect(gpuBtn_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { setGpuEnabled(!gpuEnabled_); });
-	ui.connect(settingsBtn_, SignalKind::Clicked,
-	           [this](UiContext&, NodeHandle, const SignalArgs&) { setSettingsBarVisible(!settingsShown_); });
+	ui.connect(gpuBtn_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+		setGpuEnabled(!gpuEnabled_);
+	});
+	ui.connect(settingsBtn_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+		setSettingsBarVisible(!settingsShown_);
+	});
 	ui.connect(clearBtn_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { clear(); });
 	ui.connect(sendBtn_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { sendQuery(); });
 	ui.connect(stopBtn_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { stopGeneration(); });
 	ui.connect(input_, SignalKind::Submitted, [this](UiContext&, NodeHandle, const SignalArgs&) { sendQuery(); });
-	ui.connect(tempSpin_, SignalKind::ValueChanged,
-	           [this](UiContext&, NodeHandle, const SignalArgs& a) { worker_->setTemperature(a.value); });
-	ui.connect(topPSpin_, SignalKind::ValueChanged,
-	           [this](UiContext&, NodeHandle, const SignalArgs& a) { worker_->setTopP(a.value); });
-	ui.connect(topKSpin_, SignalKind::ValueChanged,
-	           [this](UiContext&, NodeHandle, const SignalArgs& a) { worker_->setTopK(int(a.value)); });
-	ui.connect(maxTokSpin_, SignalKind::ValueChanged,
-	           [this](UiContext&, NodeHandle, const SignalArgs& a) { worker_->setMaxTokens(int(a.value)); });
-	ui.connect(thinking_, SignalKind::Toggled,
-	           [this](UiContext&, NodeHandle, const SignalArgs& a) { setThinkingMode(a.flag); });
+	ui.connect(tempSpin_, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+		worker_->setTemperature(a.value);
+	});
+	ui.connect(topPSpin_, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+		worker_->setTopP(a.value);
+	});
+	ui.connect(topKSpin_, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+		worker_->setTopK(int(a.value));
+	});
+	ui.connect(maxTokSpin_, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+		worker_->setMaxTokens(int(a.value));
+	});
+	ui.connect(thinking_, SignalKind::Toggled, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+		setThinkingMode(a.flag);
+	});
 
 	applyMlSettingsFromApp();
 	if (model::assistantHasNeuralBackend())
@@ -201,8 +209,10 @@ void AIAssistantPanel::unloadModel()
 
 void AIAssistantPanel::browseModel()
 {
-	files_.show(FilePrompt::Mode::Open, "Open GGUF model", settings_.ml.modelPath, "*.gguf",
-	            [this](const std::string& path) { loadModel(path, gpuEnabled_); });
+	files_.show(
+		FilePrompt::Mode::Open, "Open GGUF model", settings_.ml.modelPath, "*.gguf", [this](const std::string& path) {
+			loadModel(path, gpuEnabled_);
+		});
 }
 
 void AIAssistantPanel::applyMlSettingsFromApp()
@@ -211,8 +221,10 @@ void AIAssistantPanel::applyMlSettingsFromApp()
 	const bool cpuOnly = ml.inferenceDevice == model::MLSettings::InferenceDevice::CPU;
 	const bool gpuOn = ml.inferenceDevice == model::MLSettings::InferenceDevice::GPU;
 	model::applyProcessEnvironmentVariables(model::assistantNeuralEnvironment(ml, ui_.checked(thinking_)));
-	if (cpuOnly) setGpuEnabled(false);
-	else if (gpuOn) setGpuEnabled(true);
+	if (cpuOnly)
+		setGpuEnabled(false);
+	else if (gpuOn)
+		setGpuEnabled(true);
 
 	worker_->setTemperature(float(ml.temperature));
 	worker_->setTopP(float(ml.topP));
@@ -346,39 +358,41 @@ bool AIAssistantPanel::pumpEvents()
 		using K = model::InferenceEvent::Kind;
 		switch (e.kind)
 		{
-			case K::Token:
-				if (!history_.empty() && history_.back().role == model::ChatRole::Assistant && !history_.back().isComplete)
-					history_.back().text += e.text;
-				else
-					history_.push_back({model::ChatRole::Assistant, std::move(e.text), false});
-				streamDirty = true;
-				break;
-			case K::Complete:
-				if (!history_.empty() && history_.back().role == model::ChatRole::Assistant)
-					history_.back().isComplete = true;
-				updateLastMessageNode();
-				streamDirty = false;
-				setInferenceBusy(false);
-				if (e.tokens > 0)
-					ui_.setText(status_, e.tokPerSec > 0.0 ? std::format("{} tokens ({:.1f} tok/s)", e.tokens, e.tokPerSec)
-					                                       : std::format("{} tokens", e.tokens));
-				break;
-			case K::Error:
-				appendSystemMessage(model::assistantErrorText(e.text));
-				setInferenceBusy(false);
-				break;
-			case K::SystemMessage: appendSystemMessage(e.text); break;
-			case K::LoadFinished:
-				modelLoaded_ = e.ok;
-				if (e.ok)
-				{
-					modelPath_ = e.path;
-					ui_.setText(modelLabel_, "Model: " + e.path);
-				}
-				else
-					ui_.setText(modelLabel_, "Load failed");
-				if (!inferenceRunning_) ui_.setText(status_, "");
-				break;
+		case K::Token:
+			if (!history_.empty() && history_.back().role == model::ChatRole::Assistant && !history_.back().isComplete)
+				history_.back().text += e.text;
+			else
+				history_.push_back({model::ChatRole::Assistant, std::move(e.text), false});
+			streamDirty = true;
+			break;
+		case K::Complete:
+			if (!history_.empty() && history_.back().role == model::ChatRole::Assistant)
+				history_.back().isComplete = true;
+			updateLastMessageNode();
+			streamDirty = false;
+			setInferenceBusy(false);
+			if (e.tokens > 0)
+				ui_.setText(
+					status_,
+					e.tokPerSec > 0.0 ? std::format("{} tokens ({:.1f} tok/s)", e.tokens, e.tokPerSec)
+									  : std::format("{} tokens", e.tokens));
+			break;
+		case K::Error:
+			appendSystemMessage(model::assistantErrorText(e.text));
+			setInferenceBusy(false);
+			break;
+		case K::SystemMessage: appendSystemMessage(e.text); break;
+		case K::LoadFinished:
+			modelLoaded_ = e.ok;
+			if (e.ok)
+			{
+				modelPath_ = e.path;
+				ui_.setText(modelLabel_, "Model: " + e.path);
+			}
+			else
+				ui_.setText(modelLabel_, "Load failed");
+			if (!inferenceRunning_) ui_.setText(status_, "");
+			break;
 		}
 	}
 	// Streaming redraws per batch of tokens; without it the text appears on completion.

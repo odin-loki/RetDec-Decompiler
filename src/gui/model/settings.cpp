@@ -645,7 +645,7 @@ FontSpec FontSpec::fromQtString(std::string_view s, int defaultPointSize)
 		if (!family.empty()) family += ',';
 		family += f;
 	}
-	(void) sawNumber;
+	(void)sawNumber;
 	if (!trimmed(family).empty()) out.family = family;
 	return out;
 }

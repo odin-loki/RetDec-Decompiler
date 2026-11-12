@@ -36,25 +36,61 @@ public:
 	/// box. Returns false in that case.
 	bool show(std::function<void()> onClosed = {});
 	void close();
-	bool isOpen() const { return dlg_.isOpen(); }
+	bool isOpen() const
+	{
+		return dlg_.isOpen();
+	}
 
 	/// Use @p dir instead of searching (tests, a user-chosen folder). Empty restores the search.
-	void setDocsDir(std::filesystem::path dir) { overrideDir_ = std::move(dir); }
-	const std::filesystem::path& docsDir() const { return dir_; }
-	const std::vector<model::DocEntry>& docs() const { return docs_; }
+	void setDocsDir(std::filesystem::path dir)
+	{
+		overrideDir_ = std::move(dir);
+	}
+	const std::filesystem::path& docsDir() const
+	{
+		return dir_;
+	}
+	const std::vector<model::DocEntry>& docs() const
+	{
+		return docs_;
+	}
 
 	/// Show document @p index (list selection follows).
 	void showDoc(int index);
-	int currentIndex() const { return current_; }
+	int currentIndex() const
+	{
+		return current_;
+	}
 	/// The Markdown currently rendered.
-	const std::string& currentMarkdown() const { return markdown_; }
+	const std::string& currentMarkdown() const
+	{
+		return markdown_;
+	}
 
-	std::string title() const { return dlg_.title(); }
-	fuse::ui::NodeHandle list() const { return list_; }
-	fuse::ui::NodeHandle markdownNode() const { return view_; }
-	fuse::ui::NodeHandle closeButton() const { return close_; }
-	MessageDialog& message() { return message_; }
-	fuse::ui::NodeHandle card() const { return dlg_.card(); }
+	std::string title() const
+	{
+		return dlg_.title();
+	}
+	fuse::ui::NodeHandle list() const
+	{
+		return list_;
+	}
+	fuse::ui::NodeHandle markdownNode() const
+	{
+		return view_;
+	}
+	fuse::ui::NodeHandle closeButton() const
+	{
+		return close_;
+	}
+	MessageDialog& message()
+	{
+		return message_;
+	}
+	fuse::ui::NodeHandle card() const
+	{
+		return dlg_.card();
+	}
 
 private:
 	ModalDialog dlg_;

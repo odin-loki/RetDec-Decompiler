@@ -48,8 +48,11 @@ TriageBanner::TriageBanner(UiContext& ui, NodeHandle parent): ui_(ui)
 	packerBadge_ = w::label(ui, root_, "");
 	ui.addClass(packerBadge_, "retdec-badge");
 	ui.addClass(packerBadge_, "retdec-badge-warning");
-	w::setTooltip(ui, packerBadge_,
-	              "fileinfo detected a packer signature. Use 'Unpack first' or unpack manually before decompiling for best results.");
+	w::setTooltip(
+		ui,
+		packerBadge_,
+		"fileinfo detected a packer signature. Use 'Unpack first' or unpack manually before decompiling for best "
+		"results.");
 	setShown(ui, packerBadge_, false);
 
 	const NodeHandle spacer = w::panel(ui, root_);
@@ -59,7 +62,8 @@ TriageBanner::TriageBanner(UiContext& ui, NodeHandle parent): ui_(ui)
 	moreBtn_ = w::button(ui, root_, "More \xE2\x96\xBC"); // ▼
 	w::setTooltip(ui, unpackBtn_, "Run retdec-unpacker on the current binary and reopen the result.");
 	w::setTooltip(ui, decompileBtn_, "Run retdec-decompiler on the current binary as-is (Ctrl+R / F5).");
-	w::setTooltip(ui, moreBtn_, "Show secondary triage tools (re-run fileinfo, copy hash, view raw output\xE2\x80\xA6).");
+	w::setTooltip(
+		ui, moreBtn_, "Show secondary triage tools (re-run fileinfo, copy hash, view raw output\xE2\x80\xA6).");
 	closeBtn_ = w::toolButton(ui, root_, "\xE2\x9C\x95"); // ✕
 	w::setTooltip(ui, closeBtn_, "Hide this banner for the current binary.");
 
@@ -116,8 +120,8 @@ void TriageBanner::setBinary(std::string_view path)
 	setShown(ui_, root_, true);
 }
 
-void TriageBanner::setMetadata(std::string_view format, std::string_view arch, std::string_view os, int64_t sizeBytes,
-                               std::string_view packerName)
+void TriageBanner::setMetadata(
+	std::string_view format, std::string_view arch, std::string_view os, int64_t sizeBytes, std::string_view packerName)
 {
 	ui_.setText(formatBadge_, format.empty() ? kDash : format);
 	ui_.setText(archBadge_, arch.empty() ? kDash : arch);

@@ -14,8 +14,8 @@
 #include <memory>
 
 using namespace retdec::gui;
-using retdec::gui::test::HeadlessUi;
 using fuse::ui::Key;
+using retdec::gui::test::HeadlessUi;
 
 class IRPanelTest : public ::testing::Test {
 protected:

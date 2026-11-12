@@ -31,15 +31,33 @@ public:
 	void show(std::function<void(uint64_t address)> onAccepted);
 	void accept();
 	void reject();
-	bool isOpen() const { return dlg_.isOpen(); }
+	bool isOpen() const
+	{
+		return dlg_.isOpen();
+	}
 
 	std::string text() const;
 	void setText(std::string_view text);
-	std::string title() const { return dlg_.title(); }
-	fuse::ui::NodeHandle edit() const { return edit_; }
-	fuse::ui::NodeHandle okButton() const { return ok_; }
-	fuse::ui::NodeHandle cancelButton() const { return cancel_; }
-	fuse::ui::NodeHandle card() const { return dlg_.card(); }
+	std::string title() const
+	{
+		return dlg_.title();
+	}
+	fuse::ui::NodeHandle edit() const
+	{
+		return edit_;
+	}
+	fuse::ui::NodeHandle okButton() const
+	{
+		return ok_;
+	}
+	fuse::ui::NodeHandle cancelButton() const
+	{
+		return cancel_;
+	}
+	fuse::ui::NodeHandle card() const
+	{
+		return dlg_.card();
+	}
 
 	/// (message, timeout ms) for the status bar.
 	std::function<void(const std::string& message, int timeoutMs)> onStatusMessage;
@@ -58,14 +76,29 @@ public:
 	void show(std::function<void(int line)> onAccepted);
 	void accept();
 	void reject();
-	bool isOpen() const { return dlg_.isOpen(); }
+	bool isOpen() const
+	{
+		return dlg_.isOpen();
+	}
 
 	std::string text() const;
 	void setText(std::string_view text);
-	std::string title() const { return dlg_.title(); }
-	fuse::ui::NodeHandle edit() const { return edit_; }
-	fuse::ui::NodeHandle okButton() const { return ok_; }
-	fuse::ui::NodeHandle cancelButton() const { return cancel_; }
+	std::string title() const
+	{
+		return dlg_.title();
+	}
+	fuse::ui::NodeHandle edit() const
+	{
+		return edit_;
+	}
+	fuse::ui::NodeHandle okButton() const
+	{
+		return ok_;
+	}
+	fuse::ui::NodeHandle cancelButton() const
+	{
+		return cancel_;
+	}
 
 	std::function<void(const std::string& message, int timeoutMs)> onStatusMessage;
 

@@ -60,9 +60,10 @@ buildExpressCommand(std::string_view lib, std::string_view out, const fs::path& 
 	const std::string_view l = dlgTrim(lib), o = dlgTrim(out);
 	if (l.empty() || o.empty()) return std::unexpected(std::string("Express: set library input and YARA output path."));
 	if (python.empty() || script.empty())
-		return std::unexpected(std::string(
-			"Express: Python 3 or retdec-signature-from-library-creator.py not found. "
-			"Use a full RetDec install with scripts/ on disk."));
+		return std::unexpected(
+			std::string(
+				"Express: Python 3 or retdec-signature-from-library-creator.py not found. "
+				"Use a full RetDec install with scripts/ on disk."));
 	SigToolCommand c;
 	c.toolLabel = "retdec-signature-from-library-creator.py";
 	c.executable = python;
@@ -98,7 +99,11 @@ buildMachoExtractorCommand(const fs::path& exe, std::string_view file, std::stri
 }
 
 static std::expected<SigToolCommand, std::string> buildInOutCommand(
-	std::string label, const fs::path& exe, std::string_view in, std::string_view out, std::string_view ext,
+	std::string label,
+	const fs::path& exe,
+	std::string_view in,
+	std::string_view out,
+	std::string_view ext,
 	std::string error)
 {
 	const std::string_view i = dlgTrim(in);
@@ -141,7 +146,8 @@ std::string sigToolOutputTail(std::string_view text, std::size_t maxChars)
 {
 	if (text.size() <= maxChars) return std::string(text);
 	std::size_t at = text.size() - maxChars;
-	while (at < text.size() && (static_cast<unsigned char>(text[at]) & 0xC0) == 0x80) ++at;
+	while (at < text.size() && (static_cast<unsigned char>(text[at]) & 0xC0) == 0x80)
+		++at;
 	return std::string(text.substr(at));
 }
 

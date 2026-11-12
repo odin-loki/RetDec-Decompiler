@@ -55,11 +55,11 @@ int cStyleCallInfoIndex(std::string_view stored);
 /// Analysis → Raw image / archive options… (and the "-m raw" toggle).
 struct RawArchiveOptions
 {
-	std::string endian;          ///< "", "little" or "big" → -e
-	int bitSize = 0;             ///< 0, 16, 32, 64 → -b
-	uint64_t rawSectionVma = 0;  ///< 0 omits --raw-section-vma
-	std::string arName;          ///< --ar-name (empty omits)
-	std::optional<int> arIndex;  ///< --ar-index (ignored when arName is set)
+	std::string endian;         ///< "", "little" or "big" → -e
+	int bitSize = 0;            ///< 0, 16, 32, 64 → -b
+	uint64_t rawSectionVma = 0; ///< 0 omits --raw-section-vma
+	std::string arName;         ///< --ar-name (empty omits)
+	std::optional<int> arIndex; ///< --ar-index (ignored when arName is set)
 
 	bool operator==(const RawArchiveOptions&) const = default;
 };
@@ -93,12 +93,12 @@ struct NextRunOptions
 {
 	CStyleOptions cStyle;
 	RawArchiveOptions raw;
-	bool rawMode = false;            ///< "Treat input as raw image (-m raw)"
-	uint64_t maxMemoryBytes = 0;     ///< Set max memory…
+	bool rawMode = false;        ///< "Treat input as raw image (-m raw)"
+	uint64_t maxMemoryBytes = 0; ///< Set max memory…
 	bool noMemoryLimit = false;
-	std::string pdbPath;             ///< Set PDB symbols…
-	std::string staticCodeSigFile;   ///< Set static-code signature file… / Signature Studio
-	std::string varRenamer;          ///< Variable renamer submenu ("" = readable)
+	std::string pdbPath;           ///< Set PDB symbols…
+	std::string staticCodeSigFile; ///< Set static-code signature file… / Signature Studio
+	std::string varRenamer;        ///< Variable renamer submenu ("" = readable)
 	bool printBeforeAll = false;
 	bool keepUnreachableFuncs = false;
 	bool cleanup = false;

@@ -21,7 +21,10 @@ namespace {
 struct TempDir
 {
 	fs::path path;
-	TempDir() { path = fs::path(forge::os::fs::make_temp_dir("retdec-gui-proj-").value); }
+	TempDir()
+	{
+		path = fs::path(forge::os::fs::make_temp_dir("retdec-gui-proj-").value);
+	}
 	~TempDir()
 	{
 		std::error_code ec;
@@ -195,7 +198,7 @@ TEST(ProjectFile, SaveReplacesAtomically)
 	int files = 0;
 	for (const auto& e: fs::directory_iterator(tmp.path))
 	{
-		(void) e;
+		(void)e;
 		++files;
 	}
 	EXPECT_EQ(files, 1);

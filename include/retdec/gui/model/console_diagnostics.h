@@ -40,12 +40,21 @@ public:
 
 	void add(Diagnostic d);
 	void clear();
-	std::size_t size() const { return entries_.size(); }
-	const Diagnostic& at(std::size_t i) const { return entries_[i]; }
+	std::size_t size() const
+	{
+		return entries_.size();
+	}
+	const Diagnostic& at(std::size_t i) const
+	{
+		return entries_[i];
+	}
 
 	/// Cap on retained entries (minimum 100). Shrinking evicts the oldest.
 	void setMaxEntries(std::size_t n);
-	std::size_t maxEntries() const { return max_; }
+	std::size_t maxEntries() const
+	{
+		return max_;
+	}
 
 	/**
 	 * Indices of the rows shown: while @p text is non-empty it replaces the

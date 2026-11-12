@@ -153,7 +153,8 @@ TEST(InspectModel, FileHelpers)
 	ASSERT_TRUE(h);
 	EXPECT_EQ(h->size(), 64u);
 	writeFile(dir / "empty", "");
-	EXPECT_EQ(*blake3File(dir / "empty"), "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"); // BLAKE3("")
+	EXPECT_EQ(
+		*blake3File(dir / "empty"), "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"); // BLAKE3("")
 }
 
 TEST(InspectModel, ArgsAndTail)
@@ -195,7 +196,8 @@ TEST(InspectModel, SpawnFailureIsReported)
 TEST(InspectModel, RunsFileinfoAndUnpacker)
 {
 	const auto dir = retdec::gui::test::scratchDir("inspect_run");
-	const auto fi = script(dir, "fake-fileinfo", "echo '{\"fileFormat\":\"ELF\",\"sha256\":\"aa\"}'\necho 'note' >&2\n");
+	const auto fi =
+		script(dir, "fake-fileinfo", "echo '{\"fileFormat\":\"ELF\",\"sha256\":\"aa\"}'\necho 'note' >&2\n");
 	const auto un = script(dir, "fake-unpacker", "echo \"unpacking $@\"\nexit 3\n");
 	InspectModel m;
 	ASSERT_TRUE(m.startFileinfo("/some/bin", fi.string()));

@@ -40,8 +40,7 @@
 
 namespace retdec::gui::ui {
 
-class StringsBrowserPanel
-{
+class StringsBrowserPanel {
 public:
 	static constexpr std::string_view kTitle = "Strings & Constants";
 
@@ -56,7 +55,10 @@ public:
 	StringsBrowserPanel(const StringsBrowserPanel&) = delete;
 	StringsBrowserPanel& operator=(const StringsBrowserPanel&) = delete;
 
-	fuse::ui::NodeHandle root() const { return root_; }
+	fuse::ui::NodeHandle root() const
+	{
+		return root_;
+	}
 
 	// ── data in ─────────────────────────────────────────────────────────────
 	/// Entries still in the Plain category are classified.
@@ -67,10 +69,22 @@ public:
 	/// Drops all rows and resets the filters.
 	void clear();
 
-	int stringCount() const { return static_cast<int>(strings_.size()); }
-	int constantCount() const { return static_cast<int>(constants_.size()); }
-	const model::StringsTable& strings() const { return strings_; }
-	const model::ConstantsTable& constants() const { return constants_; }
+	int stringCount() const
+	{
+		return static_cast<int>(strings_.size());
+	}
+	int constantCount() const
+	{
+		return static_cast<int>(constants_.size());
+	}
+	const model::StringsTable& strings() const
+	{
+		return strings_;
+	}
+	const model::ConstantsTable& constants() const
+	{
+		return constants_;
+	}
 
 	// ── filters (also driven by the widgets) ────────────────────────────────
 	void setStringFilterText(std::string_view text);
@@ -92,8 +106,14 @@ public:
 	int currentTab() const;
 
 	// ── export ──────────────────────────────────────────────────────────────
-	std::string stringsCsv() const { return strings_.exportCsv(); }
-	std::string constantsCsv() const { return constants_.exportCsv(); }
+	std::string stringsCsv() const
+	{
+		return strings_.exportCsv();
+	}
+	std::string constantsCsv() const
+	{
+		return constants_.exportCsv();
+	}
 	std::expected<void, std::string> exportStringsCsv(const std::string& path) const;
 	std::expected<void, std::string> exportConstantsCsv(const std::string& path) const;
 	/// Opens the save dialog of the CSV button of @p t.
@@ -106,20 +126,59 @@ public:
 	std::function<bool(const std::string&)> clipboardWriter;
 
 	// ── test hooks ──────────────────────────────────────────────────────────
-	fuse::ui::NodeHandle tableNode(Table t) const { return tables_[idx(t)].table; }
-	fuse::ui::NodeHandle searchNode(Table t) const { return tables_[idx(t)].search; }
-	fuse::ui::NodeHandle statusNode(Table t) const { return tables_[idx(t)].status; }
-	fuse::ui::NodeHandle exportButtonNode(Table t) const { return tables_[idx(t)].exportBtn; }
-	fuse::ui::NodeHandle typeComboNode() const { return typeCombo_; }
-	fuse::ui::NodeHandle categoryComboNode() const { return catCombo_; }
-	fuse::ui::NodeHandle regexButtonNode() const { return regexBtn_; }
-	fuse::ui::NodeHandle kindComboNode() const { return kindCombo_; }
-	fuse::ui::NodeHandle tabsNode() const { return tabs_; }
-	fuse::ui::NodeHandle contextMenu() const { return menu_; }
-	fuse::ui::NodeHandle fileDialogNode() const { return fileDlg_; }
-	const std::vector<std::string>& contextMenuLabels() const { return menuLabels_; }
+	fuse::ui::NodeHandle tableNode(Table t) const
+	{
+		return tables_[idx(t)].table;
+	}
+	fuse::ui::NodeHandle searchNode(Table t) const
+	{
+		return tables_[idx(t)].search;
+	}
+	fuse::ui::NodeHandle statusNode(Table t) const
+	{
+		return tables_[idx(t)].status;
+	}
+	fuse::ui::NodeHandle exportButtonNode(Table t) const
+	{
+		return tables_[idx(t)].exportBtn;
+	}
+	fuse::ui::NodeHandle typeComboNode() const
+	{
+		return typeCombo_;
+	}
+	fuse::ui::NodeHandle categoryComboNode() const
+	{
+		return catCombo_;
+	}
+	fuse::ui::NodeHandle regexButtonNode() const
+	{
+		return regexBtn_;
+	}
+	fuse::ui::NodeHandle kindComboNode() const
+	{
+		return kindCombo_;
+	}
+	fuse::ui::NodeHandle tabsNode() const
+	{
+		return tabs_;
+	}
+	fuse::ui::NodeHandle contextMenu() const
+	{
+		return menu_;
+	}
+	fuse::ui::NodeHandle fileDialogNode() const
+	{
+		return fileDlg_;
+	}
+	const std::vector<std::string>& contextMenuLabels() const
+	{
+		return menuLabels_;
+	}
 	/// Hover tooltip of the cell under the pointer (full string value, constant label).
-	fuse::ui::NodeHandle cellToolTipNode() const { return cellTip_; }
+	fuse::ui::NodeHandle cellToolTipNode() const
+	{
+		return cellTip_;
+	}
 	std::size_t visibleRowCount(Table t) const;
 	std::string cellText(Table t, std::size_t row, int col) const;
 	uint64_t rowAddress(Table t, std::size_t row) const;
@@ -136,7 +195,10 @@ private:
 		StringsBrowserPanel* panel = nullptr;
 		int table = 0;
 	};
-	static constexpr std::size_t idx(Table t) { return static_cast<std::size_t>(t); }
+	static constexpr std::size_t idx(Table t)
+	{
+		return static_cast<std::size_t>(t);
+	}
 
 	void build(fuse::ui::NodeHandle parent);
 	void buildTable(Table t, fuse::ui::NodeHandle page);

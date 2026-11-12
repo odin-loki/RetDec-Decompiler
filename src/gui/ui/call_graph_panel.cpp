@@ -102,12 +102,15 @@ CallGraphPanel::CallGraphPanel(UiContext& ui, NodeHandle parent): m_ui(ui)
 	m_view->setEmptyText("No call graph");
 
 	// ── Wiring ───────────────────────────────────────────────────────────────
-	ui.connect(m_nameFilter, SignalKind::TextChanged,
-		[this](UiContext&, NodeHandle, const SignalArgs& a) { setNameFilter(std::string(a.text)); });
-	ui.connect(m_find, SignalKind::TextChanged,
-		[this](UiContext&, NodeHandle, const SignalArgs& a) { search(std::string(a.text)); });
-	ui.connect(m_find, SignalKind::Submitted,
-		[this](UiContext&, NodeHandle, const SignalArgs& a) { search(std::string(a.text)); });
+	ui.connect(m_nameFilter, SignalKind::TextChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+		setNameFilter(std::string(a.text));
+	});
+	ui.connect(m_find, SignalKind::TextChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+		search(std::string(a.text));
+	});
+	ui.connect(m_find, SignalKind::Submitted, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+		search(std::string(a.text));
+	});
 	ui.connect(m_minCalls, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) {
 		if (!m_updating) setMinCallCount(int(std::lround(a.value)));
 	});
@@ -124,29 +127,37 @@ CallGraphPanel::CallGraphPanel(UiContext& ui, NodeHandle parent): m_ui(ui)
 	});
 	ui.connect(m_layoutCombo, SignalKind::ValueChanged, [this](UiContext& u, NodeHandle n, const SignalArgs&) {
 		if (!m_updating)
-			setLayoutMode(u.value(n) >= 0.5f ? model::CallGraphLayoutMode::Layered : model::CallGraphLayoutMode::ForceDirected);
+			setLayoutMode(
+				u.value(n) >= 0.5f ? model::CallGraphLayoutMode::Layered : model::CallGraphLayoutMode::ForceDirected);
 	});
 	ui.connect(m_collapse, SignalKind::Toggled, [this](UiContext&, NodeHandle, const SignalArgs& a) {
 		if (!m_updating) setCollapseSccs(a.flag);
 	});
-	ui.connect(m_minimapCheck, SignalKind::Toggled,
-		[this](UiContext&, NodeHandle, const SignalArgs& a) { m_view->setMinimapVisible(a.flag); });
+	ui.connect(m_minimapCheck, SignalKind::Toggled, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+		m_view->setMinimapVisible(a.flag);
+	});
 	ui.connect(m_clearFocus, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { clearFocus(); });
 	ui.connect(m_fitBtn, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { fitView(); });
 	ui.connect(m_resetBtn, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { resetZoom(); });
-	ui.connect(m_dotBtn, SignalKind::Clicked,
-		[this](UiContext&, NodeHandle, const SignalArgs&) { requestExport(GraphExportFormat::Dot); });
-	ui.connect(m_svgBtn, SignalKind::Clicked,
-		[this](UiContext&, NodeHandle, const SignalArgs&) { requestExport(GraphExportFormat::Svg); });
-	ui.connect(m_pngBtn, SignalKind::Clicked,
-		[this](UiContext&, NodeHandle, const SignalArgs&) { requestExport(GraphExportFormat::Png); });
+	ui.connect(m_dotBtn, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+		requestExport(GraphExportFormat::Dot);
+	});
+	ui.connect(m_svgBtn, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+		requestExport(GraphExportFormat::Svg);
+	});
+	ui.connect(m_pngBtn, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+		requestExport(GraphExportFormat::Png);
+	});
 
 	m_view->onNodeClicked = [this](uint64_t id) { nodeClicked(id); };
 	m_view->onNodeActivated = [this](uint64_t id) {
 		if (m_model.isSccNode(id))
-			m_ui.post([](UiContext& u, NodeHandle n, uint64_t self, uint64_t) {
-				if (u.alive(n)) reinterpret_cast<CallGraphPanel*>(self)->setCollapseSccs(false);
-			}, m_root, reinterpret_cast<uint64_t>(this));
+			m_ui.post(
+				[](UiContext& u, NodeHandle n, uint64_t self, uint64_t) {
+					if (u.alive(n)) reinterpret_cast<CallGraphPanel*>(self)->setCollapseSccs(false);
+				},
+				m_root,
+				reinterpret_cast<uint64_t>(this));
 	};
 	m_view->onNodeContextMenu = [this](uint64_t id, fuse::ui::Vec2 at) {
 		std::string items;
@@ -228,7 +239,8 @@ void CallGraphPanel::filtersChanged()
 	// Visibility only: reuse the view's scene geometry, copy the flags.
 	model::GraphScene& sc = m_view->mutableScene();
 	const model::GraphScene& src = m_model.scene();
-	if (sc.nodes.size() != src.nodes.size() || sc.edges.size() != src.edges.size() || sc.regions.size() != src.regions.size())
+	if (sc.nodes.size() != src.nodes.size() || sc.edges.size() != src.edges.size()
+		|| sc.regions.size() != src.regions.size())
 	{
 		refresh(false);
 	}
@@ -378,8 +390,7 @@ int CallGraphPanel::focusHops() const
 
 void CallGraphPanel::focusOn(uint64_t address, int hops)
 {
-	if (hops > 0)
-		setFocusHops(hops);
+	if (hops > 0) setFocusHops(hops);
 	hops = focusHops();
 	m_model.setFocusNode(address, hops);
 	m_focusText = std::format("Focus: 0x{:x} ({} hops)", address, hops);
@@ -516,8 +527,11 @@ void CallGraphPanel::requestExport(GraphExportFormat f)
 	}
 	if (!m_prompt) m_prompt = std::make_unique<SavePrompt>(m_ui);
 	m_pendingExport = f;
-	const std::string filter = f == GraphExportFormat::Dot ? "*.dot;*.gv" : std::format("*.{}", graphExportExtension(f));
-	m_prompt->open(f == GraphExportFormat::Dot ? "Export Call Graph (DOT)" : "Export Call Graph", filter,
+	const std::string filter =
+		f == GraphExportFormat::Dot ? "*.dot;*.gv" : std::format("*.{}", graphExportExtension(f));
+	m_prompt->open(
+		f == GraphExportFormat::Dot ? "Export Call Graph (DOT)" : "Export Call Graph",
+		filter,
 		[this](const std::string& path) {
 			std::filesystem::path p(path);
 			if (!p.has_extension()) p.replace_extension(graphExportExtension(m_pendingExport));

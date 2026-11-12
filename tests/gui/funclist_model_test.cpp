@@ -153,7 +153,8 @@ TEST(FunclistModelTest, CellTextAndTooltips)
 	e.patterns.stl = e.patterns.library = true;
 	EXPECT_EQ(functionCellText(e, FnColSize), "\xE2\x80\x94");
 	EXPECT_EQ(functionCellText(e, FnColInstrs), "\xE2\x80\x94");
-	EXPECT_EQ(functionCellText(e, FnColConfidence), std::format("{} %", static_cast<int>(e.confidence.composite() * 100)));
+	EXPECT_EQ(
+		functionCellText(e, FnColConfidence), std::format("{} %", static_cast<int>(e.confidence.composite() * 100)));
 	EXPECT_EQ(functionToolTip(e, FnColName), "main\n_Zmain\nint main(int, char**)");
 	EXPECT_EQ(functionToolTip(e, FnColPatterns), "STL container / algorithm\nStatically linked library code");
 	EXPECT_EQ(functionToolTip(fn(1, "x"), FnColPatterns), "No patterns detected");
@@ -181,7 +182,8 @@ TEST(FunclistModelTest, CsvTextMatchesQt)
 		static_cast<double>(a.confidence.composite()),
 		static_cast<double>(b.confidence.composite()));
 	EXPECT_EQ(functionListCsv(ptrs(v)), expected);
-	EXPECT_EQ(functionListCsv({}), "Address,Name,SizeBytes,Instrs,Confidence,CC,STL,Crypto,Algo,Design,Lib,Notes,Tags\n");
+	EXPECT_EQ(
+		functionListCsv({}), "Address,Name,SizeBytes,Instrs,Confidence,CC,STL,Crypto,Algo,Design,Lib,Notes,Tags\n");
 }
 
 TEST(FunclistModelTest, JsonTextMatchesQtIndentedLayout)

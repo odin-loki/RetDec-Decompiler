@@ -43,7 +43,7 @@ TEST(ConsoleLog, RepairsUtf8)
 {
 	EXPECT_EQ(sanitizeUtf8("na\xC3\xAFve \xE2\x82\xAC"), "na\xC3\xAFve \xE2\x82\xAC");
 	EXPECT_EQ(sanitizeUtf8("\xff\xfe"), "\xEF\xBF\xBD\xEF\xBF\xBD");
-	EXPECT_EQ(sanitizeUtf8("\xC3"), "\xEF\xBF\xBD");             // truncated
+	EXPECT_EQ(sanitizeUtf8("\xC3"), "\xEF\xBF\xBD");                 // truncated
 	EXPECT_EQ(sanitizeUtf8("\xC0\x80"), "\xEF\xBF\xBD\xEF\xBF\xBD"); // overlong
 	EXPECT_EQ(sanitizeUtf8("\x01\x02"), "\x01\x02");
 }

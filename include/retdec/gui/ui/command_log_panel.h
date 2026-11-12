@@ -34,11 +34,22 @@ public:
 	CommandLogPanel(const CommandLogPanel&) = delete;
 	CommandLogPanel& operator=(const CommandLogPanel&) = delete;
 
-	fuse::ui::NodeHandle root() const { return root_; }
-	std::string panelTitle() const { return "Command log"; }
+	fuse::ui::NodeHandle root() const
+	{
+		return root_;
+	}
+	std::string panelTitle() const
+	{
+		return "Command log";
+	}
 
-	void appendRun(std::string_view tool, const std::vector<std::string>& args, std::string_view cwd, int exitCode,
-	               int64_t elapsedMs, std::string_view outputTail);
+	void appendRun(
+		std::string_view tool,
+		const std::vector<std::string>& args,
+		std::string_view cwd,
+		int exitCode,
+		int64_t elapsedMs,
+		std::string_view outputTail);
 	void clear();
 
 	/// Cap on retained lines (minimum 100, default 20 000).
@@ -54,13 +65,34 @@ public:
 	std::function<void(const std::string& msg, int timeoutMs)> onStatusMessage;
 
 	// Test hooks.
-	std::string text() const { return buffer_.text(); }
-	int blockCount() const { return int(buffer_.lineCount()); }
-	bool isEmpty() const { return buffer_.isEmpty(); }
-	CodeView& view() { return *view_; }
-	fuse::ui::NodeHandle copyButton() const { return copyBtn_; }
-	fuse::ui::NodeHandle clearButton() const { return clearBtn_; }
-	fuse::ui::NodeHandle saveButton() const { return saveBtn_; }
+	std::string text() const
+	{
+		return buffer_.text();
+	}
+	int blockCount() const
+	{
+		return int(buffer_.lineCount());
+	}
+	bool isEmpty() const
+	{
+		return buffer_.isEmpty();
+	}
+	CodeView& view()
+	{
+		return *view_;
+	}
+	fuse::ui::NodeHandle copyButton() const
+	{
+		return copyBtn_;
+	}
+	fuse::ui::NodeHandle clearButton() const
+	{
+		return clearBtn_;
+	}
+	fuse::ui::NodeHandle saveButton() const
+	{
+		return saveBtn_;
+	}
 
 private:
 	bool handleEvent(fuse::ui::EventContext& ec, const fuse::ui::Event& e);

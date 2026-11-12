@@ -114,8 +114,8 @@ CodePalette codePaletteFor(ThemeKind kind)
 	set(TK::Label, Color::rgb(0xdf8e1d));        // yellow
 	set(TK::SsaName, Color::rgb(0x8839ef));      // mauve
 	set(TK::Builtin, Color::rgb(0x179299));      // teal
-	p.console = {Color::rgb(0x4c4f69), Color::rgb(0xdf8e1d), Color::rgb(0xd20f39), Color::rgb(0x1e66f5),
-	             Color::rgb(0x40a02b)};
+	p.console = {
+		Color::rgb(0x4c4f69), Color::rgb(0xdf8e1d), Color::rgb(0xd20f39), Color::rgb(0x1e66f5), Color::rgb(0x40a02b)};
 	return p;
 }
 
@@ -134,7 +134,8 @@ std::expected<ThemeKind, std::string> applyTheme(fuse::ui::UiContext& ui, ThemeK
 	return applied;
 }
 
-std::expected<ThemeKind, std::string> applyThemeFromSettings(fuse::ui::UiContext& ui, const model::AppSettings& settings)
+std::expected<ThemeKind, std::string>
+applyThemeFromSettings(fuse::ui::UiContext& ui, const model::AppSettings& settings)
 {
 	return applyTheme(ui, themeKindFor(settings.general.theme));
 }
@@ -147,21 +148,47 @@ ThemeKind currentTheme(const fuse::ui::UiContext& ui)
 const ThemeColors& themeColors(ThemeKind kind)
 {
 	static constexpr ThemeColors kMocha{
-		.base = 0x1e1e2e, .mantle = 0x181825, .crust = 0x11111b,
-		.surface0 = 0x313244, .surface1 = 0x45475a, .surface2 = 0x585b70,
-		.overlay0 = 0x6c7086, .overlay1 = 0x7f849c,
-		.text = 0xcdd6f4, .subtext0 = 0xa6adc8, .subtext1 = 0xbac2de,
-		.blue = 0x89b4fa, .green = 0xa6e3a1, .yellow = 0xf9e2af, .red = 0xf38ba8, .peach = 0xfab387,
-		.mauve = 0xcba6f7, .teal = 0x94e2d5, .maroon = 0xeba0ac,
+		.base = 0x1e1e2e,
+		.mantle = 0x181825,
+		.crust = 0x11111b,
+		.surface0 = 0x313244,
+		.surface1 = 0x45475a,
+		.surface2 = 0x585b70,
+		.overlay0 = 0x6c7086,
+		.overlay1 = 0x7f849c,
+		.text = 0xcdd6f4,
+		.subtext0 = 0xa6adc8,
+		.subtext1 = 0xbac2de,
+		.blue = 0x89b4fa,
+		.green = 0xa6e3a1,
+		.yellow = 0xf9e2af,
+		.red = 0xf38ba8,
+		.peach = 0xfab387,
+		.mauve = 0xcba6f7,
+		.teal = 0x94e2d5,
+		.maroon = 0xeba0ac,
 		.onAccent = 0x1e1e2e,
 	};
 	static constexpr ThemeColors kLatte{
-		.base = 0xeff1f5, .mantle = 0xe6e9ef, .crust = 0xdce0e8,
-		.surface0 = 0xccd0da, .surface1 = 0xbcc0cc, .surface2 = 0xacb0be,
-		.overlay0 = 0x9ca0b0, .overlay1 = 0x8c8fa1,
-		.text = 0x4c4f69, .subtext0 = 0x6c6f85, .subtext1 = 0x5c5f77,
-		.blue = 0x1e66f5, .green = 0x40a02b, .yellow = 0xdf8e1d, .red = 0xd20f39, .peach = 0xfe640b,
-		.mauve = 0x8839ef, .teal = 0x179299, .maroon = 0xe64553,
+		.base = 0xeff1f5,
+		.mantle = 0xe6e9ef,
+		.crust = 0xdce0e8,
+		.surface0 = 0xccd0da,
+		.surface1 = 0xbcc0cc,
+		.surface2 = 0xacb0be,
+		.overlay0 = 0x9ca0b0,
+		.overlay1 = 0x8c8fa1,
+		.text = 0x4c4f69,
+		.subtext0 = 0x6c6f85,
+		.subtext1 = 0x5c5f77,
+		.blue = 0x1e66f5,
+		.green = 0x40a02b,
+		.yellow = 0xdf8e1d,
+		.red = 0xd20f39,
+		.peach = 0xfe640b,
+		.mauve = 0x8839ef,
+		.teal = 0x179299,
+		.maroon = 0xe64553,
 		.onAccent = 0xeff1f5,
 	};
 	return kind == ThemeKind::Latte ? kLatte : kMocha;

@@ -47,8 +47,14 @@ public:
 	AssemblyPanel(const AssemblyPanel&) = delete;
 	AssemblyPanel& operator=(const AssemblyPanel&) = delete;
 
-	fuse::ui::NodeHandle root() const { return root_; }
-	std::string panelTitle() const { return "Assembly"; }
+	fuse::ui::NodeHandle root() const
+	{
+		return root_;
+	}
+	std::string panelTitle() const
+	{
+		return "Assembly";
+	}
 
 	// ── Data in ──────────────────────────────────────────────────────────────
 	void setAssemblyText(std::string_view text);
@@ -56,7 +62,10 @@ public:
 	/// re-applied when text arrives later).
 	void navigateTo(uint64_t address);
 	/// Slot for addressNavigated from other panels.
-	void onAddressNavigated(uint64_t address) { navigateTo(address); }
+	void onAddressNavigated(uint64_t address)
+	{
+		navigateTo(address);
+	}
 	void applyEditorFont(float px);
 	void clear();
 
@@ -66,8 +75,14 @@ public:
 	/// Shows the search bar in find mode (F).
 	void find();
 	void hideSearchBar();
-	bool searchBarVisible() const { return searchShown_; }
-	SearchMode searchMode() const { return mode_; }
+	bool searchBarVisible() const
+	{
+		return searchShown_;
+	}
+	SearchMode searchMode() const
+	{
+		return mode_;
+	}
 	void setSearchText(std::string_view text);
 	/// Enter in the search bar.
 	void submitSearch();
@@ -75,7 +90,10 @@ public:
 	bool followJump();
 	/// Escape on the view: back to the address before the last followed jump.
 	bool navigateBack();
-	std::size_t backStackSize() const { return navStack_.size(); }
+	std::size_t backStackSize() const
+	{
+		return navStack_.size();
+	}
 	void openContextMenu(fuse::ui::Vec2 at, int line);
 
 	// ── Events out ───────────────────────────────────────────────────────────
@@ -83,16 +101,40 @@ public:
 	std::function<void(uint64_t address)> onAddressActivated;
 
 	// ── Test hooks ───────────────────────────────────────────────────────────
-	CodeView& view() { return *view_; }
-	EmptyState& emptyState() { return *empty_; }
-	bool emptyStateShown() const { return emptyShown_; }
+	CodeView& view()
+	{
+		return *view_;
+	}
+	EmptyState& emptyState()
+	{
+		return *empty_;
+	}
+	bool emptyStateShown() const
+	{
+		return emptyShown_;
+	}
 	std::string functionLabel() const;
-	fuse::ui::NodeHandle searchEdit() const { return searchEdit_; }
-	fuse::ui::NodeHandle goToButton() const { return goToBtn_; }
-	fuse::ui::NodeHandle findButton() const { return findBtn_; }
-	ContextMenu& contextMenu() { return menu_; }
+	fuse::ui::NodeHandle searchEdit() const
+	{
+		return searchEdit_;
+	}
+	fuse::ui::NodeHandle goToButton() const
+	{
+		return goToBtn_;
+	}
+	fuse::ui::NodeHandle findButton() const
+	{
+		return findBtn_;
+	}
+	ContextMenu& contextMenu()
+	{
+		return menu_;
+	}
 	/// 0-based caret line.
-	int caretLine() const { return view_->caret().line; }
+	int caretLine() const
+	{
+		return view_->caret().line;
+	}
 
 private:
 	bool handleEvent(fuse::ui::EventContext& ec, const fuse::ui::Event& e);

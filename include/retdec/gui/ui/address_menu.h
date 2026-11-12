@@ -71,8 +71,8 @@ void copyAddressToClipboard(fuse::ui::UiContext& ui, uint64_t address);
 
 /// "Copy Address" + "Go to Function" for @p address; both disabled when the
 /// line under the pointer has no address.
-std::vector<MenuAction> addressMenuActions(fuse::ui::UiContext& ui, std::optional<uint64_t> address,
-                                           std::function<void(uint64_t)> goToFunction);
+std::vector<MenuAction> addressMenuActions(
+	fuse::ui::UiContext& ui, std::optional<uint64_t> address, std::function<void(uint64_t)> goToFunction);
 
 } // namespace retdec::gui::ui
 

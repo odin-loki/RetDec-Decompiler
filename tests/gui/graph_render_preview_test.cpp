@@ -68,8 +68,9 @@ TEST(GraphRenderPreview, Cfg)
 	ASSERT_NE(h.ui.resolveFont("monospace"), h.ui.font());
 	ASSERT_NE(h.ui.resolveFont("sans-serif", fuse::ui::kFontWeightBold), h.ui.font());
 	panel.setFunction(0x401000, "main");
-	panel.setCfg({block(0, true), block(1), block(2, false, true)},
-	             {{0, 1, EdgeKind::TrueBranch}, {0, 2, EdgeKind::FalseBranch}, {1, 2, EdgeKind::FallThrough}});
+	panel.setCfg(
+		{block(0, true), block(1), block(2, false, true)},
+		{{0, 1, EdgeKind::TrueBranch}, {0, 2, EdgeKind::FalseBranch}, {1, 2, EdgeKind::FallThrough}});
 	finish(h, "graph_cfg");
 }
 

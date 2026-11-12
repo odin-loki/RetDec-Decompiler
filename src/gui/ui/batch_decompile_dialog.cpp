@@ -16,8 +16,8 @@ namespace retdec::gui::ui {
 namespace w = fuse::ui::widgets;
 using namespace fuse::ui;
 
-BatchDecompileDialog::BatchDecompileDialog(UiContext& ui)
-	: dlg_(ui, "Batch Decompile", 560.f, 360.f, "batchDecompileDialog"), files_(ui)
+BatchDecompileDialog::BatchDecompileDialog(UiContext& ui):
+	dlg_(ui, "Batch Decompile", 560.f, 360.f, "batchDecompileDialog"), files_(ui)
 {
 	const NodeHandle b = dlg_.body();
 	w::label(ui, b, "Binaries are decompiled sequentially using the same settings as Run Full Analysis.");
@@ -34,8 +34,9 @@ BatchDecompileDialog::BatchDecompileDialog(UiContext& ui)
 	cancel_ = w::button(ui, buttons, "Cancel");
 
 	ui.connect(add_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
-		files_.show(FilePrompt::Mode::Open, "Add binaries", startDir_, {},
-		            [this](const std::string& path) { addPaths({path}); });
+		files_.show(FilePrompt::Mode::Open, "Add binaries", startDir_, {}, [this](const std::string& path) {
+			addPaths({path});
+		});
 	});
 	ui.connect(remove_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { removeSelected(); });
 	ui.connect(clear_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { clear(); });

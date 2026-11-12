@@ -35,7 +35,9 @@ TEST_F(CommandLogPanelTest, AppendRunFormatsRecord)
 	log->appendRun("retdec-fileinfo", {"--json", "/a b"}, "/opt/retdec/bin", 0, 37, "{ }");
 	const std::string t = log->text();
 	EXPECT_EQ(t.front(), '[');
-	EXPECT_NE(t.find("] retdec-fileinfo\n  cwd: /opt/retdec/bin\n  exit: 0  time: 37 ms\n  cmd: --json /a b\n"), std::string::npos);
+	EXPECT_NE(
+		t.find("] retdec-fileinfo\n  cwd: /opt/retdec/bin\n  exit: 0  time: 37 ms\n  cmd: --json /a b\n"),
+		std::string::npos);
 	EXPECT_NE(t.find("  --- output (tail) ---\n{ }\n"), std::string::npos);
 	log->appendRun("retdec-unpacker", {}, "/w", 2, 5, "   ");
 	const std::string t2 = log->text();

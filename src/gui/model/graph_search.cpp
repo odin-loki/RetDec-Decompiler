@@ -100,7 +100,11 @@ bool graphContainsNoCase(std::string_view hay, std::string_view needle)
 {
 	if (needle.empty()) return true;
 	if (needle.size() > hay.size()) return false;
-	return std::search(hay.begin(), hay.end(), needle.begin(), needle.end(),
+	return std::search(
+			   hay.begin(),
+			   hay.end(),
+			   needle.begin(),
+			   needle.end(),
 			   [](char a, char b) { return lower(a) == lower(b); })
 		!= hay.end();
 }
@@ -127,7 +131,9 @@ std::vector<uint64_t> graphSearchScene(const GraphScene& scene, std::string_view
 		{
 			const std::string idHex = std::format("0x{:x}", n.id);
 			hit = idHex.size() >= query.size()
-				&& std::equal(query.begin(), query.end(), idHex.begin(), [](char a, char b) { return lower(a) == lower(b); });
+			   && std::equal(query.begin(), query.end(), idHex.begin(), [](char a, char b) {
+					  return lower(a) == lower(b);
+				  });
 		}
 		if (hit) out.push_back(n.id);
 	}

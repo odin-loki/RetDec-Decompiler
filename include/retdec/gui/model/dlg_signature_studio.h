@@ -40,11 +40,11 @@ struct SigToolCommand
 /// Defaults the panel fills into empty fields when a binary becomes active.
 struct SigStudioDefaults
 {
-	std::string expressLib;  ///< the binary
-	std::string expressOut;  ///< <dir>/<completeBaseName>-libsig.yar
-	std::string arArchive;   ///< the binary
-	std::string machoFile;   ///< the binary
-	std::string workDir;     ///< <dir>/retdec-sig-work (ar and Mach-O output)
+	std::string expressLib; ///< the binary
+	std::string expressOut; ///< <dir>/<completeBaseName>-libsig.yar
+	std::string arArchive;  ///< the binary
+	std::string machoFile;  ///< the binary
+	std::string workDir;    ///< <dir>/retdec-sig-work (ar and Mach-O output)
 };
 SigStudioDefaults sigStudioDefaultsForBinary(const std::filesystem::path& binary);
 
@@ -53,23 +53,26 @@ SigStudioDefaults sigStudioDefaultsForBinary(const std::filesystem::path& binary
 /// path." and "Express: Python 3 or retdec-signature-from-library-creator.py
 /// not found. Use a full RetDec install with scripts/ on disk."
 std::expected<SigToolCommand, std::string> buildExpressCommand(
-	std::string_view lib, std::string_view out, const std::filesystem::path& python, const std::filesystem::path& script);
+	std::string_view lib,
+	std::string_view out,
+	const std::filesystem::path& python,
+	const std::filesystem::path& script);
 
 /// `retdec-ar-extractor -e -o OUTDIR ARCHIVE`. Error: "Set archive and output directory."
-std::expected<SigToolCommand, std::string> buildArExtractorCommand(
-	const std::filesystem::path& exe, std::string_view archive, std::string_view outDir);
+std::expected<SigToolCommand, std::string>
+buildArExtractorCommand(const std::filesystem::path& exe, std::string_view archive, std::string_view outDir);
 
 /// `retdec-macho-extractor --all -o OUTDIR FILE`. Error: "Set Mach-O file and output directory."
-std::expected<SigToolCommand, std::string> buildMachoExtractorCommand(
-	const std::filesystem::path& exe, std::string_view file, std::string_view outDir);
+std::expected<SigToolCommand, std::string>
+buildMachoExtractorCommand(const std::filesystem::path& exe, std::string_view file, std::string_view outDir);
 
 /// `retdec-bin2pat -o OUT IN`; an empty OUT becomes "<abs IN>.pat". Error: "Set bin2pat input file."
-std::expected<SigToolCommand, std::string> buildBin2patCommand(
-	const std::filesystem::path& exe, std::string_view in, std::string_view out);
+std::expected<SigToolCommand, std::string>
+buildBin2patCommand(const std::filesystem::path& exe, std::string_view in, std::string_view out);
 
 /// `retdec-pat2yara -o OUT IN`; an empty OUT becomes "<abs IN>.yar". Error: "Set pat2yara input file."
-std::expected<SigToolCommand, std::string> buildPat2yaraCommand(
-	const std::filesystem::path& exe, std::string_view in, std::string_view out);
+std::expected<SigToolCommand, std::string>
+buildPat2yaraCommand(const std::filesystem::path& exe, std::string_view in, std::string_view out);
 
 /// "Use YARA as static-code sigfile": the express YARA output when it exists,
 /// else the pat2yara output when it exists; absolute. Nothing when neither is
@@ -86,9 +89,9 @@ struct SigToolResult
 	std::string tool;
 	std::vector<std::string> arguments;
 	std::string workingDirectory;
-	int exitCode = -1;       ///< -1 when it failed to start
+	int exitCode = -1; ///< -1 when it failed to start
 	int64_t elapsedMs = 0;
-	std::string outputTail;  ///< merged stdout+stderr tail, or the error text
+	std::string outputTail; ///< merged stdout+stderr tail, or the error text
 	bool failedToStart = false;
 };
 

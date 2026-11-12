@@ -83,14 +83,24 @@ InspectPanel::InspectPanel(UiContext& ui, NodeHandle parent): ui_(ui)
 	raw_->setPlaceholder("JSON output from retdec-fileinfo --json");
 
 	auto* self = this;
-	ui.connect(refreshBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->refresh(); });
+	ui.connect(refreshBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) {
+		self->refresh();
+	});
 	ui.connect(decompileBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) {
 		if (self->onRequestDecompileMode) self->onRequestDecompileMode();
 	});
-	ui.connect(copyHashesBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->copyHashes(); });
-	ui.connect(unpackBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->runUnpacker(); });
-	ui.connect(openUnpackedBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->openUnpacked(); });
-	ui.connect(unpackOut_, SignalKind::TextChanged, [self](UiContext&, NodeHandle, const SignalArgs&) { self->updateButtonStates(); });
+	ui.connect(copyHashesBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) {
+		self->copyHashes();
+	});
+	ui.connect(unpackBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) {
+		self->runUnpacker();
+	});
+	ui.connect(openUnpackedBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) {
+		self->openUnpacked();
+	});
+	ui.connect(unpackOut_, SignalKind::TextChanged, [self](UiContext&, NodeHandle, const SignalArgs&) {
+		self->updateButtonStates();
+	});
 	updateButtonStates();
 }
 
@@ -146,7 +156,8 @@ void InspectPanel::setRawCapped(std::string_view text, std::size_t cap)
 	while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80)
 		--cut;
 	std::string preview(text.substr(0, cut));
-	preview += std::format("\n\n\xE2\x80\xA6[truncated \xE2\x80\x94 {} KiB total, showing first {} KiB]", text.size() / 1024, cap / 1024);
+	preview += std::format(
+		"\n\n\xE2\x80\xA6[truncated \xE2\x80\x94 {} KiB total, showing first {} KiB]", text.size() / 1024, cap / 1024);
 	raw_->setText(preview);
 }
 
@@ -213,7 +224,8 @@ void InspectPanel::runFileinfo(std::string_view binaryPath, std::string_view fil
 	ui_.setValue(w::tabWidgetBar(ui_, tabs_), 0.f, true);
 	const auto args = model::fileinfoArgs(binaryPath_);
 	const std::filesystem::path exe(fileinfoExe_);
-	if (onProcessStarted) onProcessStarted("retdec-fileinfo", args, exe.has_parent_path() ? exe.parent_path().string() : std::string());
+	if (onProcessStarted)
+		onProcessStarted("retdec-fileinfo", args, exe.has_parent_path() ? exe.parent_path().string() : std::string());
 	auto r = model_.startFileinfo(binaryPath_, fileinfoExe_);
 	if (!r)
 	{
@@ -255,7 +267,10 @@ void InspectPanel::runUnpacker()
 	ui_.setDisabled(openUnpackedBtn_, true);
 	const std::filesystem::path exe(unpackerExe_);
 	if (onProcessStarted)
-		onProcessStarted("retdec-unpacker", model::unpackerArgs(binaryPath_, outPath, brute), exe.has_parent_path() ? exe.parent_path().string() : std::string());
+		onProcessStarted(
+			"retdec-unpacker",
+			model::unpackerArgs(binaryPath_, outPath, brute),
+			exe.has_parent_path() ? exe.parent_path().string() : std::string());
 	auto r = model_.startUnpacker(binaryPath_, unpackerExe_, outPath, brute);
 	if (!r)
 	{
@@ -327,13 +342,16 @@ void InspectPanel::clear()
 void InspectPanel::handleRun(const model::ToolRun& run)
 {
 	if (onProcessOutput && (!run.out.empty() || !run.err.empty())) onProcessOutput(run.tool, run.out, run.err);
-	if (run.kind == model::InspectTool::Fileinfo) handleFileinfo(run);
-	else handleUnpacker(run);
+	if (run.kind == model::InspectTool::Fileinfo)
+		handleFileinfo(run);
+	else
+		handleUnpacker(run);
 }
 
 void InspectPanel::handleFileinfo(const model::ToolRun& run)
 {
-	if (onCliToolFinished) onCliToolFinished(run.tool, run.args, run.cwd, run.exitCode, run.elapsedMs, run.outputTail());
+	if (onCliToolFinished)
+		onCliToolFinished(run.tool, run.args, run.cwd, run.exitCode, run.elapsedMs, run.outputTail());
 	if (run.exitCode == -1 && !run.errorText.empty())
 	{
 		status(std::format("fileinfo error: {}", run.errorText));
@@ -344,8 +362,10 @@ void InspectPanel::handleFileinfo(const model::ToolRun& run)
 	{
 		status(std::format("fileinfo failed (exit {})", run.exitCode));
 		setSummaryMessage("Non-zero exit. See JSON tab.");
-		if (run.out.empty()) raw_->setText("(no output)");
-		else setRawCapped(run.out, 256 * 1024);
+		if (run.out.empty())
+			raw_->setText("(no output)");
+		else
+			setRawCapped(run.out, 256 * 1024);
 		return;
 	}
 	status("fileinfo OK \xE2\x80\x94 see Summary / JSON tabs.");
@@ -368,13 +388,15 @@ void InspectPanel::handleFileinfo(const model::ToolRun& run)
 		summary_.addRow(cellSafe(k) + "\t" + cellSafe(v));
 	if (info_->summaryRows.empty()) summary_.addRow("No flat key/value fields at root; see JSON tab.");
 	w::tableModelChanged(ui_, summaryTable_);
-	setRawCapped(run.out.size() <= kMaxRawBytes ? std::string_view(info_->prettyJson) : std::string_view(run.out), kMaxRawBytes);
+	setRawCapped(
+		run.out.size() <= kMaxRawBytes ? std::string_view(info_->prettyJson) : std::string_view(run.out), kMaxRawBytes);
 	if (onFileinfoReady) onFileinfoReady(*info_, lastJson_, lastFileinfoBinary_);
 }
 
 void InspectPanel::handleUnpacker(const model::ToolRun& run)
 {
-	if (onCliToolFinished) onCliToolFinished(run.tool, run.args, run.cwd, run.exitCode, run.elapsedMs, run.outputTail());
+	if (onCliToolFinished)
+		onCliToolFinished(run.tool, run.args, run.cwd, run.exitCode, run.elapsedMs, run.outputTail());
 	const std::string outp = trimmed(unpackOutput());
 	if (run.exitCode == -1 && !run.errorText.empty())
 	{

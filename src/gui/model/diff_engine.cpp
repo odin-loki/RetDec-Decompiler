@@ -327,7 +327,7 @@ IntraLineDiff intraLineDiff(std::string_view a, std::string_view b, std::size_t 
 	for (std::size_t i = 1; i <= mn; ++i)
 		for (std::size_t j = 1; j <= mm; ++j)
 			dp[i][j] = cpAt(a, ca, pre + i - 1) == cpAt(b, cb, pre + j - 1) ? dp[i - 1][j - 1] + 1
-																			 : std::max(dp[i - 1][j], dp[i][j - 1]);
+																			: std::max(dp[i - 1][j], dp[i][j - 1]);
 	std::vector<bool> keepA(mn, false), keepB(mm, false);
 	for (std::size_t i = mn, j = mm; i > 0 && j > 0;)
 	{

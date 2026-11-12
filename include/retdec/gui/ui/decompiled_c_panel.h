@@ -40,8 +40,14 @@ public:
 	DecompiledCPanel(const DecompiledCPanel&) = delete;
 	DecompiledCPanel& operator=(const DecompiledCPanel&) = delete;
 
-	fuse::ui::NodeHandle root() const { return root_; }
-	std::string panelTitle() const { return "Decompiled C"; }
+	fuse::ui::NodeHandle root() const
+	{
+		return root_;
+	}
+	std::string panelTitle() const
+	{
+		return "Decompiled C";
+	}
 
 	// ── Data in ──────────────────────────────────────────────────────────────
 	void setSource(std::string_view cSource);
@@ -49,8 +55,14 @@ public:
 	/// "Refined" toggle; empty disables it and shows the original.
 	void setRefinedSource(std::string_view refined);
 	void setShowRefined(bool on);
-	bool showingRefined() const { return showingRefined_; }
-	bool refinedAvailable() const { return !refined_.empty(); }
+	bool showingRefined() const
+	{
+		return showingRefined_;
+	}
+	bool refinedAvailable() const
+	{
+		return !refined_.empty();
+	}
 	/// Output language used for highlighting (default C).
 	void setLanguage(model::CodeLang lang);
 	void applyEditorFont(float px);
@@ -69,7 +81,10 @@ public:
 	// ── Actions ──────────────────────────────────────────────────────────────
 	void showFindBar();
 	void hideFindBar();
-	bool findBarVisible() const { return findShown_; }
+	bool findBarVisible() const
+	{
+		return findShown_;
+	}
 	void setFindText(std::string_view text);
 	/// Enter in the find bar.
 	void submitFind();
@@ -90,18 +105,51 @@ public:
 	std::function<void(uint64_t address)> onAddressActivated;
 
 	// ── Test hooks ───────────────────────────────────────────────────────────
-	CodeView& view() { return *view_; }
-	EmptyState& emptyState() { return *empty_; }
-	bool emptyStateShown() const { return emptyShown_; }
+	CodeView& view()
+	{
+		return *view_;
+	}
+	EmptyState& emptyState()
+	{
+		return *empty_;
+	}
+	bool emptyStateShown() const
+	{
+		return emptyShown_;
+	}
 	std::string functionLabel() const;
-	std::string lastFindQuery() const { return lastFindQuery_; }
-	fuse::ui::NodeHandle findEdit() const { return findEdit_; }
-	fuse::ui::NodeHandle copyButton() const { return copyBtn_; }
-	fuse::ui::NodeHandle saveButton() const { return saveBtn_; }
-	fuse::ui::NodeHandle findButton() const { return findBtn_; }
-	fuse::ui::NodeHandle refinedToggle() const { return refinedChk_; }
-	fuse::ui::NodeHandle saveDialog() const { return saveDlg_; }
-	ContextMenu& contextMenu() { return menu_; }
+	std::string lastFindQuery() const
+	{
+		return lastFindQuery_;
+	}
+	fuse::ui::NodeHandle findEdit() const
+	{
+		return findEdit_;
+	}
+	fuse::ui::NodeHandle copyButton() const
+	{
+		return copyBtn_;
+	}
+	fuse::ui::NodeHandle saveButton() const
+	{
+		return saveBtn_;
+	}
+	fuse::ui::NodeHandle findButton() const
+	{
+		return findBtn_;
+	}
+	fuse::ui::NodeHandle refinedToggle() const
+	{
+		return refinedChk_;
+	}
+	fuse::ui::NodeHandle saveDialog() const
+	{
+		return saveDlg_;
+	}
+	ContextMenu& contextMenu()
+	{
+		return menu_;
+	}
 
 private:
 	bool handleEvent(fuse::ui::EventContext& ec, const fuse::ui::Event& e);

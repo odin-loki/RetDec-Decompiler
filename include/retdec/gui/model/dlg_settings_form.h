@@ -68,8 +68,8 @@ std::vector<std::string> settingsEditorFontFamilies(std::string_view current);
 std::expected<std::vector<std::string>, std::string> settingsLlvmPassNames();
 
 /// Names whose checkbox is off, in list order (the stored llvmPassesDisabled).
-std::vector<std::string> settingsDisabledPasses(
-	const std::vector<std::string>& names, const std::vector<bool>& checked);
+std::vector<std::string>
+settingsDisabledPasses(const std::vector<std::string>& names, const std::vector<bool>& checked);
 
 /**
  * @brief The checks the Qt dialog ran before applying: a non-empty decompile

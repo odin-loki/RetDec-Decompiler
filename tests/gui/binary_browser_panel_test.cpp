@@ -81,7 +81,7 @@ TEST_F(BinaryBrowserTest, SelectingASectionShowsItsHexDump)
 	EXPECT_EQ(panel->hexView().line(0).substr(0, 10), "00000010  ");
 	EXPECT_NE(panel->hexText().find("QRSTUVWXYZABCDEF"), std::string::npos);
 	EXPECT_EQ(panel->hexView().lineCount(), 3); // two dump lines + trailing newline
-	panel->selectRow(2); // .bss, size 0: nothing
+	panel->selectRow(2);                        // .bss, size 0: nothing
 	EXPECT_TRUE(panel->hexText().empty());
 	panel->selectRow(3); // larger than the 64 KiB cap (and than the file)
 	EXPECT_NE(panel->hexText().find("showing first 64 KiB of 128 KiB"), std::string::npos);
@@ -111,8 +111,10 @@ TEST_F(BinaryBrowserTest, ActivationAndContextMenu)
 
 	panel->openContextMenu({100.f, 100.f}, 1);
 	ASSERT_TRUE(panel->contextMenu().isOpen());
-	EXPECT_EQ(panel->contextMenu().labels(),
-	          (std::vector<std::string>{"Decompile this range\xE2\x80\xA6", "Copy start address", "Copy VMA range", "Copy hex snippet"}));
+	EXPECT_EQ(
+		panel->contextMenu().labels(),
+		(std::vector<std::string>{
+			"Decompile this range\xE2\x80\xA6", "Copy start address", "Copy VMA range", "Copy hex snippet"}));
 	EXPECT_TRUE(panel->contextMenu().trigger(0));
 	ASSERT_EQ(ranges.size(), 1u);
 	EXPECT_EQ(ranges[0], "0x401000-0x401020");
@@ -142,7 +144,8 @@ TEST_F(BinaryBrowserTest, RightClickOpensMenuForRowUnderPointer)
 	{
 		h.clickAt({r.x + 50.f, y}, fuse::ui::MouseButton::Right);
 		h.frame();
-		if (int(h.ui.value(panel->table())) == 1) opened = panel->contextMenu().isOpen();
+		if (int(h.ui.value(panel->table())) == 1)
+			opened = panel->contextMenu().isOpen();
 		else
 		{
 			panel->contextMenu().close();

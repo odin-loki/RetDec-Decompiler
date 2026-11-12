@@ -236,8 +236,8 @@ void DiffPanel::paintPane(const fuse::ui::PaintContext& pc, fuse::ui::DrawList& 
 			line2 = u.rightLine;
 			prefix = u.prefix();
 			bg = u.kind == model::DiffOpKind::Delete ? model::kDiffRemovedBg
-				: u.kind == model::DiffOpKind::Insert ? model::kDiffAddedBg
-													   : 0;
+			   : u.kind == model::DiffOpKind::Insert ? model::kDiffAddedBg
+													 : 0;
 			spanColor = u.kind == model::DiffOpKind::Delete ? model::kDiffRemovedSpanBg : model::kDiffAddedSpanBg;
 		}
 		else
@@ -255,10 +255,18 @@ void DiffPanel::paintPane(const fuse::ui::PaintContext& pc, fuse::ui::DrawList& 
 			dl.rect({c.x + gutterW, y, c.w - gutterW, lh}, pc.tint(Color::rgb(themed(ui, bg))));
 			dl.rect({c.x, y, gutterW - 2.f, lh}, pc.tint(Color::rgb(darker(themed(ui, bg), 1.3f))));
 		}
-		if (r == p.cursorRow_) dl.rect({c.x + gutterW, y, c.w - gutterW, lh}, pc.tint(Color::rgb(themed(ui, kCurrentLine), 160.f / 255.f)));
+		if (r == p.cursorRow_)
+			dl.rect(
+				{c.x + gutterW, y, c.w - gutterW, lh}, pc.tint(Color::rgb(themed(ui, kCurrentLine), 160.f / 255.f)));
 		if (line >= 0)
 			ui.paintString(
-				dl, std::to_string(line + 1), {c.x, y, numW - 4.f, lh}, numCol, px - 1.f, fuse::ui::TextAlignment::End, pc.node.index);
+				dl,
+				std::to_string(line + 1),
+				{c.x, y, numW - 4.f, lh},
+				numCol,
+				px - 1.f,
+				fuse::ui::TextAlignment::End,
+				pc.node.index);
 		if (unified)
 		{
 			if (line2 >= 0)
@@ -272,7 +280,14 @@ void DiffPanel::paintPane(const fuse::ui::PaintContext& pc, fuse::ui::DrawList& 
 					pc.node.index);
 			const char pre[2] = {prefix, 0};
 			const Color preCol = pc.tint(Color::rgb(themed(ui, prefix == '+' ? kGreen : prefix == '-' ? kRed : kText)));
-			ui.paintString(dl, pre, {c.x + numW * 2.f, y, charW * 2.f, lh}, preCol, px, fuse::ui::TextAlignment::Center, pc.node.index);
+			ui.paintString(
+				dl,
+				pre,
+				{c.x + numW * 2.f, y, charW * 2.f, lh},
+				preCol,
+				px,
+				fuse::ui::TextAlignment::Center,
+				pc.node.index);
 		}
 		if (text.empty()) continue;
 		const std::string shown = expandTabs(text, &spans);
@@ -281,7 +296,10 @@ void DiffPanel::paintPane(const fuse::ui::PaintContext& pc, fuse::ui::DrawList& 
 		{
 			const float x0 = ui.measureString(std::string_view(shown).substr(0, sp.begin), px, pc.node);
 			const float x1 = ui.measureString(std::string_view(shown).substr(0, sp.end), px, pc.node);
-			dl.rect({textX + x0, y + 1.f, std::max(2.f, x1 - x0), lh - 2.f}, pc.tint(Color::rgb(themed(ui, spanColor))), 2.f);
+			dl.rect(
+				{textX + x0, y + 1.f, std::max(2.f, x1 - x0), lh - 2.f},
+				pc.tint(Color::rgb(themed(ui, spanColor))),
+				2.f);
 		}
 		ui.paintString(dl, shown, {textX, y, 100000.f, lh}, textCol, px, fuse::ui::TextAlignment::Start, pc.node.index);
 		dl.popClip();
@@ -416,8 +434,12 @@ void DiffPanel::build(NodeHandle parent)
 	});
 	ui_.connect(prevBtn_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { prevHunk(); });
 	ui_.connect(nextBtn_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { nextHunk(); });
-	ui_.connect(exportUBtn_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { openExportDialog(false); });
-	ui_.connect(exportHBtn_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { openExportDialog(true); });
+	ui_.connect(exportUBtn_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+		openExportDialog(false);
+	});
+	ui_.connect(exportHBtn_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+		openExportDialog(true);
+	});
 	ui_.connect(copyBtn_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { copyDiff(); });
 
 	// ── side by side ────────────────────────────────────────────────────────
@@ -552,7 +574,10 @@ void DiffPanel::updateStats()
 	ui_.setText(statsAdded_, std::format("+{}", diff_.linesAdded));
 	ui_.setText(statsRemoved_, std::format("-{}", diff_.linesRemoved));
 	ui_.setText(statsSimilar_, std::format("{}% similar", static_cast<int>(diff_.similarity * 100.0)));
-	if (!diff_.exact) ui_.setText(statsSimilar_, std::format("{}% similar (too large to diff exactly)", static_cast<int>(diff_.similarity * 100.0)));
+	if (!diff_.exact)
+		ui_.setText(
+			statsSimilar_,
+			std::format("{}% similar (too large to diff exactly)", static_cast<int>(diff_.similarity * 100.0)));
 }
 
 // ─── View ────────────────────────────────────────────────────────────────────

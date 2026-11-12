@@ -24,7 +24,7 @@ TEST(Address, ParseFirstAddress)
 	EXPECT_EQ(m::parseFirstAddress("x0x12"), 0x12u);
 	EXPECT_FALSE(m::parseFirstAddress("no address here").has_value());
 	EXPECT_FALSE(m::parseFirstAddress("0x").has_value());
-	EXPECT_FALSE(m::parseFirstAddress("0X10").has_value()); // lowercase x only, as before
+	EXPECT_FALSE(m::parseFirstAddress("0X10").has_value());                // lowercase x only, as before
 	EXPECT_FALSE(m::parseFirstAddress("0x1ffffffffffffffff").has_value()); // does not fit
 	EXPECT_EQ(m::parseFirstAddress("0xg 0x5"), 0x5u);
 }

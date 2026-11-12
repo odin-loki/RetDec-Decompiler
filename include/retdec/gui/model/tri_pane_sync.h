@@ -36,7 +36,10 @@ struct LineMappingEntry
 	int asmLine = -1;
 	int irLine = -1;
 	int cLine = -1;
-	int line(TriPane p) const { return p == TriPane::Asm ? asmLine : p == TriPane::IR ? irLine : cLine; }
+	int line(TriPane p) const
+	{
+		return p == TriPane::Asm ? asmLine : p == TriPane::IR ? irLine : cLine;
+	}
 	friend bool operator==(const LineMappingEntry&, const LineMappingEntry&) = default;
 };
 
@@ -45,9 +48,18 @@ class LineMapping {
 public:
 	void addEntry(int asmLine, int irLine, int cLine);
 	void clear();
-	bool isEmpty() const { return entries_.empty(); }
-	std::size_t size() const { return entries_.size(); }
-	const std::vector<LineMappingEntry>& entries() const { return entries_; }
+	bool isEmpty() const
+	{
+		return entries_.empty();
+	}
+	std::size_t size() const
+	{
+		return entries_.size();
+	}
+	const std::vector<LineMappingEntry>& entries() const
+	{
+		return entries_;
+	}
 
 	/// Entry whose asmLine == line, or nullptr (negative lines never match).
 	const LineMappingEntry* byAsmLine(int line) const;
@@ -69,7 +81,8 @@ private:
  *  - C: a "// 0x…" comment (retdec emits these per statement) or an
  *    "Address range: 0x… - 0x…" header (start address).
  */
-std::optional<uint64_t> lineAddress(TriPane pane, const std::string& line, const std::map<int, uint64_t>* irMetadata = nullptr);
+std::optional<uint64_t>
+lineAddress(TriPane pane, const std::string& line, const std::map<int, uint64_t>* irMetadata = nullptr);
 
 /// IR metadata nodes of the form `!N = !{i64 <addr>}` (decimal or 0x).
 std::map<int, uint64_t> parseIrAddressMetadata(const std::vector<std::string>& irLines);
@@ -80,8 +93,10 @@ std::map<int, uint64_t> parseIrAddressMetadata(const std::vector<std::string>& i
  * address (-1 when none). IR / C lines whose address has no asm line still
  * get an entry so that clicking them highlights the other pane.
  */
-LineMapping buildLineMappingByAddress(const std::vector<std::string>& asmLines, const std::vector<std::string>& irLines,
-                                      const std::vector<std::string>& cLines);
+LineMapping buildLineMappingByAddress(
+	const std::vector<std::string>& asmLines,
+	const std::vector<std::string>& irLines,
+	const std::vector<std::string>& cLines);
 
 /// Maps one pane's scroll value to the same relative position in another.
 int proportionalScroll(int value, int srcMax, int dstMax);
@@ -101,12 +116,27 @@ public:
 	/// Moves back / forward; the new current entry, or nullopt at the end.
 	std::optional<Entry> back();
 	std::optional<Entry> forward();
-	bool canGoBack() const { return index_ > 0; }
-	bool canGoForward() const { return index_ + 1 < static_cast<int>(entries_.size()); }
+	bool canGoBack() const
+	{
+		return index_ > 0;
+	}
+	bool canGoForward() const
+	{
+		return index_ + 1 < static_cast<int>(entries_.size());
+	}
 	void clear();
-	std::size_t size() const { return entries_.size(); }
-	int index() const { return index_; }
-	const std::vector<Entry>& entries() const { return entries_; }
+	std::size_t size() const
+	{
+		return entries_.size();
+	}
+	int index() const
+	{
+		return index_;
+	}
+	const std::vector<Entry>& entries() const
+	{
+		return entries_;
+	}
 
 private:
 	std::vector<Entry> entries_;

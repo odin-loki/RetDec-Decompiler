@@ -32,8 +32,8 @@ int itemIndex(const std::vector<std::string>& items, const std::string& text)
 
 } // namespace
 
-RawOptionsDialog::RawOptionsDialog(UiContext& ui)
-	: dlg_(ui, "Raw image / archive options", 420.f, 0.f, "rawArchiveOptionsDialog")
+RawOptionsDialog::RawOptionsDialog(UiContext& ui):
+	dlg_(ui, "Raw image / archive options", 420.f, 0.f, "rawArchiveOptionsDialog")
 {
 	const NodeHandle b = dlg_.body();
 	w::label(ui, b, "Endian (-e)");
@@ -42,8 +42,8 @@ RawOptionsDialog::RawOptionsDialog(UiContext& ui)
 	bits_ = w::comboBox(ui, b, dlg::joinLines(model::rawBitSizeItems()), 0, "rawOptBitSize");
 	vma_ = field(ui, b, "Raw section VMA", "0x100000 (empty = omit)", "rawOptVma");
 	arName_ = field(ui, b, "Archive member (--ar-name)", "member.o (empty = omit)", "rawOptArName");
-	arIndex_ = field(ui, b, "Archive member index (--ar-index)", "0 (empty = omit; ignored if name is set)",
-	                 "rawOptArIndex");
+	arIndex_ =
+		field(ui, b, "Archive member index (--ar-index)", "0 (empty = omit; ignored if name is set)", "rawOptArIndex");
 	const NodeHandle buttons = dlg::buttonRow(ui, b);
 	ok_ = w::button(ui, buttons, "OK");
 	ui.addClass(ok_, "primary");
@@ -75,8 +75,8 @@ void RawOptionsDialog::load(const model::RawArchiveOptions& o)
 	dlg::setEditText(ui, arIndex_, f.arIndexText);
 }
 
-void RawOptionsDialog::show(const model::RawArchiveOptions& current,
-                            std::function<void(const model::RawArchiveOptions&)> onAccepted)
+void RawOptionsDialog::show(
+	const model::RawArchiveOptions& current, std::function<void(const model::RawArchiveOptions&)> onAccepted)
 {
 	onAccepted_ = std::move(onAccepted);
 	load(current);

@@ -29,17 +29,35 @@ public:
 	void show(std::function<void(model::RunStageChoice choice)> onAccepted);
 	void accept();
 	void reject();
-	bool isOpen() const { return dlg_.isOpen(); }
+	bool isOpen() const
+	{
+		return dlg_.isOpen();
+	}
 
-	std::string title() const { return dlg_.title(); }
+	std::string title() const
+	{
+		return dlg_.title();
+	}
 	std::string label() const;
 	int currentIndex() const;
 	void setCurrentIndex(int index);
 	std::string currentText() const;
-	fuse::ui::NodeHandle combo() const { return combo_; }
-	fuse::ui::NodeHandle okButton() const { return ok_; }
-	fuse::ui::NodeHandle cancelButton() const { return cancel_; }
-	fuse::ui::NodeHandle card() const { return dlg_.card(); }
+	fuse::ui::NodeHandle combo() const
+	{
+		return combo_;
+	}
+	fuse::ui::NodeHandle okButton() const
+	{
+		return ok_;
+	}
+	fuse::ui::NodeHandle cancelButton() const
+	{
+		return cancel_;
+	}
+	fuse::ui::NodeHandle card() const
+	{
+		return dlg_.card();
+	}
 
 private:
 	ModalDialog dlg_;

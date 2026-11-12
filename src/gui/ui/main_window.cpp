@@ -105,8 +105,8 @@ bool clipboardGet(void* user, std::string& out)
 
 constexpr std::string_view kDocTitles = "Decompiled C\nAssembly\nIR (SSA)\nCFG\nSynced (Asm | IR | C)";
 constexpr std::string_view kWorkspaceTitles = "Strings\nInspect\nBinary\nTarget";
-constexpr std::array<std::string_view, MainWindow::kOutCount> kOutputTitles = {"Console", "Problems", "History",
-                                                                                 "Progress"};
+constexpr std::array<std::string_view, MainWindow::kOutCount> kOutputTitles = {
+	"Console", "Problems", "History", "Progress"};
 
 std::vector<std::string> splitLines(std::string_view s)
 {
@@ -147,7 +147,9 @@ std::string defaultDockLayout()
 	return std::format(
 		"fusedock 1\nsize left {}\nsize right {}\nsize bottom {}\n"
 		"dock dock_functions left 0 open\ndock dock_workspace right 0 open\ndock dock_output bottom 0 open\n",
-		detail::kDefaultLeftDockPx, detail::kDefaultRightDockPx, detail::kDefaultBottomDockPx);
+		detail::kDefaultLeftDockPx,
+		detail::kDefaultRightDockPx,
+		detail::kDefaultBottomDockPx);
 }
 
 } // namespace
@@ -163,8 +165,8 @@ void bindSystemClipboard(UiContext& ui)
 
 // ─── Tool windows / question box ─────────────────────────────────────────────
 
-MainWindow::ToolWindow::ToolWindow(UiContext& ui, const std::string& t, float w, float h)
-	: title(t), width(w), height(h), dlg(std::make_unique<ModalDialog>(ui, t, w, h))
+MainWindow::ToolWindow::ToolWindow(UiContext& ui, const std::string& t, float w, float h):
+	title(t), width(w), height(h), dlg(std::make_unique<ModalDialog>(ui, t, w, h))
 {
 	body = widgets::panel(ui, dlg->body());
 	ui.addClass(body, "retdec-toolwindow-body");
@@ -186,8 +188,8 @@ MainWindow::Question::Question(UiContext& ui): dlg(ui, "Question", 480.f, 0.f)
 
 // ─── Construction ────────────────────────────────────────────────────────────
 
-MainWindow::MainWindow(UiContext& ui, MainWindowOptions options)
-	: ui_(ui), opts_(options), settings_(options.settings ? *options.settings : model::AppSettings::instance())
+MainWindow::MainWindow(UiContext& ui, MainWindowOptions options):
+	ui_(ui), opts_(options), settings_(options.settings ? *options.settings : model::AppSettings::instance())
 {
 	ensureRetdecUiClasses(ui_);
 	if (ui_.registry().find("popup") == 0xFFFFFFFFu) widgets::install(ui_);
@@ -334,10 +336,12 @@ void MainWindow::createLayout()
 	startOpenBinary_ = widgets::button(ui_, startActions, "Open Binary\xE2\x80\xA6", "startOpenBinary");
 	ui_.addClass(startOpenBinary_, "primary");
 	startOpenProject_ = widgets::button(ui_, startActions, "Open Project\xE2\x80\xA6", "startOpenProject");
-	ui_.connect(startOpenBinary_, SignalKind::Clicked,
-	            [this](UiContext&, NodeHandle, const SignalArgs&) { triggerAction("file.open_binary"); });
-	ui_.connect(startOpenProject_, SignalKind::Clicked,
-	            [this](UiContext&, NodeHandle, const SignalArgs&) { triggerAction("file.open_project"); });
+	ui_.connect(startOpenBinary_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+		triggerAction("file.open_binary");
+	});
+	ui_.connect(startOpenProject_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+		triggerAction("file.open_project");
+	});
 
 	docTabs_ = widgets::tabWidget(ui_, centralStack_, kDocTitles, "documentTabs");
 	fill(ui_, docTabs_);
@@ -404,8 +408,8 @@ void MainWindow::createLayout()
 	callGraph_ = std::make_unique<CallGraphPanel>(ui_, toolWindow("Call Graph", 900.f, 700.f).body);
 	typeHierarchy_ = std::make_unique<TypeHierarchyPanel>(ui_, toolWindow("Type Hierarchy", 700.f, 600.f).body);
 	sigStudio_ = std::make_unique<SignatureStudioPanel>(ui_, toolWindow("Signature Studio", 900.f, 600.f).body);
-	ai_ = std::make_unique<AIAssistantPanel>(ui_, toolWindow("AI Assistant", 720.f, 640.f).body,
-	                                         model::defaultAssistantBackendFactory(), settings_);
+	ai_ = std::make_unique<AIAssistantPanel>(
+		ui_, toolWindow("AI Assistant", 720.f, 640.f).body, model::defaultAssistantBackendFactory(), settings_);
 	compare_ = std::make_unique<DiffPanel>(ui_, toolWindow("Compare", 1100.f, 700.f).body);
 	for (NodeHandle r: {callGraph_->root(), typeHierarchy_->root(), sigStudio_->root(), ai_->root(), compare_->root()})
 		ui_.setCss(r, "flex-grow", "1");
@@ -568,8 +572,13 @@ bool MainWindow::handleRootEvent(EventContext& ec, const Event& e)
 void MainWindow::createActions()
 {
 	const std::string ell = "\xE2\x80\xA6"; // …
-	auto act = [this](std::string id, std::string label, std::function<void()> run, std::string shortcut = {},
-	                  Key key = Key::None, u8 mods = 0) -> Action& {
+	auto act = [this](
+				   std::string id,
+				   std::string label,
+				   std::function<void()> run,
+				   std::string shortcut = {},
+				   Key key = Key::None,
+				   u8 mods = 0) -> Action& {
 		Action a;
 		a.id = std::move(id);
 		a.label = std::move(label);
@@ -604,71 +613,102 @@ void MainWindow::createActions()
 	// ── Analysis ────────────────────────────────────────────────────────────
 	act("analysis.run_full", "Run Full Analysis", [this] { runFullAnalysis(); }, "F5", Key::F5, 0);
 	{
-		Action& a = act("analysis.redecompile", "Re-decompile Selected Function", [this] { redecompileSelectedFunction(); });
+		Action& a =
+			act("analysis.redecompile", "Re-decompile Selected Function", [this] { redecompileSelectedFunction(); });
 		a.enabled = false;
-		a.toolTip = "Run retdec-decompiler with --select-functions for the function selected in the Functions list. "
-		            "Other functions keep declarations only; use Run Full Analysis to restore all bodies.";
+		a.toolTip =
+			"Run retdec-decompiler with --select-functions for the function selected in the Functions list. "
+			"Other functions keep declarations only; use Run Full Analysis to restore all bodies.";
 	}
 	act("analysis.run_stage", "Run Stage" + ell, [this] { onRunStage(); });
 	act("analysis.configure", "Configure" + ell, [this] { onConfigure(); });
 	act("analysis.target", "Target", [this] { focusWorkspaceTab(kWsTarget); });
-	toggle("analysis.fast", "Fast decompile (skip backend optimisations)",
-	       "Adds --backend-no-opts --disable-static-code-detection — output is less polished but the run finishes "
-	       "noticeably sooner. Toggle off and re-run for the full-quality pass.",
-	       [this](bool on) { fastDecompile_ = on; });
-	toggle("analysis.print_after_all", "Print LLVM IR after every pass (next run)",
-	       "Adds --print-after-all to the next retdec-decompiler invocation (verbose).",
-	       [this](bool on) { printAfterAll_ = on; });
-	toggle("analysis.print_before_all", "Print LLVM IR before every pass (next run)",
-	       "Adds --print-before-all to the next retdec-decompiler invocation.",
-	       [this](bool on) { nextRun_.printBeforeAll = on; });
-	toggle("analysis.keep_unreachable", "Keep unreachable functions (next run)",
-	       "Adds -k / --keep-unreachable-funcs so discarded helpers stay in the C.",
-	       [this](bool on) { nextRun_.keepUnreachableFuncs = on; });
-	toggle("analysis.cleanup", "Delete intermediates after run (--cleanup)", "",
-	       [this](bool on) { nextRun_.cleanup = on; });
-	toggle("analysis.try_emulation", "Try emulation unpacking (next run)",
-	       "Adds --try-emulation. Experimental; can be slow or fail on packed samples.",
-	       [this](bool on) { nextRun_.tryEmulation = on; });
-	toggle("analysis.keep_library", "Keep library functions (next run)",
-	       "Adds --backend-keep-library-funcs so libc-like helpers stay in the C.",
-	       [this](bool on) { nextRun_.keepLibraryFuncs = on; });
+	toggle(
+		"analysis.fast",
+		"Fast decompile (skip backend optimisations)",
+		"Adds --backend-no-opts --disable-static-code-detection — output is less polished but the run finishes "
+		"noticeably sooner. Toggle off and re-run for the full-quality pass.",
+		[this](bool on) { fastDecompile_ = on; });
+	toggle(
+		"analysis.print_after_all",
+		"Print LLVM IR after every pass (next run)",
+		"Adds --print-after-all to the next retdec-decompiler invocation (verbose).",
+		[this](bool on) { printAfterAll_ = on; });
+	toggle(
+		"analysis.print_before_all",
+		"Print LLVM IR before every pass (next run)",
+		"Adds --print-before-all to the next retdec-decompiler invocation.",
+		[this](bool on) { nextRun_.printBeforeAll = on; });
+	toggle(
+		"analysis.keep_unreachable",
+		"Keep unreachable functions (next run)",
+		"Adds -k / --keep-unreachable-funcs so discarded helpers stay in the C.",
+		[this](bool on) { nextRun_.keepUnreachableFuncs = on; });
+	toggle("analysis.cleanup", "Delete intermediates after run (--cleanup)", "", [this](bool on) {
+		nextRun_.cleanup = on;
+	});
+	toggle(
+		"analysis.try_emulation",
+		"Try emulation unpacking (next run)",
+		"Adds --try-emulation. Experimental; can be slow or fail on packed samples.",
+		[this](bool on) { nextRun_.tryEmulation = on; });
+	toggle(
+		"analysis.keep_library",
+		"Keep library functions (next run)",
+		"Adds --backend-keep-library-funcs so libc-like helpers stay in the C.",
+		[this](bool on) { nextRun_.keepLibraryFuncs = on; });
 	act("analysis.max_memory", "Set max memory (bytes)" + ell, [this] {
 		maxMemDlg_->show(nextRun_.maxMemoryBytes, [this](uint64_t bytes) { nextRun_.maxMemoryBytes = bytes; });
 	});
-	toggle("analysis.no_memory_limit", "No memory limit (next run)", "Adds --no-memory-limit (overrides --max-memory).",
-	       [this](bool on) { nextRun_.noMemoryLimit = on; });
+	toggle(
+		"analysis.no_memory_limit",
+		"No memory limit (next run)",
+		"Adds --no-memory-limit (overrides --max-memory).",
+		[this](bool on) { nextRun_.noMemoryLimit = on; });
 	act("analysis.c_style", "C output style" + ell, [this] {
 		cStyleDlg_->show(nextRun_.cStyle, [this](const model::CStyleOptions& o) { nextRun_.cStyle = o; });
 	}).toolTip = "Backend C flags for the next run (brackets, renaming, call-info).";
-	toggle("analysis.raw_mode", "Treat input as raw image (-m raw)", "Adds -m raw for firmware dumps without a container header.",
-	       [this](bool on) { nextRun_.rawMode = on; });
+	toggle(
+		"analysis.raw_mode",
+		"Treat input as raw image (-m raw)",
+		"Adds -m raw for firmware dumps without a container header.",
+		[this](bool on) { nextRun_.rawMode = on; });
 	act("analysis.raw_options", "Raw image / archive options" + ell, [this] {
 		rawDlg_->show(nextRun_.raw, [this](const model::RawArchiveOptions& o) { nextRun_.raw = o; });
 	}).toolTip = "Set --endian, --bit-size, --raw-section-vma, and --ar-name for the next run.";
 	act("analysis.pdb", "Set PDB symbols" + ell, [this] {
-		files_->show(FilePrompt::Mode::Open, "PDB symbols", fileDialogStartDir(), model::kPdbFileFilter,
-		             [this](const std::string& path) {
-			             if (path.empty()) return;
-			             nextRun_.pdbPath = path;
-			             rememberLastOpenDir(path);
-			             showStatusMessage(model::pdbPathStatus(path), 5000);
-		             });
+		files_->show(
+			FilePrompt::Mode::Open,
+			"PDB symbols",
+			fileDialogStartDir(),
+			model::kPdbFileFilter,
+			[this](const std::string& path) {
+				if (path.empty()) return;
+				nextRun_.pdbPath = path;
+				rememberLastOpenDir(path);
+				showStatusMessage(model::pdbPathStatus(path), 5000);
+			});
 	});
 	act("analysis.sig_file", "Set static-code signature file" + ell, [this] {
-		files_->show(FilePrompt::Mode::Open, "Static-code signatures", fileDialogStartDir(), model::kSignatureFileFilter,
-		             [this](const std::string& path) {
-			             if (path.empty()) return;
-			             nextRun_.staticCodeSigFile = path;
-			             rememberLastOpenDir(path);
-			             showStatusMessage(model::staticSigFileStatus(path), 5000);
-		             });
+		files_->show(
+			FilePrompt::Mode::Open,
+			"Static-code signatures",
+			fileDialogStartDir(),
+			model::kSignatureFileFilter,
+			[this](const std::string& path) {
+				if (path.empty()) return;
+				nextRun_.staticCodeSigFile = path;
+				rememberLastOpenDir(path);
+				showStatusMessage(model::staticSigFileStatus(path), 5000);
+			});
 	});
 	act("analysis.stop", "Stop Analysis", [this] { stopAnalysis(); }, "F6", Key::F6, 0).enabled = false;
 
 	// ── View ────────────────────────────────────────────────────────────────
-	toggle("view.dock_functions", "Functions", "", [this](bool on) { setDockOpen(Dock::Functions, on); }).checked = true;
-	toggle("view.dock_workspace", "Workspace", "", [this](bool on) { setDockOpen(Dock::Workspace, on); }).checked = true;
+	toggle("view.dock_functions", "Functions", "", [this](bool on) { setDockOpen(Dock::Functions, on); }).checked =
+		true;
+	toggle("view.dock_workspace", "Workspace", "", [this](bool on) { setDockOpen(Dock::Workspace, on); }).checked =
+		true;
 	toggle("view.dock_output", "Output", "", [this](bool on) { setDockOpen(Dock::Output, on); }).checked = true;
 	static constexpr std::array<std::pair<const char*, const char*>, kDocCount> kShow = {{
 		{"view.show_c", "Show Decompiled C"},
@@ -680,16 +720,28 @@ void MainWindow::createActions()
 	static constexpr std::array<Key, kDocCount> kNumKeys = {Key::Num1, Key::Num2, Key::Num3, Key::Num4, Key::Num5};
 	for (int i = 0; i < kDocCount; ++i)
 	{
-		act(kShow[std::size_t(i)].first, kShow[std::size_t(i)].second, [this, i] {
-			if (opts_.layoutStore) opts_.layoutStore->set("preferredDocumentTabIndex", double(i));
-			raiseDocumentTab(i);
-		}, std::format("Ctrl+{}", i + 1), kNumKeys[std::size_t(i)], C);
+		act(
+			kShow[std::size_t(i)].first,
+			kShow[std::size_t(i)].second,
+			[this, i] {
+				if (opts_.layoutStore) opts_.layoutStore->set("preferredDocumentTabIndex", double(i));
+				raiseDocumentTab(i);
+			},
+			std::format("Ctrl+{}", i + 1),
+			kNumKeys[std::size_t(i)],
+			C);
 	}
 	act("view.goto_address", "Go to address" + ell, [this] { onGotoAddress(); }, "Ctrl+G", Key::G, C);
 	act("view.goto_line", "Go to line" + ell, [this] { onGotoLine(); }, "Ctrl+L", Key::L, C);
 	// '`' is Key::Grave by key position (Shift+` arrives as Grave + Shift).
 	act("view.show_console", "Show Console", [this] { focusOutputTab(kOutConsole); }, "Ctrl+`", Key::Grave, C);
-	act("view.show_problems", "Show Problems", [this] { focusOutputTab(kOutProblems); }, "Ctrl+Shift+`", Key::Grave, CS);
+	act(
+		"view.show_problems",
+		"Show Problems",
+		[this] { focusOutputTab(kOutProblems); },
+		"Ctrl+Shift+`",
+		Key::Grave,
+		CS);
 	act("view.show_history", "Show History", [this] { focusOutputTab(kOutHistory); });
 	act("view.show_progress", "Show Progress", [this] { focusOutputTab(kOutProgress); });
 	toggle("view.show_banner", "Show triage banner", "", [this](bool on) {
@@ -744,32 +796,43 @@ void MainWindow::createMenus()
 	};
 
 	Menu file{"File", {}, {}};
-	file.entries = {A("file.open_binary"), A("file.open_project"), S(),
-	                Sub("Recent Files",
-	                    [this] {
-		                    Items out;
-		                    for (const std::string& p: recentFiles_)
-			                    out.emplace_back(p, true, [this, p] { openPath(p); });
-		                    if (recentFiles_.empty())
-		                    {
-			                    out.emplace_back("(empty)", false, nullptr);
-			                    return out;
-		                    }
-		                    out.emplace_back("-", false, nullptr);
-		                    out.emplace_back("Clear recent files", true, [this] { clearRecentFiles(); });
-		                    return out;
-	                    }),
-	                S(), A("file.save_project"), A("file.save_project_as"), S(), A("file.save_decompiled"),
-	                A("file.export_cmake"), A("file.export_bundle"), A("file.export_intel"),
-	                Sub("Export As",
-	                    [] {
-		                    Items out;
-		                    for (const model::Plugin* p: model::PluginManager::instance().outputPlugins())
-			                    out.emplace_back(p->formatName(), true, nullptr); // run bound below
-		                    if (out.empty()) out.emplace_back("(no output plugins loaded)", false, nullptr);
-		                    return out;
-	                    }),
-	                A("file.batch"), S(), A("file.quit")};
+	file.entries = {
+		A("file.open_binary"),
+		A("file.open_project"),
+		S(),
+		Sub("Recent Files",
+			[this] {
+				Items out;
+				for (const std::string& p: recentFiles_)
+					out.emplace_back(p, true, [this, p] { openPath(p); });
+				if (recentFiles_.empty())
+				{
+					out.emplace_back("(empty)", false, nullptr);
+					return out;
+				}
+				out.emplace_back("-", false, nullptr);
+				out.emplace_back("Clear recent files", true, [this] { clearRecentFiles(); });
+				return out;
+			}),
+		S(),
+		A("file.save_project"),
+		A("file.save_project_as"),
+		S(),
+		A("file.save_decompiled"),
+		A("file.export_cmake"),
+		A("file.export_bundle"),
+		A("file.export_intel"),
+		Sub("Export As",
+			[] {
+				Items out;
+				for (const model::Plugin* p: model::PluginManager::instance().outputPlugins())
+					out.emplace_back(p->formatName(), true, nullptr); // run bound below
+				if (out.empty()) out.emplace_back("(no output plugins loaded)", false, nullptr);
+				return out;
+			}),
+		A("file.batch"),
+		S(),
+		A("file.quit")};
 	// The Export As runs need `this`; bind them here.
 	file.entries[12].items = [this] {
 		Items out;
@@ -783,49 +846,90 @@ void MainWindow::createMenus()
 	};
 
 	Menu analysis{"Analysis", {}, {}};
-	analysis.entries = {A("analysis.run_full"), A("analysis.redecompile"), A("analysis.run_stage"), S(),
-	                    A("analysis.configure"), A("analysis.target"), S(), A("analysis.fast"),
-	                    A("analysis.print_after_all"), A("analysis.print_before_all"), A("analysis.keep_unreachable"),
-	                    A("analysis.cleanup"), A("analysis.try_emulation"), A("analysis.keep_library"),
-	                    A("analysis.max_memory"), A("analysis.no_memory_limit"), A("analysis.c_style"),
-	                    A("analysis.raw_mode"), A("analysis.raw_options"), A("analysis.pdb"), A("analysis.sig_file"),
-	                    Sub("Variable renamer",
-	                        [this] {
-		                        static constexpr std::array<const char*, 5> kStyles = {"readable", "simple", "address",
-		                                                                               "hungarian", "unified"};
-		                        Items out;
-		                        const std::string cur = nextRun_.varRenamer.empty() ? "readable" : nextRun_.varRenamer;
-		                        for (const char* s: kStyles)
-		                        {
-			                        const std::string style = s;
-			                        out.emplace_back((style == cur ? "\xE2\x80\xA2 " : "   ") + style, true,
-			                                         [this, style] { nextRun_.varRenamer = style == "readable" ? "" : style; });
-		                        }
-		                        return out;
-	                        }),
-	                    A("analysis.stop")};
+	analysis.entries = {
+		A("analysis.run_full"),
+		A("analysis.redecompile"),
+		A("analysis.run_stage"),
+		S(),
+		A("analysis.configure"),
+		A("analysis.target"),
+		S(),
+		A("analysis.fast"),
+		A("analysis.print_after_all"),
+		A("analysis.print_before_all"),
+		A("analysis.keep_unreachable"),
+		A("analysis.cleanup"),
+		A("analysis.try_emulation"),
+		A("analysis.keep_library"),
+		A("analysis.max_memory"),
+		A("analysis.no_memory_limit"),
+		A("analysis.c_style"),
+		A("analysis.raw_mode"),
+		A("analysis.raw_options"),
+		A("analysis.pdb"),
+		A("analysis.sig_file"),
+		Sub("Variable renamer",
+			[this] {
+				static constexpr std::array<const char*, 5> kStyles = {
+					"readable", "simple", "address", "hungarian", "unified"};
+				Items out;
+				const std::string cur = nextRun_.varRenamer.empty() ? "readable" : nextRun_.varRenamer;
+				for (const char* s: kStyles)
+				{
+					const std::string style = s;
+					out.emplace_back((style == cur ? "\xE2\x80\xA2 " : "   ") + style, true, [this, style] {
+						nextRun_.varRenamer = style == "readable" ? "" : style;
+					});
+				}
+				return out;
+			}),
+		A("analysis.stop")};
 
 	Menu view{"View", {}, {}};
-	view.entries = {A("view.dock_functions"), A("view.dock_workspace"), A("view.dock_output"), S(),
-	                A("view.show_c"), A("view.show_assembly"), A("view.show_ir"), A("view.show_cfg"),
-	                A("view.show_synced"), A("view.goto_address"), S(), A("view.show_console"),
-	                A("view.show_problems"), A("view.show_history"), A("view.show_progress"), S(),
-	                A("view.show_banner"), S(), A("view.reset_layout")};
+	view.entries = {
+		A("view.dock_functions"),
+		A("view.dock_workspace"),
+		A("view.dock_output"),
+		S(),
+		A("view.show_c"),
+		A("view.show_assembly"),
+		A("view.show_ir"),
+		A("view.show_cfg"),
+		A("view.show_synced"),
+		A("view.goto_address"),
+		S(),
+		A("view.show_console"),
+		A("view.show_problems"),
+		A("view.show_history"),
+		A("view.show_progress"),
+		S(),
+		A("view.show_banner"),
+		S(),
+		A("view.reset_layout")};
 
 	Menu tools{"Tools", {}, {}};
-	tools.entries = {A("tools.settings"), S(), A("tools.signature_studio"), A("tools.call_graph"),
-	                 A("tools.type_hierarchy"), A("tools.ai_assistant"), S(), A("tools.compare"),
-	                 A("tools.compare_refined"), A("tools.copy_function_c"), S(),
-	                 Sub("Visualisation plugins", [this] {
-		                 Items out;
-		                 for (const model::Plugin* p: model::PluginManager::instance().visualisationPlugins())
-		                 {
-			                 const std::string id = p->metadata().id;
-			                 out.emplace_back(p->panelTitle(), true, [this, id] { onShowVisualisationPlugin(id); });
-		                 }
-		                 if (out.empty()) out.emplace_back("(no visualisation plugins loaded)", false, nullptr);
-		                 return out;
-	                 })};
+	tools.entries = {
+		A("tools.settings"),
+		S(),
+		A("tools.signature_studio"),
+		A("tools.call_graph"),
+		A("tools.type_hierarchy"),
+		A("tools.ai_assistant"),
+		S(),
+		A("tools.compare"),
+		A("tools.compare_refined"),
+		A("tools.copy_function_c"),
+		S(),
+		Sub("Visualisation plugins", [this] {
+			Items out;
+			for (const model::Plugin* p: model::PluginManager::instance().visualisationPlugins())
+			{
+				const std::string id = p->metadata().id;
+				out.emplace_back(p->panelTitle(), true, [this, id] { onShowVisualisationPlugin(id); });
+			}
+			if (out.empty()) out.emplace_back("(no visualisation plugins loaded)", false, nullptr);
+			return out;
+		})};
 
 	Menu help{"Help", {}, {}};
 	help.entries = {A("help.documentation"), S(), A("help.shortcuts"), A("help.about")};
@@ -865,7 +969,8 @@ const MainWindow::Menu* MainWindow::findMenu(std::string_view title) const
 	return nullptr;
 }
 
-std::string MainWindow::menuText(const Menu& m, std::vector<std::function<void()>>& runs, std::vector<int>& topLines) const
+std::string
+MainWindow::menuText(const Menu& m, std::vector<std::function<void()>>& runs, std::vector<int>& topLines) const
 {
 	std::vector<std::string> lines;
 	runs.clear();
@@ -1049,14 +1154,38 @@ void MainWindow::createStatusBar()
 	statusElapsed_ = widgets::label(ui_, statusBar_, "", "statusElapsed");
 }
 
-std::string MainWindow::statusFileText() const { return std::string(ui_.text(statusFile_)); }
-std::string MainWindow::statusStageText() const { return std::string(ui_.text(statusStage_)); }
-std::string MainWindow::statusFunctionCountText() const { return std::string(ui_.text(statusFnCount_)); }
-std::string MainWindow::statusDecompileText() const { return std::string(ui_.text(statusDecompile_)); }
-std::string MainWindow::statusElapsedText() const { return std::string(ui_.text(statusElapsed_)); }
-std::string MainWindow::statusNeuralText() const { return std::string(ui_.text(statusNeural_)); }
-std::string MainWindow::statusMessageText() const { return std::string(ui_.text(statusMsg_)); }
-float MainWindow::progressBarValue() const { return ui_.value(statusProgress_); }
+std::string MainWindow::statusFileText() const
+{
+	return std::string(ui_.text(statusFile_));
+}
+std::string MainWindow::statusStageText() const
+{
+	return std::string(ui_.text(statusStage_));
+}
+std::string MainWindow::statusFunctionCountText() const
+{
+	return std::string(ui_.text(statusFnCount_));
+}
+std::string MainWindow::statusDecompileText() const
+{
+	return std::string(ui_.text(statusDecompile_));
+}
+std::string MainWindow::statusElapsedText() const
+{
+	return std::string(ui_.text(statusElapsed_));
+}
+std::string MainWindow::statusNeuralText() const
+{
+	return std::string(ui_.text(statusNeural_));
+}
+std::string MainWindow::statusMessageText() const
+{
+	return std::string(ui_.text(statusMsg_));
+}
+float MainWindow::progressBarValue() const
+{
+	return ui_.value(statusProgress_);
+}
 
 void MainWindow::setStatusFile(const std::string& path)
 {
@@ -1160,7 +1289,8 @@ void MainWindow::wirePanels()
 			showStatusMessage("Decompiler already running", 2500);
 			return;
 		}
-		launchDecompilerForBinary(std::filesystem::absolute(project_->binaryPath()).string(), project_->arch(), {}, {range});
+		launchDecompilerForBinary(
+			std::filesystem::absolute(project_->binaryPath()).string(), project_->arch(), {}, {range});
 	};
 	triPane_->onAddressNavigated = [this](uint64_t addr) { assembly_->navigateTo(addr); };
 	triPane_->onFunctionRequested = [this](uint64_t addr) { navigateToAddress(addr, kDocSynced); };
@@ -1201,7 +1331,8 @@ void MainWindow::wirePanels()
 	triage_->onDecompileRequested = [this] { runFullAnalysis(); };
 	triage_->onUnpackRequested = [this] {
 		focusWorkspaceTab(kWsInspect);
-		showStatusMessage("Use the Inspect panel's 'Run unpacker' button. The unpacker output path is preconfigured.", 6000);
+		showStatusMessage(
+			"Use the Inspect panel's 'Run unpacker' button. The unpacker output path is preconfigured.", 6000);
 	};
 	triage_->onMoreActionsRequested = [this](Vec2 anchor) { onTriageMoreActions(anchor); };
 	triage_->onDismissed = [this] {
@@ -1212,14 +1343,21 @@ void MainWindow::wirePanels()
 
 	// Inspect: fileinfo / unpacker runs.
 	inspect_->setUnpackerExecutable(model::resolveRetdecUnpackerExecutable().string());
-	inspect_->onProcessStarted = [this](const std::string& label, const std::vector<std::string>& args,
-	                                    const std::string& cwd) { console_->appendBanner(label, args, cwd); };
+	inspect_->onProcessStarted =
+		[this](const std::string& label, const std::vector<std::string>& args, const std::string& cwd) {
+			console_->appendBanner(label, args, cwd);
+		};
 	inspect_->onProcessOutput = [this](const std::string&, const std::string& out, const std::string& err) {
 		if (!out.empty()) console_->appendChunk(LiveConsolePanel::Stream::Stdout, out);
 		if (!err.empty()) console_->appendChunk(LiveConsolePanel::Stream::Stderr, err);
 	};
-	inspect_->onCliToolFinished = [this](const std::string& tool, const std::vector<std::string>& args,
-	                                     const std::string& cwd, int exitCode, int64_t ms, const std::string& tail) {
+	inspect_->onCliToolFinished = [this](
+									  const std::string& tool,
+									  const std::vector<std::string>& args,
+									  const std::string& cwd,
+									  int exitCode,
+									  int64_t ms,
+									  const std::string& tail) {
 		commandLog_->appendRun(tool, args, cwd, exitCode, ms, tail);
 		console_->appendFooter(tool, exitCode, ms);
 		if (tool.find("fileinfo") != std::string::npos) refreshTriageFromInspect();
@@ -1256,12 +1394,15 @@ void MainWindow::wirePanels()
 	progress_->onStageStarted = [this](const std::string& stage) { onAnalysisStageChanged(stage); };
 
 	// Docks closed with their ✕ keep the View menu in sync.
-	ui_.connect(dockFunctions_, SignalKind::Toggled,
-	            [this](UiContext&, NodeHandle, const SignalArgs& a) { setActionChecked("view.dock_functions", a.flag); });
-	ui_.connect(dockWorkspace_, SignalKind::Toggled,
-	            [this](UiContext&, NodeHandle, const SignalArgs& a) { setActionChecked("view.dock_workspace", a.flag); });
-	ui_.connect(dockOutput_, SignalKind::Toggled,
-	            [this](UiContext&, NodeHandle, const SignalArgs& a) { setActionChecked("view.dock_output", a.flag); });
+	ui_.connect(dockFunctions_, SignalKind::Toggled, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+		setActionChecked("view.dock_functions", a.flag);
+	});
+	ui_.connect(dockWorkspace_, SignalKind::Toggled, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+		setActionChecked("view.dock_workspace", a.flag);
+	});
+	ui_.connect(dockOutput_, SignalKind::Toggled, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+		setActionChecked("view.dock_output", a.flag);
+	});
 }
 
 // ─── View helpers ────────────────────────────────────────────────────────────
@@ -1359,17 +1500,20 @@ void MainWindow::setDockOpen(Dock d, bool open)
 	const NodeHandle n = dockNode(d);
 	if (open == dockOpen(d))
 	{
-		setActionChecked(d == Dock::Functions ? "view.dock_functions"
-		                 : d == Dock::Workspace ? "view.dock_workspace"
-		                                        : "view.dock_output",
-		                 open);
+		setActionChecked(
+			d == Dock::Functions   ? "view.dock_functions"
+			: d == Dock::Workspace ? "view.dock_workspace"
+								   : "view.dock_output",
+			open);
 		return;
 	}
 	if (open)
-		widgets::dockTo(ui_, n,
-		                d == Dock::Functions   ? widgets::DockSide::Left
-		                : d == Dock::Workspace ? widgets::DockSide::Right
-		                                       : widgets::DockSide::Bottom);
+		widgets::dockTo(
+			ui_,
+			n,
+			d == Dock::Functions   ? widgets::DockSide::Left
+			: d == Dock::Workspace ? widgets::DockSide::Right
+								   : widgets::DockSide::Bottom);
 	else
 		widgets::dockClose(ui_, n);
 }
@@ -1481,10 +1625,11 @@ void MainWindow::restoreLayout()
 			(void)widgets::dockRestoreLayout(ui_, dockArea_, defaultDockLayout());
 	}
 	for (Dock d: {Dock::Functions, Dock::Workspace, Dock::Output})
-		setActionChecked(d == Dock::Functions ? "view.dock_functions"
-		                 : d == Dock::Workspace ? "view.dock_workspace"
-		                                        : "view.dock_output",
-		                 dockOpen(d));
+		setActionChecked(
+			d == Dock::Functions   ? "view.dock_functions"
+			: d == Dock::Workspace ? "view.dock_workspace"
+								   : "view.dock_output",
+			dockOpen(d));
 	raiseDocumentTab(st ? int(st->number("preferredDocumentTabIndex", kDocDecompiledC)) : kDocDecompiledC);
 }
 

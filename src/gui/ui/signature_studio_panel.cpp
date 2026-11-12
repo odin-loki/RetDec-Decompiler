@@ -48,8 +48,8 @@ SignatureStudioPanel::ToolResolver SignatureStudioPanel::defaultToolResolver()
 	};
 }
 
-SignatureStudioPanel::SignatureStudioPanel(UiContext& ui, NodeHandle parent)
-	: ui_(ui), files_(ui), tools_(defaultToolResolver())
+SignatureStudioPanel::SignatureStudioPanel(UiContext& ui, NodeHandle parent):
+	ui_(ui), files_(ui), tools_(defaultToolResolver())
 {
 	dlg::ensureDialogStyles(ui);
 	handler_.handle = [this](EventContext& ec, const Event& e) { return handleEvent(ec, e); };
@@ -57,9 +57,11 @@ SignatureStudioPanel::SignatureStudioPanel(UiContext& ui, NodeHandle parent)
 	ui.setCss(root_, "padding", "6px");
 	ui.setCss(root_, "gap", "6px");
 
-	dlg::noteLabel(ui, root_,
-	               "Uses RetDec tools next to the GUI or on PATH. Pick inputs below; outputs go to the Command log on "
-	               "completion.");
+	dlg::noteLabel(
+		ui,
+		root_,
+		"Uses RetDec tools next to the GUI or on PATH. Pick inputs below; outputs go to the Command log on "
+		"completion.");
 
 	tabs_ = w::tabWidget(ui, root_, "Express\nAR\nMach-O\nPAT / YARA", "sigStudioTabs");
 	ui.setCss(tabs_, "flex-grow", "1");
@@ -83,11 +85,13 @@ SignatureStudioPanel::SignatureStudioPanel(UiContext& ui, NodeHandle parent)
 		expressLib_ = fileRow(box, "Static library / archive", FilePrompt::Mode::Open, "Library / archive", {});
 		expressOut_ = fileRow(box, "Output YARA", FilePrompt::Mode::Save, "YARA output", "*.yar");
 		expressRun_ = w::button(ui, box, "Run express pipeline");
-		w::setTooltip(ui, expressRun_,
-		              "Requires Python 3, installed RetDec scripts directory, and tools next to the script.");
-		dlg::noteLabel(ui, box,
-		               "Script must live in the installed scripts folder with retdec-ar-extractor, retdec-bin2pat, "
-		               "retdec-pat2yara beside it (standard install layout).");
+		w::setTooltip(
+			ui, expressRun_, "Requires Python 3, installed RetDec scripts directory, and tools next to the script.");
+		dlg::noteLabel(
+			ui,
+			box,
+			"Script must live in the installed scripts folder with retdec-ar-extractor, retdec-bin2pat, "
+			"retdec-pat2yara beside it (standard install layout).");
 	}
 	// ── AR ──
 	{
@@ -115,7 +119,8 @@ SignatureStudioPanel::SignatureStudioPanel(UiContext& ui, NodeHandle parent)
 		p2yOut_ = fileRow(p2y, "Output YARA", FilePrompt::Mode::Save, "YARA output", "*.yar");
 		p2yRun_ = w::button(ui, p2y, "Run pat2yara");
 	}
-	for (NodeHandle b: {expressRun_, arRun_, machoRun_, b2pRun_, p2yRun_}) ui.setCss(b, "align-self", "start");
+	for (NodeHandle b: {expressRun_, arRun_, machoRun_, b2pRun_, p2yRun_})
+		ui.setCss(b, "align-self", "start");
 
 	log_ = std::make_unique<CodeView>(ui, root_, model::CodeLang::Plain);
 	ui.setCss(log_->node(), "height", "100px");
@@ -130,10 +135,14 @@ SignatureStudioPanel::SignatureStudioPanel(UiContext& ui, NodeHandle parent)
 
 	ui.connect(expressRun_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { runExpress(); });
 	ui.connect(arRun_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { runArExtractor(); });
-	ui.connect(machoRun_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { runMachoExtractor(); });
+	ui.connect(machoRun_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+		runMachoExtractor();
+	});
 	ui.connect(b2pRun_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { runBin2pat(); });
 	ui.connect(p2yRun_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { runPat2yara(); });
-	ui.connect(useAsStatic_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { useAsStaticSigFile(); });
+	ui.connect(useAsStatic_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+		useAsStaticSigFile();
+	});
 }
 
 SignatureStudioPanel::~SignatureStudioPanel()
@@ -149,8 +158,12 @@ bool SignatureStudioPanel::handleEvent(EventContext&, const Event&)
 	return false;
 }
 
-NodeHandle SignatureStudioPanel::fileRow(NodeHandle form, std::string_view label, FilePrompt::Mode mode,
-                                         std::string_view promptTitle, std::string_view filter)
+NodeHandle SignatureStudioPanel::fileRow(
+	NodeHandle form,
+	std::string_view label,
+	FilePrompt::Mode mode,
+	std::string_view promptTitle,
+	std::string_view filter)
 {
 	const NodeHandle row = dlg::formRow(ui_, form, label);
 	const NodeHandle e = dlg::growEdit(ui_, row);
@@ -160,8 +173,9 @@ NodeHandle SignatureStudioPanel::fileRow(NodeHandle form, std::string_view label
 	ui_.connect(b, SignalKind::Clicked, [this, idx](UiContext&, NodeHandle, const SignalArgs&) {
 		const BrowseRow& r = browseRows_[idx];
 		const NodeHandle edit = r.edit;
-		files_.show(r.mode, r.title, dlg::editText(ui_, edit), r.filter,
-		            [this, edit](const std::string& p) { dlg::setEditText(ui_, edit, p); });
+		files_.show(r.mode, r.title, dlg::editText(ui_, edit), r.filter, [this, edit](const std::string& p) {
+			dlg::setEditText(ui_, edit, p);
+		});
 	});
 	return e;
 }
@@ -229,7 +243,8 @@ std::string SignatureStudioPanel::log() const
 
 void SignatureStudioPanel::setBusy(bool on)
 {
-	for (NodeHandle b: {expressRun_, arRun_, machoRun_, b2pRun_, p2yRun_}) ui_.setDisabled(b, on);
+	for (NodeHandle b: {expressRun_, arRun_, machoRun_, b2pRun_, p2yRun_})
+		ui_.setDisabled(b, on);
 }
 
 bool SignatureStudioPanel::busy() const
@@ -302,26 +317,30 @@ bool SignatureStudioPanel::runExpress()
 
 bool SignatureStudioPanel::runArExtractor()
 {
-	return start(model::buildArExtractorCommand(resolve(tools_.arExtractor), dlg::editText(ui_, arArchive_),
-	                                            dlg::editText(ui_, arOut_)));
+	return start(
+		model::buildArExtractorCommand(
+			resolve(tools_.arExtractor), dlg::editText(ui_, arArchive_), dlg::editText(ui_, arOut_)));
 }
 
 bool SignatureStudioPanel::runMachoExtractor()
 {
-	return start(model::buildMachoExtractorCommand(resolve(tools_.machoExtractor), dlg::editText(ui_, machoFile_),
-	                                               dlg::editText(ui_, machoOut_)));
+	return start(
+		model::buildMachoExtractorCommand(
+			resolve(tools_.machoExtractor), dlg::editText(ui_, machoFile_), dlg::editText(ui_, machoOut_)));
 }
 
 bool SignatureStudioPanel::runBin2pat()
 {
-	auto cmd = model::buildBin2patCommand(resolve(tools_.bin2pat), dlg::editText(ui_, b2pIn_), dlg::editText(ui_, b2pOut_));
+	auto cmd =
+		model::buildBin2patCommand(resolve(tools_.bin2pat), dlg::editText(ui_, b2pIn_), dlg::editText(ui_, b2pOut_));
 	if (cmd && !cmd->defaultedOutput.empty()) dlg::setEditText(ui_, b2pOut_, cmd->defaultedOutput);
 	return start(std::move(cmd));
 }
 
 bool SignatureStudioPanel::runPat2yara()
 {
-	auto cmd = model::buildPat2yaraCommand(resolve(tools_.pat2yara), dlg::editText(ui_, p2yIn_), dlg::editText(ui_, p2yOut_));
+	auto cmd =
+		model::buildPat2yaraCommand(resolve(tools_.pat2yara), dlg::editText(ui_, p2yIn_), dlg::editText(ui_, p2yOut_));
 	if (cmd && !cmd->defaultedOutput.empty()) dlg::setEditText(ui_, p2yOut_, cmd->defaultedOutput);
 	return start(std::move(cmd));
 }

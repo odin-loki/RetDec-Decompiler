@@ -70,7 +70,9 @@ std::expected<void, std::string> DecompileRun::start(DecompileRunSpec spec)
 
 	if (spec.executable.empty()) return std::unexpected(std::string("No executable to run."));
 	const std::string exe = forge::os::find_executable(spec.executable.string());
-	if (exe.empty()) return std::unexpected(std::format("Failed to start {}: not found or not executable.", spec.executable.string()));
+	if (exe.empty())
+		return std::unexpected(
+			std::format("Failed to start {}: not found or not executable.", spec.executable.string()));
 	if (spec.workingDirectory.empty()) spec.workingDirectory = fs::path(exe).parent_path();
 	{
 		std::error_code ec;

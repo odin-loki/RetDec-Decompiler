@@ -106,8 +106,10 @@ void MainWindow::stopPollTimer()
 void MainWindow::updateElapsedTime()
 {
 	const int64_t ms = msSince(wallStart_);
-	ui_.setText(statusElapsed_, ms < 60000 ? std::format("{}.{}s", ms / 1000, (ms % 1000) / 100)
-	                                       : std::format("{}m {}s", ms / 60000, (ms % 60000) / 1000));
+	ui_.setText(
+		statusElapsed_,
+		ms < 60000 ? std::format("{}.{}s", ms / 1000, (ms % 1000) / 100)
+				   : std::format("{}m {}s", ms / 60000, (ms % 60000) / 1000));
 }
 
 void MainWindow::startAnalysis()
@@ -135,8 +137,8 @@ void MainWindow::stopAnalysis()
 	if (hadRun && run_->state() == model::DecompileRun::State::Cancelled)
 	{
 		console_->appendFooter("retdec-decompiler", -1, run_->elapsed().count());
-		commandLog_->appendRun("retdec-decompiler", lastDecompilerArgs_, lastDecompilerCwd_, -1, run_->elapsed().count(),
-		                       "(stopped)");
+		commandLog_->appendRun(
+			"retdec-decompiler", lastDecompilerArgs_, lastDecompilerCwd_, -1, run_->elapsed().count(), "(stopped)");
 	}
 	stopPollTimer();
 	logProgressOffset_ = logConsoleOffset_ = logDiagOffset_ = 0;
@@ -212,8 +214,8 @@ void MainWindow::redecompileSelectedFunction()
 		return;
 	}
 	pendingReselectAddress_ = entry->address;
-	if (!launchDecompilerForBinary(fs::absolute(project_->binaryPath()).string(), project_->arch(),
-	                               {entry->selectFunctionsCliName()}))
+	if (!launchDecompilerForBinary(
+			fs::absolute(project_->binaryPath()).string(), project_->arch(), {entry->selectFunctionsCliName()}))
 		pendingReselectAddress_.reset();
 }
 
@@ -226,8 +228,8 @@ void MainWindow::headlessFail(int exitCode, const std::string& message)
 	if (onQuitRequested) onQuitRequested(exitCode);
 }
 
-void MainWindow::writeHeadlessDecompileReport(int64_t decompileMs, int exitCode, const std::string& outputPath,
-                                              const std::vector<std::string>& args)
+void MainWindow::writeHeadlessDecompileReport(
+	int64_t decompileMs, int exitCode, const std::string& outputPath, const std::vector<std::string>& args)
 {
 	std::error_code ec;
 	const fs::path path = fs::temp_directory_path(ec) / "retdec-gui-decompile-timing.txt";
@@ -243,9 +245,11 @@ void MainWindow::writeHeadlessDecompileReport(int64_t decompileMs, int exitCode,
 	(void)forge::os::write_file(path.string(), text);
 }
 
-bool MainWindow::launchDecompilerForBinary(const std::string& absBinary, const std::string& arch,
-                                           const std::vector<std::string>& selectedFunctions,
-                                           const std::vector<std::string>& selectedRanges)
+bool MainWindow::launchDecompilerForBinary(
+	const std::string& absBinary,
+	const std::string& arch,
+	const std::vector<std::string>& selectedFunctions,
+	const std::vector<std::string>& selectedRanges)
 {
 	if (decompilerRunning()) return false;
 	const bool quit = quitWhenDecompileFinishes_;
@@ -373,22 +377,26 @@ bool MainWindow::launchDecompilerForBinary(const std::string& absBinary, const s
 	console_->setFlushHz(!quit && st.advanced.verbosity == V::Debug ? 40 : 20);
 	console_->appendBanner("retdec-decompiler", built->args, lastDecompilerCwd_);
 	const bool streamLog = st.decompiler.liveConsoleTail && !quit;
-	console_->appendLine(LiveConsolePanel::Stream::Stdout,
-	                     streamLog ? std::format("(stdout/stderr redirected to {} \xE2\x80\x94 streaming log to console)",
-	                                             lastLogPath_.string())
-	                               : std::format("(stdout/stderr redirected to {} \xE2\x80\x94 console updates when the run finishes)",
-	                                             lastLogPath_.string()));
+	console_->appendLine(
+		LiveConsolePanel::Stream::Stdout,
+		streamLog ? std::format(
+						"(stdout/stderr redirected to {} \xE2\x80\x94 streaming log to console)", lastLogPath_.string())
+				  : std::format(
+						"(stdout/stderr redirected to {} \xE2\x80\x94 console updates when the run finishes)",
+						lastLogPath_.string()));
 	if (!quit) focusOutputTab(kOutConsole);
 
 	const bool neural = model::processEnvironmentValue(env, "RETDEC_NEURAL_REFINE") == "1";
 	ui_.setText(statusNeural_, neural ? "Neural: on" : "Neural: off");
 	if (neural)
-		console_->appendLine(LiveConsolePanel::Stream::Stdout,
-		                     std::format("Neural refine: model={} gpu_layers={} ctx={} max_tokens={}",
-		                                 model::processEnvironmentValue(env, "RETDEC_NEURAL_MODEL"),
-		                                 model::processEnvironmentValue(env, "RETDEC_NEURAL_N_GPU_LAYERS"),
-		                                 model::processEnvironmentValue(env, "RETDEC_NEURAL_CTX"),
-		                                 model::processEnvironmentValue(env, "RETDEC_NEURAL_MAX_TOKENS")));
+		console_->appendLine(
+			LiveConsolePanel::Stream::Stdout,
+			std::format(
+				"Neural refine: model={} gpu_layers={} ctx={} max_tokens={}",
+				model::processEnvironmentValue(env, "RETDEC_NEURAL_MODEL"),
+				model::processEnvironmentValue(env, "RETDEC_NEURAL_N_GPU_LAYERS"),
+				model::processEnvironmentValue(env, "RETDEC_NEURAL_CTX"),
+				model::processEnvironmentValue(env, "RETDEC_NEURAL_MAX_TOKENS")));
 
 	stopPollTimer();
 	pollTimerOn_ = true;
@@ -518,8 +526,13 @@ void MainWindow::onDecompileFinished()
 	console_->appendFooter("retdec-decompiler", exitCode, decompileMs);
 	for (auto& d: model::scanDecompilerLogDiagnosticsIncremental(logPath, &logDiagOffset_, 200))
 		diagnostics_->addDiagnostic(std::move(d));
-	commandLog_->appendRun("retdec-decompiler", lastDecompilerArgs_, lastDecompilerCwd_, exitCode, decompileMs,
-	                       model::readDecompilerLogTail(logPath));
+	commandLog_->appendRun(
+		"retdec-decompiler",
+		lastDecompilerArgs_,
+		lastDecompilerCwd_,
+		exitCode,
+		decompileMs,
+		model::readDecompilerLogTail(logPath));
 	if (run_->timedOut())
 		diagnostics_->addMessage(Severity::Error, "retdec-decompiler", "The decompiler run timed out and was stopped.");
 
@@ -536,14 +549,16 @@ void MainWindow::onDecompileFinished()
 			const bool ok = loadDecompileArtifacts(decompilerOutputPath_, reselect);
 			const int64_t loadMs = msSince(loadStart);
 			if (!ok)
-				diagnostics_->addMessage(Severity::Warning, "retdec-decompiler",
-				                         "Finished but could not read: " + decompilerOutputPath_.string());
+				diagnostics_->addMessage(
+					Severity::Warning,
+					"retdec-decompiler",
+					"Finished but could not read: " + decompilerOutputPath_.string());
 			else
 			{
 				setStatusDecompileState("decompiled");
-				showStatusMessage(std::format("Decompile {:.1f} s \xC2\xB7 load {:.1f} s", decompileMs / 1000.0,
-				                              loadMs / 1000.0),
-				                  8000);
+				showStatusMessage(
+					std::format("Decompile {:.1f} s \xC2\xB7 load {:.1f} s", decompileMs / 1000.0, loadMs / 1000.0),
+					8000);
 			}
 		}
 	}
@@ -660,8 +675,10 @@ bool MainWindow::tryLoadCachedDecompile(const std::string& binaryPath)
 	if (stale)
 	{
 		showStatusMessage("Cache may be stale \xE2\x80\x94 re-decompile recommended", 8000);
-		diagnostics_->addMessage(Severity::Warning, "retdec-decompiler",
-		                         "Cached decompile is older than the binary \xE2\x80\x94 press F5 to refresh.");
+		diagnostics_->addMessage(
+			Severity::Warning,
+			"retdec-decompiler",
+			"Cached decompile is older than the binary \xE2\x80\x94 press F5 to refresh.");
 	}
 	else
 		showStatusMessage("Loaded cached decompile \xE2\x80\x94 press F5 to re-decompile.", 8000);
@@ -715,9 +732,11 @@ void MainWindow::populateFromArtifacts(const fs::path& absC, std::optional<uint6
 			const forge::json::value* acc = m->find("accepted");
 			const bool accepted = acc && acc->is_bool() && std::get<bool>(acc->v);
 			const std::string reason = m->str_or("reason", "");
-			diagnostics_->addMessage(accepted ? Severity::Info : Severity::Warning, "retdec-neural",
-			                         accepted ? "Neural refine accepted \xE2\x80\x94 showing " + refinedC.string()
-			                                  : "Neural refine rejected: " + (reason.empty() ? std::string("see manifest") : reason));
+			diagnostics_->addMessage(
+				accepted ? Severity::Info : Severity::Warning,
+				"retdec-neural",
+				accepted ? "Neural refine accepted \xE2\x80\x94 showing " + refinedC.string()
+						 : "Neural refine rejected: " + (reason.empty() ? std::string("see manifest") : reason));
 		}
 
 	std::unordered_map<std::string, float> tiByName;
@@ -742,8 +761,10 @@ void MainWindow::populateFromArtifacts(const fs::path& absC, std::optional<uint6
 					tiByName[name] = std::clamp(float(s / 8.0), 0.f, 1.f);
 				}
 				if (n > 0)
-					diagnostics_->addMessage(Severity::Info, "type-inference",
-					                         std::format("{} functions, {} values with known types", n, known));
+					diagnostics_->addMessage(
+						Severity::Info,
+						"type-inference",
+						std::format("{} functions, {} values with known types", n, known));
 			}
 		}
 
@@ -752,9 +773,13 @@ void MainWindow::populateFromArtifacts(const fs::path& absC, std::optional<uint6
 	if (cap > 0 && int(shown.size()) > cap)
 	{
 		shown.resize(std::size_t(cap));
-		diagnostics_->addMessage(Severity::Info, "retdec-decompiler",
-		                         std::format("Showing first {} of {} functions (Settings \xE2\x86\x92 Advanced \xE2\x86\x92 max functions)",
-		                                     cap, art.functions.size()));
+		diagnostics_->addMessage(
+			Severity::Info,
+			"retdec-decompiler",
+			std::format(
+				"Showing first {} of {} functions (Settings \xE2\x86\x92 Advanced \xE2\x86\x92 max functions)",
+				cap,
+				art.functions.size()));
 	}
 	for (auto& f: shown)
 	{
@@ -796,10 +821,15 @@ void MainWindow::populateFromArtifacts(const fs::path& absC, std::optional<uint6
 		const auto side = model::pathsFromOutputC(absC);
 		const bool hasDsm = fs::exists(side.dsmPath, ec);
 		const bool hasLl = fs::exists(side.llPath, ec);
-		diagnostics_->addMessage(hasDsm && hasLl ? Severity::Info : Severity::Warning, "retdec-decompiler",
-		                         std::format("Sidecars: {} {}, {} {}", side.dsmPath.filename().string(),
-		                                     hasDsm ? "ok" : "missing", side.llPath.filename().string(),
-		                                     hasLl ? "ok" : "missing"));
+		diagnostics_->addMessage(
+			hasDsm && hasLl ? Severity::Info : Severity::Warning,
+			"retdec-decompiler",
+			std::format(
+				"Sidecars: {} {}, {} {}",
+				side.dsmPath.filename().string(),
+				hasDsm ? "ok" : "missing",
+				side.llPath.filename().string(),
+				hasLl ? "ok" : "missing"));
 		std::string dumpTo = settings_.advanced.irDumpPath;
 		while (!dumpTo.empty() && std::isspace(static_cast<unsigned char>(dumpTo.back())))
 			dumpTo.pop_back();
@@ -810,8 +840,10 @@ void MainWindow::populateFromArtifacts(const fs::path& absC, std::optional<uint6
 				dest = dest / side.llPath.filename();
 			fs::remove(dest, ec);
 			const bool copied = fs::copy_file(side.llPath, dest, ec) && !ec;
-			diagnostics_->addMessage(copied ? Severity::Info : Severity::Warning, "retdec-decompiler",
-			                         (copied ? "Copied IR to " : "Could not copy IR to ") + dest.string());
+			diagnostics_->addMessage(
+				copied ? Severity::Info : Severity::Warning,
+				"retdec-decompiler",
+				(copied ? "Copied IR to " : "Could not copy IR to ") + dest.string());
 		}
 	}
 
@@ -844,8 +876,10 @@ void MainWindow::populateFromArtifacts(const fs::path& absC, std::optional<uint6
 
 	const auto cSize = fs::file_size(absC, ec);
 	const uint64_t kib = ec ? 0 : cSize / 1024;
-	diagnostics_->addMessage(Severity::Info, "retdec-decompiler", std::format("Output: {} ({} KiB)", absC.string(), kib));
-	showStatusMessage(std::format("Loaded decompile artifacts ({} KiB C, {} functions)", kib, art.functions.size()), 5000);
+	diagnostics_->addMessage(
+		Severity::Info, "retdec-decompiler", std::format("Output: {} ({} KiB)", absC.string(), kib));
+	showStatusMessage(
+		std::format("Loaded decompile artifacts ({} KiB C, {} functions)", kib, art.functions.size()), 5000);
 
 	raiseDocumentTab(kDocDecompiledC);
 	if (quitWhenDecompileFinishes_) return;

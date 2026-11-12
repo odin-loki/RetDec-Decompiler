@@ -58,10 +58,16 @@ bool CommandLogPanel::handleEvent(EventContext& ec, const Event& e)
 	return false;
 }
 
-void CommandLogPanel::appendRun(std::string_view tool, const std::vector<std::string>& args, std::string_view cwd, int exitCode,
-                                int64_t elapsedMs, std::string_view outputTail)
+void CommandLogPanel::appendRun(
+	std::string_view tool,
+	const std::vector<std::string>& args,
+	std::string_view cwd,
+	int exitCode,
+	int64_t elapsedMs,
+	std::string_view outputTail)
 {
-	std::string entry = model::formatCommandLogEntry(tool, args, cwd, exitCode, elapsedMs, outputTail, model::isoTimestampNow());
+	std::string entry =
+		model::formatCommandLogEntry(tool, args, cwd, exitCode, elapsedMs, outputTail, model::isoTimestampNow());
 	// appendPlainText adds a paragraph; the entry's own final newline is the
 	// blank separator line.
 	if (!entry.empty() && entry.back() == '\n') entry.pop_back();

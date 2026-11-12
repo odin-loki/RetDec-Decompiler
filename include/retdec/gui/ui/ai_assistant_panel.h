@@ -39,16 +39,24 @@ namespace retdec::gui::ui {
 
 class AIAssistantPanel {
 public:
-	AIAssistantPanel(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent,
-	                 model::AssistantBackendFactory factory = model::defaultAssistantBackendFactory(),
-	                 model::AppSettings& settings = model::AppSettings::instance());
+	AIAssistantPanel(
+		fuse::ui::UiContext& ui,
+		fuse::ui::NodeHandle parent,
+		model::AssistantBackendFactory factory = model::defaultAssistantBackendFactory(),
+		model::AppSettings& settings = model::AppSettings::instance());
 	/// Aborts a running generation and stops the worker thread.
 	~AIAssistantPanel();
 	AIAssistantPanel(const AIAssistantPanel&) = delete;
 	AIAssistantPanel& operator=(const AIAssistantPanel&) = delete;
 
-	fuse::ui::NodeHandle root() const { return root_; }
-	std::string panelTitle() const { return "AI Assistant"; }
+	fuse::ui::NodeHandle root() const
+	{
+		return root_;
+	}
+	std::string panelTitle() const
+	{
+		return "AI Assistant";
+	}
 
 	/// The function the next query is about (resets the KV cache when it changes).
 	void setActiveFunction(std::string_view decompiledSource, std::string_view functionName);
@@ -58,7 +66,10 @@ public:
 	/// Queue a model load (asynchronous; the label shows the outcome).
 	bool loadModel(const std::string& ggufPath, bool useGpu = false);
 	void unloadModel();
-	bool isModelLoaded() const { return modelLoaded_; }
+	bool isModelLoaded() const
+	{
+		return modelLoaded_;
+	}
 	/// Settings → ML into the worker, the settings bar and RETDEC_NEURAL_*.
 	void applyMlSettingsFromApp();
 
@@ -66,13 +77,22 @@ public:
 	/// Send the query field (no-op when it is blank).
 	void sendQuery();
 	void stopGeneration();
-	void clearHistory() { clear(); }
+	void clearHistory()
+	{
+		clear();
+	}
 	/// The Load button: a *.gguf file prompt, then loadModel().
 	void browseModel();
 	void setGpuEnabled(bool on);
-	bool gpuEnabled() const { return gpuEnabled_; }
+	bool gpuEnabled() const
+	{
+		return gpuEnabled_;
+	}
 	void setSettingsBarVisible(bool on);
-	bool settingsBarVisible() const { return settingsShown_; }
+	bool settingsBarVisible() const
+	{
+		return settingsShown_;
+	}
 	void setThinkingMode(bool on);
 
 	/// Apply what the worker reported (the panel posts this to itself; tests
@@ -80,38 +100,104 @@ public:
 	bool pumpEvents();
 
 	// ── State ────────────────────────────────────────────────────────────────
-	const std::vector<model::ChatMessage>& history() const { return history_; }
+	const std::vector<model::ChatMessage>& history() const
+	{
+		return history_;
+	}
 	/// The chat log as plain text, one message per paragraph.
 	std::string chatText() const;
 	std::string modelLabel() const;
 	std::string statusText() const;
-	bool inferenceRunning() const { return inferenceRunning_; }
-	bool contextPending() const { return contextPending_; }
+	bool inferenceRunning() const
+	{
+		return inferenceRunning_;
+	}
+	bool contextPending() const
+	{
+		return contextPending_;
+	}
 	/// The prompt the last send produced (context + query).
-	const std::string& lastPrompt() const { return lastPrompt_; }
-	model::InferenceWorker& worker() { return *worker_; }
+	const std::string& lastPrompt() const
+	{
+		return lastPrompt_;
+	}
+	model::InferenceWorker& worker()
+	{
+		return *worker_;
+	}
 
 	// ── Events ───────────────────────────────────────────────────────────────
 	std::function<void(uint64_t address)> onAddressNavigated;
 
 	// ── Test hooks ───────────────────────────────────────────────────────────
-	fuse::ui::NodeHandle modelPathLabel() const { return modelLabel_; }
-	fuse::ui::NodeHandle loadButton() const { return loadBtn_; }
-	fuse::ui::NodeHandle gpuButton() const { return gpuBtn_; }
-	fuse::ui::NodeHandle settingsButton() const { return settingsBtn_; }
-	fuse::ui::NodeHandle clearButton() const { return clearBtn_; }
-	fuse::ui::NodeHandle settingsBar() const { return settingsBar_; }
-	fuse::ui::NodeHandle temperatureSpin() const { return tempSpin_; }
-	fuse::ui::NodeHandle topPSpin() const { return topPSpin_; }
-	fuse::ui::NodeHandle topKSpin() const { return topKSpin_; }
-	fuse::ui::NodeHandle maxTokensSpin() const { return maxTokSpin_; }
-	fuse::ui::NodeHandle thinkingCheck() const { return thinking_; }
-	fuse::ui::NodeHandle chatLog() const { return chat_; }
-	fuse::ui::NodeHandle statusLabel() const { return status_; }
-	fuse::ui::NodeHandle queryInput() const { return input_; }
-	fuse::ui::NodeHandle sendButton() const { return sendBtn_; }
-	fuse::ui::NodeHandle stopButton() const { return stopBtn_; }
-	FilePrompt& filePrompt() { return files_; }
+	fuse::ui::NodeHandle modelPathLabel() const
+	{
+		return modelLabel_;
+	}
+	fuse::ui::NodeHandle loadButton() const
+	{
+		return loadBtn_;
+	}
+	fuse::ui::NodeHandle gpuButton() const
+	{
+		return gpuBtn_;
+	}
+	fuse::ui::NodeHandle settingsButton() const
+	{
+		return settingsBtn_;
+	}
+	fuse::ui::NodeHandle clearButton() const
+	{
+		return clearBtn_;
+	}
+	fuse::ui::NodeHandle settingsBar() const
+	{
+		return settingsBar_;
+	}
+	fuse::ui::NodeHandle temperatureSpin() const
+	{
+		return tempSpin_;
+	}
+	fuse::ui::NodeHandle topPSpin() const
+	{
+		return topPSpin_;
+	}
+	fuse::ui::NodeHandle topKSpin() const
+	{
+		return topKSpin_;
+	}
+	fuse::ui::NodeHandle maxTokensSpin() const
+	{
+		return maxTokSpin_;
+	}
+	fuse::ui::NodeHandle thinkingCheck() const
+	{
+		return thinking_;
+	}
+	fuse::ui::NodeHandle chatLog() const
+	{
+		return chat_;
+	}
+	fuse::ui::NodeHandle statusLabel() const
+	{
+		return status_;
+	}
+	fuse::ui::NodeHandle queryInput() const
+	{
+		return input_;
+	}
+	fuse::ui::NodeHandle sendButton() const
+	{
+		return sendBtn_;
+	}
+	fuse::ui::NodeHandle stopButton() const
+	{
+		return stopBtn_;
+	}
+	FilePrompt& filePrompt()
+	{
+		return files_;
+	}
 
 private:
 	void appendSystemMessage(std::string_view text);

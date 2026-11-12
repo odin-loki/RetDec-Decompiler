@@ -39,14 +39,10 @@ int parseIntOrZero(const char* s)
 
 } // namespace
 
-ParsedLaunchOptions::ParsedLaunchOptions(const ParsedLaunchOptions& o)
-	: argStorage(o.argStorage)
-	, headless(o.headless)
-	, headlessExitMs(o.headlessExitMs)
-	, headlessDecompile(o.headlessDecompile)
-	, fastDecompile(o.fastDecompile)
-	, positional(o.positional)
-	, binaryPath(o.binaryPath)
+ParsedLaunchOptions::ParsedLaunchOptions(const ParsedLaunchOptions& o):
+	argStorage(o.argStorage), headless(o.headless), headlessExitMs(o.headlessExitMs),
+	headlessDecompile(o.headlessDecompile), fastDecompile(o.fastDecompile), positional(o.positional),
+	binaryPath(o.binaryPath)
 {
 	rebuildArgv();
 }

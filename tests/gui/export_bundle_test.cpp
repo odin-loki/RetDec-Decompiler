@@ -21,7 +21,10 @@ namespace {
 struct TempDir
 {
 	fs::path path;
-	TempDir() { path = fs::path(forge::os::fs::make_temp_dir("retdec-gui-bundle-").value); }
+	TempDir()
+	{
+		path = fs::path(forge::os::fs::make_temp_dir("retdec-gui-bundle-").value);
+	}
 	~TempDir()
 	{
 		std::error_code ec;
@@ -169,10 +172,12 @@ TEST(ExportBundle, CommandText)
 	m::DecompileBundleInput in;
 	in.decompilerExe = "/opt/retdec/bin/retdec-decompiler";
 	in.decompilerArgs = {"a.out", "-o", "a.c"};
-	EXPECT_EQ(m::formatDecompilerCommandText(in), "executable: /opt/retdec/bin/retdec-decompiler\ncommand: a.out -o a.c\n");
+	EXPECT_EQ(
+		m::formatDecompilerCommandText(in), "executable: /opt/retdec/bin/retdec-decompiler\ncommand: a.out -o a.c\n");
 	in.decompilerCwd = "/opt";
 	EXPECT_EQ(
-		m::formatDecompilerCommandText(in), "executable: /opt/retdec/bin/retdec-decompiler\ncwd: /opt\ncommand: a.out -o a.c\n");
+		m::formatDecompilerCommandText(in),
+		"executable: /opt/retdec/bin/retdec-decompiler\ncwd: /opt\ncommand: a.out -o a.c\n");
 }
 
 TEST(ExportBundle, MissingCFileFails)

@@ -48,8 +48,7 @@
 
 namespace retdec::gui::ui {
 
-class FunctionListPanel
-{
+class FunctionListPanel {
 public:
 	static constexpr std::string_view kTitle = "Functions";
 
@@ -75,7 +74,10 @@ public:
 	FunctionListPanel(const FunctionListPanel&) = delete;
 	FunctionListPanel& operator=(const FunctionListPanel&) = delete;
 
-	fuse::ui::NodeHandle root() const { return root_; }
+	fuse::ui::NodeHandle root() const
+	{
+		return root_;
+	}
 
 	// ── data in ─────────────────────────────────────────────────────────────
 	void setFunctions(std::vector<model::FunctionEntry> fns);
@@ -95,10 +97,16 @@ public:
 	void setMinConfidence(float minConfidence);
 	/// Pattern check boxes, in order STL, Crypto, Algo, Pat (design), Lib.
 	void setPatternFilter(bool stl, bool crypto, bool algo, bool design, bool lib);
-	const model::FunctionFilter& filter() const { return proxy_.filter(); }
+	const model::FunctionFilter& filter() const
+	{
+		return proxy_.filter();
+	}
 
 	// ── state out ───────────────────────────────────────────────────────────
-	const std::vector<model::FunctionEntry>& functions() const { return list_.functions(); }
+	const std::vector<model::FunctionEntry>& functions() const
+	{
+		return list_.functions();
+	}
 	std::optional<model::FunctionEntry> selectedEntry() const;
 	/// Selected functions in view order.
 	std::vector<uint64_t> selectedAddresses() const;
@@ -111,8 +119,14 @@ public:
 
 	// ── sorting ─────────────────────────────────────────────────────────────
 	void sortBy(int column, bool ascending);
-	int sortColumn() const { return proxy_.sortColumn(); }
-	bool sortAscending() const { return proxy_.sortAscending(); }
+	int sortColumn() const
+	{
+		return proxy_.sortColumn();
+	}
+	bool sortAscending() const
+	{
+		return proxy_.sortAscending();
+	}
 
 	// ── actions ─────────────────────────────────────────────────────────────
 	/// Runs @p a on @p address (default: the current row). Prompts open a dialog.
@@ -138,34 +152,85 @@ public:
 	std::function<bool(const std::string&)> clipboardWriter;
 
 	// ── test hooks ──────────────────────────────────────────────────────────
-	fuse::ui::NodeHandle tableNode() const { return table_; }
-	fuse::ui::NodeHandle nameFilterNode() const { return nameEdit_; }
-	fuse::ui::NodeHandle addrLowNode() const { return addrLowEdit_; }
-	fuse::ui::NodeHandle addrHighNode() const { return addrHighEdit_; }
-	fuse::ui::NodeHandle confidenceNode() const { return confSpin_; }
-	fuse::ui::NodeHandle patternCheckNode(int i) const { return patternChecks_[static_cast<std::size_t>(i)]; }
-	fuse::ui::NodeHandle statusNode() const { return status_; }
-	fuse::ui::NodeHandle emptyStateNode() const { return emptyState_; }
-	fuse::ui::NodeHandle csvButtonNode() const { return csvBtn_; }
-	fuse::ui::NodeHandle jsonButtonNode() const { return jsonBtn_; }
-	fuse::ui::NodeHandle copyButtonNode() const { return copyBtn_; }
-	std::size_t visibleRowCount() const { return proxy_.rowCount(); }
+	fuse::ui::NodeHandle tableNode() const
+	{
+		return table_;
+	}
+	fuse::ui::NodeHandle nameFilterNode() const
+	{
+		return nameEdit_;
+	}
+	fuse::ui::NodeHandle addrLowNode() const
+	{
+		return addrLowEdit_;
+	}
+	fuse::ui::NodeHandle addrHighNode() const
+	{
+		return addrHighEdit_;
+	}
+	fuse::ui::NodeHandle confidenceNode() const
+	{
+		return confSpin_;
+	}
+	fuse::ui::NodeHandle patternCheckNode(int i) const
+	{
+		return patternChecks_[static_cast<std::size_t>(i)];
+	}
+	fuse::ui::NodeHandle statusNode() const
+	{
+		return status_;
+	}
+	fuse::ui::NodeHandle emptyStateNode() const
+	{
+		return emptyState_;
+	}
+	fuse::ui::NodeHandle csvButtonNode() const
+	{
+		return csvBtn_;
+	}
+	fuse::ui::NodeHandle jsonButtonNode() const
+	{
+		return jsonBtn_;
+	}
+	fuse::ui::NodeHandle copyButtonNode() const
+	{
+		return copyBtn_;
+	}
+	std::size_t visibleRowCount() const
+	{
+		return proxy_.rowCount();
+	}
 	std::string cellText(std::size_t row, int col) const;
 	uint64_t rowAddress(std::size_t row) const;
 	/// Centre of a body cell / header cell in context coordinates (after update()).
 	fuse::ui::Vec2 cellCenter(std::size_t row, int col) const;
 	fuse::ui::Vec2 headerCenter(int col) const;
 	bool promptOpen() const;
-	fuse::ui::NodeHandle promptEdit() const { return promptEdit_; }
+	fuse::ui::NodeHandle promptEdit() const
+	{
+		return promptEdit_;
+	}
 	/// Fills the open prompt with @p text and accepts it.
 	void acceptPrompt(std::string_view text);
 	void cancelPrompt();
-	fuse::ui::NodeHandle contextMenu() const { return menu_; }
+	fuse::ui::NodeHandle contextMenu() const
+	{
+		return menu_;
+	}
 	/// Labels of the last context menu, in order (separators omitted).
-	const std::vector<std::string>& contextMenuLabels() const { return menuLabels_; }
-	fuse::ui::NodeHandle fileDialogNode() const { return fileDlg_; }
+	const std::vector<std::string>& contextMenuLabels() const
+	{
+		return menuLabels_;
+	}
+	fuse::ui::NodeHandle fileDialogNode() const
+	{
+		return fileDlg_;
+	}
 	/// The hover tooltip of the cell under the pointer (shown after 0.5 s).
-	fuse::ui::NodeHandle cellToolTipNode() const { return cellTip_; }
+	fuse::ui::NodeHandle cellToolTipNode() const
+	{
+		return cellTip_;
+	}
 
 private:
 	enum class Prompt

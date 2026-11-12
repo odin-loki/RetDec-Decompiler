@@ -132,8 +132,13 @@ TEST(CFGEdgeColorTest, FalseBranchIsReddish)
 
 TEST(CFGEdgeColorTest, AllKindsValid)
 {
-	for (auto kind: {EdgeKind::FallThrough, EdgeKind::TrueBranch, EdgeKind::FalseBranch, EdgeKind::BackEdge,
-			 EdgeKind::ExceptionEdge, EdgeKind::UnresolvedIndirect})
+	for (auto kind:
+		 {EdgeKind::FallThrough,
+		  EdgeKind::TrueBranch,
+		  EdgeKind::FalseBranch,
+		  EdgeKind::BackEdge,
+		  EdgeKind::ExceptionEdge,
+		  EdgeKind::UnresolvedIndirect})
 	{
 		EXPECT_EQ(rgbaA(cfgEdgeColor(kind)), 255);
 		EXPECT_STRNE(edgeKindName(kind), "");
@@ -232,8 +237,8 @@ TEST(CFGBlockItemTest, HeaderShowsAddressAndTag)
 
 TEST(CFGBlockItemTest, NodeColouringByKind)
 {
-	const auto lay = load({makeBlock(1, true), makeBlock(2, false, true), makeBlock(3, false, false, true, 0),
-							  makeBlock(4)},
+	const auto lay = load(
+		{makeBlock(1, true), makeBlock(2, false, true), makeBlock(3, false, false, true, 0), makeBlock(4)},
 		{makeEdge(1, 3), makeEdge(3, 4), makeEdge(4, 3), makeEdge(3, 2)});
 	EXPECT_EQ(lay.scene.node(1)->border, catppuccin::green);
 	EXPECT_EQ(lay.scene.node(2)->border, catppuccin::red);
@@ -262,7 +267,8 @@ TEST(CFGSceneTest, SingleNodeGraphAdded)
 
 TEST(CFGSceneTest, LinearChainThreeNodes)
 {
-	const auto lay = load({makeBlock(1, true), makeBlock(2), makeBlock(3, false, true)}, {makeEdge(1, 2), makeEdge(2, 3)});
+	const auto lay =
+		load({makeBlock(1, true), makeBlock(2), makeBlock(3, false, true)}, {makeEdge(1, 2), makeEdge(2, 3)});
 	EXPECT_EQ(lay.nodeCount, 3);
 	// one block per level, top to bottom
 	EXPECT_LT(lay.scene.node(1)->rect.bottom(), lay.scene.node(2)->rect.y);
@@ -273,7 +279,8 @@ TEST(CFGSceneTest, LinearChainThreeNodes)
 
 TEST(CFGSceneTest, DiamondBranchFourNodes)
 {
-	const auto lay = load({makeBlock(1, true), makeBlock(2), makeBlock(3), makeBlock(4, false, true)},
+	const auto lay = load(
+		{makeBlock(1, true), makeBlock(2), makeBlock(3), makeBlock(4, false, true)},
 		{
 			makeEdge(1, 2, EdgeKind::TrueBranch),
 			makeEdge(1, 3, EdgeKind::FalseBranch),
@@ -282,7 +289,7 @@ TEST(CFGSceneTest, DiamondBranchFourNodes)
 		});
 	EXPECT_EQ(lay.nodeCount, 4);
 	const GRect r2 = lay.scene.node(2)->rect, r3 = lay.scene.node(3)->rect;
-	EXPECT_FLOAT_EQ(r2.y, r3.y);                         // same level
+	EXPECT_FLOAT_EQ(r2.y, r3.y);                                 // same level
 	EXPECT_GE(std::abs(r2.x - r3.x), cfg::kNodeSpacingH - 0.5f); // Qt horizontal spacing
 	// entry centred over its two successors, exit under them
 	EXPECT_NEAR(lay.scene.node(1)->rect.center().x, (r2.center().x + r3.center().x) / 2, 1.f);
@@ -297,7 +304,8 @@ TEST(CFGSceneTest, DiamondBranchFourNodes)
 
 TEST(CFGSceneTest, BackEdgeGraphDoesNotCrash)
 {
-	const auto lay = load({makeBlock(1, true), makeBlock(2, false, false, true, 0), makeBlock(3, false, false, false, 0)},
+	const auto lay = load(
+		{makeBlock(1, true), makeBlock(2, false, false, true, 0), makeBlock(3, false, false, false, 0)},
 		{makeEdge(1, 2), makeEdge(2, 3), makeEdge(3, 2, EdgeKind::BackEdge)});
 	EXPECT_EQ(lay.nodeCount, 3);
 	EXPECT_TRUE(lay.backEdges.count({3, 2}));
@@ -316,7 +324,8 @@ TEST(CFGSceneTest, BackEdgeGraphDoesNotCrash)
 
 TEST(CFGSceneTest, DfsBackEdgeDrawnAsBackEdgeEvenIfNotMarked)
 {
-	const auto lay = load({makeBlock(1, true), makeBlock(2), makeBlock(3)}, {makeEdge(1, 2), makeEdge(2, 3), makeEdge(3, 2)});
+	const auto lay =
+		load({makeBlock(1, true), makeBlock(2), makeBlock(3)}, {makeEdge(1, 2), makeEdge(2, 3), makeEdge(3, 2)});
 	for (const auto& e: lay.scene.edges)
 		if (e.from == 3 && e.to == 2)
 		{
@@ -409,7 +418,8 @@ TEST(CFGSceneTest, LoopRegionBlocksHaveLoopId)
 
 TEST(CFGSceneTest, LoopsDetectedWhenDataHasNone)
 {
-	auto lay = load({makeBlock(1, true), makeBlock(2), makeBlock(3), makeBlock(4, false, true)},
+	auto lay = load(
+		{makeBlock(1, true), makeBlock(2), makeBlock(3), makeBlock(4, false, true)},
 		{makeEdge(1, 2), makeEdge(2, 3), makeEdge(3, 2), makeEdge(2, 4)});
 	ASSERT_EQ(lay.loops.size(), 1u);
 	EXPECT_EQ(lay.loops[0].header, 2u);
@@ -420,7 +430,8 @@ TEST(CFGSceneTest, LoopsDetectedWhenDataHasNone)
 
 TEST(CFGSceneTest, PortsSpreadForBranches)
 {
-	const auto lay = load({makeBlock(1, true), makeBlock(2), makeBlock(3)},
+	const auto lay = load(
+		{makeBlock(1, true), makeBlock(2), makeBlock(3)},
 		{makeEdge(1, 2, EdgeKind::TrueBranch), makeEdge(1, 3, EdgeKind::FalseBranch)});
 	ASSERT_EQ(lay.scene.edges.size(), 2u);
 	EXPECT_NE(lay.scene.edges[0].points.front().x, lay.scene.edges[1].points.front().x);
@@ -854,8 +865,13 @@ TEST(CFGDataModelTest, BlockInstrDefaults)
 TEST(CFGDataModelTest, AllEdgeKindsDistinctColors)
 {
 	std::vector<Rgba> colors;
-	for (auto k: {EdgeKind::FallThrough, EdgeKind::TrueBranch, EdgeKind::FalseBranch, EdgeKind::BackEdge,
-			 EdgeKind::ExceptionEdge, EdgeKind::UnresolvedIndirect})
+	for (auto k:
+		 {EdgeKind::FallThrough,
+		  EdgeKind::TrueBranch,
+		  EdgeKind::FalseBranch,
+		  EdgeKind::BackEdge,
+		  EdgeKind::ExceptionEdge,
+		  EdgeKind::UnresolvedIndirect})
 		colors.push_back(cfgEdgeColor(k));
 	EXPECT_NE(colors[1], colors[2]);
 	EXPECT_NE(colors[3], colors[0]);

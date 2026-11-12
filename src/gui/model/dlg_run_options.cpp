@@ -125,12 +125,12 @@ std::optional<RunStageChoice> runStageFromIndex(int index)
 {
 	switch (index)
 	{
-		case 0: return RunStageChoice::Decompile;
-		case 1: return RunStageChoice::FastDecompile;
-		case 2: return RunStageChoice::Fileinfo;
-		case 3: return RunStageChoice::Unpacker;
-		case 4: return RunStageChoice::SignatureStudio;
-		default: return std::nullopt;
+	case 0: return RunStageChoice::Decompile;
+	case 1: return RunStageChoice::FastDecompile;
+	case 2: return RunStageChoice::Fileinfo;
+	case 3: return RunStageChoice::Unpacker;
+	case 4: return RunStageChoice::SignatureStudio;
+	default: return std::nullopt;
 	}
 }
 

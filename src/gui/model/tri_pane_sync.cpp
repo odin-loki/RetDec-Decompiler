@@ -156,8 +156,10 @@ std::optional<uint64_t> lineAddress(TriPane pane, const std::string& line, const
 	return std::nullopt;
 }
 
-LineMapping buildLineMappingByAddress(const std::vector<std::string>& asmLines, const std::vector<std::string>& irLines,
-                                      const std::vector<std::string>& cLines)
+LineMapping buildLineMappingByAddress(
+	const std::vector<std::string>& asmLines,
+	const std::vector<std::string>& irLines,
+	const std::vector<std::string>& cLines)
 {
 	const std::map<int, uint64_t> meta = parseIrAddressMetadata(irLines);
 	auto firstLines = [&](TriPane pane, const std::vector<std::string>& lines) {

@@ -33,7 +33,10 @@ struct TextRange
 {
 	TextPos begin;
 	TextPos end;
-	bool empty() const { return begin == end; }
+	bool empty() const
+	{
+		return begin == end;
+	}
 	friend bool operator==(const TextRange&, const TextRange&) = default;
 };
 
@@ -62,8 +65,8 @@ struct FindOptions
  * repeated find moves past the current match), backward searches end before
  * @p from.begin. Returns the match range or nullopt. Matches do not span lines.
  */
-std::optional<TextRange> findText(const std::vector<std::string>& lines, std::string_view query,
-                                  const TextRange& from, const FindOptions& opt = {});
+std::optional<TextRange> findText(
+	const std::vector<std::string>& lines, std::string_view query, const TextRange& from, const FindOptions& opt = {});
 
 /// Number of (non-overlapping, case-insensitive) occurrences of @p query.
 std::size_t countMatches(const std::vector<std::string>& lines, std::string_view query, bool caseSensitive = false);

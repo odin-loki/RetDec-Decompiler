@@ -18,8 +18,8 @@
 #include <vector>
 
 using namespace retdec::gui;
-using retdec::gui::test::HeadlessUi;
 using fuse::ui::Key;
+using retdec::gui::test::HeadlessUi;
 
 // ─── LineMapping ─────────────────────────────────────────────────────────────
 
@@ -114,10 +114,23 @@ class SyntaxHighlighterTest : public ::testing::Test {};
 
 TEST_F(SyntaxHighlighterTest, EveryLanguageTokenizesWithoutCrash)
 {
-	const std::vector<std::string> lines = {"#include <stdio.h>", "int main(void) { return 0; /* comment */ }", "  push rbp",
-	                                        "%a = alloca i32", "def f(): return None  # c", "local x = 1 -- c", ""};
-	for (model::CodeLang l: {model::CodeLang::Asm, model::CodeLang::IR, model::CodeLang::C, model::CodeLang::Cxx,
-	                         model::CodeLang::CSharp, model::CodeLang::Java, model::CodeLang::Python, model::CodeLang::Lua})
+	const std::vector<std::string> lines = {
+		"#include <stdio.h>",
+		"int main(void) { return 0; /* comment */ }",
+		"  push rbp",
+		"%a = alloca i32",
+		"def f(): return None  # c",
+		"local x = 1 -- c",
+		""};
+	for (model::CodeLang l:
+		 {model::CodeLang::Asm,
+		  model::CodeLang::IR,
+		  model::CodeLang::C,
+		  model::CodeLang::Cxx,
+		  model::CodeLang::CSharp,
+		  model::CodeLang::Java,
+		  model::CodeLang::Python,
+		  model::CodeLang::Lua})
 		EXPECT_NO_THROW({ (void)model::highlightLines(l, lines); });
 }
 
@@ -133,7 +146,8 @@ TEST_F(SyntaxHighlighterTest, SetLangSwitchesHighlighting)
 
 TEST_F(SyntaxHighlighterTest, HighlightingDoesNotCrashOnContent)
 {
-	const auto spans = model::highlightLines(model::CodeLang::C, {"#include <stdio.h>", "int main(void) { return 0; /* comment */ }"});
+	const auto spans =
+		model::highlightLines(model::CodeLang::C, {"#include <stdio.h>", "int main(void) { return 0; /* comment */ }"});
 	ASSERT_EQ(spans.size(), 2u);
 	EXPECT_EQ(model::tokenAt(spans[0], 0), model::TokenKind::Preprocessor);
 	EXPECT_EQ(model::tokenAt(spans[1], 0), model::TokenKind::Keyword); // int
@@ -280,8 +294,11 @@ TEST_F(TriPaneTest, PanelTitleIsTriPaneView)
 
 TEST_F(TriPaneTest, LoadFunctionDoesNotCrash)
 {
-	EXPECT_NO_THROW(view->loadFunction(0x401000, "401000: push rbp\n401002: mov rbp, rsp\n",
-	                                   "%entry:\n  %a = alloca i32\n  ret void\n", "int sub_401000(void) {\n  return 0;\n}\n"));
+	EXPECT_NO_THROW(view->loadFunction(
+		0x401000,
+		"401000: push rbp\n401002: mov rbp, rsp\n",
+		"%entry:\n  %a = alloca i32\n  ret void\n",
+		"int sub_401000(void) {\n  return 0;\n}\n"));
 	EXPECT_EQ(view->asmPane().lineCount(), 3);
 	EXPECT_EQ(view->irPane().lineCount(), 4);
 	EXPECT_EQ(view->cPane().editor().line(0), "int sub_401000(void) {");
@@ -464,8 +481,11 @@ TEST_F(TriPaneTest, CrossPaneSyncWithMapping)
 	model::LineMapping m;
 	m.addEntry(1, 1, 1);
 	m.addEntry(2, 3, 5);
-	view->loadFunction(0x1000, "push rbp\nmov rbp, rsp\nret\n", "entry:\n  %x = alloca\n  %y = load\n  ret\n",
-	                   "int f(void) {\n  int x;\n  x = 0;\n  return x;\n  }\n");
+	view->loadFunction(
+		0x1000,
+		"push rbp\nmov rbp, rsp\nret\n",
+		"entry:\n  %x = alloca\n  %y = load\n  ret\n",
+		"int f(void) {\n  int x;\n  x = 0;\n  return x;\n  }\n");
 	view->setLineMapping(m);
 	EXPECT_NO_THROW(view->onFunctionSelected(0x1000, "f"));
 	view->activateLine(model::TriPane::Asm, 2);
@@ -496,9 +516,11 @@ TEST_F(TriPaneTest, ClickingALineSyncsTheOtherPanes)
 
 TEST_F(TriPaneTest, MappingFromAddresses)
 {
-	view->loadFunction(0x401000, "0x401000:  push ebp\n0x401001:  mov ebp, esp\n0x401003:  ret\n",
-	                   "define i32 @f() {\n  %1 = alloca i32 ; 0x401001\n  ret i32 0 ; 0x401003\n}\n",
-	                   "int f(void) { // 0x401000\n  int a; // 0x401001\n  return 0; // 0x401003\n}\n");
+	view->loadFunction(
+		0x401000,
+		"0x401000:  push ebp\n0x401001:  mov ebp, esp\n0x401003:  ret\n",
+		"define i32 @f() {\n  %1 = alloca i32 ; 0x401001\n  ret i32 0 ; 0x401003\n}\n",
+		"int f(void) { // 0x401000\n  int a; // 0x401001\n  return 0; // 0x401003\n}\n");
 	view->buildLineMappingFromAddresses();
 	view->activateLine(model::TriPane::Asm, 2);
 	EXPECT_EQ(view->irPane().highlightedLine(), 2);
@@ -532,8 +554,11 @@ TEST_F(TriPaneTest, ScrollingOnePaneScrollsTheOthersProportionally)
 
 TEST_F(TriPaneTest, RendersHeadless)
 {
-	view->loadFunction(0x401000, "0x401000:  55  push ebp\n0x401001:  call 0x401100\n", "define i32 @main() {\nentry:\n  ret i32 0\n}\n",
-	                   "int main(void) {\n    return 0; // 0x401001\n}\n");
+	view->loadFunction(
+		0x401000,
+		"0x401000:  55  push ebp\n0x401001:  call 0x401100\n",
+		"define i32 @main() {\nentry:\n  ret i32 0\n}\n",
+		"int main(void) {\n    return 0; // 0x401001\n}\n");
 	h.frame(2);
 	EXPECT_GT(h.ui.drawList().size(), 20u);
 	const char* out = std::getenv("RETDEC_GUI_TEST_PNG_DIR");

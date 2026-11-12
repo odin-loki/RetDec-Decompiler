@@ -47,7 +47,10 @@ struct DiffResult
 	/// False when the differing region was too large to diff exactly.
 	bool exact = true;
 
-	bool isEmpty() const { return ops.empty(); }
+	bool isEmpty() const
+	{
+		return ops.empty();
+	}
 
 	/// Unified diff (--- / +++ / @@ hunks with @p context lines; hunks closer
 	/// than 2*context merge).
@@ -60,8 +63,7 @@ struct DiffResult
 /// LCS table ceiling (cells); about 100 MB.
 inline constexpr std::size_t kMaxDiffCells = 25000000;
 
-class MyersDiff
-{
+class MyersDiff {
 public:
 	static DiffResult diff(const std::vector<std::string>& left, const std::vector<std::string>& right);
 	/// Splits both texts into lines (std::getline: a trailing newline adds no

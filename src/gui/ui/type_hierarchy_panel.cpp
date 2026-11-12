@@ -38,9 +38,15 @@ float tableRowHeight(const UiContext& ui, NodeHandle n)
 
 struct TypeHierarchyPanel::Glue
 {
-	static const TypeHierarchyPanel& self(const void* u) { return *static_cast<const TypeHierarchyPanel*>(u); }
+	static const TypeHierarchyPanel& self(const void* u)
+	{
+		return *static_cast<const TypeHierarchyPanel*>(u);
+	}
 
-	static uint32_t treeRows(const void* u) { return uint32_t(self(u).m_rows.size()); }
+	static uint32_t treeRows(const void* u)
+	{
+		return uint32_t(self(u).m_rows.size());
+	}
 	static std::string_view treeData(const void* u, uint32_t row, uint32_t col, std::string& scratch)
 	{
 		const auto& p = self(u);
@@ -50,12 +56,18 @@ struct TypeHierarchyPanel::Glue
 	}
 	static std::string_view treeHeader(const void*, uint32_t col)
 	{
-		static const std::string h[] = {model::ClassHierarchyModel::headerData(0), model::ClassHierarchyModel::headerData(1),
-			model::ClassHierarchyModel::headerData(2), model::ClassHierarchyModel::headerData(3),
+		static const std::string h[] = {
+			model::ClassHierarchyModel::headerData(0),
+			model::ClassHierarchyModel::headerData(1),
+			model::ClassHierarchyModel::headerData(2),
+			model::ClassHierarchyModel::headerData(3),
 			model::ClassHierarchyModel::headerData(4)};
 		return col < 5 ? std::string_view(h[col]) : std::string_view{};
 	}
-	static uint32_t vtRows(const void* u) { return uint32_t(self(u).m_vtable.rowCount()); }
+	static uint32_t vtRows(const void* u)
+	{
+		return uint32_t(self(u).m_vtable.rowCount());
+	}
 	static std::string_view vtData(const void* u, uint32_t row, uint32_t col, std::string& scratch)
 	{
 		scratch = self(u).m_vtable.data(int(row), int(col));
@@ -63,18 +75,29 @@ struct TypeHierarchyPanel::Glue
 	}
 	static std::string_view vtHeader(const void*, uint32_t col)
 	{
-		static const std::string h[] = {model::VtableModel::headerData(0), model::VtableModel::headerData(1),
-			model::VtableModel::headerData(2), model::VtableModel::headerData(3)};
+		static const std::string h[] = {
+			model::VtableModel::headerData(0),
+			model::VtableModel::headerData(1),
+			model::VtableModel::headerData(2),
+			model::VtableModel::headerData(3)};
 		return col < 4 ? std::string_view(h[col]) : std::string_view{};
 	}
 
-	static void paintTree(const void* u, const fuse::ui::PaintContext& pc, fuse::ui::DrawList& dl, Rect cell,
-		uint32_t row, uint32_t col, std::string_view text, bool)
+	static void paintTree(
+		const void* u,
+		const fuse::ui::PaintContext& pc,
+		fuse::ui::DrawList& dl,
+		Rect cell,
+		uint32_t row,
+		uint32_t col,
+		std::string_view text,
+		bool)
 	{
 		const auto& p = self(u);
 		if (row >= p.m_rows.size()) return;
 		const auto& r = p.m_rows[row];
-		const fuse::ui::Color color = pc.tint(graphColor(themedRgba(currentTheme(pc.ui), p.m_hierarchy.foreground(r.node, int(col)))));
+		const fuse::ui::Color color =
+			pc.tint(graphColor(themedRgba(currentTheme(pc.ui), p.m_hierarchy.foreground(r.node, int(col)))));
 		// Qt: monospace cells, abstract class names italic. FuseUI has no italic
 		// faces: they are bold (and mauve, from the model's colour).
 		const fuse::text::Font* face = styledFont(pc.ui, pc.node, true, p.m_hierarchy.italic(r.node, int(col)));
@@ -82,23 +105,50 @@ struct TypeHierarchyPanel::Glue
 		{
 			const float x = cell.x + float(r.depth) * kIndent;
 			if (r.hasChildren)
-				pc.ui.paintString(dl, r.expanded ? "\xE2\x96\xBE" : "\xE2\x96\xB8", {x, cell.y, kToggleW, cell.h}, // ▾ ▸
-					pc.tint(graphColor(themedRgba(currentTheme(pc.ui), model::catppuccin::overlay2))), pc.style.fontSize, fuse::ui::TextAlignment::Center,
+				pc.ui.paintString(
+					dl,
+					r.expanded ? "\xE2\x96\xBE" : "\xE2\x96\xB8",
+					{x, cell.y, kToggleW, cell.h}, // ▾ ▸
+					pc.tint(graphColor(themedRgba(currentTheme(pc.ui), model::catppuccin::overlay2))),
+					pc.style.fontSize,
+					fuse::ui::TextAlignment::Center,
 					pc.node.index);
 			const float tx = x + kToggleW + 2.f;
-			pc.ui.paintString(dl, text, {tx, cell.y, std::max(0.f, cell.right() - tx), cell.h}, color, pc.style.fontSize,
-				fuse::ui::TextAlignment::Start, pc.node.index, face);
+			pc.ui.paintString(
+				dl,
+				text,
+				{tx, cell.y, std::max(0.f, cell.right() - tx), cell.h},
+				color,
+				pc.style.fontSize,
+				fuse::ui::TextAlignment::Start,
+				pc.node.index,
+				face);
 			return;
 		}
-		pc.ui.paintString(dl, text, cell, color, pc.style.fontSize, fuse::ui::TextAlignment::Start, pc.node.index, face);
+		pc.ui.paintString(
+			dl, text, cell, color, pc.style.fontSize, fuse::ui::TextAlignment::Start, pc.node.index, face);
 	}
-	static void paintVtable(const void* u, const fuse::ui::PaintContext& pc, fuse::ui::DrawList& dl, Rect cell,
-		uint32_t row, uint32_t col, std::string_view text, bool)
+	static void paintVtable(
+		const void* u,
+		const fuse::ui::PaintContext& pc,
+		fuse::ui::DrawList& dl,
+		Rect cell,
+		uint32_t row,
+		uint32_t col,
+		std::string_view text,
+		bool)
 	{
 		const auto& p = self(u);
 		// Monospace; pure-virtual slots italic in Qt -> bold here (no italic faces).
-		pc.ui.paintString(dl, text, cell, pc.tint(graphColor(themedRgba(currentTheme(pc.ui), p.m_vtable.foreground(int(row), int(col))))), pc.style.fontSize,
-			fuse::ui::TextAlignment::Start, pc.node.index, styledFont(pc.ui, pc.node, true, p.m_vtable.italic(int(row), int(col))));
+		pc.ui.paintString(
+			dl,
+			text,
+			cell,
+			pc.tint(graphColor(themedRgba(currentTheme(pc.ui), p.m_vtable.foreground(int(row), int(col))))),
+			pc.style.fontSize,
+			fuse::ui::TextAlignment::Start,
+			pc.node.index,
+			styledFont(pc.ui, pc.node, true, p.m_vtable.italic(int(row), int(col))));
 	}
 };
 
@@ -163,10 +213,12 @@ TypeHierarchyPanel::TypeHierarchyPanel(UiContext& ui, NodeHandle parent): m_ui(u
 	w::setTableActivation(ui, m_vtableView, true);
 
 	// ── Wiring ───────────────────────────────────────────────────────────────
-	ui.connect(m_search, SignalKind::TextChanged,
-		[this](UiContext&, NodeHandle, const SignalArgs& a) { setFilter(std::string(a.text)); });
-	ui.connect(m_tree, SignalKind::ValueChanged,
-		[this](UiContext& u, NodeHandle n, const SignalArgs&) { classRowSelected(int(std::lround(u.value(n)))); });
+	ui.connect(m_search, SignalKind::TextChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+		setFilter(std::string(a.text));
+	});
+	ui.connect(m_tree, SignalKind::ValueChanged, [this](UiContext& u, NodeHandle n, const SignalArgs&) {
+		classRowSelected(int(std::lround(u.value(n))));
+	});
 	ui.connect(m_tree, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { treeClicked(); });
 	ui.connect(m_tree, SignalKind::Event, [this](UiContext& u, NodeHandle n, const SignalArgs& a) {
 		if (!a.event || a.event->type != fuse::ui::EventType::KeyDown) return;
@@ -179,7 +231,8 @@ TypeHierarchyPanel::TypeHierarchyPanel(UiContext& ui, NodeHandle parent): m_ui(u
 			else if (const int par = m_hierarchy.parent(m_rows[size_t(row)].node); par >= 0)
 				selectClass(m_hierarchy.classAt(par)->name);
 		}
-		else if (a.event->key == fuse::ui::Key::Right && m_rows[size_t(row)].hasChildren && !m_rows[size_t(row)].expanded)
+		else if (
+			a.event->key == fuse::ui::Key::Right && m_rows[size_t(row)].hasChildren && !m_rows[size_t(row)].expanded)
 			toggleRow(row);
 	});
 	// Double click on a class row toggles it (not Enter: index -1); a double
@@ -187,8 +240,9 @@ TypeHierarchyPanel::TypeHierarchyPanel(UiContext& ui, NodeHandle parent): m_ui(u
 	ui.connect(m_tree, SignalKind::Activated, [this](UiContext&, NodeHandle, const SignalArgs& a) {
 		if (a.index >= 0) treeActivated(int(std::lround(a.value)));
 	});
-	ui.connect(m_vtableView, SignalKind::Activated,
-		[this](UiContext&, NodeHandle, const SignalArgs& a) { activateVtableRow(int(std::lround(a.value))); });
+	ui.connect(m_vtableView, SignalKind::Activated, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+		activateVtableRow(int(std::lround(a.value)));
+	});
 
 	rebuildRows(-1);
 }
@@ -329,16 +383,20 @@ void TypeHierarchyPanel::showVtable(int node)
 	}
 	else
 	{
-		m_ui.setText(m_vtableTitle, c->vtableAddress ? std::format("Vtable — {} @ {} ({} slots)", c->name,
-														  model::hexAddress(c->vtableAddress), c->vtable.size())
-													 : std::format("Vtable — {} ({} slots)", c->name, c->vtable.size()));
+		m_ui.setText(
+			m_vtableTitle,
+			c->vtableAddress
+				? std::format(
+					  "Vtable — {} @ {} ({} slots)", c->name, model::hexAddress(c->vtableAddress), c->vtable.size())
+				: std::format("Vtable — {} ({} slots)", c->name, c->vtable.size()));
 		std::string bases;
 		for (const auto& b: c->bases)
 			bases += std::format("{}{} {}", bases.empty() ? "" : ", ", model::inheritLabel(b.kind), b.base);
 		std::string derived;
 		for (const auto& d: m_hierarchy.derivedClasses(node))
 			derived += (derived.empty() ? "" : ", ") + d;
-		m_details = std::format("Bases: {}   Derived: {}", bases.empty() ? "—" : bases, derived.empty() ? "—" : derived);
+		m_details =
+			std::format("Bases: {}   Derived: {}", bases.empty() ? "—" : bases, derived.empty() ? "—" : derived);
 		if (!c->moduleName.empty()) m_details += "   Module: " + c->moduleName;
 	}
 	m_ui.setText(m_detailsLabel, m_details);

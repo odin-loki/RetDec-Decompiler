@@ -32,22 +32,55 @@ public:
 	void show(const model::RawArchiveOptions& current, std::function<void(const model::RawArchiveOptions&)> onAccepted);
 	void accept();
 	void reject();
-	bool isOpen() const { return dlg_.isOpen(); }
+	bool isOpen() const
+	{
+		return dlg_.isOpen();
+	}
 
 	/// The fields as text / as options.
 	model::RawArchiveForm form() const;
-	model::RawArchiveOptions options() const { return model::rawArchiveOptionsFromForm(form()); }
+	model::RawArchiveOptions options() const
+	{
+		return model::rawArchiveOptionsFromForm(form());
+	}
 	void load(const model::RawArchiveOptions& o);
 
-	std::string title() const { return dlg_.title(); }
-	fuse::ui::NodeHandle endianCombo() const { return endian_; }
-	fuse::ui::NodeHandle bitSizeCombo() const { return bits_; }
-	fuse::ui::NodeHandle vmaEdit() const { return vma_; }
-	fuse::ui::NodeHandle arNameEdit() const { return arName_; }
-	fuse::ui::NodeHandle arIndexEdit() const { return arIndex_; }
-	fuse::ui::NodeHandle okButton() const { return ok_; }
-	fuse::ui::NodeHandle cancelButton() const { return cancel_; }
-	fuse::ui::NodeHandle card() const { return dlg_.card(); }
+	std::string title() const
+	{
+		return dlg_.title();
+	}
+	fuse::ui::NodeHandle endianCombo() const
+	{
+		return endian_;
+	}
+	fuse::ui::NodeHandle bitSizeCombo() const
+	{
+		return bits_;
+	}
+	fuse::ui::NodeHandle vmaEdit() const
+	{
+		return vma_;
+	}
+	fuse::ui::NodeHandle arNameEdit() const
+	{
+		return arName_;
+	}
+	fuse::ui::NodeHandle arIndexEdit() const
+	{
+		return arIndex_;
+	}
+	fuse::ui::NodeHandle okButton() const
+	{
+		return ok_;
+	}
+	fuse::ui::NodeHandle cancelButton() const
+	{
+		return cancel_;
+	}
+	fuse::ui::NodeHandle card() const
+	{
+		return dlg_.card();
+	}
 
 	std::function<void(const std::string& message, int timeoutMs)> onStatusMessage;
 

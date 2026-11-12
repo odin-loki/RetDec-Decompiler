@@ -82,7 +82,7 @@ ZipWriter::ZipWriter(const std::filesystem::path& zipPath): path_(zipPath)
 
 ZipWriter::~ZipWriter()
 {
-	if (open_ && !closed_) (void) close();
+	if (open_ && !closed_) (void)close();
 }
 
 uint32_t ZipWriter::crc32(std::string_view data)
@@ -209,7 +209,8 @@ std::expected<void, std::string> ZipWriter::close()
 	if (r) r = writeBytes(eocd);
 	if (r)
 	{
-		if (auto st = impl_->file.sync(); !st) r = fail(std::format("Cannot flush {}: {}", path_.string(), st.err.what));
+		if (auto st = impl_->file.sync(); !st)
+			r = fail(std::format("Cannot flush {}: {}", path_.string(), st.err.what));
 	}
 	impl_->file.close();
 	open_ = false;

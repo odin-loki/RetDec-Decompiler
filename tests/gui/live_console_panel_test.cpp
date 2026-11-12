@@ -264,7 +264,8 @@ TEST_F(LiveConsolePanelTest, LargeFloodIsChunkedAcrossFlushes)
 	// The rest drains over the following frames without stalling any of them.
 	const auto start = std::chrono::steady_clock::now();
 	EXPECT_TRUE(h.pumpUntil([&] { return panel->feed()->pendingBytes() == 0; }, 10'000));
-	const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+	const auto ms =
+		std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
 	EXPECT_LT(ms, 10'000);
 	EXPECT_GT(panel->blockCount(), 1000);
 	panel->detachSource(src);
@@ -279,7 +280,8 @@ TEST_F(LiveConsolePanelTest, DirectAppendOfTwoMegabytesIsFast)
 	const auto start = std::chrono::steady_clock::now();
 	panel->appendChunk(Stream::Stdout, buf);
 	h.frame();
-	const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+	const auto ms =
+		std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
 	EXPECT_LT(ms, 1500) << "appendChunk too slow for 2MiB buffer";
 	EXPECT_GT(panel->blockCount(), 1000);
 }
@@ -295,7 +297,9 @@ TEST_F(LiveConsolePanelTest, PerCallStaysUnderFrameBudgetForRealisticChunks)
 		panel->clear();
 		const auto t = std::chrono::steady_clock::now();
 		panel->appendChunk(Stream::Stdout, buf);
-		worstUs = std::max<long long>(worstUs, std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t).count());
+		worstUs = std::max<long long>(
+			worstUs,
+			std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t).count());
 	}
 	EXPECT_LT(worstUs, 16'000) << "16 KiB insert exceeded 16 ms frame budget (worst=" << worstUs << " us)";
 }
@@ -306,7 +310,10 @@ TEST_F(LiveConsolePanelTest, HandlesPathologicalInputs)
 {
 	panel->appendChunk(Stream::Stdout, std::string());
 	panel->appendChunk(Stream::Stdout, "\n\n\n");
-	panel->appendChunk(Stream::Stdout, "na\xC3\xAFve \xE2\x82\xAC" "100 \x01\x02\x07 \xff\xfe\n");
+	panel->appendChunk(
+		Stream::Stdout,
+		"na\xC3\xAFve \xE2\x82\xAC"
+		"100 \x01\x02\x07 \xff\xfe\n");
 	panel->appendChunk(Stream::Stdout, std::string(8192, 'A'));
 	panel->appendChunk(Stream::Stdout, "\n");
 	h.frame(3);

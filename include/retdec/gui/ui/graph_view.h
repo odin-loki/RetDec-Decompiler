@@ -39,22 +39,30 @@
 
 namespace retdec::gui::ui {
 
-class GraphView
-{
+class GraphView {
 public:
 	GraphView(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent, std::string_view id = {});
 	~GraphView();
 	GraphView(const GraphView&) = delete;
 	GraphView& operator=(const GraphView&) = delete;
 
-	fuse::ui::NodeHandle node() const { return m_node; }
+	fuse::ui::NodeHandle node() const
+	{
+		return m_node;
+	}
 
 	// ── Scene ────────────────────────────────────────────────────────────────
 	/// Replaces the scene. `fit` fits it to the viewport (deferred until the view has a size).
 	void setScene(model::GraphScene scene, bool fit = true);
-	const model::GraphScene& scene() const { return m_scene; }
+	const model::GraphScene& scene() const
+	{
+		return m_scene;
+	}
 	/// Edit visibility / styles in place, then call sceneChanged() (finalize() first if geometry moved).
-	model::GraphScene& mutableScene() { return m_scene; }
+	model::GraphScene& mutableScene()
+	{
+		return m_scene;
+	}
 	void sceneChanged();
 	void clear();
 
@@ -69,26 +77,50 @@ public:
 	void panBy(float dx, float dy);
 	/// Centres the view on a node (no zoom change). False when the node is not in the scene.
 	bool centerOn(uint64_t nodeId);
-	float zoom() const { return m_t.zoom; }
-	const model::ViewTransform& transform() const { return m_t; }
+	float zoom() const
+	{
+		return m_t.zoom;
+	}
+	const model::ViewTransform& transform() const
+	{
+		return m_t;
+	}
 	void setTransform(const model::ViewTransform& t);
 	/// The canvas area in context coordinates (valid after an update).
 	fuse::ui::Rect viewportRect() const;
 
 	// ── Selection, hover, search highlight ───────────────────────────────────
 	void setSelectedNode(std::optional<uint64_t> id);
-	std::optional<uint64_t> selectedNode() const { return m_selected; }
-	std::optional<uint64_t> hoveredNode() const { return m_hovered; }
+	std::optional<uint64_t> selectedNode() const
+	{
+		return m_selected;
+	}
+	std::optional<uint64_t> hoveredNode() const
+	{
+		return m_hovered;
+	}
 	void setHighlighted(const std::vector<uint64_t>& ids);
-	const std::unordered_set<uint64_t>& highlighted() const { return m_highlight; }
+	const std::unordered_set<uint64_t>& highlighted() const
+	{
+		return m_highlight;
+	}
 
 	// ── Minimap and tooltip ──────────────────────────────────────────────────
 	void setMinimapVisible(bool on);
-	bool minimapVisible() const { return m_minimap; }
+	bool minimapVisible() const
+	{
+		return m_minimap;
+	}
 	/// Minimap frame in context coordinates (empty when hidden or no scene).
 	fuse::ui::Rect minimapRect() const;
-	void setTooltipDelay(float seconds) { m_tooltipDelay = seconds; }
-	bool tooltipVisible() const { return m_tooltipShown && m_hovered.has_value(); }
+	void setTooltipDelay(float seconds)
+	{
+		m_tooltipDelay = seconds;
+	}
+	bool tooltipVisible() const
+	{
+		return m_tooltipShown && m_hovered.has_value();
+	}
 	std::string tooltipText() const;
 	/// Text shown centred when the scene is empty (empty = nothing).
 	void setEmptyText(std::string text);
@@ -119,7 +151,10 @@ public:
 
 	/// Deprecated: double clicks follow the context's settings
 	/// (UiContext::setDoubleClick); kept for source compatibility.
-	void setDoubleClickInterval(double seconds) { m_doubleClick = seconds; }
+	void setDoubleClickInterval(double seconds)
+	{
+		m_doubleClick = seconds;
+	}
 
 	// Widget-class glue (internal).
 	struct Impl;
@@ -182,8 +217,7 @@ void graphSetShown(fuse::ui::UiContext& ui, fuse::ui::NodeHandle n, bool shown);
 bool graphShown(const fuse::ui::UiContext& ui, fuse::ui::NodeHandle n);
 
 /// Save-file prompt on FuseUI's modal file dialog (one per panel; the dialog is created on first use).
-class SavePrompt
-{
+class SavePrompt {
 public:
 	explicit SavePrompt(fuse::ui::UiContext& ui): m_ui(ui) {}
 	~SavePrompt();
@@ -191,7 +225,10 @@ public:
 	SavePrompt& operator=(const SavePrompt&) = delete;
 	/// Opens the dialog in the current directory; `onChosen(path)` runs on OK (not on Cancel).
 	void open(std::string_view title, std::string_view filter, std::function<void(const std::string&)> onChosen);
-	fuse::ui::NodeHandle dialog() const { return m_dialog; }
+	fuse::ui::NodeHandle dialog() const
+	{
+		return m_dialog;
+	}
 
 private:
 	fuse::ui::UiContext& m_ui;

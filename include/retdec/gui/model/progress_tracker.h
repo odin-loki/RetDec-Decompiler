@@ -88,8 +88,7 @@ struct WaterfallBar
 	uint32_t color = 0;
 };
 
-class ProgressTracker
-{
+class ProgressTracker {
 public:
 	/// Monotonic milliseconds (default: std::chrono::steady_clock).
 	using Clock = std::function<int64_t()>;
@@ -97,8 +96,14 @@ public:
 	ProgressTracker();
 	void setClock(Clock clock);
 
-	const std::vector<StageRow>& stages() const { return rows_; }
-	const std::vector<StageTiming>& timings() const { return timings_; }
+	const std::vector<StageRow>& stages() const
+	{
+		return rows_;
+	}
+	const std::vector<StageTiming>& timings() const
+	{
+		return timings_;
+	}
 	int stageIndex(std::string_view name) const;
 	/// Index of @p name, appending a pending stage when it is new.
 	int ensureStage(std::string_view name);
@@ -109,8 +114,14 @@ public:
 	void setStageState(std::string_view name, StageState state, int percent = -1);
 	/// False (and nothing changes) for an unknown stage.
 	bool setStageElapsed(std::string_view name, int64_t ms);
-	void setFunctionCount(int count) { functionCount_ = count; }
-	void setInstructionCount(int64_t count) { instrCount_ = count; }
+	void setFunctionCount(int count)
+	{
+		functionCount_ = count;
+	}
+	void setInstructionCount(int64_t count)
+	{
+		instrCount_ = count;
+	}
 	void setThroughput(double fnPerSec, double instrPerSec);
 	/// Overrides the overall percentage (clamped 0-100) until the next stage change.
 	void setOverallProgress(int percent);
@@ -128,13 +139,34 @@ public:
 	/// Everything back to the default stages, all pending, counters zero.
 	void reset();
 
-	int overallPercent() const { return overall_; }
-	int functionCount() const { return functionCount_; }
-	int64_t instructionCount() const { return instrCount_; }
-	std::optional<double> functionRate() const { return fnRate_; }
-	std::optional<double> instructionRate() const { return instrRate_; }
-	bool running() const { return running_; }
-	bool started() const { return started_; }
+	int overallPercent() const
+	{
+		return overall_;
+	}
+	int functionCount() const
+	{
+		return functionCount_;
+	}
+	int64_t instructionCount() const
+	{
+		return instrCount_;
+	}
+	std::optional<double> functionRate() const
+	{
+		return fnRate_;
+	}
+	std::optional<double> instructionRate() const
+	{
+		return instrRate_;
+	}
+	bool running() const
+	{
+		return running_;
+	}
+	bool started() const
+	{
+		return started_;
+	}
 	/// Wall time since analysisStarted() (frozen at the reported total once
 	/// completed; 0 before any start).
 	int64_t elapsedMs() const;

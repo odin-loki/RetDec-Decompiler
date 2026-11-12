@@ -47,10 +47,10 @@ struct FileinfoInfo
 	/// key (max 48 rows), values as text.
 	std::vector<std::pair<std::string, std::string>> summaryRows;
 	std::string sha256, md5, crc32;
-	std::string format;  ///< "fileFormat"
-	std::string arch;    ///< "architecture"
-	std::string os;      ///< "osOrAbi" (or "Windows" for PE)
-	std::string packer;  ///< name of the first tool of type "packer"
+	std::string format; ///< "fileFormat"
+	std::string arch;   ///< "architecture"
+	std::string os;     ///< "osOrAbi" (or "Windows" for PE)
+	std::string packer; ///< name of the first tool of type "packer"
 	std::vector<SectionInfo> sections;
 	std::string prettyJson; ///< indented re-serialisation (for the JSON tab)
 };
@@ -71,7 +71,8 @@ std::string prettyPrintJson(std::string_view json);
 // ── Files ────────────────────────────────────────────────────────────────────
 
 /// Reads up to @p size bytes at @p offset.
-std::expected<std::vector<uint8_t>, std::string> readFileRange(const std::filesystem::path& path, uint64_t offset, uint64_t size);
+std::expected<std::vector<uint8_t>, std::string>
+readFileRange(const std::filesystem::path& path, uint64_t offset, uint64_t size);
 
 /// Classic 16-bytes-per-line hex + ASCII dump; line offsets start at @p fileOffset.
 std::string formatHexDump(const std::vector<uint8_t>& data, uint64_t fileOffset);
@@ -107,10 +108,10 @@ struct ToolRun
 	std::string executable;        ///< full path that was run
 	std::vector<std::string> args; ///< arguments after the executable
 	std::string cwd;
-	int exitCode = -1;             ///< -1 when the process could not start
+	int exitCode = -1; ///< -1 when the process could not start
 	int64_t elapsedMs = 0;
 	std::string out, err;
-	std::string errorText;         ///< spawn failure text (exitCode -1)
+	std::string errorText; ///< spawn failure text (exitCode -1)
 	bool cancelled = false;
 	/// Combined stdout + stderr (unpacker) or stdout (fileinfo), capped at 4000 chars.
 	std::string outputTail() const;
@@ -136,11 +137,14 @@ public:
 	/// Starts `fileinfo --json --verbose <binary>`; error when no executable is given.
 	std::expected<void, std::string> startFileinfo(std::string_view binary, std::string_view fileinfoExe);
 	/// Starts the unpacker; error when it is running already or no executable is given.
-	std::expected<void, std::string> startUnpacker(std::string_view binary, std::string_view unpackerExe,
-	                                               std::string_view outPath, bool brute);
+	std::expected<void, std::string>
+	startUnpacker(std::string_view binary, std::string_view unpackerExe, std::string_view outPath, bool brute);
 
 	bool running(InspectTool t) const;
-	bool anyRunning() const { return running(InspectTool::Fileinfo) || running(InspectTool::Unpacker); }
+	bool anyRunning() const
+	{
+		return running(InspectTool::Fileinfo) || running(InspectTool::Unpacker);
+	}
 
 	/// Cancels (kills the process tree) and waits for the worker.
 	void cancel(InspectTool t);
@@ -154,7 +158,8 @@ public:
 
 private:
 	struct Worker;
-	std::expected<void, std::string> start(InspectTool kind, std::string tool, std::string exe, std::vector<std::string> args);
+	std::expected<void, std::string>
+	start(InspectTool kind, std::string tool, std::string exe, std::vector<std::string> args);
 	std::shared_ptr<Worker> workers_[2];
 	struct Shared;
 	std::shared_ptr<Shared> shared_;

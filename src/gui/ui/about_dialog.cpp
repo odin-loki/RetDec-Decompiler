@@ -14,8 +14,8 @@ namespace retdec::gui::ui {
 namespace w = fuse::ui::widgets;
 using namespace fuse::ui;
 
-AboutDialog::AboutDialog(UiContext& ui)
-	: dlg_(ui, model::kAboutTitle, 560.f, 0.f, "aboutDialog"), markdown_(model::aboutMarkdown())
+AboutDialog::AboutDialog(UiContext& ui):
+	dlg_(ui, model::kAboutTitle, 560.f, 0.f, "aboutDialog"), markdown_(model::aboutMarkdown())
 {
 	view_ = w::markdownView(ui, dlg_.body(), markdown_);
 	ui.setCss(view_, "flex-grow", "1");

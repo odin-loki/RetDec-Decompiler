@@ -18,8 +18,14 @@ namespace {
 
 /// Field (with an example as its placeholder) + OK / Cancel, wired to the owner's accept / reject.
 template <class D>
-void buildSingleField(UiContext& ui, ModalDialog& dlg, std::string_view example, NodeHandle& edit, NodeHandle& ok,
-                      NodeHandle& cancel, D* owner)
+void buildSingleField(
+	UiContext& ui,
+	ModalDialog& dlg,
+	std::string_view example,
+	NodeHandle& edit,
+	NodeHandle& ok,
+	NodeHandle& cancel,
+	D* owner)
 {
 	edit = w::lineEdit(ui, dlg.body(), "");
 	w::setPlaceholderText(ui, edit, example);

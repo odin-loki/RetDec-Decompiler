@@ -341,7 +341,11 @@ TEST(DiffEngineTest, IntraLineSpans)
 	EXPECT_TRUE(ins.left.empty());
 	EXPECT_EQ(ins.right, (std::vector<DiffSpan>{{4, 7}}));
 	// UTF-8: a whole code point is one change.
-	auto u = intraLineDiff("a\xCF\x80" "b", "a\xC3\xA9" "b");
+	auto u = intraLineDiff(
+		"a\xCF\x80"
+		"b",
+		"a\xC3\xA9"
+		"b");
 	EXPECT_EQ(u.left, (std::vector<DiffSpan>{{1, 3}}));
 	EXPECT_EQ(u.right, (std::vector<DiffSpan>{{1, 3}}));
 	// Over the limit: prefix / suffix trimming only.
@@ -420,7 +424,8 @@ std::string numbered(int n, int changeAt, const std::string& changed)
 {
 	std::string s;
 	for (int i = 0; i < n; ++i)
-		s += (i == changeAt ? changed : "    line_" + std::to_string(i) + " = compute(" + std::to_string(i) + ");") + "\n";
+		s += (i == changeAt ? changed : "    line_" + std::to_string(i) + " = compute(" + std::to_string(i) + ");")
+		   + "\n";
 	return s;
 }
 

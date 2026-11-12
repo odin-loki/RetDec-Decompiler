@@ -38,8 +38,7 @@ struct LegacyClassEntry
 };
 std::vector<ClassInfo> classesFromLegacy(const std::vector<LegacyClassEntry>& entries);
 
-class ClassHierarchyModel
-{
+class ClassHierarchyModel {
 public:
 	static constexpr int kColumns = 5;
 	enum Column : int
@@ -52,11 +51,17 @@ public:
 	};
 
 	void setClasses(std::vector<ClassInfo> classes);
-	const std::vector<ClassInfo>& classes() const { return m_classes; }
+	const std::vector<ClassInfo>& classes() const
+	{
+		return m_classes;
+	}
 
 	// ── Tree (node indices; -1 = the invisible root) ─────────────────────────
 	int rowCount(int parent = -1) const;
-	int columnCount() const { return kColumns; }
+	int columnCount() const
+	{
+		return kColumns;
+	}
 	/// Node of child `row` under `parent`, or -1.
 	int index(int row, int parent = -1) const;
 	int parent(int node) const;
@@ -108,14 +113,19 @@ private:
 	std::vector<int> m_roots;
 };
 
-class VtableModel
-{
+class VtableModel {
 public:
 	static constexpr int kColumns = 4;
 	void setSlots(std::vector<VtableSlot> slots);
 	const VtableSlot* slotAt(int row) const;
-	int rowCount() const { return int(m_slots.size()); }
-	int columnCount() const { return kColumns; }
+	int rowCount() const
+	{
+		return int(m_slots.size());
+	}
+	int columnCount() const
+	{
+		return kColumns;
+	}
 	std::string data(int row, int column) const;
 	Rgba foreground(int row, int column) const;
 	bool italic(int row, int column) const;

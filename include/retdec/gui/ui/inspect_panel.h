@@ -39,15 +39,24 @@ public:
 	InspectPanel(const InspectPanel&) = delete;
 	InspectPanel& operator=(const InspectPanel&) = delete;
 
-	fuse::ui::NodeHandle root() const { return root_; }
-	std::string panelTitle() const { return "Inspect"; }
+	fuse::ui::NodeHandle root() const
+	{
+		return root_;
+	}
+	std::string panelTitle() const
+	{
+		return "Inspect";
+	}
 
 	// ── Commands ─────────────────────────────────────────────────────────────
 	/// Runs fileinfo on @p binaryPath (an empty @p fileinfoExe reports "not
 	/// found"; an empty path only resets the buttons).
 	void runFileinfo(std::string_view binaryPath, std::string_view fileinfoExe);
 	/// Executable used by "Run unpacker" (resolved by the app).
-	void setUnpackerExecutable(std::string_view exe) { unpackerExe_ = std::string(exe); }
+	void setUnpackerExecutable(std::string_view exe)
+	{
+		unpackerExe_ = std::string(exe);
+	}
 	void refresh();
 	void runUnpacker();
 	void openUnpacked();
@@ -58,44 +67,96 @@ public:
 	void clear();
 	/// Collects finished runs (the UI timer calls this while busy).
 	void poll();
-	bool busy() const { return model_.anyRunning(); }
+	bool busy() const
+	{
+		return model_.anyRunning();
+	}
 
 	/// Last successfully parsed fileinfo result, if any.
-	const std::optional<model::FileinfoInfo>& fileinfo() const { return info_; }
+	const std::optional<model::FileinfoInfo>& fileinfo() const
+	{
+		return info_;
+	}
 	/// Raw stdout of the last successful fileinfo run.
-	const std::string& fileinfoJson() const { return lastJson_; }
+	const std::string& fileinfoJson() const
+	{
+		return lastJson_;
+	}
 
 	// ── Events out ───────────────────────────────────────────────────────────
 	std::function<void()> onRequestDecompileMode;
 	/// Load a different binary (e.g. the unpacked output).
 	std::function<void(const std::string& absolutePath)> onRequestOpenBinary;
 	/// A tool finished (for the command log).
-	std::function<void(const std::string& tool, const std::vector<std::string>& args, const std::string& cwd, int exitCode,
-	                   int64_t elapsedMs, const std::string& outputTail)>
+	std::function<void(
+		const std::string& tool,
+		const std::vector<std::string>& args,
+		const std::string& cwd,
+		int exitCode,
+		int64_t elapsedMs,
+		const std::string& outputTail)>
 		onCliToolFinished;
 	/// A tool is starting (the console's banner).
-	std::function<void(const std::string& label, const std::vector<std::string>& args, const std::string& cwd)> onProcessStarted;
+	std::function<void(const std::string& label, const std::vector<std::string>& args, const std::string& cwd)>
+		onProcessStarted;
 	/// Output of a finished tool (for the live console).
 	std::function<void(const std::string& label, const std::string& out, const std::string& err)> onProcessOutput;
 	/// Parsed fileinfo for @p absPath.
-	std::function<void(const model::FileinfoInfo& info, const std::string& json, const std::string& absPath)> onFileinfoReady;
+	std::function<void(const model::FileinfoInfo& info, const std::string& json, const std::string& absPath)>
+		onFileinfoReady;
 
 	// ── Test hooks ───────────────────────────────────────────────────────────
 	std::string statusText() const;
-	int summaryRowCount() const { return int(summary_.rows()); }
+	int summaryRowCount() const
+	{
+		return int(summary_.rows());
+	}
 	std::string summaryCell(int row, int col) const;
-	std::string rawText() const { return raw_->text(); }
+	std::string rawText() const
+	{
+		return raw_->text();
+	}
 	std::string unpackOutput() const;
-	model::InspectModel& model() { return model_; }
-	fuse::ui::NodeHandle refreshButton() const { return refreshBtn_; }
-	fuse::ui::NodeHandle decompileModeButton() const { return decompileBtn_; }
-	fuse::ui::NodeHandle copyHashesButton() const { return copyHashesBtn_; }
-	fuse::ui::NodeHandle unpackButton() const { return unpackBtn_; }
-	fuse::ui::NodeHandle openUnpackedButton() const { return openUnpackedBtn_; }
-	fuse::ui::NodeHandle unpackOutputEdit() const { return unpackOut_; }
-	fuse::ui::NodeHandle bruteCheck() const { return bruteChk_; }
-	fuse::ui::NodeHandle autoOpenCheck() const { return autoOpenChk_; }
-	fuse::ui::NodeHandle tabs() const { return tabs_; }
+	model::InspectModel& model()
+	{
+		return model_;
+	}
+	fuse::ui::NodeHandle refreshButton() const
+	{
+		return refreshBtn_;
+	}
+	fuse::ui::NodeHandle decompileModeButton() const
+	{
+		return decompileBtn_;
+	}
+	fuse::ui::NodeHandle copyHashesButton() const
+	{
+		return copyHashesBtn_;
+	}
+	fuse::ui::NodeHandle unpackButton() const
+	{
+		return unpackBtn_;
+	}
+	fuse::ui::NodeHandle openUnpackedButton() const
+	{
+		return openUnpackedBtn_;
+	}
+	fuse::ui::NodeHandle unpackOutputEdit() const
+	{
+		return unpackOut_;
+	}
+	fuse::ui::NodeHandle bruteCheck() const
+	{
+		return bruteChk_;
+	}
+	fuse::ui::NodeHandle autoOpenCheck() const
+	{
+		return autoOpenChk_;
+	}
+	fuse::ui::NodeHandle tabs() const
+	{
+		return tabs_;
+	}
 	int currentTab() const;
 
 private:

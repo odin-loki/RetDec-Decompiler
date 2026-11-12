@@ -41,8 +41,8 @@ std::vector<std::filesystem::path> installPrefixCandidates();
 /// bundle), then on PATH.
 std::filesystem::path resolveCliTool(std::string_view toolBaseName);
 
-std::filesystem::path resolveRetdecFileinfoExecutable();   ///< retdec-fileinfo, then fileinfo
-std::filesystem::path resolveRetdecUnpackerExecutable();   ///< retdec-unpacker, then unpacker
+std::filesystem::path resolveRetdecFileinfoExecutable(); ///< retdec-fileinfo, then fileinfo
+std::filesystem::path resolveRetdecUnpackerExecutable(); ///< retdec-unpacker, then unpacker
 std::filesystem::path resolveRetdecDecompilerExecutablePath();
 std::filesystem::path resolveRetdecArExtractorExecutable(); ///< retdec-ar-extractor, then ar_extractor
 std::filesystem::path resolveRetdecMachoExtractorExecutable();

@@ -249,27 +249,13 @@ const std::unordered_map<uint32_t, const char*>& magic32()
 const std::unordered_map<uint32_t, const char*>& crypto32()
 {
 	static const std::unordered_map<uint32_t, const char*> m = {
-		{0x428a2f98, "SHA256_K[0]"},
-		{0x71374491, "SHA256_K[1]"},
-		{0xb5c0fbcf, "SHA256_K[2]"},
-		{0xe9b5dba5, "SHA256_K[3]"},
-		{0x3956c25b, "SHA256_K[4]"},
-		{0x59f111f1, "SHA256_K[5]"},
-		{0x923f82a4, "SHA256_K[6]"},
-		{0xab1c5ed5, "SHA256_K[7]"},
-		{0xd807aa98, "SHA256_K[8]"},
-		{0x12835b01, "SHA256_K[9]"},
-		{0x01000000, "AES Rcon[1]"},
-		{0x02000000, "AES Rcon[2]"},
-		{0x04000000, "AES Rcon[3]"},
-		{0x08000000, "AES Rcon[4]"},
-		{0x10000000, "AES Rcon[5]"},
-		{0x1B000000, "AES Rcon[6]"},
-		{0x36000000, "AES Rcon[7]"},
-		{0xEDB88320, "CRC32 poly (LE)"},
-		{0x04C11DB7, "CRC32 poly (BE)"},
-		{0xd76aa478, "MD5_T[1]"},
-		{0xe8c7b756, "MD5_T[2]"},
+		{0x428a2f98, "SHA256_K[0]"},     {0x71374491, "SHA256_K[1]"}, {0xb5c0fbcf, "SHA256_K[2]"},
+		{0xe9b5dba5, "SHA256_K[3]"},     {0x3956c25b, "SHA256_K[4]"}, {0x59f111f1, "SHA256_K[5]"},
+		{0x923f82a4, "SHA256_K[6]"},     {0xab1c5ed5, "SHA256_K[7]"}, {0xd807aa98, "SHA256_K[8]"},
+		{0x12835b01, "SHA256_K[9]"},     {0x01000000, "AES Rcon[1]"}, {0x02000000, "AES Rcon[2]"},
+		{0x04000000, "AES Rcon[3]"},     {0x08000000, "AES Rcon[4]"}, {0x10000000, "AES Rcon[5]"},
+		{0x1B000000, "AES Rcon[6]"},     {0x36000000, "AES Rcon[7]"}, {0xEDB88320, "CRC32 poly (LE)"},
+		{0x04C11DB7, "CRC32 poly (BE)"}, {0xd76aa478, "MD5_T[1]"},    {0xe8c7b756, "MD5_T[2]"},
 		{5381, "DJB2 hash seed"},
 	};
 	return m;
@@ -666,9 +652,8 @@ void fillInstrCountsFromDsm(std::vector<FunctionEntry>& functions, std::string_v
 		if (fn.instrCount != 0 || fn.address == 0 || fn.sizeBytes <= 0) continue;
 		const uint64_t lo = fn.address;
 		const uint64_t hi = fn.address + static_cast<uint64_t>(fn.sizeBytes);
-		fn.instrCount = static_cast<int>(std::count_if(lineAddrs.begin(), lineAddrs.end(), [&](uint64_t a) {
-			return a >= lo && a < hi;
-		}));
+		fn.instrCount = static_cast<int>(
+			std::count_if(lineAddrs.begin(), lineAddrs.end(), [&](uint64_t a) { return a >= lo && a < hi; }));
 	}
 }
 
@@ -678,7 +663,8 @@ int countDsmAddrRefs(std::string_view fullDsm, uint64_t a)
 	return static_cast<int>(countOverlapping(fullDsm, "0x" + hex) + countOverlapping(fullDsm, hex));
 }
 
-void fillRefCountsFromDsm(std::vector<StringEntry>& strings, std::vector<ConstantEntry>& constants, std::string_view fullDsm)
+void fillRefCountsFromDsm(
+	std::vector<StringEntry>& strings, std::vector<ConstantEntry>& constants, std::string_view fullDsm)
 {
 	if (fullDsm.empty() || fullDsm.size() > kMaxDsmScanChars) return;
 	for (auto& e: strings)
@@ -801,7 +787,8 @@ std::vector<BlockInstr> extractDsmInstructionsForRange(std::string_view fullDsm,
 	return instrs;
 }
 
-std::string extractDsmForFunction(std::string_view fullDsm, uint64_t startAddr, uint64_t endAddr, std::string_view funcName)
+std::string
+extractDsmForFunction(std::string_view fullDsm, uint64_t startAddr, uint64_t endAddr, std::string_view funcName)
 {
 	if (fullDsm.empty()) return {};
 
@@ -815,8 +802,10 @@ std::string extractDsmForFunction(std::string_view fullDsm, uint64_t startAddr, 
 		std::match_results<std::string_view::const_iterator> m;
 		if (contains(line, "; function:") && std::regex_search(line.begin(), line.end(), m, fnRe))
 		{
-			const std::string_view name = trimView(std::string_view(&*m[1].first, static_cast<std::size_t>(m[1].length())));
-			const uint64_t s = parseAddress(std::string_view(&*m[2].first, static_cast<std::size_t>(m[2].length()))).value_or(0);
+			const std::string_view name =
+				trimView(std::string_view(&*m[1].first, static_cast<std::size_t>(m[1].length())));
+			const uint64_t s =
+				parseAddress(std::string_view(&*m[2].first, static_cast<std::size_t>(m[2].length()))).value_or(0);
 			inFn = (s == startAddr) || (!funcName.empty() && name == funcName);
 			if (inFn)
 			{
@@ -944,7 +933,9 @@ std::string extractCForFunctionByName(std::string_view fullC, std::string_view f
 	}
 	if (candidates.empty()) return {};
 
-	std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) { return a.begin < b.begin; });
+	std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
+		return a.begin < b.begin;
+	});
 	auto chosen = std::find_if(candidates.begin(), candidates.end(), [](const Candidate& c) { return c.definition; });
 	if (chosen == candidates.end()) chosen = candidates.begin();
 

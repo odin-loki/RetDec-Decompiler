@@ -50,15 +50,33 @@ public:
 	/// JSON ("Invalid JSON") or a write error.
 	bool save();
 	void cancel();
-	bool isOpen() const { return dlg_.isOpen(); }
+	bool isOpen() const
+	{
+		return dlg_.isOpen();
+	}
 
 	std::string text() const;
 	void setText(std::string_view text);
-	std::string title() const { return dlg_.title(); }
-	fuse::ui::NodeHandle editor() const { return edit_; }
-	fuse::ui::NodeHandle saveButton() const { return save_; }
-	fuse::ui::NodeHandle cancelButton() const { return cancel_; }
-	MessageDialog& message() { return message_; }
+	std::string title() const
+	{
+		return dlg_.title();
+	}
+	fuse::ui::NodeHandle editor() const
+	{
+		return edit_;
+	}
+	fuse::ui::NodeHandle saveButton() const
+	{
+		return save_;
+	}
+	fuse::ui::NodeHandle cancelButton() const
+	{
+		return cancel_;
+	}
+	MessageDialog& message()
+	{
+		return message_;
+	}
 
 	std::function<void(const std::string& title, const std::string& message)> onWarning;
 
@@ -74,14 +92,22 @@ private:
 
 class TargetPanel {
 public:
-	TargetPanel(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent,
-	            model::AppSettings& settings = model::AppSettings::instance());
+	TargetPanel(
+		fuse::ui::UiContext& ui,
+		fuse::ui::NodeHandle parent,
+		model::AppSettings& settings = model::AppSettings::instance());
 	~TargetPanel();
 	TargetPanel(const TargetPanel&) = delete;
 	TargetPanel& operator=(const TargetPanel&) = delete;
 
-	fuse::ui::NodeHandle root() const { return root_; }
-	std::string panelTitle() const { return "Target"; }
+	fuse::ui::NodeHandle root() const
+	{
+		return root_;
+	}
+	std::string panelTitle() const
+	{
+		return "Target";
+	}
 
 	/// Show @p pf's fields and make Apply write to it (not owned; nullptr = clear()).
 	void setFromProject(model::ProjectFile* pf);
@@ -119,17 +145,50 @@ public:
 	std::function<void(const std::string& title, const std::string& message)> onWarning;
 
 	// ── Test hooks ───────────────────────────────────────────────────────────
-	fuse::ui::NodeHandle archEdit() const { return arch_; }
-	fuse::ui::NodeHandle osEdit() const { return os_; }
-	fuse::ui::NodeHandle entryEdit() const { return entry_; }
-	fuse::ui::NodeHandle applyButton() const { return apply_; }
-	fuse::ui::NodeHandle browseButton() const { return browse_; }
-	fuse::ui::NodeHandle bundledButton() const { return bundled_; }
-	fuse::ui::NodeHandle clearButton() const { return clearCfg_; }
-	fuse::ui::NodeHandle editButton() const { return editCfg_; }
-	FilePrompt& filePrompt() { return files_; }
-	MessageDialog& message() { return message_; }
-	DecompilerConfigEditor& configEditor() { return editor_; }
+	fuse::ui::NodeHandle archEdit() const
+	{
+		return arch_;
+	}
+	fuse::ui::NodeHandle osEdit() const
+	{
+		return os_;
+	}
+	fuse::ui::NodeHandle entryEdit() const
+	{
+		return entry_;
+	}
+	fuse::ui::NodeHandle applyButton() const
+	{
+		return apply_;
+	}
+	fuse::ui::NodeHandle browseButton() const
+	{
+		return browse_;
+	}
+	fuse::ui::NodeHandle bundledButton() const
+	{
+		return bundled_;
+	}
+	fuse::ui::NodeHandle clearButton() const
+	{
+		return clearCfg_;
+	}
+	fuse::ui::NodeHandle editButton() const
+	{
+		return editCfg_;
+	}
+	FilePrompt& filePrompt()
+	{
+		return files_;
+	}
+	MessageDialog& message()
+	{
+		return message_;
+	}
+	DecompilerConfigEditor& configEditor()
+	{
+		return editor_;
+	}
 
 private:
 	void setFieldsEnabled(bool on);

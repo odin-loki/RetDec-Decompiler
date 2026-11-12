@@ -85,8 +85,8 @@ std::expected<DecompileArtifacts, std::string> loadDecompileArtifactsFromConfigJ
 /// header (matched by start address or by @p funcName) to the next header.
 /// Without a header, the instruction lines in [startAddr, endAddr) (endAddr 0 =
 /// no upper bound). Lines joined with '\n'.
-std::string extractDsmForFunction(
-	std::string_view fullDsm, uint64_t startAddr, uint64_t endAddr, std::string_view funcName = {});
+std::string
+extractDsmForFunction(std::string_view fullDsm, uint64_t startAddr, uint64_t endAddr, std::string_view funcName = {});
 
 /// Instructions "0xADDR: text" of @p fullDsm in [startAddr, endAddr).
 std::vector<BlockInstr> extractDsmInstructionsForRange(std::string_view fullDsm, uint64_t startAddr, uint64_t endAddr);
@@ -99,7 +99,8 @@ std::string extractLlvmForFunction(std::string_view fullLl, std::string_view fun
 /// C text of a function: lines [startLine, endLine] (1-based, endLine <= 0 =
 /// to the end) when startLine > 0, else the definition of @p funcName found by
 /// its signature and brace matching.
-std::string extractCForFunction(const std::filesystem::path& cPath, int startLine, int endLine, std::string_view funcName);
+std::string
+extractCForFunction(const std::filesystem::path& cPath, int startLine, int endLine, std::string_view funcName);
 
 /// Same as the name-based part of extractCForFunction, on text in memory.
 std::string extractCForFunctionByName(std::string_view fullC, std::string_view funcName);
@@ -122,9 +123,9 @@ struct FunctionViewData
 	uint64_t endAddress = 0;
 	int startLine = -1;
 	int endLine = -1;
-	std::string assemblyText; ///< extractDsmForFunction()
-	std::string irText;       ///< extractLlvmForFunction()
-	std::string cText;        ///< extractCForFunction() (empty unless requested)
+	std::string assemblyText;              ///< extractDsmForFunction()
+	std::string irText;                    ///< extractLlvmForFunction()
+	std::string cText;                     ///< extractCForFunction() (empty unless requested)
 	std::vector<BasicBlockData> cfgBlocks; ///< empty = no CFG (clear the view)
 	std::vector<CFGEdgeData> cfgEdges;
 	/// Identity mapping over the shortest of the three texts, as the Qt GUI used.
@@ -137,8 +138,8 @@ FunctionViewData buildFunctionViewData(
 	const DecompileArtifacts& art, uint64_t funcAddr, std::string_view funcName, bool includeC = true);
 
 /// 1..n identity rows, n = min(line counts) of the three texts (0 if any is empty).
-std::vector<FunctionLineMapEntry> buildIdentityLineMapping(
-	std::string_view asmText, std::string_view irText, std::string_view cText);
+std::vector<FunctionLineMapEntry>
+buildIdentityLineMapping(std::string_view asmText, std::string_view irText, std::string_view cText);
 
 } // namespace retdec::gui::model
 

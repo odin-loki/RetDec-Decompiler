@@ -32,7 +32,10 @@ using model::GRect;
 
 Color graphColor(model::Rgba c, float opacity)
 {
-	return {float(model::rgbaR(c)) / 255.f, float(model::rgbaG(c)) / 255.f, float(model::rgbaB(c)) / 255.f,
+	return {
+		float(model::rgbaR(c)) / 255.f,
+		float(model::rgbaG(c)) / 255.f,
+		float(model::rgbaB(c)) / 255.f,
 		float(model::rgbaA(c)) / 255.f * opacity};
 }
 
@@ -70,22 +73,31 @@ Rect toRect(const GRect& r)
 /// Outline of a rect as four (optionally dashed) lines.
 void outlineDashed(DrawList& dl, const Rect& r, Color c, float width, float dash, float gap)
 {
-	const std::vector<GPoint> poly{{r.x, r.y}, {r.right(), r.y}, {r.right(), r.bottom()}, {r.x, r.bottom()}, {r.x, r.y}};
+	const std::vector<GPoint> poly{
+		{r.x, r.y}, {r.right(), r.y}, {r.right(), r.bottom()}, {r.x, r.bottom()}, {r.x, r.y}};
 	for (const auto& [a, b]: model::dashPolyline(poly, dash, gap))
 		dl.line({a.x, a.y}, {b.x, b.y}, c, width);
 }
 
 /// Paints a scene through `t`; scene point s lands at offset + t.toView(s). Items outside `clip` (context
 /// coordinates) are skipped.
-void paintScene(UiContext& ui, DrawList& dl, const model::GraphScene& sc, const model::ViewTransform& t, Vec2 offset,
-	const Rect& clip, const PaintState& st, uint32_t nodeIdx)
+void paintScene(
+	UiContext& ui,
+	DrawList& dl,
+	const model::GraphScene& sc,
+	const model::ViewTransform& t,
+	Vec2 offset,
+	const Rect& clip,
+	const PaintState& st,
+	uint32_t nodeIdx)
 {
 	const float z = t.zoom;
 	const ThemeKind theme = currentTheme(ui);
 	auto tc = [theme](model::Rgba c, float opacity = 1.f) { return graphColor(themedRgba(theme, c), opacity); };
 	// SceneText faces: [mono][bold] (null = the view's own face).
 	const NodeHandle view = ui.handleOf(nodeIdx);
-	const fuse::text::Font* faces[2][2] = {{nullptr, styledFont(ui, view, false, true)},
+	const fuse::text::Font* faces[2][2] = {
+		{nullptr, styledFont(ui, view, false, true)},
 		{styledFont(ui, view, true, false), styledFont(ui, view, true, true)}};
 	const GRect visible = t.visibleScene(clip.w, clip.h);
 	const GRect vis{visible.x + (clip.x - offset.x) / z, visible.y + (clip.y - offset.y) / z, visible.w, visible.h};
@@ -106,8 +118,14 @@ void paintScene(UiContext& ui, DrawList& dl, const model::GraphScene& sc, const 
 		const float rad = reg.radius * z;
 		dl.roundedRect(r, tc(reg.fill), {rad, rad, rad, rad}, tc(reg.border), std::max(1.f, reg.borderWidth * z));
 		if (!reg.label.empty() && st.text && reg.labelSize * z >= kMinTextPx)
-			ui.paintString(dl, reg.label, {r.x + 6.f * z, r.y + 2.f * z, r.w - 12.f * z, (reg.labelSize + 6.f) * z},
-				tc(reg.labelColor), reg.labelSize * z, fuse::ui::TextAlignment::Start, nodeIdx);
+			ui.paintString(
+				dl,
+				reg.label,
+				{r.x + 6.f * z, r.y + 2.f * z, r.w - 12.f * z, (reg.labelSize + 6.f) * z},
+				tc(reg.labelColor),
+				reg.labelSize * z,
+				fuse::ui::TextAlignment::Start,
+				nodeIdx);
 	}
 
 	// Edges
@@ -116,7 +134,7 @@ void paintScene(UiContext& ui, DrawList& dl, const model::GraphScene& sc, const 
 	{
 		if (!e.visible || e.polyline.size() < 2 || !e.bounds.intersects(vis)) continue;
 		const bool hot = (st.hovered && (*st.hovered == e.from || *st.hovered == e.to))
-			|| (st.selected && (*st.selected == e.from || *st.selected == e.to));
+					  || (st.selected && (*st.selected == e.from || *st.selected == e.to));
 		// Translucent edges are pre-blended over the background: segment joints would otherwise double the alpha
 		// and bead the line.
 		const float a = float(model::rgbaA(e.color)) / 255.f * e.opacity;
@@ -146,8 +164,8 @@ void paintScene(UiContext& ui, DrawList& dl, const model::GraphScene& sc, const 
 		}
 		if (e.arrow)
 		{
-			const model::ArrowHead a = model::arrowHead(e.polyline.back(), e.polyline[e.polyline.size() - 2],
-				e.arrowLength, e.arrowHalfWidth);
+			const model::ArrowHead a =
+				model::arrowHead(e.polyline.back(), e.polyline[e.polyline.size() - 2], e.arrowLength, e.arrowHalfWidth);
 			const Vec2 tip = V(a.tip), l = V(a.left), r = V(a.right);
 			dl.line(tip, l, c, w);
 			dl.line(l, r, c, w);
@@ -166,7 +184,9 @@ void paintScene(UiContext& ui, DrawList& dl, const model::GraphScene& sc, const 
 		const bool hovered = st.hovered && *st.hovered == n.id;
 		const bool selected = st.selected && *st.selected == n.id;
 		const float op = n.opacity;
-		if (n.shadow) dl.roundedRect({r.x + 3.f * z, r.y + 3.f * z, r.w, r.h}, Color{0, 0, 0, 50.f / 255.f * op}, {rad, rad, rad, rad});
+		if (n.shadow)
+			dl.roundedRect(
+				{r.x + 3.f * z, r.y + 3.f * z, r.w, r.h}, Color{0, 0, 0, 50.f / 255.f * op}, {rad, rad, rad, rad});
 		const model::Rgba fill = hovered && n.hoverFill ? n.hoverFill : n.fill;
 		dl.roundedRect(r, tc(fill, op), {rad, rad, rad, rad});
 		if (n.headerFill && n.headerHeight > 0.f)
@@ -187,15 +207,20 @@ void paintScene(UiContext& ui, DrawList& dl, const model::GraphScene& sc, const 
 			{
 				const float px = tx.size * z;
 				if (px < kMinTextPx) continue;
-				const fuse::ui::TextAlignment al = tx.align == model::SceneAlign::Center ? fuse::ui::TextAlignment::Center
-					: tx.align == model::SceneAlign::Right                               ? fuse::ui::TextAlignment::End
-																						 : fuse::ui::TextAlignment::Start;
+				const fuse::ui::TextAlignment al =
+					tx.align == model::SceneAlign::Center  ? fuse::ui::TextAlignment::Center
+					: tx.align == model::SceneAlign::Right ? fuse::ui::TextAlignment::End
+														   : fuse::ui::TextAlignment::Start;
 				ui.paintString(dl, tx.text, R(tx.box), tc(tx.color, op), px, al, nodeIdx, faces[tx.mono][tx.bold]);
 			}
 		if (st.highlight && st.highlight->count(n.id))
 		{
 			const float g = 3.f;
-			dl.roundedRect({r.x - g, r.y - g, r.w + 2 * g, r.h + 2 * g}, Color{}, {rad + g, rad + g, rad + g, rad + g}, hlCol,
+			dl.roundedRect(
+				{r.x - g, r.y - g, r.w + 2 * g, r.h + 2 * g},
+				Color{},
+				{rad + g, rad + g, rad + g, rad + g},
+				hlCol,
 				2.f);
 		}
 		if (selected) dl.roundedRect(r, Color{}, {rad, rad, rad, rad}, selCol, std::max(1.5f, 2.5f * z));
@@ -220,7 +245,10 @@ struct GraphView::Impl
 		if (k == 0 || k > v.size() || !v[k - 1] || v[k - 1]->m_node != n || &v[k - 1]->m_ui != &ui) return nullptr;
 		return v[k - 1];
 	}
-	static fuse::ui::Size measure(UiContext&, NodeHandle, fuse::ui::Size) { return {320.f, 240.f}; }
+	static fuse::ui::Size measure(UiContext&, NodeHandle, fuse::ui::Size)
+	{
+		return {320.f, 240.f};
+	}
 	static void paint(const fuse::ui::PaintContext& pc, DrawList& dl)
 	{
 		if (GraphView* g = of(pc.ui, pc.node)) g->paint(pc, dl);
@@ -255,8 +283,8 @@ GraphView::GraphView(UiContext& ui, NodeHandle parent, std::string_view id): m_u
 		ui.setA11y(m_node, fuse::ui::A11yRole::Group, "Graph");
 		ui.setCss(m_node, "flex-grow", "1");
 		ui.addClass(m_node, "retdec-canvas");
-		m_menuConn = ui.connect(m_node, fuse::ui::SignalKind::Submitted,
-			[this](UiContext&, NodeHandle, const fuse::ui::SignalArgs& a) {
+		m_menuConn = ui.connect(
+			m_node, fuse::ui::SignalKind::Submitted, [this](UiContext&, NodeHandle, const fuse::ui::SignalArgs& a) {
 				if (!m_menuPick) return;
 				auto pick = std::move(m_menuPick);
 				m_menuPick = nullptr;
@@ -510,8 +538,14 @@ void GraphView::paint(const fuse::ui::PaintContext& pc, DrawList& dl)
 	if (m_scene.empty())
 	{
 		if (!m_emptyText.empty())
-			m_ui.paintString(dl, m_emptyText, c, tc(model::catppuccin::overlay0), 14.f,
-				fuse::ui::TextAlignment::Center, pc.node.index);
+			m_ui.paintString(
+				dl,
+				m_emptyText,
+				c,
+				tc(model::catppuccin::overlay0),
+				14.f,
+				fuse::ui::TextAlignment::Center,
+				pc.node.index);
 		dl.popClip();
 		return;
 	}
@@ -521,8 +555,12 @@ void GraphView::paint(const fuse::ui::PaintContext& pc, DrawList& dl)
 	// Minimap overlay: whole scene scaled, viewport indicator.
 	if (const Rect mm = minimapRect(); !mm.empty())
 	{
-		dl.roundedRect(mm, tc(model::catppuccin::mantle, 210.f / 255.f), {4.f, 4.f, 4.f, 4.f},
-			tc(model::catppuccin::surface1), 1.f);
+		dl.roundedRect(
+			mm,
+			tc(model::catppuccin::mantle, 210.f / 255.f),
+			{4.f, 4.f, 4.f, 4.f},
+			tc(model::catppuccin::surface1),
+			1.f);
 		dl.pushClip(mm, 4.f);
 		float s = 1.f;
 		Vec2 off;
@@ -535,7 +573,8 @@ void GraphView::paint(const fuse::ui::PaintContext& pc, DrawList& dl)
 				if (e.visible && !e.points.empty())
 				{
 					const GPoint a = e.points.front(), b = e.points.back();
-					dl.line({off.x + a.x * s, off.y + a.y * s}, {off.x + b.x * s, off.y + b.y * s}, tc(e.color, 0.6f), 1.f);
+					dl.line(
+						{off.x + a.x * s, off.y + a.y * s}, {off.x + b.x * s, off.y + b.y * s}, tc(e.color, 0.6f), 1.f);
 				}
 		for (const auto& n: m_scene.nodes)
 			if (n.visible)
@@ -543,10 +582,12 @@ void GraphView::paint(const fuse::ui::PaintContext& pc, DrawList& dl)
 				Rect r = M(n.rect);
 				r.w = std::max(r.w, 1.5f);
 				r.h = std::max(r.h, 1.5f);
-				dl.rect(r, tc(n.border == model::catppuccin::surface1 ? model::catppuccin::overlay0 : n.border, n.opacity));
+				dl.rect(
+					r, tc(n.border == model::catppuccin::surface1 ? model::catppuccin::overlay0 : n.border, n.opacity));
 			}
 		const GRect vs = m_t.visibleScene(c.w, c.h);
-		dl.roundedRect(M(vs), tc(model::catppuccin::blue, 40.f / 255.f), {}, tc(model::catppuccin::blue, 200.f / 255.f), 1.5f);
+		dl.roundedRect(
+			M(vs), tc(model::catppuccin::blue, 40.f / 255.f), {}, tc(model::catppuccin::blue, 200.f / 255.f), 1.5f);
 		dl.popClip();
 	}
 
@@ -560,7 +601,8 @@ void GraphView::paint(const fuse::ui::PaintContext& pc, DrawList& dl)
 			for (size_t at = 0;;)
 			{
 				const size_t nl = tip.find('\n', at);
-				lines.push_back(std::string_view(tip).substr(at, nl == std::string::npos ? std::string::npos : nl - at));
+				lines.push_back(
+					std::string_view(tip).substr(at, nl == std::string::npos ? std::string::npos : nl - at));
 				if (nl == std::string::npos) break;
 				at = nl + 1;
 			}
@@ -574,15 +616,25 @@ void GraphView::paint(const fuse::ui::PaintContext& pc, DrawList& dl)
 			float x = p.x + 14.f, y = p.y + 18.f;
 			if (x + w > c.right() - 4.f) x = std::max(c.x + 4.f, p.x - w - 8.f);
 			if (y + h > c.bottom() - 4.f) y = std::max(c.y + 4.f, p.y - h - 8.f);
-			dl.roundedRect({x, y, w, h}, tc(model::catppuccin::crust, 0.96f), {4.f, 4.f, 4.f, 4.f},
-				tc(model::catppuccin::surface2), 1.f);
+			dl.roundedRect(
+				{x, y, w, h},
+				tc(model::catppuccin::crust, 0.96f),
+				{4.f, 4.f, 4.f, 4.f},
+				tc(model::catppuccin::surface2),
+				1.f);
 			dl.pushClip({x, y, w, h});
 			for (size_t i = 0; i < lines.size(); ++i)
 			{
 				const float ly = y + 4.f + lh * float(i);
 				if (ly + lh > y + h) break;
-				m_ui.paintString(dl, lines[i], {x + 8.f, ly, w - 16.f, lh}, tc(model::catppuccin::text), px,
-					fuse::ui::TextAlignment::Start, pc.node.index);
+				m_ui.paintString(
+					dl,
+					lines[i],
+					{x + 8.f, ly, w - 16.f, lh},
+					tc(model::catppuccin::text),
+					px,
+					fuse::ui::TextAlignment::Start,
+					pc.node.index);
 			}
 			dl.popClip();
 		}
@@ -603,8 +655,7 @@ bool GraphView::handle(const Event& e)
 	};
 	switch (e.type)
 	{
-	case EventType::PointerDown:
-	{
+	case EventType::PointerDown: {
 		ensureFit();
 		m_last = e.pos;
 		if (e.button == MouseButton::Middle)
@@ -669,14 +720,11 @@ bool GraphView::handle(const Event& e)
 			if (m_tooltipShown) m_ui.invalidate(m_node); // tooltip follows the pointer
 		}
 		return true;
-	case EventType::PointerUp:
-		m_drag = Drag::None;
-		return true;
+	case EventType::PointerUp: m_drag = Drag::None; return true;
 	case EventType::PointerLeave:
 		if (m_drag == Drag::None) setHovered(std::nullopt);
 		return false;
-	case EventType::Wheel:
-	{
+	case EventType::Wheel: {
 		if (e.mods & fuse::ui::kModCtrl)
 		{
 			zoomAt(std::pow(1.18f, e.wheel.y), e.pos);
@@ -803,7 +851,9 @@ void SavePrompt::open(std::string_view title, std::string_view filter, std::func
 	std::error_code ec;
 	const std::string dir = std::filesystem::current_path(ec).generic_string();
 	m_dialog = fuse::ui::widgets::fileDialog(m_ui, title, dir, filter, /*save=*/true);
-	m_conn = m_ui.connect(m_dialog, fuse::ui::SignalKind::Submitted,
+	m_conn = m_ui.connect(
+		m_dialog,
+		fuse::ui::SignalKind::Submitted,
 		[this](fuse::ui::UiContext&, fuse::ui::NodeHandle, const fuse::ui::SignalArgs& a) {
 			const std::string path(a.text);
 			if (!path.empty() && m_onChosen) m_onChosen(path);

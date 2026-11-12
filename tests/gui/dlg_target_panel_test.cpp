@@ -16,8 +16,8 @@
 #include <fstream>
 
 using namespace retdec::gui;
-using retdec::gui::test::DlgUi;
 using fuse::ui::Key;
+using retdec::gui::test::DlgUi;
 
 namespace {
 

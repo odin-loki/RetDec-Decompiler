@@ -48,13 +48,17 @@ IRPanel::IRPanel(UiContext& ui, NodeHandle parent): ui_(ui), menu_(ui)
 	setShown(ui, findBar_, false);
 
 	auto* self = this;
-	ui.connect(stageCombo_, SignalKind::ValueChanged, [self](UiContext&, NodeHandle, const SignalArgs& a) { self->onStageChanged(int(a.value)); });
-	ui.connect(findEdit_, SignalKind::Submitted, [self](UiContext&, NodeHandle, const SignalArgs&) { self->findNext(); });
+	ui.connect(stageCombo_, SignalKind::ValueChanged, [self](UiContext&, NodeHandle, const SignalArgs& a) {
+		self->onStageChanged(int(a.value));
+	});
+	ui.connect(findEdit_, SignalKind::Submitted, [self](UiContext&, NodeHandle, const SignalArgs&) {
+		self->findNext();
+	});
 	view_->onContextMenu = [self](Vec2 at, int line) {
 		const auto addr = line >= 0 ? model::parseFirstAddress(self->view_->line(line)) : std::nullopt;
 		self->menu_.open(self->root_, at, addressMenuActions(self->ui_, addr, [self](uint64_t a) {
-			                 if (self->onAddressActivated) self->onAddressActivated(a);
-		                 }));
+							 if (self->onAddressActivated) self->onAddressActivated(a);
+						 }));
 	};
 	updateEmptyState();
 }
@@ -111,11 +115,15 @@ void IRPanel::updateEmptyState()
 
 void IRPanel::setIRText(std::string_view text, std::string_view stage)
 {
-	if (stage == "Module") moduleIr_ = std::string(text);
-	else functionIr_ = std::string(text);
+	if (stage == "Module")
+		moduleIr_ = std::string(text);
+	else
+		functionIr_ = std::string(text);
 	view_->setText(text);
-	if (stage == "Function") stage_ = Stage::Function;
-	else if (stage == "Module") stage_ = Stage::Module;
+	if (stage == "Function")
+		stage_ = Stage::Function;
+	else if (stage == "Module")
+		stage_ = Stage::Module;
 	if (stage == "Function" || stage == "Module") ui_.setValue(stageCombo_, float(int(stage_)), false);
 	updateEmptyState();
 }
@@ -132,7 +140,8 @@ void IRPanel::onStageChanged(int index)
 	const std::string& chosen = stage_ == Stage::Module ? moduleIr_ : functionIr_;
 	if (!chosen.empty()) view_->setText(chosen);
 	updateEmptyState();
-	if (onStatusMessage) onStatusMessage(std::format("IR stage: {}", stage_ == Stage::Module ? "Module" : "Function"), 3000);
+	if (onStatusMessage)
+		onStatusMessage(std::format("IR stage: {}", stage_ == Stage::Module ? "Module" : "Function"), 3000);
 }
 
 void IRPanel::onFunctionSelected(uint64_t address, std::string_view name)

@@ -273,7 +273,9 @@ void ProgressPanel::build(NodeHandle parent)
 	ui_.setCss(exportBtn_, "padding", "4px 10px");
 	ui_.setCss(exportBtn_, "flex-shrink", "0");
 	tooltip(exportBtn_, "Copy analysis stats as JSON to clipboard");
-	ui_.connect(exportBtn_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { exportClicked(); });
+	ui_.connect(exportBtn_, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+		exportClicked();
+	});
 }
 
 // ─── Rows ────────────────────────────────────────────────────────────────────
@@ -362,13 +364,17 @@ void ProgressPanel::syncSummary()
 	ui_.setText(pctLabel_, std::format("{}%", pct));
 	ui_.setText(fnCountLabel_, std::format("{} fn", tracker_.functionCount()));
 	ui_.setText(instrLabel_, model::formatInstructionCount(tracker_.instructionCount()));
-	ui_.setText(fnRateLabel_, tracker_.functionRate() ? model::formatFunctionRate(*tracker_.functionRate()) : "\xE2\x80\x94");
+	ui_.setText(
+		fnRateLabel_, tracker_.functionRate() ? model::formatFunctionRate(*tracker_.functionRate()) : "\xE2\x80\x94");
 	ui_.setText(
 		instrRateLabel_,
 		tracker_.instructionRate() ? model::formatInstructionRate(*tracker_.instructionRate()) : "\xE2\x80\x94");
 	// The timeline grows with its bar count.
 	const std::size_t bars = tracker_.waterfall().size();
-	ui_.setCss(waterfall_, "min-height", std::format("{}px", std::max(80.f, static_cast<float>(bars) * (kWaterfallRowH + 2.f) + 4.f)));
+	ui_.setCss(
+		waterfall_,
+		"min-height",
+		std::format("{}px", std::max(80.f, static_cast<float>(bars) * (kWaterfallRowH + 2.f) + 4.f)));
 	ui_.invalidate(waterfall_);
 }
 
@@ -544,7 +550,9 @@ void ProgressPanel::connectBridge(model::AnalysisBridge* bridge)
 		if (auto q = wq.lock()) q->push(std::move(f));
 	};
 	l.stageStarted = [push](const std::string& s) { push([s](ProgressPanel& p) { p.stageStarted(s); }); };
-	l.progressUpdated = [push](const std::string& s, int pct) { push([s, pct](ProgressPanel& p) { p.stageProgress(s, pct); }); };
+	l.progressUpdated = [push](const std::string& s, int pct) {
+		push([s, pct](ProgressPanel& p) { p.stageProgress(s, pct); });
+	};
 	l.stageCompleted = [push](const std::string& s, int64_t ms) {
 		push([s, ms](ProgressPanel& p) { p.stageCompleted(s, ms); });
 	};

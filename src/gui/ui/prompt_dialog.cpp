@@ -176,8 +176,8 @@ double spinValue(const UiContext& ui, NodeHandle spin, int decimals)
 
 // ── ModalDialog ──────────────────────────────────────────────────────────────
 
-ModalDialog::ModalDialog(UiContext& ui, std::string_view title, float width, float height, std::string_view id)
-	: ui_(ui), title_(title)
+ModalDialog::ModalDialog(UiContext& ui, std::string_view title, float width, float height, std::string_view id):
+	ui_(ui), title_(title)
 {
 	dlg::ensureDialogStyles(ui);
 	card_ = w::dialog(ui, title, id);
@@ -300,8 +300,12 @@ PromptDialog::PromptDialog(UiContext& ui): dlg_(ui, "", 420.f, 0.f)
 
 PromptDialog::~PromptDialog() = default;
 
-void PromptDialog::show(std::string_view title, std::string_view label, std::string_view initial,
-                        std::function<void(const std::string&)> onAccepted, std::function<void()> onCancelled)
+void PromptDialog::show(
+	std::string_view title,
+	std::string_view label,
+	std::string_view initial,
+	std::function<void(const std::string&)> onAccepted,
+	std::function<void()> onCancelled)
 {
 	UiContext& ui = dlg_.ui();
 	onAccepted_ = std::move(onAccepted);
@@ -371,7 +375,8 @@ NodeHandle fileDialogNameEdit(const UiContext& ui, NodeHandle dlg)
 {
 	const NodeHandle body = w::dialogBody(ui, dlg);
 	NodeHandle row = ui.firstChild(body);
-	for (int i = 0; i < 2 && ui.alive(row); ++i) row = ui.nextSibling(row);
+	for (int i = 0; i < 2 && ui.alive(row); ++i)
+		row = ui.nextSibling(row);
 	if (!ui.alive(row)) return {};
 	const NodeHandle lbl = ui.firstChild(row);
 	return ui.alive(lbl) ? ui.nextSibling(lbl) : NodeHandle{};
@@ -381,7 +386,8 @@ NodeHandle fileDialogButtons(const UiContext& ui, NodeHandle dlg)
 {
 	const NodeHandle body = w::dialogBody(ui, dlg);
 	NodeHandle last;
-	for (NodeHandle c = ui.firstChild(body); ui.alive(c); c = ui.nextSibling(c)) last = c;
+	for (NodeHandle c = ui.firstChild(body); ui.alive(c); c = ui.nextSibling(c))
+		last = c;
 	return last;
 }
 
@@ -412,8 +418,12 @@ void FilePrompt::destroyDialog()
 	chooseFolder_ = {};
 }
 
-void FilePrompt::show(Mode mode, std::string_view title, std::string_view start, std::string_view filter,
-                      std::function<void(const std::string&)> onChosen)
+void FilePrompt::show(
+	Mode mode,
+	std::string_view title,
+	std::string_view start,
+	std::string_view filter,
+	std::function<void(const std::string&)> onChosen)
 {
 	namespace fs = std::filesystem;
 	destroyDialog();
@@ -510,22 +520,30 @@ PdbFilePrompt::PdbFilePrompt(UiContext& ui): files_(ui) {}
 
 void PdbFilePrompt::show(std::string_view startDir, std::function<void(const std::string&)> onChosen)
 {
-	files_.show(FilePrompt::Mode::Open, "PDB symbols", startDir, model::kPdbFileFilter,
-	            [this, cb = std::move(onChosen)](const std::string& path) {
-		            if (cb) cb(path);
-		            if (onStatusMessage) onStatusMessage(model::pdbPathStatus(path));
-	            });
+	files_.show(
+		FilePrompt::Mode::Open,
+		"PDB symbols",
+		startDir,
+		model::kPdbFileFilter,
+		[this, cb = std::move(onChosen)](const std::string& path) {
+			if (cb) cb(path);
+			if (onStatusMessage) onStatusMessage(model::pdbPathStatus(path));
+		});
 }
 
 SignatureFilePrompt::SignatureFilePrompt(UiContext& ui): files_(ui) {}
 
 void SignatureFilePrompt::show(std::string_view startDir, std::function<void(const std::string&)> onChosen)
 {
-	files_.show(FilePrompt::Mode::Open, "Static-code signatures", startDir, model::kSignatureFileFilter,
-	            [this, cb = std::move(onChosen)](const std::string& path) {
-		            if (cb) cb(path);
-		            if (onStatusMessage) onStatusMessage(model::staticSigFileStatus(path));
-	            });
+	files_.show(
+		FilePrompt::Mode::Open,
+		"Static-code signatures",
+		startDir,
+		model::kSignatureFileFilter,
+		[this, cb = std::move(onChosen)](const std::string& path) {
+			if (cb) cb(path);
+			if (onStatusMessage) onStatusMessage(model::staticSigFileStatus(path));
+		});
 }
 
 } // namespace retdec::gui::ui

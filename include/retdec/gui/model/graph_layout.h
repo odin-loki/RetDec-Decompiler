@@ -59,13 +59,13 @@ struct GraphAdjacency
 EdgeSet findBackEdges(const std::vector<uint64_t>& nodes, const Adjacency& succ, std::optional<uint64_t> entry);
 
 /// Longest-path layering ignoring `backEdges`: sources get rank 0, every other node max(rank(pred)) + 1.
-std::unordered_map<uint64_t, int> longestPathRanks(
-	const std::vector<uint64_t>& nodes, const Adjacency& succ, const EdgeSet& backEdges);
+std::unordered_map<uint64_t, int>
+longestPathRanks(const std::vector<uint64_t>& nodes, const Adjacency& succ, const EdgeSet& backEdges);
 
 /// Barycentric crossing minimisation: `sweeps` rounds of a top-down (by predecessors) then a bottom-up (by
 /// successors) pass, each a stable sort of a level by the mean position of its neighbours on the adjacent level.
-void barycentricSweep(std::vector<std::vector<uint64_t>>& levels, const Adjacency& pred, const Adjacency& succ,
-	int sweeps = 2);
+void barycentricSweep(
+	std::vector<std::vector<uint64_t>>& levels, const Adjacency& pred, const Adjacency& succ, int sweeps = 2);
 
 /// Number of crossings between consecutive levels (edges spanning more than one level are ignored).
 int countCrossings(const std::vector<std::vector<uint64_t>>& levels, const Adjacency& succ);
@@ -89,13 +89,18 @@ struct LayeredLayout
 };
 
 /// Sugiyama layout of `nodes` (sizes[i] is the box of nodes[i]); `entry` seeds the back-edge DFS.
-LayeredLayout layeredLayout(const std::vector<uint64_t>& nodes, const std::vector<GPoint>& sizes,
-	const std::vector<EdgeRef>& edges, std::optional<uint64_t> entry, const LayeredOptions& options = {});
+LayeredLayout layeredLayout(
+	const std::vector<uint64_t>& nodes,
+	const std::vector<GPoint>& sizes,
+	const std::vector<EdgeRef>& edges,
+	std::optional<uint64_t> entry,
+	const LayeredOptions& options = {});
 
 // ── Components, depths, neighbourhoods ───────────────────────────────────────
 
 /// Tarjan's strongly connected components; each component lists its members, components in completion order.
-std::vector<std::vector<uint64_t>> stronglyConnectedComponents(const std::vector<uint64_t>& nodes, const Adjacency& succ);
+std::vector<std::vector<uint64_t>>
+stronglyConnectedComponents(const std::vector<uint64_t>& nodes, const Adjacency& succ);
 
 /// BFS depth from the roots (nodes without predecessors; the first node when every node has one).
 /// Unreachable nodes are absent.
@@ -108,8 +113,8 @@ enum class NeighbourDirection : uint8_t
 	Predecessors ///< callers
 };
 /// Nodes within `hops` edges of `start` (start included).
-std::unordered_set<uint64_t> neighbourhood(uint64_t start, int hops, const GraphAdjacency& adj,
-	NeighbourDirection dir = NeighbourDirection::Both);
+std::unordered_set<uint64_t>
+neighbourhood(uint64_t start, int hops, const GraphAdjacency& adj, NeighbourDirection dir = NeighbourDirection::Both);
 
 // ── Force-directed layout ────────────────────────────────────────────────────
 
@@ -122,8 +127,12 @@ struct ForceNode
 /// Fruchterman-Reingold spring embedding as in the Qt panel (attraction d^2/k, repulsion k^2/d, temperature
 /// sqrt(area)/4 cooled linearly), with ideal edge length `idealEdge` (area = k^2 n). Above `gridThreshold` nodes,
 /// repulsion is limited to a 2k neighbourhood on a uniform grid (O(n) per iteration).
-void forceDirectedLayout(std::vector<ForceNode>& nodes, const std::vector<EdgeRef>& edges, int iterations = 60,
-	size_t gridThreshold = 400, double idealEdge = 170.0);
+void forceDirectedLayout(
+	std::vector<ForceNode>& nodes,
+	const std::vector<EdgeRef>& edges,
+	int iterations = 60,
+	size_t gridThreshold = 400,
+	double idealEdge = 170.0);
 
 } // namespace retdec::gui::model
 

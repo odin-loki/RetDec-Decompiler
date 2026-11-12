@@ -19,7 +19,10 @@ namespace {
 struct TempDir
 {
 	fs::path path;
-	TempDir() { path = fs::path(forge::os::fs::make_temp_dir("retdec-gui-art-").value); }
+	TempDir()
+	{
+		path = fs::path(forge::os::fs::make_temp_dir("retdec-gui-art-").value);
+	}
 	~TempDir()
 	{
 		std::error_code ec;
@@ -227,7 +230,8 @@ TEST(ArtifactLoader, ParseStartEndLines)
 	EXPECT_EQ(art.functions[0].startLine, 2);
 	EXPECT_EQ(art.functions[0].endLine, 4);
 
-	const std::string slice = m::extractCForFunction(cPath, art.functions[0].startLine, art.functions[0].endLine, "foo");
+	const std::string slice =
+		m::extractCForFunction(cPath, art.functions[0].startLine, art.functions[0].endLine, "foo");
 	EXPECT_TRUE(contains(slice, "int foo"));
 	EXPECT_TRUE(contains(slice, "return 0"));
 	EXPECT_FALSE(contains(slice, "line1"));

@@ -65,11 +65,19 @@ DecompiledCPanel::DecompiledCPanel(UiContext& ui, NodeHandle parent): ui_(ui), m
 	setShown(ui, fb, false);
 
 	auto* self = this;
-	ui.connect(copyBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->copyToClipboard(); });
+	ui.connect(copyBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) {
+		self->copyToClipboard();
+	});
 	ui.connect(saveBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->saveAs(); });
-	ui.connect(findBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->showFindBar(); });
-	ui.connect(refinedChk_, SignalKind::Toggled, [self](UiContext& c, NodeHandle n, const SignalArgs&) { self->setShowRefined(c.checked(n)); });
-	ui.connect(findEdit_, SignalKind::Submitted, [self](UiContext&, NodeHandle, const SignalArgs&) { self->submitFind(); });
+	ui.connect(findBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) {
+		self->showFindBar();
+	});
+	ui.connect(refinedChk_, SignalKind::Toggled, [self](UiContext& c, NodeHandle n, const SignalArgs&) {
+		self->setShowRefined(c.checked(n));
+	});
+	ui.connect(findEdit_, SignalKind::Submitted, [self](UiContext&, NodeHandle, const SignalArgs&) {
+		self->submitFind();
+	});
 	view_->onContextMenu = [self](Vec2 at, int) { self->openContextMenu(at); };
 
 	updateEmptyState();
@@ -324,8 +332,8 @@ void DecompiledCPanel::openContextMenu(Vec2 at)
 	actions.push_back({"Find\xE2\x80\xA6", true, [self] { self->showFindBar(); }});
 	actions.push_back({"-", true, {}});
 	for (MenuAction& a: addressMenuActions(ui_, addr, [self](uint64_t a) {
-		     if (self->onAddressActivated) self->onAddressActivated(a);
-	     }))
+			 if (self->onAddressActivated) self->onAddressActivated(a);
+		 }))
 		actions.push_back(std::move(a));
 	menu_.open(root_, at, std::move(actions));
 }

@@ -32,8 +32,8 @@ using retdec::gui::ui::TypeHierarchyPanel;
 
 namespace {
 
-ClassInfo makeClass(const std::string& name, const std::vector<std::string>& bases = {}, int methods = 3,
-	bool isAbstract = false)
+ClassInfo
+makeClass(const std::string& name, const std::vector<std::string>& bases = {}, int methods = 3, bool isAbstract = false)
 {
 	ClassInfo ci;
 	ci.name = name;
@@ -55,7 +55,8 @@ ClassInfo makeClass(const std::string& name, const std::vector<std::string>& bas
 	return ci;
 }
 
-CallGraphNode makeNode(uint64_t addr, const std::string& name, int instrCount = 50, bool isLibrary = false, int moduleId = -1)
+CallGraphNode
+makeNode(uint64_t addr, const std::string& name, int instrCount = 50, bool isLibrary = false, int moduleId = -1)
 {
 	CallGraphNode n;
 	n.address = addr;
@@ -271,8 +272,8 @@ TEST(ClassHierarchyModelTest, TooltipListsModuleAndBases)
 TEST(ClassHierarchyModelTest, RecursiveFilterKeepsAncestors)
 {
 	ClassHierarchyModel model;
-	model.setClasses({makeClass("Shape"), makeClass("Circle", {"Shape"}), makeClass("Square", {"Shape"}),
-		makeClass("Unrelated")});
+	model.setClasses(
+		{makeClass("Shape"), makeClass("Circle", {"Shape"}), makeClass("Square", {"Shape"}), makeClass("Unrelated")});
 	const auto rows = model.visibleRows("circ", {});
 	ASSERT_EQ(rows.size(), 2u);
 	EXPECT_EQ(model.classAt(rows[0].node)->name, "Shape");
@@ -481,8 +482,8 @@ TEST(TypeHierarchyPanelTest, FilterBoxFiltersRecursively)
 {
 	Headless h;
 	TypeHierarchyPanel panel(h.ui, h.ui.root());
-	panel.setHierarchy({makeClass("Shape"), makeClass("Circle", {"Shape"}), makeClass("Square", {"Shape"}),
-		makeClass("Logger")});
+	panel.setHierarchy(
+		{makeClass("Shape"), makeClass("Circle", {"Shape"}), makeClass("Square", {"Shape"}), makeClass("Logger")});
 	h.frame();
 	EXPECT_EQ(panel.visibleRowCount(), 4);
 	h.ui.setFocus(panel.searchBox());
@@ -585,7 +586,8 @@ TEST(CallGraphSceneTest, ThreeNodeLinearGraph)
 
 TEST(CallGraphSceneTest, SccDetectionForCycle)
 {
-	auto m = loaded({makeNode(1, "a"), makeNode(2, "b"), makeNode(3, "c")}, {makeEdge(1, 2), makeEdge(2, 3), makeEdge(3, 1)});
+	auto m = loaded(
+		{makeNode(1, "a"), makeNode(2, "b"), makeNode(3, "c")}, {makeEdge(1, 2), makeEdge(2, 3), makeEdge(3, 1)});
 	// SCC collapses to 1 super-node; visible node count = 0 (super-nodes are not function nodes)
 	EXPECT_EQ(m.visibleNodeCount(), 0);
 	EXPECT_EQ(m.visibleSccCount(), 1);
@@ -643,7 +645,8 @@ TEST(CallGraphSceneTest, NameFilterEmpty_ShowsAll)
 
 TEST(CallGraphSceneTest, FocusModeHidesUnrelatedNodes)
 {
-	auto m = loaded({makeNode(1, "a"), makeNode(2, "b"), makeNode(3, "c"), makeNode(4, "d")}, {makeEdge(1, 2), makeEdge(2, 3)});
+	auto m = loaded(
+		{makeNode(1, "a"), makeNode(2, "b"), makeNode(3, "c"), makeNode(4, "d")}, {makeEdge(1, 2), makeEdge(2, 3)});
 	m.setFocusNode(2, 1);
 	EXPECT_LT(m.visibleNodeCount(), 4);
 	EXPECT_EQ(m.visibleNodeCount(), 3);
@@ -653,7 +656,8 @@ TEST(CallGraphSceneTest, FocusModeHidesUnrelatedNodes)
 
 TEST(CallGraphSceneTest, ClearFocusRestoresAll)
 {
-	auto m = loaded({makeNode(1, "a"), makeNode(2, "b"), makeNode(3, "c"), makeNode(4, "d")}, {makeEdge(1, 2), makeEdge(2, 3)});
+	auto m = loaded(
+		{makeNode(1, "a"), makeNode(2, "b"), makeNode(3, "c"), makeNode(4, "d")}, {makeEdge(1, 2), makeEdge(2, 3)});
 	m.setFocusNode(1, 1);
 	m.clearFocus();
 	EXPECT_FALSE(m.isFocused());
@@ -801,7 +805,8 @@ TEST(CallGraphNodeItemTest, DimmedStateChanges)
 
 TEST(SccSuperNodeItemTest, ConstructsWithMembers)
 {
-	auto m = loaded({makeNode(1, "a"), makeNode(2, "b"), makeNode(3, "c")}, {makeEdge(1, 2), makeEdge(2, 3), makeEdge(3, 1)});
+	auto m = loaded(
+		{makeNode(1, "a"), makeNode(2, "b"), makeNode(3, "c")}, {makeEdge(1, 2), makeEdge(2, 3), makeEdge(3, 1)});
 	EXPECT_TRUE(m.isSccNode(1));
 }
 
@@ -816,7 +821,8 @@ TEST(SccSuperNodeItemTest, BoundingRectPositive)
 
 TEST(SccSuperNodeItemTest, MembersReturned)
 {
-	auto m = loaded({makeNode(10, "a"), makeNode(20, "b"), makeNode(30, "c")},
+	auto m = loaded(
+		{makeNode(10, "a"), makeNode(20, "b"), makeNode(30, "c")},
 		{makeEdge(10, 20), makeEdge(20, 30), makeEdge(30, 10)});
 	EXPECT_EQ(m.sccGroups().at(10).size(), 3u);
 }
@@ -1027,7 +1033,7 @@ TEST(CallGraphPanelTest, LargeGraphLaysOutQuickly)
 	h.frame();
 	const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
 	EXPECT_EQ(panel.visibleNodeCount(), 3000);
-	EXPECT_LT(secs, 30.0); // Debug build; Release is a small fraction of this
+	EXPECT_LT(secs, 30.0);                      // Debug build; Release is a small fraction of this
 	EXPECT_LT(h.ui.drawList().size(), 200000u); // culled
 }
 

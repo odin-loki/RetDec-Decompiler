@@ -16,8 +16,8 @@
 #include <memory>
 
 using namespace retdec::gui;
-using retdec::gui::test::HeadlessUi;
 using model::Severity;
+using retdec::gui::test::HeadlessUi;
 
 class DiagnosticsPanelTest : public ::testing::Test {
 protected:

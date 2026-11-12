@@ -70,7 +70,8 @@ TEST(StringsModelTest, CsvQuotesValues)
 	e.address = 1;
 	e.value = "say \"hi\", ok";
 	t.setStrings({e});
-	EXPECT_EQ(t.exportCsv(), "Address,Type,Category,Value,Refs\n0x0000000000000001,ASCII,Plain,\"say \"\"hi\"\", ok\",0\n");
+	EXPECT_EQ(
+		t.exportCsv(), "Address,Type,Category,Value,Refs\n0x0000000000000001,ASCII,Plain,\"say \"\"hi\"\", ok\",0\n");
 }
 
 TEST(StringsModelTest, ConstantsFilterAndSort)

@@ -45,7 +45,10 @@ struct Headless
 		fuse::ui::widgets::install(ui);
 		ui.registerBundledFonts(); // "monospace", bold faces, symbol fallback (as AppWindow)
 	}
-	void frame(float dt = 1.f / 60.f) { ui.update(dt); }
+	void frame(float dt = 1.f / 60.f)
+	{
+		ui.update(dt);
+	}
 	fuse::ui::Vec2 center(fuse::ui::NodeHandle n) const
 	{
 		const fuse::ui::Rect r = ui.rect(n);
@@ -58,7 +61,10 @@ struct Headless
 		ui.pointerUp(p, b);
 		frame();
 	}
-	void clickNode(fuse::ui::NodeHandle n) { click(center(n)); }
+	void clickNode(fuse::ui::NodeHandle n)
+	{
+		click(center(n));
+	}
 	void key(fuse::ui::Key k, fuse::ui::u8 mods = 0)
 	{
 		ui.keyDown(k, mods);

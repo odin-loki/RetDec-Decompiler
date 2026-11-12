@@ -342,8 +342,8 @@ bool PreWhileTrueLoopConvOptimizer::tryOptimizationCase2(
 	// `fabs(next - guess) < 1e-12` and the code after the loop printed
 	// `next`. Reads elsewhere in the loop are unaffected: the assignment
 	// stays ahead of them on every path that continues the loop.
-	if (iVarHasReaderTheMoveWouldChange(iVar, stmt, splittedLoop->loopEnd,
-			assign1BeforeIf, assign2BeforeIf)) {
+	if (iVarHasReaderTheMoveWouldChange(iVar, stmt, splittedLoop->loopEnd, assign1BeforeIf, assign2BeforeIf))
+	{
 		return false;
 	}
 
@@ -370,56 +370,68 @@ bool PreWhileTrueLoopConvOptimizer::tryOptimizationCase2(
 }
 
 /**
-* @brief Returns @c true if moving @a assign1BeforeIf (which writes @a iVar)
-*        from before @a loopEnd to after it would change a value of @a iVar
-*        that some statement reads.
-*
-* Those are reads inside @a loopEnd (its condition or its body) and reads
-* anywhere outside @a loop. Reads of @a iVar that cannot be classified are
-* treated as such a reader.
-*
-* @par Preconditions
-*  - @a loopEnd is a loop end of @a loop, preceded by @a assign1BeforeIf, which
-*    is preceded by @a assign2BeforeIf
-*/
+ * @brief Returns @c true if moving @a assign1BeforeIf (which writes @a iVar)
+ *        from before @a loopEnd to after it would change a value of @a iVar
+ *        that some statement reads.
+ *
+ * Those are reads inside @a loopEnd (its condition or its body) and reads
+ * anywhere outside @a loop. Reads of @a iVar that cannot be classified are
+ * treated as such a reader.
+ *
+ * @par Preconditions
+ *  - @a loopEnd is a loop end of @a loop, preceded by @a assign1BeforeIf, which
+ *    is preceded by @a assign2BeforeIf
+ */
 bool PreWhileTrueLoopConvOptimizer::iVarHasReaderTheMoveWouldChange(
-		ShPtr<Variable> iVar, ShPtr<WhileLoopStmt> loop,
-		ShPtr<IfStmt> loopEnd, ShPtr<AssignStmt> assign1BeforeIf,
-		ShPtr<AssignStmt> assign2BeforeIf) {
+	ShPtr<Variable> iVar,
+	ShPtr<WhileLoopStmt> loop,
+	ShPtr<IfStmt> loopEnd,
+	ShPtr<AssignStmt> assign1BeforeIf,
+	ShPtr<AssignStmt> assign2BeforeIf)
+{
 	const auto isNestedIn = [](ShPtr<Statement> stmt, ShPtr<Statement> outer) {
-		for (auto p = stmt; p; p = p->getParent()) {
-			if (p == outer) {
+		for (auto p = stmt; p; p = p->getParent())
+		{
+			if (p == outer)
+			{
 				return true;
 			}
 		}
 		return false;
 	};
 
-	if (va->mayBePointed(iVar)) {
+	if (va->mayBePointed(iVar))
+	{
 		return true;
 	}
 
-	for (const auto &use : vuv->getUses(iVar, currFunc)->dirUses) {
+	for (const auto& use: vuv->getUses(iVar, currFunc)->dirUses)
+	{
 		// `tmp = i` and `i = expr` are the two statements being rewritten.
-		if (use == assign1BeforeIf || use == assign2BeforeIf) {
+		if (use == assign1BeforeIf || use == assign2BeforeIf)
+		{
 			continue;
 		}
 
 		// A declaration without an initializer reads nothing.
-		if (auto varDef = cast<VarDefStmt>(use)) {
-			if (varDef->getVar() == iVar && !varDef->getInitializer()) {
+		if (auto varDef = cast<VarDefStmt>(use))
+		{
+			if (varDef->getVar() == iVar && !varDef->getInitializer())
+			{
 				continue;
 			}
 		}
 
 		// The loop end: its condition and its body (the exit path) both run
 		// before the moved assignment.
-		if (isNestedIn(use, loopEnd)) {
+		if (isNestedIn(use, loopEnd))
+		{
 			return true;
 		}
 
 		// Elsewhere in the loop the assignment still runs first.
-		if (isNestedIn(use, loop)) {
+		if (isNestedIn(use, loop))
+		{
 			continue;
 		}
 
@@ -428,7 +440,8 @@ bool PreWhileTrueLoopConvOptimizer::iVarHasReaderTheMoveWouldChange(
 		// so this is conservative: it refuses a read before the loop too.
 		// i cannot be pointed to (checked above), so a dereference or a call
 		// cannot read it behind the statement's back.
-		if (va->getValueData(use)->isDirRead(iVar)) {
+		if (va->getValueData(use)->isDirRead(iVar))
+		{
 			return true;
 		}
 	}

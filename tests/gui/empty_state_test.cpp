@@ -114,8 +114,13 @@ TEST(AddressMenu, ActionsRunAndDisabledItemsDoNot)
 	HeadlessUi h;
 	ui::ContextMenu menu(h.ui);
 	int ran = 0;
-	menu.open(h.ui.root(), {50.f, 50.f},
-	          {{"First", true, [&] { ran += 1; }}, {"-", true, {}}, {"Disabled", false, [&] { ran += 100; }}, {"Last", true, [&] { ran += 10; }}});
+	menu.open(
+		h.ui.root(),
+		{50.f, 50.f},
+		{{"First", true, [&] { ran += 1; }},
+		 {"-", true, {}},
+		 {"Disabled", false, [&] { ran += 100; }},
+		 {"Last", true, [&] { ran += 10; }}});
 	h.frame();
 	ASSERT_TRUE(menu.isOpen());
 	EXPECT_EQ(menu.labels().size(), 4u);

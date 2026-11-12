@@ -1304,8 +1304,8 @@ TEST_F(OptimizerManagerPipelineTests, NewtonSqrtLoopConditionKeepsItsVariableDec
 
 	const auto code = emitC(module);
 	const auto bad = undeclaredLocals(module);
-	EXPECT_TRUE(bad.empty()) << "uses " << (bad.empty() ? std::string() : *bad.begin())
-							 << " without declaring it:\n" << code;
+	EXPECT_TRUE(bad.empty()) << "uses " << (bad.empty() ? std::string() : *bad.begin()) << " without declaring it:\n"
+							 << code;
 
 	// Declared is not the same as right. With the stale reads fixed and
 	// nothing else, the temporary was substituted away and the exit test

@@ -31,7 +31,8 @@ void finish(HeadlessUi& h, const char* name)
 {
 	h.frame(3);
 	EXPECT_GT(h.ui.drawList().size(), 10u);
-	if (const char* dir = std::getenv("RETDEC_GUI_TEST_PNG_DIR")) EXPECT_TRUE(h.writePng(std::string(dir) + "/" + name + ".png"));
+	if (const char* dir = std::getenv("RETDEC_GUI_TEST_PNG_DIR"))
+		EXPECT_TRUE(h.writePng(std::string(dir) + "/" + name + ".png"));
 }
 } // namespace
 
@@ -39,8 +40,9 @@ TEST(CodeRenderPreview, DecompiledC)
 {
 	HeadlessUi h({900.f, 420.f});
 	ui::DecompiledCPanel p(h.ui, h.ui.root());
-	p.setSource("#include <stdint.h>\n\n// Address range: 0x401000 - 0x401030\nint32_t main(int argc, char **argv) {\n"
-	            "    /* entry */\n    int32_t v = 0x10; // 0x401004\n    puts(\"hello\");\n    return v + argc;\n}\n");
+	p.setSource(
+		"#include <stdint.h>\n\n// Address range: 0x401000 - 0x401030\nint32_t main(int argc, char **argv) {\n"
+		"    /* entry */\n    int32_t v = 0x10; // 0x401004\n    puts(\"hello\");\n    return v + argc;\n}\n");
 	p.onFunctionSelected(0x401000, "main");
 	p.showFindBar();
 	p.setFindText("main");
@@ -60,8 +62,10 @@ TEST(CodeRenderPreview, Assembly)
 {
 	HeadlessUi h({900.f, 360.f});
 	ui::AssemblyPanel p(h.ui, h.ui.root());
-	p.setAssemblyText("; function: main at 0x401000\n0x401000:   55                push ebp\n0x401001:   89 e5             mov ebp, esp\n"
-	                  "0x401003:   e8 f8 00 00 00    call 0x401100 ; helper\n0x401008:   c3                ret\n");
+	p.setAssemblyText(
+		"; function: main at 0x401000\n0x401000:   55                push ebp\n0x401001:   89 e5             mov ebp, "
+		"esp\n"
+		"0x401003:   e8 f8 00 00 00    call 0x401100 ; helper\n0x401008:   c3                ret\n");
 	p.navigateTo(0x401003);
 	finish(h, "assembly");
 	// Code views are monospace, so the asm columns line up: equal advances for narrow and wide text.
@@ -118,6 +122,7 @@ TEST(CodeRenderPreview, BinaryBrowserInspectBanner)
 	ip.runFileinfo("/tmp/a.out", "");
 	ui::BinaryBrowserPanel bb(h.ui, h.ui.root());
 	bb.loadBinary("/tmp/a.out");
-	bb.populateFromFileinfo(R"({"sectionTable":{"sections":[{"name":".text","address":"0x401000","offset":"0x0","sizeInFile":"0x20"}]}})");
+	bb.populateFromFileinfo(
+		R"({"sectionTable":{"sections":[{"name":".text","address":"0x401000","offset":"0x0","sizeInFile":"0x20"}]}})");
 	finish(h, "browser_inspect_banner");
 }

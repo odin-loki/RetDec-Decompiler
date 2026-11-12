@@ -48,10 +48,18 @@ public:
 		s_->loaded = true;
 		return true;
 	}
-	void unloadModel() override { s_->loaded = false; }
-	bool isLoaded() const override { return s_->loaded; }
-	model::AssistantGenerationResult generate(const std::string& prompt, const model::AssistantGenerationParams& p,
-	                                          const std::function<bool(std::string_view)>& onPiece) override
+	void unloadModel() override
+	{
+		s_->loaded = false;
+	}
+	bool isLoaded() const override
+	{
+		return s_->loaded;
+	}
+	model::AssistantGenerationResult generate(
+		const std::string& prompt,
+		const model::AssistantGenerationParams& p,
+		const std::function<bool(std::string_view)>& onPiece) override
 	{
 		{
 			std::lock_guard lk(s_->m);
@@ -353,8 +361,9 @@ TEST(DlgAIAssistantModel, ChatMessageAndRoles)
 
 TEST(DlgAIAssistantModel, PromptAndErrorText)
 {
-	EXPECT_EQ(model::buildAssistantPrompt("why?", "foo", "int foo(){}", true),
-	          "Context: function foo\nint foo(){}\n\nQuery: why?");
+	EXPECT_EQ(
+		model::buildAssistantPrompt("why?", "foo", "int foo(){}", true),
+		"Context: function foo\nint foo(){}\n\nQuery: why?");
 	EXPECT_EQ(model::buildAssistantPrompt("why?", "foo", "int foo(){}", false), "why?");
 	EXPECT_EQ(model::buildAssistantPrompt("why?", "foo", "", true), "why?");
 	EXPECT_EQ(model::assistantErrorText("No model loaded"), "Error: No model loaded");
@@ -395,7 +404,9 @@ TEST_F(DlgAIAssistantPanel, StreamsAnswerWithFunctionContext)
 	panel.setActiveFunction("int add(int a, int b) { return a + b; }", "add");
 	t.type(panel.queryInput(), "What does it do?");
 	t.key(fuse::ui::Key::Enter);
-	EXPECT_EQ(panel.lastPrompt(), "Context: function add\nint add(int a, int b) { return a + b; }\n\nQuery: What does it do?");
+	EXPECT_EQ(
+		panel.lastPrompt(),
+		"Context: function add\nint add(int a, int b) { return a + b; }\n\nQuery: What does it do?");
 	ASSERT_TRUE(t.waitUntil([&] { return !panel.inferenceRunning(); }));
 	ASSERT_FALSE(panel.history().empty());
 	const model::ChatMessage& last = panel.history().back();

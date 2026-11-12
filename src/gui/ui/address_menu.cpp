@@ -38,8 +38,10 @@ void ContextMenu::open(NodeHandle owner, Vec2 at, std::vector<MenuAction> action
 	for (NodeHandle n = ui_.firstChild(menu); ui_.alive(n) && i < actions_.size(); n = ui_.nextSibling(n), ++i)
 	{
 		if (actions_[i].label == "-") continue;
-		if (!actions_[i].enabled) ui_.setDisabled(n, true);
-		else if (!firstEnabled.valid()) firstEnabled = n;
+		if (!actions_[i].enabled)
+			ui_.setDisabled(n, true);
+		else if (!firstEnabled.valid())
+			firstEnabled = n;
 	}
 	if (firstEnabled.valid()) ui_.setFocus(firstEnabled, FocusReason::Keyboard);
 	auto* self = this;
@@ -102,16 +104,17 @@ void copyAddressToClipboard(UiContext& ui, uint64_t address)
 	ui.setClipboardText(model::formatAddressHex(address));
 }
 
-std::vector<MenuAction> addressMenuActions(UiContext& ui, std::optional<uint64_t> address, std::function<void(uint64_t)> goToFunction)
+std::vector<MenuAction>
+addressMenuActions(UiContext& ui, std::optional<uint64_t> address, std::function<void(uint64_t)> goToFunction)
 {
 	std::vector<MenuAction> v;
 	UiContext* uip = &ui;
 	v.push_back({kCopyAddressLabel, address.has_value(), [uip, address] {
-		             if (address) copyAddressToClipboard(*uip, *address);
-	             }});
+					 if (address) copyAddressToClipboard(*uip, *address);
+				 }});
 	v.push_back({kGoToFunctionLabel, address.has_value(), [address, goToFunction] {
-		             if (address && goToFunction) goToFunction(*address);
-	             }});
+					 if (address && goToFunction) goToFunction(*address);
+				 }});
 	return v;
 }
 

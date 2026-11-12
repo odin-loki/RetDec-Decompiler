@@ -134,9 +134,9 @@ std::string budgetToolTip(BudgetLevel level, int budgetSecs)
 ProgressTracker::ProgressTracker()
 {
 	clock_ = [] {
-		return static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
-										std::chrono::steady_clock::now().time_since_epoch())
-										.count());
+		return static_cast<int64_t>(
+			std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+				.count());
 	};
 	reset();
 }
@@ -326,21 +326,23 @@ forge::json::value ProgressTracker::exportJsonValue() const
 	array stages;
 	for (const auto& r: rows_)
 	{
-		stages.emplace_back(object{
-			{"name", r.name},
-			{"state", std::string(stageStateName(r.state))},
-			{"elapsed_ms", static_cast<long long>(r.elapsedMs)},
-		});
+		stages.emplace_back(
+			object{
+				{"name", r.name},
+				{"state", std::string(stageStateName(r.state))},
+				{"elapsed_ms", static_cast<long long>(r.elapsedMs)},
+			});
 	}
 	array timeline;
 	for (const auto& t: timings_)
 	{
 		if (t.startMs < 0) continue;
-		timeline.emplace_back(object{
-			{"name", t.name},
-			{"start_ms", static_cast<long long>(t.startMs)},
-			{"duration_ms", static_cast<long long>(t.durationMs)},
-		});
+		timeline.emplace_back(
+			object{
+				{"name", t.name},
+				{"start_ms", static_cast<long long>(t.startMs)},
+				{"duration_ms", static_cast<long long>(t.durationMs)},
+			});
 	}
 	return object{
 		{"elapsed_ms", static_cast<long long>(started_ ? elapsedMs() : 0)},

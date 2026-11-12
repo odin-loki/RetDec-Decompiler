@@ -73,7 +73,8 @@ CodePalette defaultCodePalette()
 	set(TK::Label, Color::rgb(0xf9e2af));        // yellow
 	set(TK::SsaName, Color::rgb(0xcba6f7));      // mauve
 	set(TK::Builtin, Color::rgb(0x94e2d5));      // teal
-	p.console = {Color::rgb(0xcdd6f4), Color::rgb(0xf9e2af), Color::rgb(0xf38ba8), Color::rgb(0x89b4fa), Color::rgb(0xa6e3a1)};
+	p.console = {
+		Color::rgb(0xcdd6f4), Color::rgb(0xf9e2af), Color::rgb(0xf38ba8), Color::rgb(0x89b4fa), Color::rgb(0xa6e3a1)};
 	p.boldTokens[static_cast<std::size_t>(TK::Keyword)] = true;
 	p.boldTokens[static_cast<std::size_t>(TK::Mnemonic)] = true;
 	p.boldConsole[3] = p.boldConsole[4] = true; // banner, footer
@@ -107,7 +108,10 @@ struct CodeView::Glue
 		return reinterpret_cast<CodeView*>(static_cast<std::uintptr_t>(ui.userData(n)));
 	}
 
-	static Size measure(UiContext&, NodeHandle, Size) { return {200.f, 120.f}; }
+	static Size measure(UiContext&, NodeHandle, Size)
+	{
+		return {200.f, 120.f};
+	}
 
 	static bool barGeom(const CodeView& v, Rect c, Rect& track, Rect& thumb)
 	{
@@ -157,8 +161,14 @@ struct CodeView::Glue
 				char num[24];
 				std::snprintf(num, sizeof num, "%d", li + 1);
 				const bool active = li == v->highlight_ || (focused && li == v->caret_.line);
-				ui.paintString(dl, num, {c.x, y, gw - 10.f, lh}, pc.tint(active ? pal.gutterTextActive : pal.gutterText), fs * 0.9f,
-				               TextAlignment::End, pc.node.index);
+				ui.paintString(
+					dl,
+					num,
+					{c.x, y, gw - 10.f, lh},
+					pc.tint(active ? pal.gutterTextActive : pal.gutterText),
+					fs * 0.9f,
+					TextAlignment::End,
+					pc.node.index);
 			}
 		}
 
@@ -170,7 +180,14 @@ struct CodeView::Glue
 		const bool hasSel = !(a == b);
 		const fuse::text::Font* boldFace = styledFont(ui, pc.node, false, true);
 		if (v->isEmpty() && !v->placeholder_.empty())
-			ui.paintString(dl, v->placeholder_, {ta.x + 4.f, c.y, ta.w, lh}, pc.tint(pal.placeholder), fs, TextAlignment::Start, pc.node.index);
+			ui.paintString(
+				dl,
+				v->placeholder_,
+				{ta.x + 4.f, c.y, ta.w, lh},
+				pc.tint(pal.placeholder),
+				fs,
+				TextAlignment::Start,
+				pc.node.index);
 		for (int r = 0; r < vis && v->first_ + r < count; ++r)
 		{
 			const int li = v->first_ + r;
@@ -191,8 +208,15 @@ struct CodeView::Glue
 				const float x = x0 + ui.measureString(L.substr(0, from), fs, pc.node);
 				if (x > ta.right()) return false;
 				const std::string_view part = L.substr(from, to - from);
-				ui.paintString(dl, part, {x, y, ta.right() - x + 2000.f, lh}, pc.tint(col), fs, TextAlignment::Start, pc.node.index,
-				               bold ? boldFace : nullptr);
+				ui.paintString(
+					dl,
+					part,
+					{x, y, ta.right() - x + 2000.f, lh},
+					pc.tint(col),
+					fs,
+					TextAlignment::Start,
+					pc.node.index,
+					bold ? boldFace : nullptr);
 				return true;
 			};
 			if (v->console_)
@@ -207,14 +231,22 @@ struct CodeView::Glue
 				for (const model::TokenSpan& s: spans)
 				{
 					if (!seg(at, s.start, pal.text)) break;
-					if (!seg(s.start, s.start + s.length, pal.tokens[std::size_t(s.kind)], pal.boldTokens[std::size_t(s.kind)])) break;
+					if (!seg(
+							s.start,
+							s.start + s.length,
+							pal.tokens[std::size_t(s.kind)],
+							pal.boldTokens[std::size_t(s.kind)]))
+						break;
 					at = s.start + s.length;
 				}
 				seg(at, L.size(), pal.text);
 			}
 			if (focused && li == v->caret_.line)
 			{
-				const float cx = x0 + ui.measureString(L.substr(0, std::min<std::size_t>(std::size_t(v->caret_.col), L.size())), fs, pc.node);
+				const float cx =
+					x0
+					+ ui.measureString(
+						L.substr(0, std::min<std::size_t>(std::size_t(v->caret_.col), L.size())), fs, pc.node);
 				dl.rect({cx, y + 2.f, 1.5f, lh - 4.f}, pc.tint(pal.caret));
 				ui.setTextCaret(pc.node, {cx, y + 2.f, 1.5f, lh - 4.f});
 			}
@@ -292,8 +324,10 @@ struct CodeView::Glue
 				return true;
 			}
 			if (!v->dragging_) return false;
-			if (e.pos.y < c.y) v->setFirstVisibleLine(v->first_ - 1, true);
-			else if (e.pos.y > c.bottom()) v->setFirstVisibleLine(v->first_ + 1, true);
+			if (e.pos.y < c.y)
+				v->setFirstVisibleLine(v->first_ - 1, true);
+			else if (e.pos.y > c.bottom())
+				v->setFirstVisibleLine(v->first_ + 1, true);
 			const int old = v->caret_.line;
 			v->caret_ = v->hitTest(e.pos);
 			v->caretMoved(old, true);
@@ -352,7 +386,8 @@ struct CodeView::Glue
 			return move(v->caret_);
 		case Key::Right:
 			if (!shift && !(v->caret_ == v->anchor_)) return move(std::max(v->caret_, v->anchor_));
-			if (v->caret_.col < int(L.size())) return move({v->caret_.line, int(nextCp(L, std::size_t(v->caret_.col)))});
+			if (v->caret_.col < int(L.size()))
+				return move({v->caret_.line, int(nextCp(L, std::size_t(v->caret_.col)))});
 			if (v->caret_.line + 1 < count) return move({v->caret_.line + 1, 0});
 			return move(v->caret_);
 		case Key::Home: return move(ctrl ? TextPos{0, 0} : TextPos{v->caret_.line, 0});
@@ -379,7 +414,8 @@ void registerCodeViewClass(UiContext& ui)
 
 // ── CodeView ─────────────────────────────────────────────────────────────────
 
-CodeView::CodeView(UiContext& ui, NodeHandle parent, model::CodeLang lang): ui_(ui), lang_(lang), palette_(defaultCodePalette())
+CodeView::CodeView(UiContext& ui, NodeHandle parent, model::CodeLang lang):
+	ui_(ui), lang_(lang), palette_(defaultCodePalette())
 {
 	ensureRetdecUiClasses(ui);
 	auto made = ui.create(Glue::kName, parent);
@@ -655,8 +691,10 @@ void CodeView::centerOnLine(int line)
 void CodeView::ensureVisible(int line)
 {
 	const int vis = visibleLineCount();
-	if (line < first_) setFirstVisibleLine(line, true);
-	else if (line >= first_ + vis) setFirstVisibleLine(line - vis + 1, true);
+	if (line < first_)
+		setFirstVisibleLine(line, true);
+	else if (line >= first_ + vis)
+		setFirstVisibleLine(line - vis + 1, true);
 }
 
 void CodeView::scrollToEnd()
@@ -696,7 +734,8 @@ TextPos CodeView::hitTest(Vec2 p) const
 
 // ── SyncedCodePane ───────────────────────────────────────────────────────────
 
-SyncedCodePane::SyncedCodePane(UiContext& ui, NodeHandle parent, model::CodeLang lang, std::string_view title): ui_(ui), title_(title)
+SyncedCodePane::SyncedCodePane(UiContext& ui, NodeHandle parent, model::CodeLang lang, std::string_view title):
+	ui_(ui), title_(title)
 {
 	ensureRetdecUiClasses(ui);
 	root_ = w::panel(ui, parent);
@@ -810,9 +849,12 @@ TriPaneCodeView::TriPaneCodeView(UiContext& ui, NodeHandle parent): ui_(ui)
 	ui.setCss(funcLabel_, "flex-grow", "1");
 	w::label(ui, tb, "Lang:");
 	langCombo_ = w::comboBox(ui, tb, "C\nC++\nC#\nJava\nPython\nLua", 0);
-	w::setTooltip(ui, langCombo_,
-	              "View-only syntax highlighting. To change decompiled output: Settings \xE2\x86\x92 Decompiler \xE2\x86\x92 Output "
-	              "language, then re-decompile (F5).");
+	w::setTooltip(
+		ui,
+		langCombo_,
+		"View-only syntax highlighting. To change decompiled output: Settings \xE2\x86\x92 Decompiler \xE2\x86\x92 "
+		"Output "
+		"language, then re-decompile (F5).");
 	findBtn_ = w::toolButton(ui, tb, "Find"); // Qt: ⌕ (U+2315), in none of the bundled faces
 	w::setTooltip(ui, findBtn_, "Find in panes (Ctrl+F)");
 
@@ -845,17 +887,30 @@ TriPaneCodeView::TriPaneCodeView(UiContext& ui, NodeHandle parent): ui_(ui)
 
 	// Wiring.
 	auto* self = this;
-	ui.connect(backBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->navigateBack(); });
-	ui.connect(fwdBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->navigateForward(); });
-	ui.connect(findBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->showFindBar(); });
+	ui.connect(backBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) {
+		self->navigateBack();
+	});
+	ui.connect(fwdBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) {
+		self->navigateForward();
+	});
+	ui.connect(findBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) {
+		self->showFindBar();
+	});
 	ui.connect(findNext_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->findNext(); });
-	ui.connect(findPrev_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->findPrevious(); });
-	ui.connect(findClose_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->hideFindBar(); });
-	ui.connect(findEdit_, SignalKind::Submitted, [self](UiContext&, NodeHandle, const SignalArgs&) { self->findNext(); });
+	ui.connect(findPrev_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) {
+		self->findPrevious();
+	});
+	ui.connect(findClose_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) {
+		self->hideFindBar();
+	});
+	ui.connect(findEdit_, SignalKind::Submitted, [self](UiContext&, NodeHandle, const SignalArgs&) {
+		self->findNext();
+	});
 	ui.connect(langCombo_, SignalKind::ValueChanged, [self](UiContext&, NodeHandle, const SignalArgs& a) {
 		self->setOutputLanguage(static_cast<OutputLang>(std::clamp(int(a.value), 0, 5)));
 		if (self->onStatusMessage)
-			self->onStatusMessage("Change in Settings \xE2\x86\x92 Decompiler \xE2\x86\x92 Output language, then re-decompile.", 4000);
+			self->onStatusMessage(
+				"Change in Settings \xE2\x86\x92 Decompiler \xE2\x86\x92 Output language, then re-decompile.", 4000);
 	});
 
 	asm_->onLineActivated = [self](int l) { self->onLineActivated(model::TriPane::Asm, l); };
@@ -926,7 +981,8 @@ bool TriPaneCodeView::handleEvent(EventContext& ec, const Event& e)
 	return false;
 }
 
-void TriPaneCodeView::loadFunction(uint64_t address, std::string_view asmText, std::string_view irText, std::string_view cText)
+void TriPaneCodeView::loadFunction(
+	uint64_t address, std::string_view asmText, std::string_view irText, std::string_view cText)
 {
 	syncingScroll_ = true;
 	asm_->setContent(asmText);
@@ -951,8 +1007,8 @@ void TriPaneCodeView::setOutputLanguage(OutputLang lang)
 	outputLang_ = lang;
 	c_->setLang(toCodeLang(lang));
 	ui_.setValue(langCombo_, float(static_cast<int>(lang)), false);
-	static constexpr std::string_view kTitles[] = {"Decompiled C",    "Decompiled C++",    "Decompiled C#",
-	                                               "Decompiled Java", "Decompiled Python", "Decompiled Lua"};
+	static constexpr std::string_view kTitles[] = {
+		"Decompiled C", "Decompiled C++", "Decompiled C#", "Decompiled Java", "Decompiled Python", "Decompiled Lua"};
 	c_->setTitle(kTitles[static_cast<int>(lang)]);
 }
 

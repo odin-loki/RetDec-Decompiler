@@ -19,7 +19,10 @@ namespace {
 struct TempDir
 {
 	fs::path path;
-	TempDir() { path = fs::canonical(fs::path(forge::os::fs::make_temp_dir("retdec-gui-tools-").value)); }
+	TempDir()
+	{
+		path = fs::canonical(fs::path(forge::os::fs::make_temp_dir("retdec-gui-tools-").value));
+	}
 	~TempDir()
 	{
 		std::error_code ec;
@@ -37,7 +40,10 @@ void touchExecutable(const fs::path& p, std::string_view content = "#!/bin/sh\ne
 /// Points applicationDirPath() at a fake install for the test.
 class CliToolPaths : public ::testing::Test {
 protected:
-	void TearDown() override { m::setApplicationDirPathOverride({}); }
+	void TearDown() override
+	{
+		m::setApplicationDirPathOverride({});
+	}
 	TempDir tmp;
 };
 
@@ -107,7 +113,8 @@ TEST_F(CliToolPaths, MacBundleLayout)
 	EXPECT_EQ(
 		m::resolveGuiResource("bundle.txt"),
 		tmp.path / "prefix" / "RetDec.app" / "Contents" / "share" / "retdec" / "gui" / "bundle.txt");
-	EXPECT_EQ(m::resolveGuiResource("prefix-only.txt"), tmp.path / "prefix" / "share" / "retdec" / "gui" / "prefix-only.txt");
+	EXPECT_EQ(
+		m::resolveGuiResource("prefix-only.txt"), tmp.path / "prefix" / "share" / "retdec" / "gui" / "prefix-only.txt");
 }
 
 TEST_F(CliToolPaths, GuiResourcesFallBackToTheSourceTree)
@@ -127,6 +134,8 @@ TEST_F(CliToolPaths, InstalledScripts)
 	fs::create_directories(tmp.path / "p" / "share" / "retdec" / "scripts");
 	std::ofstream(tmp.path / "p" / "share" / "retdec" / "scripts" / "retdec_export_intel.py") << "#";
 	m::setApplicationDirPathOverride(bin);
-	EXPECT_EQ(m::resolveRetdecExportIntelScript(), tmp.path / "p" / "share" / "retdec" / "scripts" / "retdec_export_intel.py");
+	EXPECT_EQ(
+		m::resolveRetdecExportIntelScript(),
+		tmp.path / "p" / "share" / "retdec" / "scripts" / "retdec_export_intel.py");
 	EXPECT_TRUE(m::resolveSignatureFromLibraryCreatorScript().empty());
 }

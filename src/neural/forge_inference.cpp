@@ -139,7 +139,8 @@ void useInstalledTemplates()
 	std::error_code ec;
 	if (fs::is_directory(forge::import::template_dir(), ec)) return;
 #if defined(RETDEC_NEURAL_FORGE_TEMPLATES_REL)
-	const fs::path installed = fs::path(retdec::utils::getThisBinaryDirectoryPath()) / RETDEC_NEURAL_FORGE_TEMPLATES_REL;
+	const fs::path installed =
+		fs::path(retdec::utils::getThisBinaryDirectoryPath()) / RETDEC_NEURAL_FORGE_TEMPLATES_REL;
 	if (!fs::is_directory(installed, ec)) return;
 	const std::string v = installed.string();
 #if defined(_WIN32)
@@ -159,8 +160,8 @@ std::string resolveModel(const std::string& path, const std::string& codec)
 {
 	if (!fs::is_directory(path) && !endsWith(path, ".gguf")) return path;
 
-	std::string key = fs::absolute(path).string() + "|" + codec + "|"
-					+ std::to_string(int(forge::modelfile::format_version));
+	std::string key =
+		fs::absolute(path).string() + "|" + codec + "|" + std::to_string(int(forge::modelfile::format_version));
 	auto stamp = [&](const fs::path& f) {
 		key += std::format(
 			"|{}:{}:{}",
@@ -187,12 +188,11 @@ std::string resolveModel(const std::string& path, const std::string& codec)
 	if (!home || !home[0]) home = std::getenv("USERPROFILE");
 #endif
 	const char* cacheEnv = std::getenv("FORGE_CACHE");
-	const fs::path dir = cacheEnv && cacheEnv[0] ? fs::path(cacheEnv)
-											   : fs::path(home && home[0] ? home : "/tmp") / ".cache" / "forge";
+	const fs::path dir =
+		cacheEnv && cacheEnv[0] ? fs::path(cacheEnv) : fs::path(home && home[0] ? home : "/tmp") / ".cache" / "forge";
 	fs::create_directories(dir);
 
-	const auto digest = forge::hash::blake3::of(
-		{reinterpret_cast<const std::uint8_t*>(key.data()), key.size()});
+	const auto digest = forge::hash::blake3::of({reinterpret_cast<const std::uint8_t*>(key.data()), key.size()});
 	const std::string h = forge::hash::blake3::hex(digest).substr(0, 24);
 	// A trailing separator on a directory argument would leave filename() empty.
 	fs::path src = fs::path(path);
@@ -205,8 +205,8 @@ std::string resolveModel(const std::string& path, const std::string& codec)
 		forge::import::import_options o;
 		o.codec = codec;
 		const std::string tmp = out.string() + ".partial";
-		const auto rep = endsWith(path, ".gguf") ? forge::import::import_gguf(path, tmp, o)
-												  : forge::import::import_hf(path, tmp, o);
+		const auto rep =
+			endsWith(path, ".gguf") ? forge::import::import_gguf(path, tmp, o) : forge::import::import_hf(path, tmp, o);
 		fs::rename(tmp, out);
 		std::fprintf(
 			stderr,
@@ -489,9 +489,10 @@ private:
 
 		fi::grammar_constraint* gc = grammarFor(config, tok);
 		bool grammarActive = gc != nullptr && !reasoning;
-		if (gc) smp.filter = [&](std::span<float> l) {
-			if (grammarActive) gc->apply(l);
-		};
+		if (gc)
+			smp.filter = [&](std::span<float> l) {
+				if (grammarActive) gc->apply(l);
+			};
 
 		std::vector<int> history = tokens;
 		std::string out;
@@ -521,8 +522,7 @@ private:
 			history.push_back(t);
 			++nTok;
 
-			if (reasoning && !grammarActive && gc && out.find("</think>") != std::string::npos)
-				grammarActive = true;
+			if (reasoning && !grammarActive && gc && out.find("</think>") != std::string::npos) grammarActive = true;
 			if (grammarActive && gc->finished()) break;
 			if (i + 1 == config.maxTokens || session_->position() >= nCtx) break;
 			logits = session_->forward(std::span<const int>(&t, 1));

@@ -42,11 +42,9 @@ inline const fuse::text::Font& bundledFont()
 	return f;
 }
 
-class Headless
-{
+class Headless {
 public:
-	explicit Headless(fuse::ui::Size viewport = {1200.f, 700.f}):
-		ui(fuse::ui::UiContextDesc{viewport, &bundledFont()})
+	explicit Headless(fuse::ui::Size viewport = {1200.f, 700.f}): ui(fuse::ui::UiContextDesc{viewport, &bundledFont()})
 	{
 		fuse::ui::widgets::install(ui);
 		ui.registerBundledFonts(); // "monospace", bold faces, symbol fallback (as AppWindow)
@@ -96,7 +94,10 @@ public:
 	}
 
 	/// First live node (depth-first from the root) whose text is @p text.
-	fuse::ui::NodeHandle findByText(std::string_view text) const { return findRec(ui.root(), text); }
+	fuse::ui::NodeHandle findByText(std::string_view text) const
+	{
+		return findRec(ui.root(), text);
+	}
 
 	/// Renders the frame; writes `<RETDEC_GUI_TEST_PNG_DIR>/<name>` when that
 	/// variable is set. Returns the number of opaque-ish pixels that differ
