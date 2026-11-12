@@ -22,6 +22,21 @@ DiffCell cellOf(const DiffOp& op, DiffCellKind kind, bool leftSide)
 	return c;
 }
 
+// Intra-line spans of a changed pair, or none when most of both lines changed
+// (the pair is then two different lines, and marking characters is noise).
+IntraLineDiff pairSpans(const std::string& a, const std::string& b)
+{
+	IntraLineDiff d = intraLineDiff(a, b);
+	std::size_t changed = 0;
+	for (const auto& s: d.left)
+		changed += s.end - s.begin;
+	for (const auto& s: d.right)
+		changed += s.end - s.begin;
+	const std::size_t total = a.size() + b.size();
+	if (total == 0 || changed * 10 > total * kIntraLineMaxChangedTenths) return {};
+	return d;
+}
+
 DiffCell placeholder()
 {
 	DiffCell c;
@@ -94,7 +109,7 @@ std::vector<SideBySideRow> buildSideBySide(const DiffResult& diff, bool pairChan
 				r.right = k < ins.size() ? cellOf(*ins[k], DiffCellKind::Added, false) : placeholder();
 				if (k < dels.size() && k < ins.size())
 				{
-					auto intra = intraLineDiff(r.left.text, r.right.text);
+					auto intra = pairSpans(r.left.text, r.right.text);
 					r.left.spans = std::move(intra.left);
 					r.right.spans = std::move(intra.right);
 				}
@@ -140,7 +155,7 @@ std::vector<UnifiedRow> buildUnified(const DiffResult& diff)
 			}
 			for (std::size_t k = 0; k < std::min(delRows.size(), insRows.size()); ++k)
 			{
-				auto intra = intraLineDiff(rows[delRows[k]].text, rows[insRows[k]].text);
+				auto intra = pairSpans(rows[delRows[k]].text, rows[insRows[k]].text);
 				rows[delRows[k]].spans = std::move(intra.left);
 				rows[insRows[k]].spans = std::move(intra.right);
 			}

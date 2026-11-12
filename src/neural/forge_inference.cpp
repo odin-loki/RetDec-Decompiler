@@ -235,19 +235,37 @@ void applyThreadCount()
 #endif
 }
 
-/// The execution device. RETDEC_NEURAL_DEVICE takes Forge's FORGE_DEVICE
-/// syntax ("cpu", "cuda", "cuda:1", "vulkan", "hip", "metal", "pipe:...");
-/// Forge itself already honours FORGE_DEVICE when the model opens. Without
-/// either, a build configured with RETDEC_NEURAL_GPU_OFFLOAD=ON asks for
-/// CUDA. GPU runtimes are loaded at run time, so an unavailable device falls
+/// The GPU a "use the GPU" request maps to: Metal on Apple, CUDA elsewhere.
+const char* defaultGpuDevice()
+{
+#if defined(__APPLE__)
+	return "metal";
+#else
+	return "cuda";
+#endif
+}
+
+/// The execution device, in Forge's FORGE_DEVICE syntax ("cpu", "cuda",
+/// "cuda:1", "vulkan", "hip", "metal", "pipe:...").
+///
+///   RETDEC_NEURAL_DEVICE           wins when set;
+///   FORGE_DEVICE                   Forge applies it itself when the model opens;
+///   RETDEC_NEURAL_N_GPU_LAYERS     the llama.cpp-era knob retdec-gui still sets:
+///                                  0 means the CPU, anything else the GPU;
+///   RETDEC_NEURAL_GPU_OFFLOAD      (CMake) makes the GPU the default.
+///
+/// Forge offloads the whole graph or nothing, so a layer count has no finer
+/// meaning. GPU runtimes are loaded at run time: an unavailable device falls
 /// back to the CPU with a warning rather than failing the load.
 std::string requestedDevice()
 {
 	std::string d = envString("RETDEC_NEURAL_DEVICE");
 	if (!d.empty()) return d;
 	if (std::getenv("FORGE_DEVICE")) return {};
+	const char* layers = std::getenv("RETDEC_NEURAL_N_GPU_LAYERS");
+	if (layers && layers[0]) return envInt("RETDEC_NEURAL_N_GPU_LAYERS", 0) == 0 ? "cpu" : defaultGpuDevice();
 #if defined(RETDEC_NEURAL_GPU_OFFLOAD)
-	return "cuda";
+	return defaultGpuDevice();
 #else
 	return {};
 #endif

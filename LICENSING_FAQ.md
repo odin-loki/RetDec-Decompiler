@@ -23,8 +23,8 @@ The commercial licence has no numbered clauses. Those permissions are the
 bullets under **What you can do**.
 
 Air-gapped operation of the decompiler itself does not require a model download.
-Optional neural refinement is local llama.cpp only (`RETDEC_ENABLE_LLAMACPP` at
-build, `RETDEC_NEURAL_REFINE` at run); see [SECURITY.md](SECURITY.md)
+Optional neural refinement is local Forge inference only (`RETDEC_ENABLE_NEURAL`
+at build, `RETDEC_NEURAL_REFINE` at run); see [SECURITY.md](SECURITY.md)
 (`RETDEC_NO_NETWORK=1`). CUDA acceleration is **not** a product feature
 (`RETDEC_ENABLE_CUDA_ACCEL` defaults OFF and is unintegrated).
 

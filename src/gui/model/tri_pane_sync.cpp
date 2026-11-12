@@ -126,23 +126,9 @@ std::optional<uint64_t> lineAddress(TriPane pane, const std::string& line, const
 {
 	switch (pane)
 	{
-	case TriPane::Asm: {
-		std::string_view s(line);
-		while (!s.empty() && (s.front() == ' ' || s.front() == '\t'))
-			s.remove_prefix(1);
-		const std::size_t colon = s.find(':');
-		if (colon != std::string_view::npos && colon > 0)
-		{
-			std::string_view head = s.substr(0, colon);
-			if (head.size() > 2 && head[0] == '0' && (head[1] == 'x' || head[1] == 'X')) head.remove_prefix(2);
-			if (head.size() >= 4 && std::all_of(head.begin(), head.end(), isHex))
-			{
-				uint64_t v = 0;
-				if (std::from_chars(head.data(), head.data() + head.size(), v, 16).ec == std::errc()) return v;
-			}
-		}
+	case TriPane::Asm:
+		if (auto a = listingAddress(line)) return a;
 		return parseFirstAddress(line);
-	}
 	case TriPane::IR: {
 		if (auto a = commentAddress(line, ";")) return a;
 		if (irMetadata)

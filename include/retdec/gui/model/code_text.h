@@ -84,6 +84,10 @@ std::optional<TextPos> locateFunction(const std::vector<std::string>& lines, uin
 /// First line (0-based) containing "0x<hex address>" (case-insensitive).
 std::optional<int> findAddressLine(const std::vector<std::string>& lines, uint64_t address);
 
+/// Line (0-based) of an assembly listing whose own address is @p address
+/// (listingAddress), else findAddressLine's first line mentioning it.
+std::optional<int> findListingLine(const std::vector<std::string>& lines, uint64_t address);
+
 /// Writes @p text (UTF-8) to @p path, truncating. Reports write, flush and
 /// close failures, not only open failures.
 std::expected<void, std::string> saveTextFile(const std::filesystem::path& path, std::string_view text);

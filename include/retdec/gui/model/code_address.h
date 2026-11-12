@@ -33,9 +33,13 @@ uint64_t parseHexU64(std::string_view text);
  * tokens on the line the last one is the target (the first is the line's own
  * address); otherwise the first address after the mnemonic. nullopt when the
  * line is not a branch, has no target, or the target is the line's own
- * address.
+ * address (the first 0x token before the mnemonic).
  */
 std::optional<uint64_t> jumpTarget(std::string_view line);
+
+/// Address of an assembly listing line: its leading "0x401000:" /
+/// "401000:" token (at least 4 hex digits), nullopt for other lines.
+std::optional<uint64_t> listingAddress(std::string_view line);
 
 /// True when @p line contains a call / jmp / jcc mnemonic as a whole word.
 bool isBranchLine(std::string_view line);

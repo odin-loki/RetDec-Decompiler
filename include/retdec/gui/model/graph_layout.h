@@ -119,10 +119,11 @@ struct ForceNode
 	float x = 0.f, y = 0.f;
 	float fx = 0.f, fy = 0.f; ///< force accumulator (scratch)
 };
-/// Fruchterman-Reingold spring embedding (the Qt panel's constants: area 900^2 * sqrt(n), linear cooling).
-/// Above `gridThreshold` nodes, repulsion is limited to a 2k neighbourhood on a uniform grid (O(n) per iteration).
+/// Fruchterman-Reingold spring embedding as in the Qt panel (attraction d^2/k, repulsion k^2/d, temperature
+/// sqrt(area)/4 cooled linearly), with ideal edge length `idealEdge` (area = k^2 n). Above `gridThreshold` nodes,
+/// repulsion is limited to a 2k neighbourhood on a uniform grid (O(n) per iteration).
 void forceDirectedLayout(std::vector<ForceNode>& nodes, const std::vector<EdgeRef>& edges, int iterations = 60,
-	size_t gridThreshold = 400);
+	size_t gridThreshold = 400, double idealEdge = 170.0);
 
 } // namespace retdec::gui::model
 

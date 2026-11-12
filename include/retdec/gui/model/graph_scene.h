@@ -231,7 +231,7 @@ struct ViewTransform
 
 	GPoint toView(GPoint s) const { return {(s.x - origin.x) * zoom, (s.y - origin.y) * zoom}; }
 	GPoint toScene(GPoint v) const { return {v.x / zoom + origin.x, v.y / zoom + origin.y}; }
-	GRect toView(const GRect& r) const { return {(r.x - origin.x) * zoom, (r.y - origin.y) * zoom, r.w * zoom, r.h * zoom}; }
+	GRect toViewRect(const GRect& r) const { return {(r.x - origin.x) * zoom, (r.y - origin.y) * zoom, r.w * zoom, r.h * zoom}; }
 	/// The scene rectangle visible in a viewport of size w x h.
 	GRect visibleScene(float w, float h) const { return {origin.x, origin.y, w / zoom, h / zoom}; }
 

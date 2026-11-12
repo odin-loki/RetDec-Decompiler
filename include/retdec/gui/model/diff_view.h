@@ -28,6 +28,9 @@ inline constexpr uint32_t kDiffPlaceholderBg = 0x181825;
 inline constexpr uint32_t kDiffRemovedSpanBg = 0x7a2a2a; ///< intra-line: removed characters
 inline constexpr uint32_t kDiffAddedSpanBg = 0x2a6a2a;   ///< intra-line: added characters
 inline constexpr uint32_t kDiffLineNumberFg = 0x555577;
+/// A changed line pair gets intra-line spans only when at most this many
+/// tenths of its characters changed.
+inline constexpr std::size_t kIntraLineMaxChangedTenths = 6;
 
 enum class DiffCellKind : uint8_t
 {
@@ -54,7 +57,8 @@ struct SideBySideRow
 /**
  * One row per left/right line pair. Within a run of changes the k-th deleted
  * line is paired with the k-th inserted one (both get intra-line spans); the
- * longer side's surplus faces a placeholder. With @p pairChanges false every
+ * longer side's surplus faces a placeholder. Spans are dropped when more than
+ * kIntraLineMaxChangedTenths / 10 of a pair changed. With @p pairChanges false every
  * op gets its own row (the Qt layout: deletes then inserts, each facing a
  * placeholder).
  */

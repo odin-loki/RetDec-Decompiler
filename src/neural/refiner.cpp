@@ -7,8 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
-#include <iterator>
+#include <cstdint>
 #include <string>
 #include <system_error>
 
@@ -18,6 +17,10 @@
 #include <rapidjson/document.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
+
+#include <forge/hash/blake3.hpp>
+#include <forge/os/fs.hpp>
+#include <forge/os/os.hpp>
 
 namespace retdec::neural {
 
@@ -193,7 +196,10 @@ std::string cacheKeyHex(const std::string& prompt, const GenerationConfig& gen, 
 	blob += gen.grammarGbnf;
 	blob += '\n';
 	blob += prompt;
-	return sha256HexOfBytes(blob.data(), blob.size());
+	// An internal cache key, not a published digest (the N9 manifest's
+	// input/output hashes stay SHA-256): Forge's BLAKE3, 64 hex digits.
+	return forge::hash::blake3::hex(forge::hash::blake3::of(
+		{reinterpret_cast<const std::uint8_t*>(blob.data()), blob.size()}));
 }
 
 bool readCacheFile(const std::string& dir, const std::string& key, std::string* out)
@@ -202,9 +208,9 @@ bool readCacheFile(const std::string& dir, const std::string& key, std::string* 
 	std::error_code ec;
 	const auto path = std::filesystem::path(dir) / (key + ".txt");
 	if (!std::filesystem::is_regular_file(path, ec)) return false;
-	std::ifstream in(path, std::ios::binary);
-	if (!in) return false;
-	out->assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+	auto text = forge::os::read_file(path.string());
+	if (!text) return false;
+	*out = std::move(text.value);
 	return !out->empty();
 }
 
@@ -215,9 +221,10 @@ void writeCacheFile(const std::string& dir, const std::string& key, const std::s
 	std::filesystem::create_directories(dir, ec);
 	if (ec) return;
 	const auto path = std::filesystem::path(dir) / (key + ".txt");
-	std::ofstream out(path, std::ios::binary | std::ios::trunc);
-	if (!out) return;
-	out.write(text.data(), static_cast<std::streamsize>(text.size()));
+	// Atomic (temp file + fsync + rename): the cache directory is shared by
+	// concurrent refinements and decompiler runs, and a reader must see a
+	// whole entry or none -- a torn one would be taken for a cache hit.
+	(void)forge::os::fs::write_file_atomic(path.string(), text);
 }
 
 bool isForbiddenRenameIdent(const std::string& s)

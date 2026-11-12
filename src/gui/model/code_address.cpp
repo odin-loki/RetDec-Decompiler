@@ -62,7 +62,7 @@ constexpr std::array<std::string_view, 16> kBranches = {
 	"call", "jmp", "je", "jne", "jz", "jnz", "ja", "jb", "jae", "jbe", "jg", "jl", "jge", "jle", "jo", "js"};
 
 /// End offset of the first branch mnemonic (whole word, case-insensitive), npos if none.
-std::size_t branchEnd(std::string_view line)
+std::size_t branchEnd(std::string_view line, std::size_t* start = nullptr)
 {
 	std::size_t i = 0;
 	while (i < line.size())
@@ -79,7 +79,11 @@ std::size_t branchEnd(std::string_view line)
 		for (char& c: w)
 			c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 		for (std::string_view b: kBranches)
-			if (w == b) return e;
+			if (w == b)
+			{
+				if (start) *start = i;
+				return e;
+			}
 		i = e;
 	}
 	return std::string_view::npos;
@@ -102,6 +106,20 @@ uint64_t parseHexU64(std::string_view text)
 	return parseAddressInput(text).value_or(0);
 }
 
+std::optional<uint64_t> listingAddress(std::string_view line)
+{
+	while (!line.empty() && (line.front() == ' ' || line.front() == '\t'))
+		line.remove_prefix(1);
+	const std::size_t colon = line.find(':');
+	if (colon == std::string_view::npos || colon == 0) return std::nullopt;
+	std::string_view head = line.substr(0, colon);
+	if (head.size() > 2 && head[0] == '0' && (head[1] == 'x' || head[1] == 'X')) head.remove_prefix(2);
+	if (head.size() < 4) return std::nullopt;
+	for (char c: head)
+		if (!isHex(c)) return std::nullopt;
+	return parseHexDigits(head);
+}
+
 bool isBranchLine(std::string_view line)
 {
 	return branchEnd(line) != std::string_view::npos;
@@ -109,9 +127,12 @@ bool isBranchLine(std::string_view line)
 
 std::optional<uint64_t> jumpTarget(std::string_view line)
 {
-	const std::size_t insnEnd = branchEnd(line);
+	std::size_t insnStart = 0;
+	const std::size_t insnEnd = branchEnd(line, &insnStart);
 	if (insnEnd == std::string_view::npos) return std::nullopt;
-	const auto current = parseFirstAddress(line);
+	// The line's own address precedes the mnemonic (the Qt version took the
+	// first 0x token anywhere, so a line without one could never be followed).
+	const auto current = parseFirstAddress(line.substr(0, insnStart));
 	const auto toks = hexTokens(line);
 	std::optional<uint64_t> target;
 	if (toks.size() >= 2)

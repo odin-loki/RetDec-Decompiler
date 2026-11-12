@@ -19,7 +19,9 @@ add_library(retdec-neural STATIC
 # the way cmake/tree_sitter.cmake does for tree-sitter.
 target_sources(retdec-neural PRIVATE forge_inference.cpp)
 target_link_libraries(retdec-neural PRIVATE $<BUILD_INTERFACE:retdec::forge_inference>)
-target_link_libraries(retdec-neural INTERFACE $<INSTALL_INTERFACE:forge_simd_mv>)
+# Not a target name in this build (that would make install(EXPORT) demand
+# forge_simd_mv in the export set); the installed config declares it.
+target_link_libraries(retdec-neural INTERFACE $<INSTALL_INTERFACE:retdec-forge-simd-mv>)
 target_compile_definitions(retdec-neural PRIVATE RETDEC_HAS_FORGE_INFERENCE)
 if(RETDEC_NEURAL_GPU_OFFLOAD)
     target_compile_definitions(retdec-neural PRIVATE RETDEC_NEURAL_GPU_OFFLOAD)

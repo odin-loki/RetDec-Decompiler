@@ -287,6 +287,11 @@ Mechanics:
 
 ## 6. Phase 4 — Qwen 3.5 9B on llama.cpp (shipped)
 
+> Superseded: the backend is now Forge (`third_party/forge`,
+> `src/neural/forge_inference.cpp`); llama.cpp and `deps/llamacpp` are gone.
+> GGUF models are imported once into Forge's cache. The section below is the
+> history of the llama.cpp phase.
+
 Qwen 3.6 has no 9B (27B / 35B only). The 9B Instruct path is **Qwen 3.5**.
 
 ### Shipped

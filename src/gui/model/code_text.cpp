@@ -5,6 +5,8 @@
 
 #include "retdec/gui/model/code_text.h"
 
+#include "retdec/gui/model/code_address.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -229,6 +231,13 @@ std::optional<int> findAddressLine(const std::vector<std::string>& lines, uint64
 	for (std::size_t i = 0; i < lines.size(); ++i)
 		if (findIn(lines[i], needle, 0, true, false) != std::string_view::npos) return static_cast<int>(i);
 	return std::nullopt;
+}
+
+std::optional<int> findListingLine(const std::vector<std::string>& lines, uint64_t address)
+{
+	for (std::size_t i = 0; i < lines.size(); ++i)
+		if (listingAddress(lines[i]) == address) return static_cast<int>(i);
+	return findAddressLine(lines, address);
 }
 
 std::expected<void, std::string> saveTextFile(const std::filesystem::path& path, std::string_view text)

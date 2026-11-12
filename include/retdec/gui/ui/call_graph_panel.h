@@ -3,8 +3,8 @@
  * @brief Zoomable, filterable call-graph panel (FuseUI port of the Qt CallGraphPanel).
  *
  * Filter row: name filter (glob, or substring without wildcards), Min calls, Depth (0 = all), Hide lib, module combo,
- * Focus hops, Clear Focus. View row: layout (Force-directed / Layered), Collapse SCCs, focus and info labels, Fit, 100%,
- * Export DOT / SVG / PNG. Body: GraphView with minimap.
+ * Focus hops, Clear Focus. View row: find box (highlights matches), layout (Force-directed / Layered), Collapse SCCs,
+ * Minimap, focus and info labels, Fit, 100%, Export DOT / SVG / PNG. Body: GraphView with minimap.
  *
  * Nodes: rounded boxes sized by instruction count with a module colour stripe (library functions muted), SCC
  * super-nodes (dashed peach "SCC [n]"), module cluster backdrops; edges weighted by call count, dashed for indirect
@@ -100,6 +100,7 @@ public:
 	fuse::ui::NodeHandle hopsSpin() const { return m_hops; }
 	fuse::ui::NodeHandle clearFocusButton() const { return m_clearFocus; }
 	fuse::ui::NodeHandle layoutCombo() const { return m_layoutCombo; }
+	fuse::ui::NodeHandle findBox() const { return m_find; }
 	fuse::ui::NodeHandle collapseSccsCheck() const { return m_collapse; }
 	fuse::ui::NodeHandle fitButton() const { return m_fitBtn; }
 	fuse::ui::NodeHandle resetButton() const { return m_resetBtn; }
@@ -126,7 +127,7 @@ private:
 	fuse::ui::UiContext& m_ui;
 	fuse::ui::NodeHandle m_root;
 	fuse::ui::NodeHandle m_nameFilter, m_minCalls, m_depth, m_hideLib, m_module, m_hops, m_clearFocus;
-	fuse::ui::NodeHandle m_layoutCombo, m_collapse, m_minimapCheck, m_focusLabel, m_infoLabel;
+	fuse::ui::NodeHandle m_find, m_layoutCombo, m_collapse, m_minimapCheck, m_focusLabel, m_infoLabel;
 	fuse::ui::NodeHandle m_fitBtn, m_resetBtn, m_dotBtn, m_svgBtn, m_pngBtn;
 	std::unique_ptr<GraphView> m_view;
 	std::unique_ptr<SavePrompt> m_prompt;

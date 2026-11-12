@@ -73,8 +73,9 @@ option(RETDEC_ENABLE_CUDA_ACCEL "Build CUDA acceleration layer (CUDAContext, GPU
 option(RETDEC_ENABLE_NEURAL "Build neural refinement library (Forge inference backend, third_party/forge)" ON)
 # Forge loads GPU runtimes (CUDA, HIP, Vulkan, ...) at run time and needs no
 # GPU SDK to build. This only changes the default device: ON asks Forge for
-# CUDA, with a CPU fallback; RETDEC_NEURAL_DEVICE / FORGE_DEVICE override it.
-option(RETDEC_NEURAL_GPU_OFFLOAD "Default neural inference to Forge's CUDA device (CPU fallback)" OFF)
+# the GPU (Metal on Apple, CUDA elsewhere) with a CPU fallback;
+# RETDEC_NEURAL_DEVICE / FORGE_DEVICE override it at run time.
+option(RETDEC_NEURAL_GPU_OFFLOAD "Default neural inference to Forge's GPU device (CPU fallback)" OFF)
 option(RETDEC_ENABLE_XSIMD "Fetch xsimd and vectorize confirmed-hot byte scans" OFF)
 option(RETDEC_ENABLE_LIEF "Build LIEF adapter for incremental fileformat migration (step 29)" OFF)
 # RETDEC_ENABLE_RELLIC used to be declared here. Nothing read it -- not this

@@ -30,12 +30,12 @@ std::string aboutMarkdown()
 		   "Synced), Workspace (Strings, Inspect, Binary) on the right, Output (Console, Problems, History, Progress) "
 		   "at the bottom.\n"
 		   "\n"
-		   "Centre tabs: **Ctrl+1**…**Ctrl+5**. Console: **Ctrl+`**; Problems: **Ctrl+Shift+`**.\n"
+		   "Centre tabs: **Ctrl+1**…**Ctrl+5**. Console: **Ctrl+Backtick**; Problems: **Ctrl+Shift+Backtick**.\n"
 		   "\n"
 		   "**Ctrl+S** saves decompiled C; **Ctrl+Shift+S** saves the project. **F5** runs full analysis; "
 		   "**Ctrl+,** opens Settings.\n"
 		   "\n"
-		   "File → Batch Decompile queues multiple binaries. Tools → Call Graph / Type Hierarchy / AI Assistant "
+		   "File -> Batch Decompile queues multiple binaries. Tools -> Call Graph / Type Hierarchy / AI Assistant "
 		   "open in separate windows.\n"
 		   "\n"
 		   "Theme: Catppuccin Latte (light), Mocha (dark), or System Default | FuseUI\n";
@@ -63,7 +63,7 @@ const std::vector<ShortcutGroup>& keyboardShortcutGroups()
 		  {"F", "Assembly panel: find in disassembly (when focused)"},
 		  {"Ctrl+F", "Decompiled C / Synced tab: find in source"},
 		  {"F3 / Shift+F3", "Decompiled C: find next / previous"},
-		  {"Alt+← / Alt+→", "Synced tab: navigation history"}}},
+		  {"Alt+Left / Alt+Right", "Synced tab: navigation history"}}},
 	};
 	return k;
 }

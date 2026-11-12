@@ -79,7 +79,7 @@ void paintScene(UiContext& ui, DrawList& dl, const model::GraphScene& sc, const 
 		return Vec2{offset.x + v.x, offset.y + v.y};
 	};
 	auto R = [&](const GRect& r) {
-		const GRect v = t.toView(r);
+		const GRect v = t.toViewRect(r);
 		return Rect{offset.x + v.x, offset.y + v.y, v.w, v.h};
 	};
 
@@ -102,7 +102,11 @@ void paintScene(UiContext& ui, DrawList& dl, const model::GraphScene& sc, const 
 		if (!e.visible || e.polyline.size() < 2 || !e.bounds.intersects(vis)) continue;
 		const bool hot = (st.hovered && (*st.hovered == e.from || *st.hovered == e.to))
 			|| (st.selected && (*st.selected == e.from || *st.selected == e.to));
-		const Color c = graphColor(e.color, e.opacity);
+		// Translucent edges are pre-blended over the background: segment joints would otherwise double the alpha
+		// and bead the line.
+		const float a = float(model::rgbaA(e.color)) / 255.f * e.opacity;
+		const Color raw = graphColor(e.color), bg = graphColor(sc.background);
+		const Color c{raw.r * a + bg.r * (1.f - a), raw.g * a + bg.g * (1.f - a), raw.b * a + bg.b * (1.f - a), 1.f};
 		const float w = std::max(0.75f, e.width * z * (hot ? 1.6f : 1.f));
 		if (e.dashed)
 		{
@@ -198,7 +202,7 @@ struct GraphView::Impl
 	{
 		const uint64_t k = ui.alive(n) ? ui.userData(n) : 0;
 		auto& v = views();
-		if (k == 0 || k > v.size() || !v[k - 1] || v[k - 1]->m_node != n) return nullptr;
+		if (k == 0 || k > v.size() || !v[k - 1] || v[k - 1]->m_node != n || &v[k - 1]->m_ui != &ui) return nullptr;
 		return v[k - 1];
 	}
 	static fuse::ui::Size measure(UiContext&, NodeHandle, fuse::ui::Size) { return {320.f, 240.f}; }

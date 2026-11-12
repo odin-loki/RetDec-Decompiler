@@ -70,6 +70,12 @@ CallGraphPanel::CallGraphPanel(UiContext& ui, NodeHandle parent): m_ui(ui)
 
 	// ── View row ─────────────────────────────────────────────────────────────
 	const NodeHandle row2 = graphToolbarRow(ui, m_root);
+	m_find = w::lineEdit(ui, row2, "");
+	ui.setCss(m_find, "width", "140px");
+	ui.setCss(m_find, "font-size", "12px");
+	ui.setCss(m_find, "padding", "2px 6px");
+	ui.setA11y(m_find, fuse::ui::A11yRole::TextField, "Find function");
+	w::setTooltip(ui, m_find, "Find: highlight matching functions (Enter centres the first)");
 	m_layoutCombo = w::comboBox(ui, row2, "Force-directed\nLayered", 0);
 	ui.setCss(m_layoutCombo, "font-size", "12px");
 	ui.setCss(m_layoutCombo, "padding", "2px 6px");
@@ -94,6 +100,10 @@ CallGraphPanel::CallGraphPanel(UiContext& ui, NodeHandle parent): m_ui(ui)
 	// ── Wiring ───────────────────────────────────────────────────────────────
 	ui.connect(m_nameFilter, SignalKind::TextChanged,
 		[this](UiContext&, NodeHandle, const SignalArgs& a) { setNameFilter(std::string(a.text)); });
+	ui.connect(m_find, SignalKind::TextChanged,
+		[this](UiContext&, NodeHandle, const SignalArgs& a) { search(std::string(a.text)); });
+	ui.connect(m_find, SignalKind::Submitted,
+		[this](UiContext&, NodeHandle, const SignalArgs& a) { search(std::string(a.text)); });
 	ui.connect(m_minCalls, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) {
 		if (!m_updating) setMinCallCount(int(std::lround(a.value)));
 	});
@@ -274,6 +284,8 @@ void CallGraphPanel::clear()
 	m_updating = true;
 	m_ui.editBuffer(m_nameFilter).setText("");
 	m_ui.setText(m_nameFilter, "");
+	m_ui.editBuffer(m_find).setText("");
+	m_ui.setText(m_find, "");
 	m_ui.setValue(m_minCalls, 0.f);
 	m_ui.setValue(m_depth, 0.f);
 	m_ui.setChecked(m_hideLib, false);

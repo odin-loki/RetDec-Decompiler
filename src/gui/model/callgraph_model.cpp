@@ -58,6 +58,31 @@ std::string htmlEscape(std::string_view s)
 	return out;
 }
 
+/// Cubic route between two boxes: vertical ports (bottom -> top) when the target is clearly below, top -> bottom when
+/// clearly above (layered: an arc on the left instead), side ports when the boxes are mostly side by side.
+std::vector<GPoint> routeBetween(const GRect& fr, const GRect& tr, bool layered)
+{
+	const GPoint fc = fr.center(), tc = tr.center();
+	const float dx = tc.x - fc.x, dy = tc.y - fc.y;
+	const bool below = tr.y >= fr.bottom() + 4.f, above = tr.bottom() <= fr.y - 4.f;
+	if (layered && !below)
+	{
+		const GPoint from{fr.x, fc.y}, to{tr.x, tc.y};
+		const float leftX = std::min(fr.x, tr.x) - 50.f;
+		return {from, {leftX, from.y}, {leftX, to.y}, to};
+	}
+	if (below || (above && std::abs(dy) >= std::abs(dx) * 0.35f))
+	{
+		const GPoint from{fc.x, below ? fr.bottom() : fr.y}, to{tc.x, below ? tr.y : tr.bottom()};
+		const float cy = (from.y + to.y) * 0.5f;
+		return {from, {from.x, cy}, {to.x, cy}, to};
+	}
+	const bool right = dx >= 0.f;
+	const GPoint from{right ? fr.right() : fr.x, fc.y}, to{right ? tr.x : tr.right(), tc.y};
+	const float cx = (from.x + to.x) * 0.5f;
+	return {from, {cx, from.y}, {cx, to.y}, to};
+}
+
 } // namespace
 
 void CallGraphModel::clearGraph()
@@ -299,10 +324,6 @@ void CallGraphModel::relayout()
 		const uint64_t u = resolve(e.callerAddress), v = resolve(e.calleeAddress);
 		if (u == v || !drawnEdges.insert({u, v}).second) continue;
 		const GRect fr = rectOf[u], tr = rectOf[v];
-		const bool sccEnd = m_sccMembers.count(u) || m_sccMembers.count(v);
-		GPoint from = sccEnd ? fr.center() : GPoint{fr.center().x, fr.bottom()};
-		GPoint to = sccEnd ? tr.center() : GPoint{tr.center().x, tr.y};
-		if (m_sccMembers.count(u) && !m_sccMembers.count(v)) to = tr.center();
 		SceneEdge se;
 		se.from = u;
 		se.to = v;
@@ -315,16 +336,7 @@ void CallGraphModel::relayout()
 		se.kind = e.isDirect ? 0 : 1;
 		se.arrowLength = 9.f;
 		se.arrowHalfWidth = 4.5f;
-		if (m_mode == CallGraphLayoutMode::Layered && to.y < from.y)
-		{
-			const float leftX = std::min(fr.x, tr.x) - 50.f;
-			se.points = {from, {leftX, from.y + 20.f}, {leftX, to.y - 20.f}, to};
-		}
-		else
-		{
-			const float cy = (from.y + to.y) * 0.5f;
-			se.points = {from, {from.x, cy}, {to.x, cy}, to};
-		}
+		se.points = routeBetween(fr, tr, m_mode == CallGraphLayoutMode::Layered);
 		m_scene.edges.push_back(std::move(se));
 		m_edgeCalls.push_back(count);
 	}

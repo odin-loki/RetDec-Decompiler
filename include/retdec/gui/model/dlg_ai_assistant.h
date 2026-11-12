@@ -56,7 +56,7 @@ inline constexpr std::string_view kAssistantNoBackend =
 inline constexpr std::string_view kAssistantEnableHint =
 	"To enable it, configure RetDec with -DRETDEC_ENABLE_NEURAL=ON (the default in a full build; the standalone "
 	"GUI build has no backend), rebuild retdec-gui, then load a .gguf model here or set its path in "
-	"Settings → ML.";
+	"Settings -> ML.";
 /// First message of a build with a backend.
 inline constexpr std::string_view kAssistantLoadHint = "Load a Qwen 3.5 9B Q4_K_M GGUF to use the assistant.";
 

@@ -11,7 +11,7 @@ recovered C pseudocode is a supporting artefact, not the headline.
 
 Built on upstream [RetDec](https://github.com/avast/retdec) v5.0 (dormant since
 2022), this fork adds semantic library recovery, a GUI (FuseUI), default-on offline
-neural refinement (llama.cpp; `RETDEC_NEURAL_REFINE=0` disables), packaged Linux /
+neural refinement (Forge; `RETDEC_NEURAL_REFINE=0` disables), packaged Linux /
 macOS / Windows installs, and structured algorithm/concurrency/serialisation
 detection no stock decompiler ships. Dual-licensed AGPL-3.0+ / commercial
 (Imortek).
@@ -152,8 +152,11 @@ Not in `decompile()`: `CudaHostRecovery` (tests only), `src/idiom_reconstruct/`,
 
 ### Offline neural refinement
 
-Optional verified, air-gapped refinement via **llama.cpp** and GGUF models.
-Release installers link llama.cpp. Refine is **on by default** when
+Optional verified, air-gapped refinement on **Forge** (`third_party/forge`, the
+vendored inference library; CPU by default, GPU runtimes loaded at run time)
+with GGUF, Hugging Face or `.fpk` models. A GGUF or Hugging Face model is
+imported once into Forge's cache (`$FORGE_CACHE`, default `~/.cache/forge`),
+as `forge run` does. Refine is **on by default** when
 `share/retdec/models/Qwen3.5-9B-Q4_K_M.gguf` is present (or
 `RETDEC_NEURAL_MODEL`). Disable with `RETDEC_NEURAL_REFINE=0`.
 The tested Unsloth `Qwen3.5-9B-Q4_K_M.gguf` SHA is in `support/models.json`;
@@ -487,7 +490,7 @@ retdec-decompiler classes.dex -o decompiled.java
 # Decompile WebAssembly to WAT
 retdec-decompiler module.wasm -o module.wat
 
-# Decompile with offline neural refine (llama.cpp build + 9B Instruct GGUF)
+# Decompile with offline neural refine (Forge backend + 9B Instruct GGUF)
 export RETDEC_NEURAL_REFINE=1
 export RETDEC_NEURAL_MODEL=models/Qwen3.5-9B-Q4_K_M.gguf
 retdec-decompiler binary.elf -o output.c
@@ -520,7 +523,7 @@ retdec-decompiler binary.elf -o output.c
 | [docs/STANDALONE_CHECK.md](docs/STANDALONE_CHECK.md) | LLVM-free compile + unit suites |
 | [docs/FUZZING.md](docs/FUZZING.md) | Parser fuzz harnesses and crash corpus |
 | [docs/VERIFICATION.md](docs/VERIFICATION.md) | 286 ESBMC proofs over 14 verified kernels — what is proved, which solver proved it, and what is not |
-| [docs/NEURAL_REFINEMENT.md](docs/NEURAL_REFINEMENT.md) | Optional llama.cpp refine, gates, model allowlist |
+| [docs/NEURAL_REFINEMENT.md](docs/NEURAL_REFINEMENT.md) | Optional neural refine (Forge), gates, model allowlist |
 | [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) | Untrusted-input model; no in-tree sandbox |
 | [docs/CUDA_CAPABILITIES.md](docs/CUDA_CAPABILITIES.md) | Experimental CUDA accel (default OFF, unintegrated) |
 | [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | Profiling and perf-nightly |

@@ -115,12 +115,15 @@ src/patterngen/pattern_extractor/types/symbol_pattern.cpp|needs yaramod built fr
 src/yaracpp/yara_detector.cpp|needs YARA built from deps/
 src/utils/binary_path.cpp|needs deps/whereami built as C
 src/utils/version.cpp|needs the RETDEC_GIT_* defines only the CMake build sets
+src/neural/forge_inference.cpp|needs Forge's inference stack (generated op tables, forge_simd_mv), which only CMake builds; mock_inference.cpp's null createForgeInference() stands in
 "
 
 LLVM_FLAGS="$("${LLVM_CONFIG}" --cxxflags | tr ' ' '\n' | grep -E '^-I|^-D' | tr '\n' ' ')"
 INC="-Iinclude -Isrc -Itests -Ideps/rapidjson/include -Ideps/elfio/include \
 	-Ideps/tlsh/include -Ideps/tinyxml2/include -Ideps/stb/include \
-	-Ideps/authenticode-parser/include -Ideps/eigen -DRAPIDJSON_HAS_STDSTRING=1"
+	-Ideps/authenticode-parser/include -Ideps/eigen -DRAPIDJSON_HAS_STDSTRING=1 \
+	-isystem third_party/forge/core/include -isystem third_party/forge/os/include \
+	-isystem third_party/forge/support/include"
 # Same prefix OPT-01 uses. Without it, noble's Capstone 4 fails the include
 # of capstone/riscv.h in asm_instruction.h.
 if [ -n "${CAPSTONE_CI_INCLUDE:-}" ]; then
@@ -212,11 +215,11 @@ fi
 g++ -std=c++23 -O0 -w ${INC} ${LLVM_FLAGS} -c scripts/ci/b2l_dwarf_stub.cpp \
 	-o "${WORKDIR}/dwarf_stub.o" || die "the DWARF stub did not compile"
 
-# mock_inference and neural_refine_stub are the build's stand-ins for
-# llama_inference and decompile_hook; taking both of each pair is a duplicate
-# definition, so the real ones win.
+# neural_refine_stub is the build's stand-in for decompile_hook; taking both
+# is a duplicate definition, so the real one wins. (mock_inference stays: with
+# forge_inference.cpp not built here, its null createForgeInference() is the
+# only definition.)
 mapfile -t ARCHIVE_OBJS < <(ls "${WORKDIR}"/obj/*.o \
-	| grep -v 'src_neural_mock_inference\.o$' \
 	| grep -v 'src_retdec_neural_refine_stub\.o$')
 rm -f "${WORKDIR}/libretdec.a"
 if ! ar rcs "${WORKDIR}/libretdec.a" "${ARCHIVE_OBJS[@]}" 2>"${WORKDIR}/ar.err"; then

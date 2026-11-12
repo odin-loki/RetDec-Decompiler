@@ -107,7 +107,7 @@ void AssemblyPanel::updateEmptyState()
 void AssemblyPanel::scrollToAddress(uint64_t address)
 {
 	if (view_->isEmpty()) return;
-	if (auto line = model::findAddressLine(view_->lines(), address))
+	if (auto line = model::findListingLine(view_->lines(), address))
 	{
 		view_->setCaret({*line, 0});
 		view_->centerOnLine(*line);
@@ -194,7 +194,7 @@ bool AssemblyPanel::followJump()
 	const std::string_view line = view_->line(view_->caret().line);
 	const auto target = model::jumpTarget(line);
 	if (!target) return false;
-	if (const auto current = model::parseFirstAddress(line)) navStack_.push_back(*current);
+	if (const auto current = model::parseFirstAddress(line); current && *current != *target) navStack_.push_back(*current);
 	navigateTo(*target);
 	return true;
 }

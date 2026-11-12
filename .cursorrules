@@ -27,7 +27,7 @@
 - Proposed public header change to fix implementation.
 - Any test deletion or disable proposed.
 - Diff exceeds ~400 lines for a mechanical task.
-- llama.cpp API symbol guesswork — read `deps/llamacpp/include/llama.h` at the pinned commit first.
+- Forge API symbol guesswork — read the headers under `third_party/forge/*/include` first.
 
 ## Honesty
 

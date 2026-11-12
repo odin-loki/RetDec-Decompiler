@@ -427,12 +427,15 @@ std::unordered_set<uint64_t> neighbourhood(uint64_t start, int hops, const Graph
 
 // ── Force-directed ───────────────────────────────────────────────────────────
 
-void forceDirectedLayout(std::vector<ForceNode>& nodes, const std::vector<EdgeRef>& edges, int iterations, size_t gridThreshold)
+void forceDirectedLayout(std::vector<ForceNode>& nodes, const std::vector<EdgeRef>& edges, int iterations, size_t gridThreshold,
+	double idealEdge)
 {
 	if (nodes.empty() || iterations <= 0) return;
 	const double n = double(nodes.size());
-	const double area = 900.0 * 900.0 * std::sqrt(n);
-	const double k = std::sqrt(area / n);
+	// Ideal edge length k. (The Qt panel used area = 900^2 * sqrt(n), i.e. k = 900 / n^0.25: 535 px for 8 nodes, so a
+	// fitted view of a small graph showed unreadably small boxes. A fixed k keeps boxes readable at fit.)
+	const double k = idealEdge;
+	const double area = k * k * n;
 	double temperature = std::sqrt(area) / 4.0;
 	const double cooling = temperature / double(iterations);
 	const bool useGrid = nodes.size() > gridThreshold;
