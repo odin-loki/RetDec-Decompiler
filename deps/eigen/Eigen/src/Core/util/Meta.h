@@ -315,7 +315,15 @@ protected:
   * upcoming next STL generation (using a templated result member).
   * If none of these members is provided, then the type of the first argument is returned. FIXME, that behavior is a pretty bad hack.
   */
-#if EIGEN_HAS_STD_RESULT_OF
+#if defined(__cplusplus) && __cplusplus >= 201703L
+// RetDec: std::result_of is deprecated in C++17 and removed in C++20 (libc++
+// drops it), so use std::invoke_result as Eigen 3.3.8+ does.
+template<typename T> struct result_of;
+template<typename F, typename... ArgTypes> struct result_of<F(ArgTypes...)> {
+  typedef typename std::invoke_result<F, ArgTypes...>::type type1;
+  typedef typename remove_all<type1>::type type;
+};
+#elif EIGEN_HAS_STD_RESULT_OF
 template<typename T> struct result_of {
   typedef typename std::result_of<T>::type type1;
   typedef typename remove_all<type1>::type type;
