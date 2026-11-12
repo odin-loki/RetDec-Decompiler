@@ -9,6 +9,8 @@
 #define RETDEC_FILEFORMAT_TYPES_STRINGS_CHARACTER_ITERATOR_H
 
 #include <cctype>
+#include <cstddef>
+#include <cstdlib>
 #include <iterator>
 
 namespace retdec {
