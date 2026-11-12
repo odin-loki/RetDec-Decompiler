@@ -289,6 +289,22 @@ static FormatResult parseELF(const uint8_t* data, size_t size, bool is64, bool i
 		e_shnum = 0; // skip section parsing for absurd counts
 	}
 
+	// Every section header read below reaches 40 (ELF32) / 64 (ELF64) bytes
+	// into the entry, but inBounds() is only asked about e_shentsize bytes, so
+	// a file claiming e_shentsize = 1 read past the buffer (fuzz: lattice
+	// heap-buffer-overflow in u32le). Require the real header size, and an
+	// e_shoff inside the file so e_shoff + i * e_shentsize cannot wrap.
+	const uint16_t minShent = is64 ? 64u : 40u;
+	if (e_shnum != 0 && (e_shentsize < minShent || e_shoff >= size))
+	{
+		res.corruption.sectionOffsetsInvalid = true;
+		e_shnum = 0;
+	}
+	if (e_phoff >= size)
+	{
+		e_phnum = 0;
+	}
+
 	// ── Determine load bias from PT_LOAD ─────────────────────────────────────
 	uint64_t minLoadVA = UINT64_MAX;
 	uint64_t imageBase = 0;
