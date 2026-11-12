@@ -71,10 +71,21 @@ def modelled_names() -> set[str]:
     src = ROOT / "src/retdec/semantic_recovery_export.cpp"
     if not src.is_file():
         return set()
-    m = re.search(MODELLED_RE, src.read_text(encoding="utf-8"), re.S)
+    text = src.read_text(encoding="utf-8")
+    m = re.search(MODELLED_RE, text, re.S)
     if not m:
         return set()
-    return set(re.findall(r'name != "(__asm_\w+)"', m.group(1)))
+    body = m.group(1)
+    names = set(re.findall(r'name != "(__asm_\w+)"', body))
+    # The rep-string memset/memcpy stubs moved out of the inline `name !=`
+    # chain into the kRepStringStubs table, which isAsmIntrinsicName()
+    # excludes through isRepStringStubName(). Read the table when the
+    # function defers to it, so the exclusion still comes from the product.
+    if "isRepStringStubName" in body:
+        t = re.search(r'kRepStringStubs\[\]\s*=\s*\{(.*?)\};', text, re.S)
+        if t:
+            names |= set(re.findall(r'\{\s*"(__asm_\w+)"', t.group(1)))
+    return names
 
 
 def measure(corpus: Path, probe: Path, arch: str):

@@ -10,7 +10,7 @@ target_link_libraries(retdec-module-cluster-tests
 )
 
 set_target_properties(retdec-module-cluster-tests PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
 )
 

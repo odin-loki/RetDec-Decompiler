@@ -497,7 +497,17 @@ InsertionSortEvidence InsertionSortFingerprint::analyse(const ssa::SSAFunction& 
 	InsertionSortEvidence ev;
 	ev.found = hasBackwardShiftLoop(fn);
 	if (std::getenv("RETDEC_SORT_DIAG"))
-		std::fprintf(stderr, "INS %s subs=%d/%d cmps=%d stores=%d blocks=%u move=%d nested=%d\n", fn.name().c_str(), countSubs(fn), countDecrements(fn), countCompares(fn), countStores(fn), fn.blockCount(), hasElementMove(fn), ssa::hasNestedLoop(fn));
+		std::fprintf(
+			stderr,
+			"INS %s subs=%d/%d cmps=%d stores=%d blocks=%zu move=%d nested=%d\n",
+			fn.name().c_str(),
+			countSubs(fn),
+			countDecrements(fn),
+			countCompares(fn),
+			countStores(fn),
+			fn.blockCount(),
+			hasElementMove(fn),
+			ssa::hasNestedLoop(fn));
 	if (ev.found)
 	{
 		// The shape hasBackwardShiftLoop() accepts is also a plain backwards

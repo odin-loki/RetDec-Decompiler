@@ -1,0 +1,20 @@
+// Example .fuseui document (used by fuse_ui_doc_load and fuse_ui_lua_bindings).
+{
+  "fuseui": 1,
+  "style": ".settings { gap: 6px; padding: 12px; } .hp { color: #ffcc66; }",
+  "root": {
+    "class": "panel", "id": "settings", "classes": ["settings", "card"],
+    "style": { "width": 320 },
+    "children": [
+      { "class": "label", "id": "hp", "classes": ["hp"], "text": "HP {player.health / player.maxHealth * 100:0}%" },
+      { "class": "label", "id": "who", "text": "Player: {player.name}" },
+      { "class": "slider", "id": "vol", "min": 0, "max": 1, "value": "{=audio.volume}" },
+      { "class": "checkbox", "id": "mute", "text": "Mute", "checked": "{=audio.mute}" },
+      { "class": "lineedit", "id": "nick", "text": "{=player.name}" },
+      { "class": "combobox", "id": "quality", "items": ["Low", "High", "Ultra"], "selected": 1 },
+      { "class": "button", "id": "save", "text": "Save", "disabled": "{busy || audio.volume <= 0}",
+        "on": { "clicked": "save" } },
+      { "class": "label", "id": "warn", "text": "Muted", "visible": "{audio.mute}" },
+    ],
+  },
+}

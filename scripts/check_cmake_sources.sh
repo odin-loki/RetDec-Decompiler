@@ -39,6 +39,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 exec python3 - "$@" <<'PY'
+import glob
 import os
 import re
 import sys
@@ -179,6 +180,24 @@ for root in ROOTS:
             key = os.path.relpath(path, ".").replace(os.sep, "/")
             cu_listfiles.setdefault(key, []).append(
                 (line_of(text, m.start()), m.group(0)))
+        # file(GLOB ...) source lists: src/gui and tests/gui glob their
+        # directories so that a new model/view file needs no CMake edit. Every
+        # file the pattern matches is built, so it counts as named.
+        for g in re.finditer(r"file\s*\(\s*GLOB(?:_RECURSE)?\s+\w+([^)]*)\)", text):
+            recurse = "GLOB_RECURSE" in g.group(0)
+            for tok in re.findall(r'"[^"]*"|\S+', g.group(1)):
+                tok = tok.strip('"')
+                if tok in ("CONFIGURE_DEPENDS", "LIST_DIRECTORIES", "RELATIVE",
+                           "FOLLOW_SYMLINKS", "true", "false"):
+                    continue
+                for var in ("${CMAKE_CURRENT_SOURCE_DIR}", "${CMAKE_CURRENT_LIST_DIR}"):
+                    tok = tok.replace(var, dirpath)
+                if "$" in tok:
+                    continue
+                pattern = tok if (os.path.isabs(tok) or tok.startswith(dirpath)) \
+                    else os.path.join(dirpath, tok)
+                for hit in glob.glob(pattern, recursive=recurse):
+                    named.add(os.path.relpath(hit, ".").replace(os.sep, "/"))
         for call in CALL.finditer(text):
             body = call.group(2)
             # Blank out comments rather than deleting them: the reported

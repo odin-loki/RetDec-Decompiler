@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Decompile one binary with Qwen 3.5 9B (llama.cpp-native GGUF).
+# Decompile one binary with Qwen 3.5 9B (GGUF, imported into Forge on first use).
 # Compile gate stays on unless you export RETDEC_NEURAL_SKIP_COMPILE_GATE=1.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -49,5 +49,5 @@ elif [[ -f "${OUT}.refinement-manifest.json" ]]; then
 	echo "no refined sidecar; manifest:"
 	cat "${OUT}.refinement-manifest.json"
 else
-	echo "no sidecar (refine off, load failed, or llama.cpp not linked)"
+	echo "no sidecar (refine off, model load failed, or retdec-neural not built)"
 fi

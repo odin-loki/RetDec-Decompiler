@@ -103,7 +103,7 @@ add_executable(fileinfo
 	pattern_detector/pattern_detector.cpp
 )
 
-target_compile_features(fileinfo PUBLIC cxx_std_17)
+target_compile_features(fileinfo PUBLIC cxx_std_23)
 
 target_include_directories(fileinfo
 	PRIVATE

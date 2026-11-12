@@ -58,7 +58,7 @@ Separate from `gpu_scanner`. Nothing in `src/retdec` includes
 |-----------|------|
 | [`src/cuda_accel/`](../src/cuda_accel/) | Experimental `CUDAContext`, kernel cache, optional profiling |
 | [`src/opencl/`](../src/opencl/) | Experimental OpenCL backend — **not** added from `src/CMakeLists.txt` |
-| [`src/neural/`](../src/neural/) | Opt-in llama.cpp refine. GPU offload is `n_gpu_layers` / `RETDEC_NEURAL_GPU_OFFLOAD`, not this tree |
+| [`src/neural/`](../src/neural/) | Opt-in neural refine on Forge. GPU use is Forge's device choice (`RETDEC_NEURAL_DEVICE`, `RETDEC_NEURAL_N_GPU_LAYERS`, `RETDEC_NEURAL_GPU_OFFLOAD`), not this tree |
 | GUI **CUDA** settings tab | Device index, block size, kernel cache — persisted GUI state, not a pipeline hook |
 
 These do **not** run in the default LLVM → C pipeline.
@@ -113,7 +113,7 @@ Binary input
             └─► Post-pipeline analysis CPU
                     ├─► OclHostRecovery (log)
                     ├─► CudaHostRecovery (not called)
-                    └─► llama.cpp refine (opt-in) / parked cuda_accel
+                    └─► Forge neural refine (opt-in) / parked cuda_accel
 ```
 
 ## Related docs

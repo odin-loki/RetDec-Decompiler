@@ -27,7 +27,7 @@ add_executable(format_router_probe
 target_include_directories(format_router_probe
     PRIVATE "${CMAKE_SOURCE_DIR}/src/retdec-decompiler"
 )
-target_compile_features(format_router_probe PUBLIC cxx_std_20)
+target_compile_features(format_router_probe PUBLIC cxx_std_23)
 target_link_libraries(format_router_probe
     retdec::utils
     retdec-jvm-parser
@@ -88,10 +88,13 @@ set(_FIB_BIN "${CMAKE_CURRENT_BINARY_DIR}/fib_smoke${CMAKE_EXECUTABLE_SUFFIX}")
 # materializes UCRT's header-inline printf into the .obj (LNK2005 vs the
 # stub, LNK2019 on __acrt_iob_func / __stdio_common_vfprintf).
 # _NO_CRT_STDIO_INLINE makes <stdio.h> declare printf only.
+# /EXPORT:printf names the stub the same way /EXPORT:main names main: the PEs
+# carry no symbol table, so without it the stub decompiled as an anonymous
+# function_1400010a0 and corpus_regression found no `printf` in the output.
 if(MSVC)
     set(_MSVC_FIXTURE_C /nologo /Od /Ob0 /Oi- /GS- /Oy- /guard:cf- /D_NO_CRT_STDIO_INLINE)
     set(_MSVC_PRINTF_STUB "${CMAKE_CURRENT_SOURCE_DIR}/msvc_fixture_printf.c")
-    set(_MSVC_FIXTURE_LINK /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO /ENTRY:main /NODEFAULTLIB /SUBSYSTEM:CONSOLE /EXPORT:main)
+    set(_MSVC_FIXTURE_LINK /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO /ENTRY:main /NODEFAULTLIB /SUBSYSTEM:CONSOLE /EXPORT:main /EXPORT:printf)
     set(_FIB_MAIN_OBJ "${CMAKE_CURRENT_BINARY_DIR}/fib_smoke_main.obj")
     set(_FIB_PRINTF_OBJ "${CMAKE_CURRENT_BINARY_DIR}/fib_smoke_printf.obj")
     add_custom_command(
@@ -180,11 +183,20 @@ set(_CORPUS_HELLO_PYC "${_CORPUS_FIXTURES_DIR}/hello.pyc")
 set(_CORPUS_HELLO_PY "${CMAKE_CURRENT_SOURCE_DIR}/corpus/sources/hello.py")
 file(TO_CMAKE_PATH "${_CORPUS_HELLO_PY}" _CORPUS_HELLO_PY_C)
 file(TO_CMAKE_PATH "${_CORPUS_HELLO_PYC}" _CORPUS_HELLO_PYC_C)
+# The .pyc magic is the interpreter's, so the fixture depends on which
+# interpreter configure chose, not only on hello.py. Without this a cached
+# build tree kept a .pyc from whatever Python first built it: ctest-windows
+# pins 3.12, but restored a hello.pyc with magic 3666 that pyc_parser does not
+# know, and corpus_regression failed on it. configure_file() rewrites the
+# stamp only when its content changes.
+set(_CORPUS_PYC_STAMP "${CMAKE_CURRENT_BINARY_DIR}/hello_pyc_interpreter.txt")
+file(CONFIGURE OUTPUT "${_CORPUS_PYC_STAMP}"
+    CONTENT "${Python3_EXECUTABLE} ${Python3_VERSION}\n")
 add_custom_command(
     OUTPUT "${_CORPUS_HELLO_PYC}"
     COMMAND ${Python3_EXECUTABLE} -c
         "import py_compile; py_compile.compile('${_CORPUS_HELLO_PY_C}', cfile='${_CORPUS_HELLO_PYC_C}', doraise=True)"
-    DEPENDS "${_CORPUS_HELLO_PY}"
+    DEPENDS "${_CORPUS_HELLO_PY}" "${_CORPUS_PYC_STAMP}"
     COMMENT "Generating corpus hello.pyc"
     VERBATIM
 )
@@ -232,7 +244,7 @@ add_dependencies(retdec-decompiler-corpus-fixtures retdec-decompiler-runtime-sha
 # are per module now; this decompiles three fixtures serially and then three
 # copies of each at once, and requires identical output.
 add_executable(parallel_decompile_check parallel_decompile_check.cpp)
-target_compile_features(parallel_decompile_check PRIVATE cxx_std_20)
+target_compile_features(parallel_decompile_check PRIVATE cxx_std_23)
 target_link_libraries(parallel_decompile_check retdec::retdec retdec::config retdec::deps::llvm)
 if(MSVC)
 	target_link_libraries(parallel_decompile_check
@@ -402,7 +414,7 @@ if(WIN32)
         TIMEOUT 600
         LABELS "decompiler;gui;smoke;integration;install"
         SKIP_REGULAR_EXPRESSION "SKIP:"
-        ENVIRONMENT "RETDEC_GUI_HEADLESS=1;QT_QPA_PLATFORM=offscreen"
+        ENVIRONMENT "RETDEC_GUI_HEADLESS=1"
     )
 endif()
 
@@ -417,21 +429,20 @@ set(_GUI_STAGING_STAMP "${_GUI_STAGING}/.staged")
 
 # On macOS retdec-gui is a MACOSX_BUNDLE, so $<TARGET_FILE_DIR:retdec-gui> is
 # retdec-gui.app/Contents/MacOS -- NOT the directory the application needs.
-# macdeployqt puts Qt in Contents/Frameworks and rewrites the executable's load
-# commands to @executable_path/../Frameworks/..., so copying only Contents/MacOS
-# somewhere else makes @executable_path/.. a directory with no Frameworks in it:
+# The bundle is the unit: copy the whole thing and run the executable inside
+# it. Its POST_BUILD step has already put the GUI's own resources (FuseUI
+# themes, fonts, pass presets) at Contents/share/retdec/gui, which is
+# <bin>/../share/retdec/gui from Contents/MacOS.
 #
-#     dyld: Library not loaded: @executable_path/../Frameworks/QtWidgets.framework/...
-#       tried: '.../build/linux/tests/decompiler/Frameworks/QtWidgets.framework/...'
+# Two more things have to move inside the bundle with it, because both are
+# resolved RELATIVE TO THE EXECUTABLE (src/gui/model/cli_tool_paths.cpp):
+# retdec-decompiler, which is looked for side by side; and the decompiler's
+# support tree, looked for at <bin>/../share/retdec -- Contents/share once
+# <bin> is Contents/MacOS.
 #
-# which is what gui_headless_decompile_fib aborted with on the first macOS run.
-# The bundle is the unit: copy the whole thing and run the executable inside it.
-#
-# Two things then have to move inside the bundle with it, because both are
-# resolved RELATIVE TO THE EXECUTABLE (src/gui/cli_tool_paths.cpp):
-# retdec-decompiler, which resolveCliTool() looks for side by side; and the
-# support tree, which resolveBundledDecompilerConfigPath() looks for at
-# <bin>/../share/retdec -- Contents/share once <bin> is Contents/MacOS.
+# Elsewhere the executable is staged flat in gui_staging/, so <bin>/../share is
+# this directory's share/: decompiler-config.json, profiles and share/retdec/gui
+# are staged there.
 set(_GUI_STAGE_EXTRA_COMMANDS)
 if(APPLE)
     set(_GUI_STAGE_SRC "$<TARGET_BUNDLE_DIR:retdec-gui>")
@@ -474,9 +485,12 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/src/retdec-decompiler/profiles"
         "${CMAKE_CURRENT_BINARY_DIR}/share/retdec/profiles"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/src/gui/resources"
+        "${CMAKE_CURRENT_BINARY_DIR}/share/retdec/gui"
     COMMAND ${CMAKE_COMMAND} -E touch "${_GUI_STAGING_STAMP}"
     DEPENDS retdec-gui retdec-decompiler
-    COMMENT "Stage retdec-gui (with Qt deps) + retdec-decompiler for integration tests"
+    COMMENT "Stage retdec-gui (with share/retdec/gui) + retdec-decompiler for integration tests"
     VERBATIM
 )
 
@@ -491,19 +505,12 @@ add_test(
         "${_FIB_BIN}"
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
-# macdeployqt ships cocoa, not offscreen. After MAC-01 the bundle is
-# relocatable and no longer searches Homebrew, so offscreen aborts with
-# "Available platform plugins are: cocoa." RETDEC_GUI_HEADLESS still
-# suppresses windows; cocoa is what the bundle actually contains.
-if(APPLE)
-    set(_GUI_QPA "cocoa")
-else()
-    set(_GUI_QPA "offscreen")
-endif()
+# RETDEC_GUI_HEADLESS=1 (and --headless) makes the FuseUI AppWindow present to
+# nothing, so no display, X server or window server is needed on any platform.
 set_tests_properties(gui_headless_decompile_fib PROPERTIES
     TIMEOUT 300
     LABELS "gui;decompiler;smoke;integration"
-    ENVIRONMENT "RETDEC_GUI_HEADLESS=1;QT_QPA_PLATFORM=${_GUI_QPA}"
+    ENVIRONMENT "RETDEC_GUI_HEADLESS=1"
 )
 
 if(WIN32)
@@ -521,7 +528,7 @@ if(WIN32)
     set_tests_properties(gui_cli_decompile_parity_fib PROPERTIES
         TIMEOUT 600
         LABELS "gui;decompiler;parity;integration"
-        ENVIRONMENT "RETDEC_GUI_HEADLESS=1;QT_QPA_PLATFORM=offscreen"
+        ENVIRONMENT "RETDEC_GUI_HEADLESS=1"
     )
 endif()
 

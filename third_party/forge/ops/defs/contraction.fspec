@@ -1,0 +1,4 @@
+op matmul     class contraction  inputs 2  shape matmul     tol rel:1e-4  fuse epilogue  cost 2  doc "batched a[..., m, k] @ b[k, n] or b[..., k, n]"
+op matmul_t   class contraction  inputs 2  shape matmul_t   tol rel:1e-4  fuse epilogue  cost 2  doc "a[..., m, k] @ b[n, k]^T (weight layout of HF linear layers)"
+op attention  class contraction  inputs 3  shape attention  tol abs:1e-5  fuse no  cost 4  attrs "causal,groups,scale,window" doc "naive scaled-dot-product attention; q[s,hq,d] k[t,hk,d] v[t,hk,d] -> [s,hq,d]; GQA via groups"
+op moe_ffn    class contraction  inputs 5  shape same  tol rel:1e-4  fuse no  cost 6  attrs "k,norm,scale,gating" doc "sparse MoE SwiGLU FFN: h[t,d], router logits[t,e], gate/up[e,f,d], down[e,d,f]; per token top-k experts (ties -> lower index; gating 0 softmax, 1 sigmoid), weights renormalised over the k if norm, times scale; y = sum_k w * down_e(silu(gate_e h) * up_e h)"

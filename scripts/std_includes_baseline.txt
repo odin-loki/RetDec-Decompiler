@@ -6,7 +6,6 @@ include/retdec/pelib/OutputBuffer.h algorithm
 include/retdec/pelib/ResourceDirectory.h algorithm
 src/bin2llvmir/analyses/reaching_definitions.cpp algorithm
 src/bin2llvmir/analyses/symbolic_tree.cpp algorithm
-src/bin2llvmir/optimizations/param_return/collector/collector.cpp algorithm
 src/bin2llvmir/optimizations/param_return/data_entries.cpp algorithm
 src/bin2llvmir/optimizations/phi_remover/phi_remover.cpp algorithm
 src/bin2llvmir/providers/calling_convention/calling_convention.cpp algorithm

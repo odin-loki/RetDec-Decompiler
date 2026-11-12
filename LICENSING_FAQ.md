@@ -3,7 +3,8 @@
 This is not legal advice. It restates what the in-tree licence files already say.
 The texts of record are [LICENSE-AGPL](LICENSE-AGPL) and
 [LICENSE-COMMERCIAL](LICENSE-COMMERCIAL). [NOTICE](NOTICE) lists third-party
-components. Qt LGPL evidence is in [docs/LGPL_QT.md](docs/LGPL_QT.md).
+components; [LICENSE-THIRD-PARTY](LICENSE-THIRD-PARTY) carries the licence
+texts of the code vendored in [third_party/](third_party/README.md).
 File-level provenance is [docs/PROVENANCE.md](docs/PROVENANCE.md).
 
 **RetDec Imortek 2.0.22** is a specification-extraction decompiler (algorithm
@@ -22,8 +23,8 @@ The commercial licence has no numbered clauses. Those permissions are the
 bullets under **What you can do**.
 
 Air-gapped operation of the decompiler itself does not require a model download.
-Optional neural refinement is local llama.cpp only (`RETDEC_ENABLE_LLAMACPP` at
-build, `RETDEC_NEURAL_REFINE` at run); see [SECURITY.md](SECURITY.md)
+Optional neural refinement is local Forge inference only (`RETDEC_ENABLE_NEURAL`
+at build, `RETDEC_NEURAL_REFINE` at run); see [SECURITY.md](SECURITY.md)
 (`RETDEC_NO_NETWORK=1`). CUDA acceleration is **not** a product feature
 (`RETDEC_ENABLE_CUDA_ACCEL` defaults OFF and is unintegrated).
 
@@ -56,12 +57,30 @@ Email **odin.loch@outlook.com.au** with company name and country, intended use
 **How to buy** in [LICENSE-COMMERCIAL](LICENSE-COMMERCIAL). Prices are not
 published in git.
 
-## Which licence governs Keystone and Qt?
+## Which licence governs Keystone and the GUI toolkit?
 
 Keystone is GPL-2.0 and is excluded from commercial-package install of
-`capstone2llvmirtool` (see [NOTICE](NOTICE) and the LEG-11 CI gate). Qt 6 is
-LGPL and must stay dynamically linked on Linux, Windows, and macOS
-(`RetDec.app`); see [docs/LGPL_QT.md](docs/LGPL_QT.md).
+`capstone2llvmirtool` (see [NOTICE](NOTICE) and the LEG-11 CI gate).
+
+The GUI (`retdec-gui`, macOS `RetDec.app`) contains no Qt and no other
+LGPL code, so there is no relinking obligation to meet. It is built on two
+libraries vendored in [third_party/](third_party/README.md):
+
+| Component | Licence |
+|-----------|---------|
+| FuseUI (`third_party/fuseui`) — GUI toolkit | AGPL-3.0-or-later or commercial. First-party: same owner as RetDec (Odin Loch / Imortek), so commercial terms come from the same licensor. |
+| Forge (`third_party/forge`) — OS layer, JSON, hashing, threads | AGPL-3.0-or-later or commercial. First-party, as above. |
+| stb (in FuseUI) | MIT or public domain |
+| Open Sans font (in FuseUI) | Apache-2.0 |
+| JetBrains Mono font (in FuseUI) | SIL Open Font License 1.1 |
+| DejaVu Sans font (in FuseUI) | Bitstream Vera / Arev font licences (permissive) |
+| Lua 5.2 (in FuseUI; vendored, not linked into retdec-gui) | MIT |
+| Monocypher 4.0.2 (in Forge) | BSD-2-Clause or CC0-1.0 |
+| Level Zero API header (in Forge) | MIT |
+
+Their licence texts are in [LICENSE-THIRD-PARTY](LICENSE-THIRD-PARTY), which
+is installed to `share/retdec` with every package. None of them adds a
+copyleft obligation beyond RetDec's own AGPL / commercial choice.
 
 ## Warranty
 

@@ -34,18 +34,6 @@ RUN apt-get -y update && \
 	m4 \
 	libtool \
 	make \
-	qt6-base-dev \
-	qt6-base-dev-tools \
-	libqt6svg6-dev \
-	libgl1-mesa-dev \
-	libxkbcommon-dev \
-	libxcb-cursor0 \
-	libxcb-icccm4 \
-	libxcb-image0 \
-	libxcb-keysyms1 \
-	libxcb-render-util0 \
-	libxcb-xinerama0 \
-	libxcb-xfixes0 \
 	&& rm -rf /var/lib/apt/lists/* && \
 	update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100 && \
 	update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 100

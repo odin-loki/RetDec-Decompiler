@@ -401,7 +401,7 @@ void foldVectorLaneExtracts(llvm::Module& m)
 				{
 					continue;
 				}
-				r = new llvm::BitCastInst(src, ty, "", ee);
+				r = new llvm::BitCastInst(src, ty, "", ee->getIterator());
 			}
 			ee->replaceAllUsesWith(r);
 		}

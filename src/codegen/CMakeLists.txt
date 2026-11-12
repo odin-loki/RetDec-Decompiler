@@ -20,6 +20,6 @@ target_link_libraries(retdec_codegen
         retdec_dce
 )
 
-target_compile_features(retdec_codegen PUBLIC cxx_std_17)
+target_compile_features(retdec_codegen PUBLIC cxx_std_23)
 
 add_library(retdec-codegen ALIAS retdec_codegen)

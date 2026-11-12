@@ -1,6 +1,6 @@
 # RetDec build reference
 
-This document is the **canonical guide** to configuring, compiling, installing, packaging, and validating RetDec. It complements [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) (MSVC + Qt6; CUDA toolkit optional) and [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md) (MinGW cross-compile).
+This document is the **canonical guide** to configuring, compiling, installing, packaging, and validating RetDec. It complements [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) (MSVC; CUDA toolkit optional) and [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md) (MinGW cross-compile).
 
 ---
 
@@ -14,7 +14,7 @@ This document is the **canonical guide** to configuring, compiling, installing, 
 6. [Shell environment (`retdec-env.sh`)](#shell-environment-retdec-envsh)
 7. [Windows PowerShell helpers](#windows-powershell-helpers)
 8. [Component presets: `core-*` vs `full-*`](#component-presets-core--vs-full-)
-9. [CUDA, Qt6, and OpenSSL](#cuda-qt6-and-openssl)
+9. [CUDA, the GUI, and OpenSSL](#cuda-the-gui-and-openssl)
 10. [Docker](#docker)
 11. [Continuous integration](#continuous-integration)
 12. [Dependency archives (`cmake/deps.cmake`)](#dependency-archives-cmakedepscmake)
@@ -31,7 +31,8 @@ This document is the **canonical guide** to configuring, compiling, installing, 
 | **Ninja** | any | Default generator in presets. |
 | **C++ compiler** | C++17 | MSVC 2019+ (Windows), GCC 11+ / Clang 14+ (Linux), Apple Clang (macOS). |
 | **Python 3** | 3.4+ | LLVM TableGen and scripts. Release packaging pins 3.12 (`support/install-share.py` / tarfile PEP 706). |
-| **Qt 6** | 6.4+ | Widgets, Core, Gui, Test — **required** for `full-linux-*` and `full-windows-*` (GUI). macOS CI uses Homebrew `qt@6`. |
+| **C++23 compiler** | GCC 13+ / Clang 17+ / Apple Clang 15+ / MSVC 2022 17.6+ | The tree is C++23 (`CMAKE_CXX_STANDARD 23`); `retdec-gui` and its Forge layer use `std::expected` and `std::format`. `scripts/doctor.sh` / `doctor.ps1` check it. |
+| **GUI toolkit** | — | None to install. `retdec-gui` is built from FuseUI and Forge, vendored in [third_party/](../third_party/README.md) (`RETDEC_GUI`, default ON). |
 | **CUDA Toolkit** | 11.8+ (typical) | Optional and **opt-in** (`RETDEC_ENABLE_CUDA_ACCEL=OFF` by default, including full presets). The acceleration layer is experimental and not in the decompiler pipeline. |
 | **MinGW-w64** | Ubuntu packages | Only for Linux/WSL → Windows PE cross-compile. |
 
@@ -79,9 +80,9 @@ cmake --build build/linux --parallel    # Linux/WSL/macOS
 | `core-release-msvc` | Windows | Release + LTO | Same core set as `core-release`. |
 | `core-asan` | Unix | Debug + ASan | AddressSanitizer (inherits `core-debug`). |
 | `core-coverage` | Unix | Debug + gcov | Coverage instrumentation. |
-| `full-linux-debug` | Linux/WSL/macOS | Debug | Full tree, Qt6 GUI, tests ON; CUDA accel **OFF**. |
-| `full-linux-release` | Linux/WSL/macOS | Release + LTO | Full tree, Qt6 GUI, tests ON; CUDA accel **OFF**. |
-| `full-windows-release` | Windows only | Release + LTO | MSVC, bundled OpenSSL, Qt6, tests ON; CUDA accel **OFF**. |
+| `full-linux-debug` | Linux/WSL/macOS | Debug | Full tree, GUI (FuseUI), tests ON; CUDA accel **OFF**. |
+| `full-linux-release` | Linux/WSL/macOS | Release + LTO | Full tree, GUI (FuseUI), tests ON; CUDA accel **OFF**. |
+| `full-windows-release` | Windows only | Release + LTO | MSVC, bundled OpenSSL, GUI (FuseUI), tests ON; CUDA accel **OFF**. |
 | `full-windows-debug` | Windows only | Debug | Same components as release; PDB-friendly. |
 
 Windows `full-*` and `core-*-msvc` presets are **hidden** on non-Windows hosts (CMake preset conditions). Unix `core-*` / `full-linux-*` are hidden on Windows. Full presets stay **CPU-only** unless you pass `-DRETDEC_ENABLE_CUDA_ACCEL=ON`.
@@ -102,7 +103,7 @@ ctest --preset full-linux-debug
 
 ## Superbuild
 
-The **superbuild** is a separate CMake project under `cmake/superbuild/`. It orchestrates ExternalProject-style builds (core, optional Qt GUI, etc.). Presets live in [cmake/superbuild/CMakePresets.json](../cmake/superbuild/CMakePresets.json).
+The **superbuild** is a separate CMake project under `cmake/superbuild/`. It orchestrates ExternalProject-style builds (core, which includes the FuseUI GUI unless `RETDEC_SUPERBUILD_ENABLE_GUI=OFF`; with core disabled, the GUI alone from `cmake/gui_standalone`). Presets live in [cmake/superbuild/CMakePresets.json](../cmake/superbuild/CMakePresets.json).
 
 **Output layout (by host):**
 
@@ -146,9 +147,9 @@ SUPERBUILD_MINGW=1 bash scripts/superbuild-build-all-linux.sh
 
 ### Superbuild configure presets
 
-- `superbuild-debug` — Debug, tests ON (where applicable), Qt GUI ON.
+- `superbuild-debug` — Debug, tests ON (where applicable), GUI ON.
 - `superbuild-release` — Release + LTO, tests OFF.
-- `superbuild-windows-cross-mingw` — MinGW cross **Release** + LTO (Unix host only).
+- `superbuild-windows-cross-mingw` — MinGW cross **Release** + LTO (Unix host only); GUI OFF.
 - `superbuild-windows-cross-mingw-debug` — MinGW cross **Debug** (Unix host only).
 - `superbuild-linux-clang` — Linux native with Clang toolchain file (Release + LTO).
 
@@ -174,7 +175,7 @@ cmake --install build\windows
 
 ### Windows portable folder (`dist/windows`)
 
-`windows_native_build.ps1` runs `cmake --build`, `cmake --install` into `install/windows`, then copies binaries, `share/retdec`, Qt DLLs (`windeployqt`), and MSVC runtimes into `dist/windows`. If a CUDA toolkit is present it also copies CUDA runtime DLLs; that does not enable `cuda_accel` in the decompiler pipeline.
+`windows_native_build.ps1` runs `cmake --build`, `cmake --install` into `install/windows`, then copies binaries, `share/retdec` (including the GUI's `share/retdec/gui` resources; the GUI has no DLLs or plugins to deploy), and MSVC runtimes into `dist/windows`. If a CUDA toolkit is present it also copies CUDA runtime DLLs; that does not enable `cuda_accel` in the decompiler pipeline.
 
 For a **debuggable GUI** copy with PDBs, use `windows_prepare_debuggable_gui.ps1` (reads from `dist/windows`, writes `dist/windows/debuggable` by default).
 
@@ -231,17 +232,17 @@ See [scripts/README.md](../scripts/README.md) for the full table.
 
 ## Component presets: `core-*` vs `full-*`
 
-- **`full-*`** presets enable the **default “everything”** product build (Qt6 GUI, bundled OpenSSL on Windows, etc.). `RETDEC_ENABLE_CUDA_ACCEL` stays **OFF**.
+- **`full-*`** presets enable the **default “everything”** product build (GUI, bundled OpenSSL on Windows, etc.). `RETDEC_ENABLE_CUDA_ACCEL` stays **OFF**.
 - **`core-*`** presets enable a **reduced** set of `RETDEC_ENABLE_*` options suitable for faster CLI-focused builds. CMake logic still pulls in libraries required by `retdec-decompiler` (e.g. unpacker, extractors) via [cmake/options.cmake](../cmake/options.cmake).
 
 To customise components, use `-DRETDEC_ENABLE_*=ON/OFF` or `-DRETDEC_ENABLE_ALL=ON` and read `options.cmake` for dependency chains.
 
 ---
 
-## CUDA, Qt6, and OpenSSL
+## CUDA, the GUI, and OpenSSL
 
 - **CUDA:** `RETDEC_ENABLE_CUDA_ACCEL` defaults **OFF** in full presets (`C-CUDA-PIPE` withdrawn). Pass `-DRETDEC_ENABLE_CUDA_ACCEL=ON` only for parked research builds. `windows_native_configure.ps1 -NoCuda` skips the NVCC probe.
-- **Qt6:** Full presets set `RETDEC_REQUIRE_QT6=ON`. Use `-AllowOptionalQt` on the Windows configure script or `-DRETDEC_REQUIRE_QT6=OFF` for CLI-only experiments.
+- **GUI:** `RETDEC_GUI` (default **ON**, set explicitly by the full presets) builds `retdec-gui` from FuseUI + Forge in `third_party/`; nothing external is found or required. `-DRETDEC_GUI=OFF` (or `-NoGui` on the Windows configure script) for CLI-only. The GUI also builds alone, without LLVM: `cmake -S cmake/gui_standalone -B build/gui -G Ninja` ([gui/FUSEUI_PORT.md](gui/FUSEUI_PORT.md)); `gui.yml` does that on Linux, Windows and macOS.
 - **OpenSSL:** On Windows, `RETDEC_BUNDLED_OPENSSL` is typically ON (MSVC build via openssl-externalCMake + Ninja; no Perl). MinGW cross-compiles use the same CMake path with the MinGW toolchain file. Pins: `cmake/deps.cmake` (`OPENSSL_*`).
 
 ---
@@ -290,14 +291,14 @@ GitHub Actions workflows under [.github/workflows/](../.github/workflows/):
 | [codeql.yml](../.github/workflows/codeql.yml) | Push / PR to `main` + weekly + manual | CodeQL for Python and Actions (not C++) |
 | [coverage.yml](../.github/workflows/coverage.yml) | Weekly + manual | gcov/lcov via `run_coverage.sh` (LLVM build) |
 | [fuzz-pr.yml](../.github/workflows/fuzz-pr.yml) | Push to `main` / `claude/**`, PR to `main`, weekly, manual | Fuzz option smoke on PR; libFuzzer on schedule/dispatch |
-| [qt-lgpl-evidence.yml](../.github/workflows/qt-lgpl-evidence.yml) | Weekly + manual | dumpbin `/dependents` Qt6Core.dll on Windows zip |
+| [gui.yml](../.github/workflows/gui.yml) | Push to `main` / `claude/**` / `ccr-*`, PR, manual | `cmake/gui_standalone` + `retdec-gui-tests` on Linux, Windows (MSVC) and macOS; Linux also runs a headless smoke and an Xvfb window smoke |
 | [sign-release-sbom.yml](../.github/workflows/sign-release-sbom.yml) | After installers + push (this file) + manual | Cosign unsigned SBOM, tarball, Windows artefacts |
 | [upload-sample-binary.yml](../.github/workflows/upload-sample-binary.yml) | After installers + push (this file / `fib.c`) + manual | Upload `fib_smoke` / `fib_smoke.exe` to the Release |
 | [docker-publish.yml](../.github/workflows/docker-publish.yml) | Manual | GHCR from in-tree Dockerfile (LLVM rebuild) |
 
 `ctest-linux` and `ctest-macos` run on every push and PR to `main`. `ctest-windows` does **not**; use **Actions → Run workflow** or a local `ctest`. Full presets in those jobs stay CPU-only (`-DRETDEC_ENABLE_CUDA_ACCEL=OFF`).
 
-**GUI platform plugin:** `ctest-linux` and `ctest-windows` set `RETDEC_GUI_HEADLESS=1` and `QT_QPA_PLATFORM=offscreen`. `ctest-macos` uses `QT_QPA_PLATFORM=cocoa` because MAC-01 keeps rpaths inside the bundle and the offscreen plugin is not shipped there.
+**Headless GUI:** `ctest-linux`, `ctest-windows` and `ctest-macos` set `RETDEC_GUI_HEADLESS=1`; the FuseUI window then presents to nothing, so no display, plugin or window server is involved on any platform.
 
 **Release installers** ([release-installers.yml](../.github/workflows/release-installers.yml)):
 
@@ -359,12 +360,12 @@ RETDEC_UPDATE_SNAPSHOTS=1 ./build/linux/tests/<suite>/retdec-*-tests
 |---------|----------------|-------------|
 | `retdec::ar-extractor` / similar not found | Partial `RETDEC_ENABLE_*` without dependencies | Use `full-*`, `RETDEC_ENABLE_ALL=ON`, or a recent `options.cmake` that ties `retdec-decompiler` deps. |
 | `llvm-tblgen` missing (MinGW cross) | No native Linux build | Run `wsl_configure_nosudo.sh` and build `build/linux` first; or set `RETDEC_LLVM_TABLEGEN`. |
-| Qt not found | Qt6 not installed or `Qt6_DIR` wrong | Install Qt MSVC x64; pass `-QtDir` to `windows_native_configure.ps1`. |
+| `<expected>` / `std::format` not found, or C++23 errors in `src/gui` / `third_party/` | Compiler too old for C++23, or Clang 17/18 on libstdc++ (its `<expected>` needs `__cpp_concepts >= 202002L`, which Clang advertises from 19) | GCC 13+, Clang 19+ (17+ with libc++), Apple Clang 15+, MSVC 2022 17.6+; `bash scripts/doctor.sh` / `scripts\doctor.ps1` compiles the probe with your `$CXX`. |
 | OpenSSL external project fails on Windows | `cl.exe` or Ninja missing | Developer PowerShell for VS 2022; `winget install Ninja-build.Ninja`. Inspect `build/windows/external/openssl-ep/build/`. |
 | CUDA not detected | `CUDA_PATH` / toolkit missing | Install CUDA; or disable `RETDEC_ENABLE_CUDA_ACCEL`. |
 | GitHub download fails during LLVM fetch | Network / HTTP2 | Retry build; clear `build/.../external/src/*-stamp/*-download` if needed. |
 | Manual ctest workflow fails | Heavy build / cache | Trigger [ctest-linux.yml](../.github/workflows/ctest-linux.yml), [ctest-macos.yml](../.github/workflows/ctest-macos.yml), or [ctest-windows.yml](../.github/workflows/ctest-windows.yml) from Actions; prefer local `ctest` for iteration. |
-| macOS GUI: “Available platform plugins are: cocoa” | Offscreen plugin not in the relocatable bundle | Use `QT_QPA_PLATFORM=cocoa` (what `ctest-macos.yml` sets). |
+| GUI starts unstyled / without fonts | `share/retdec/gui` not beside the binary | Run from an install tree (`<bin>/../share/retdec/gui`) or `RetDec.app` (`Contents/share/retdec/gui`); re-run `cmake --install`. |
 
 For MinGW-specific issues, see [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md). For MSVC GUI deployment, see [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md).
 

@@ -12,10 +12,6 @@
 
 #include <rapidjson/document.h>
 
-#if defined(RETDEC_HAS_LLAMACPP)
-#include "gguf.h"
-#endif
-
 #if defined(RETDEC_NEURAL_HAS_OPENSSL)
 #include <openssl/evp.h>
 #if defined(OPENSSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER < 0x10100000L
@@ -27,8 +23,8 @@ namespace retdec::neural {
 
 namespace {
 
-// SHA-256 of the Unsloth llama.cpp-native Q4_K_M (5.28 GiB).
-// Ollama qwen3.5:9b blobs fail on b10451 (rope.dimension_sections length 3).
+// SHA-256 of the Unsloth Q4_K_M GGUF (5.28 GiB), the default model Forge
+// imports for neural refinement.
 constexpr const char* kQwen35Q4KmSha256 = "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8";
 
 std::string fileBasename(const std::string& path)
@@ -299,7 +295,7 @@ bool filenameLooksMultimodal(const std::string& modelPath)
 		|| lower.find("_vl_") != std::string::npos;
 }
 
-// GGUF v2/v3 little-endian KV header (gguf.h at llama.cpp b10451).
+// GGUF v2/v3 little-endian KV header (the format spec, ggml/docs/gguf.md).
 // Type tags match enum gguf_type. Strings are u64 length + bytes, no NUL.
 constexpr std::uint32_t kGgufTypeUint8 = 0;
 constexpr std::uint32_t kGgufTypeInt8 = 1;
@@ -476,58 +472,6 @@ bool parseGgufKvStandalone(GgufByteReader& r, GgufIdentity& out)
 	return true;
 }
 
-#if defined(RETDEC_HAS_LLAMACPP)
-
-bool parseGgufKvLlamaBuffer(const void* data, std::size_t size, GgufIdentity& out)
-{
-	gguf_init_params params{};
-	params.no_alloc = true;
-	params.ctx = nullptr;
-	gguf_context* ctx = gguf_init_from_buffer(data, size, params);
-	if (!ctx) return false;
-
-	out.parsed = true;
-	out.version = gguf_get_version(ctx);
-	const int64_t archId = gguf_find_key(ctx, "general.architecture");
-	if (archId >= 0 && gguf_get_kv_type(ctx, archId) == GGUF_TYPE_STRING)
-	{
-		if (const char* s = gguf_get_val_str(ctx, archId)) out.architecture = s;
-	}
-	const int64_t nameId = gguf_find_key(ctx, "general.name");
-	if (nameId >= 0 && gguf_get_kv_type(ctx, nameId) == GGUF_TYPE_STRING)
-	{
-		if (const char* s = gguf_get_val_str(ctx, nameId)) out.name = s;
-	}
-	gguf_free(ctx);
-	return true;
-}
-
-bool parseGgufKvLlamaFile(const std::string& path, GgufIdentity& out)
-{
-	gguf_init_params params{};
-	params.no_alloc = true;
-	params.ctx = nullptr;
-	gguf_context* ctx = gguf_init_from_file(path.c_str(), params);
-	if (!ctx) return false;
-
-	out.parsed = true;
-	out.version = gguf_get_version(ctx);
-	const int64_t archId = gguf_find_key(ctx, "general.architecture");
-	if (archId >= 0 && gguf_get_kv_type(ctx, archId) == GGUF_TYPE_STRING)
-	{
-		if (const char* s = gguf_get_val_str(ctx, archId)) out.architecture = s;
-	}
-	const int64_t nameId = gguf_find_key(ctx, "general.name");
-	if (nameId >= 0 && gguf_get_kv_type(ctx, nameId) == GGUF_TYPE_STRING)
-	{
-		if (const char* s = gguf_get_val_str(ctx, nameId)) out.name = s;
-	}
-	gguf_free(ctx);
-	return true;
-}
-
-#endif
-
 std::string modelsJsonPath()
 {
 	if (const char* override = std::getenv("RETDEC_NEURAL_MODELS_JSON"))
@@ -649,10 +593,6 @@ bool parseGgufIdentityFromMemory(const void* data, std::size_t size, GgufIdentit
 	out = GgufIdentity{};
 	if (!startsWithGgufMagic(data, size)) return false;
 
-#if defined(RETDEC_HAS_LLAMACPP)
-	if (parseGgufKvLlamaBuffer(data, size, out)) return true;
-	out = GgufIdentity{};
-#endif
 	GgufByteReader r(static_cast<const std::uint8_t*>(data), size);
 	return parseGgufKvStandalone(r, out);
 }
@@ -668,10 +608,6 @@ bool parseGgufIdentity(const std::string& modelPath, GgufIdentity& out)
 		return false;
 	peek.close();
 
-#if defined(RETDEC_HAS_LLAMACPP)
-	if (parseGgufKvLlamaFile(modelPath, out)) return true;
-	out = GgufIdentity{};
-#endif
 	std::ifstream in(modelPath, std::ios::binary);
 	if (!in) return false;
 	GgufByteReader r(in);

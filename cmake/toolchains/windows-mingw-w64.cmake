@@ -44,19 +44,9 @@ endif()
 # ─── sysroot / find-root ──────────────────────────────────────────────────────
 set(CMAKE_FIND_ROOT_PATH "/usr/x86_64-w64-mingw32" CACHE PATH "MinGW sysroot")
 
-# User-overrideable path for a pre-built Qt6 Windows cross-build tree.
-# Install one via: apt install qt6-base-dev (MinGW variant) or build Qt6 from source
-# targeting x86_64-w64-mingw32, then point this variable at the install prefix.
-set(RETDEC_QT6_WIN_ROOT
-    "$ENV{RETDEC_QT6_WIN_ROOT}"
-    CACHE PATH "Path to a Qt6 Windows cross-build (set in env or pass -DRETDEC_QT6_WIN_ROOT=...)")
-
-if(EXISTS "${RETDEC_QT6_WIN_ROOT}")
-    list(APPEND CMAKE_FIND_ROOT_PATH "${RETDEC_QT6_WIN_ROOT}")
-    list(APPEND CMAKE_PREFIX_PATH    "${RETDEC_QT6_WIN_ROOT}")
-    set(Qt6_DIR "${RETDEC_QT6_WIN_ROOT}/lib/cmake/Qt6" CACHE PATH "Qt6 CMake dir")
-    message(STATUS "MinGW cross: Qt6 root = ${RETDEC_QT6_WIN_ROOT}")
-endif()
+# retdec-gui needs no cross-built toolkit: FuseUI and Forge are vendored in
+# third_party/ and the Win32 backend links only user32/gdi32 from the MinGW
+# sysroot.
 
 # Optional: OpenSSL cross-build root.
 set(RETDEC_MINGW_OPENSSL_ROOT

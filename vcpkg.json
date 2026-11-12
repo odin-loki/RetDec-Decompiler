@@ -3,11 +3,7 @@
   "version-string": "5.0",
   "description": "RetDec Enhanced Decompiler Suite — vcpkg dependency manifest (CUDA replaces OpenCL)",
   "dependencies": [
-    {
-      "name": "qtbase",
-      "features": ["widgets", "opengl"]
-    },
-    "qttools",
+    "gtest",
     "capstone",
     "rapidjson",
     "nlohmann-json",

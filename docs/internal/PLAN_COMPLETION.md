@@ -11,12 +11,12 @@ Last updated: **v2.0.24**. Historical plan text stays in
 | DecompileBench | **Done (stand-in + stock v5.0)** | 216-binary harness; stock via `remnux/retdec`; OSS-Fuzz paper corpus out of scope |
 | Algorithm recovery | Done (caveat) | name-blind **mean_f1_raw=0.056** (full) / **0.126** (ci-core); stem-era 1.0 withdrawn |
 | Default `.c` recompile | Done | CC-01 **216/216** (run 276). Stock remains 0/216 |
-| Neural refinement | Done | tiers 1–5, gates, llama.cpp pin, opt-in via env. Differential gate **not** implemented |
+| Neural refinement | Done | tiers 1–5, gates, inference on Forge (llama.cpp pin removed), opt-in via env. Differential gate **not** implemented |
 | Licensing | Done | AGPL + commercial, doctor checks |
 | Fuzz / sanitizers | Done | `sanitizers.yml`, `tests/crash_corpus/` |
 | Part 16 automation | Done | doctor, nightly report, benchmark gate, demo |
 | Release | Done | `release-installers.yml`: linux-installer, **windows-installer** (no `needs: release`), macos-installer. Linux x64 tarball; macOS arm64 tarball + `RetDec.app`; Windows NSIS/zip |
-| macOS bundle | Done | MAC-01 `check_macos_bundle.py`; GUI tests `QT_QPA_PLATFORM=cocoa` |
+| macOS bundle | Done | MAC-01 `check_macos_bundle.py`; GUI tests headless (`RETDEC_GUI_HEADLESS=1`; the Qt-era `QT_QPA_PLATFORM=cocoa` is gone with Qt) |
 | MSVC / Windows | Done | `/STACK:67108864`; u128 ops; `/ENTRY:main /NODEFAULTLIB` fixtures; i128 `isPowerOf2`/`logBase2` |
 | LLVM pin | Unchanged | llvm-project **23.1.0**. No bump unless tasked |
 

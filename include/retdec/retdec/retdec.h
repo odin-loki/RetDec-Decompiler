@@ -32,6 +32,14 @@ void setLogsFrom(const retdec::config::Parameters& params);
 
 struct LlvmModuleContextPair
 {
+	// Constructors are spelled out: since C++20 a struct with any
+	// user-declared constructor (the defaulted move below) is no longer an
+	// aggregate, so `LlvmModuleContextPair{module, context}` stopped compiling
+	// when the tree moved to C++23.
+	LlvmModuleContextPair() = default;
+	LlvmModuleContextPair(std::unique_ptr<llvm::Module> m, std::unique_ptr<llvm::LLVMContext> c):
+		module(std::move(m)), context(std::move(c))
+	{}
 	LlvmModuleContextPair(LlvmModuleContextPair&&) = default;
 	~LlvmModuleContextPair()
 	{

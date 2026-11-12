@@ -8,7 +8,7 @@ add_executable(pat2yara
 	utils.cpp
 )
 
-target_compile_features(pat2yara PUBLIC cxx_std_17)
+target_compile_features(pat2yara PUBLIC cxx_std_23)
 
 target_include_directories(pat2yara
 	PRIVATE

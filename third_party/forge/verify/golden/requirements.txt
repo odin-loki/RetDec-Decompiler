@@ -1,0 +1,8 @@
+# Python packages for the golden tests. Install into a venv and point FORGE_GOLDEN_PYTHON at it:
+#   python3 -m venv ~/venv-forge && ~/venv-forge/bin/pip install -r verify/golden/requirements.txt
+#   cmake ... -DFORGE_GOLDEN_PYTHON=$HOME/venv-forge/bin/python
+numpy==2.5.4
+torch==2.15.0
+transformers==5.22.1
+# Needed by golden_quant_inplace's GGUF import sub-check (skipped without it).
+gguf==0.19.0

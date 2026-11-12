@@ -21,7 +21,7 @@ cmake --preset full-linux-debug -DRETDEC_ENABLE_CUDA_ACCEL=ON
 ```
 
 Nothing in the specification-extraction pipeline (buildable C, semantic
-detections, optional llama.cpp) calls this library.
+detections, optional Forge inference) calls this library.
 
 Include paths remain `retdec/cuda_accel/*`. Public write-up:
 [docs/CUDA_CAPABILITIES.md](../../docs/CUDA_CAPABILITIES.md).

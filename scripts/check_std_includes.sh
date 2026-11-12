@@ -97,8 +97,10 @@ def strip_comments_and_literals(text):
             i += 1
     return "".join(out)
 
-# Directories that are not this project's to format.
-SKIP_DIRS = {".git", "build", "deps", "node_modules", "__pycache__"}
+# Directories that are not this project's to format. third_party/ is vendored
+# upstream code (FuseUI, Forge) kept as upstream has it, like deps/.
+SKIP_DIRS = {".git", "build", "deps", "third_party",
+             "node_modules", "__pycache__"}
 
 found = {}
 for dirpath, dirnames, filenames in os.walk("."):

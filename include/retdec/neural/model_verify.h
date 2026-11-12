@@ -1,6 +1,6 @@
 /**
  * @file include/retdec/neural/model_verify.h
- * @brief GGUF model SHA-256 allowlist + header checks at load (N6/N7).
+ * @brief Model (.gguf / .fpk) SHA-256 allowlist + GGUF header checks at load (N6/N7).
  */
 
 #ifndef RETDEC_NEURAL_MODEL_VERIFY_H

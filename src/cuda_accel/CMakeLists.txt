@@ -97,7 +97,7 @@ add_library(retdec::cuda-accel ALIAS retdec-cuda-accel)
 # Mixed CXX + CUDA: CXX_STANDARD 23 makes CMake require CUDA23 for .cu, which nvcc does not
 # support yet. Use C++20 for this target and CUDA 17 for device code.
 set_target_properties(retdec-cuda-accel PROPERTIES
-    CXX_STANDARD 20
+    CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
     CUDA_STANDARD 17
     CUDA_STANDARD_REQUIRED ON

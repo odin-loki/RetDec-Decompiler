@@ -1,0 +1,350 @@
+diff --git a/flow/include/forge/flow/kernels.hpp b/flow/include/forge/flow/kernels.hpp
+index 1729889..bc3b0fd 100644
+--- a/flow/include/forge/flow/kernels.hpp
++++ b/flow/include/forge/flow/kernels.hpp
+@@ -36,6 +36,9 @@ struct device_hooks {
+     std::function<void()> begin_run, end_run;
+     std::function<void(const float*, std::size_t)> pin, to_host, host_wrote, release;
+     std::function<void(float* src, std::size_t n, float* dst_base, std::size_t dst_count, std::size_t off)> copy;  // device-side
++    // fixed-size state op (state_ops.hpp: delta_rule, causal_conv) run on the device with the slot `S` kept resident;
++    // false when the backend has no kernel for it (the executor then runs the host version).
++    std::function<bool(const std::string& fn, std::span<const tensor_view> in, float* S, std::size_t sn, tensor_view out, const spec::attrs& a)> state;
+ };
+ 
+ inline kernel_fn reference_kernel(spec::op o) {
+diff --git a/flow/include/forge/flow/plan.hpp b/flow/include/forge/flow/plan.hpp
+index af73306..47b0409 100644
+--- a/flow/include/forge/flow/plan.hpp
++++ b/flow/include/forge/flow/plan.hpp
+@@ -1,5 +1,7 @@
+ #pragma once
+ // partition -> memory-plan -> lower -> flat plan -> replay. Plans are cached per shape bucket.
++#include <map>
++#include <cstdio>
+ #include <algorithm>
+ #include <forge/flow/codecs.hpp>
+ #include <forge/flow/kernels.hpp>
+@@ -381,8 +383,13 @@ private:
+                 std::vector<shape_t> shs; for (auto& v : ins) shs.push_back(v.shape);
+                 auto ss = state_ops::state_shape(fn, shs);
+                 auto& sl = st_->slots[node.name];
+-                if (sl.len == 0 || sl.buf.shape != ss) { sl.buf = tensor(ss); sl.len = 0; sl.fixed = true; }   // fresh: zeros
+-                if (h) { for (auto& v : ins) h->to_host(v.data, v.size()); h->to_host(out.data, out.size()); }
++                if (sl.len == 0 || sl.buf.shape != ss) {   // fresh: zeros (in place when the shape is unchanged, so a device copy stays keyed)
++                    if (sl.buf.shape == ss && !sl.buf.data.empty()) { std::fill(sl.buf.data.begin(), sl.buf.data.end(), 0.f); if (h) h->host_wrote(sl.buf.data.data(), sl.buf.data.size()); }
++                    else { if (h && !sl.buf.data.empty()) h->release(sl.buf.data.data(), sl.buf.data.size()); sl.buf = tensor(ss); }
++                    sl.len = 0; sl.fixed = true;
++                }
++                if (h && h->state && h->state(fn, ins, sl.buf.data.data(), sl.buf.data.size(), out, *s.attrs)) { sl.len += ins[0].shape[0]; continue; }
++                if (h) { for (auto& v : ins) h->to_host(v.data, v.size()); h->to_host(out.data, out.size()); h->to_host(sl.buf.data.data(), sl.buf.data.size()); }
+                 if (fn == "causal_conv")
+                     state_ops::causal_conv(ins[0].data, ins[1].data, sl.buf.data.data(), out.data, ins[0].shape[0], ins[0].shape[1], ins[1].shape[1]);
+                 else if (fn == "delta_rule") {
+@@ -392,7 +399,7 @@ private:
+                                           s.attrs->num("l2norm", 1) != 0, float(s.attrs->num("scale", 1.0 / std::sqrt(double(dk)))));
+                 } else raise(errc::not_found, "unknown state op '{}'", fn);
+                 sl.len += ins[0].shape[0];
+-                if (h) h->host_wrote(out.data, out.size());
++                if (h) { h->host_wrote(out.data, out.size()); h->host_wrote(sl.buf.data.data(), sl.buf.data.size()); }
+                 continue;
+             }
+             if (s.kind == 1) {
+@@ -425,7 +432,17 @@ private:
+                 out.shape[0] = sl.len;   // symbolic length: downstream kernels read it at run time
+                 continue;
+             }
++            if (h && p_.g.at(s.out).op == spec::op::reshape && ins.size() == 1 && ins[0].size() == out.size() &&
++                (ins[0].data + ins[0].size() <= out.data || out.data + out.size() <= ins[0].data)) {
++                h->copy(const_cast<float*>(ins[0].data), out.size(), out.data, out.size(), 0);   // stays on the device
++                continue;
++            }
+             if (h && !s.low->on_device) {
++                if (std::getenv("FORGE_PLAN_TRACE")) {   // which ops round-trip through the host on a device run
++                    static std::map<std::string, std::size_t> c; static bool reg = false;
++                    if (!reg) { reg = true; std::atexit([] { for (auto& [k, n] : c) std::fprintf(stderr, "host-op %s %zu\n", k.c_str(), n); }); }
++                    ++c[std::string(spec::info(p_.g.at(s.out).op).name) + " " + std::to_string(out.size())];
++                }
+                 for (auto& v : ins) if (v.data) h->to_host(v.data, v.size());   // encoded weights (qdata) live on the host only
+                 h->to_host(out.data, out.size());
+                 s.low->fn(ins, out, *s.attrs);
+diff --git a/flow/include/forge/flow/vulkan.hpp b/flow/include/forge/flow/vulkan.hpp
+index 022c30b..43396dc 100644
+--- a/flow/include/forge/flow/vulkan.hpp
++++ b/flow/include/forge/flow/vulkan.hpp
+@@ -67,6 +67,10 @@ template<class RT> std::unique_ptr<registry> gpu_registry(std::shared_ptr<RT> rt
+         h->host_wrote = [raw](const float* p, std::size_t n) { raw->host_wrote(p, n); };
+         h->release = [raw](const float* p, std::size_t n) { raw->release(p, n); };
+         h->copy = [raw](float* s, std::size_t n, float* d, std::size_t dn, std::size_t off) { raw->copy_resident(s, n, d, dn, off); };
++        if constexpr (requires { raw->run_state(std::string(), std::vector<tensor_view>(), (float*)nullptr, std::size_t(0), tensor_view(), spec::attrs()); })
++            if (!std::getenv("FORGE_GPU_NO_STATE_OPS"))
++                h->state = [raw](const std::string& fn, std::span<const tensor_view> in, float* S, std::size_t sn, tensor_view out, const spec::attrs& a) {
++                    return raw->run_state(fn, std::vector<tensor_view>(in.begin(), in.end()), S, sn, out, a); };
+         r->hooks = h;
+     }
+     for (std::size_t i = 0; i < spec::op_count; ++i) {
+diff --git a/grid/include/forge/grid/cuda.hpp b/grid/include/forge/grid/cuda.hpp
+index 406dd6d..be18921 100644
+--- a/grid/include/forge/grid/cuda.hpp
++++ b/grid/include/forge/grid/cuda.hpp
+@@ -286,6 +286,46 @@ public:
+         return true;
+     }
+ 
++    // Gated DeltaNet state ops (flow/state_ops.hpp) on the device. The state slot S is pinned, so it stays resident
++    // across runs (tokens) like the weights; inputs/output follow the residency protocol. Only inside a run.
++    bool run_state(const std::string& fn, const std::vector<tensor_view>& in, float* S, std::size_t sn, tensor_view out, const spec::attrs& a) {
++        std::lock_guard lk(mu_); bind();
++        if (!in_run_ || !has_fn_locked("forge_" + fn)) return false;
++        std::uint32_t u[6] = {}; std::uint32_t grid = 0; float sc = 0;
++        if (fn == "delta_rule" && in.size() == 5) {
++            u[0] = std::uint32_t(in[0].shape[0]); u[1] = std::uint32_t(in[0].shape[1]); u[2] = std::uint32_t(in[0].shape[2]);
++            u[3] = std::uint32_t(in[2].shape[1]); u[4] = std::uint32_t(in[2].shape[2]); u[5] = a.num("l2norm", 1) != 0;
++            if (u[2] > 256u || !u[1] || u[3] % u[1]) return false;
++            sc = float(a.num("scale", 1.0 / std::sqrt(double(u[2])))); grid = u[3];
++        } else if (fn == "causal_conv" && in.size() == 2) {
++            u[0] = std::uint32_t(in[0].shape[0]); u[1] = std::uint32_t(in[0].shape[1]); u[2] = std::uint32_t(in[1].shape[1]);
++            if (u[2] < 1u || u[2] > 9u) return false;
++            grid = (u[1] + 127u) / 128u;
++        } else return false;
++        bool known = false; for (auto& [p, n] : pinned_) if (p == S && n == sn) known = true;
++        if (!known) pinned_.push_back({S, sn});
++        // the kernels are not in-place safe: an output overlapping an input or the state goes to the host path
++        auto overlaps = [](const float* a, std::size_t an, const float* b, std::size_t bn) { return a < b + bn && b < a + an; };
++        for (auto& v : in) if (overlaps(out.data, out.size(), v.data, v.size())) return false;
++        if (overlaps(out.data, out.size(), S, sn)) return false;
++        // acquire twice: a later acquire may replace (and free) a resident buffer an earlier one returned when the
++        // ranges overlap, so the pointers are only final once a full pass hits the cache
++        std::vector<std::uint64_t> ptrs;
++        for (int pass = 0; pass < 2; ++pass) {
++            ptrs.clear();
++            for (auto& v : in) ptrs.push_back(acquire(v.data, v.size(), false).ptr);
++            auto sb = acquire(S, sn, false); sb.e->pinned = true; ptrs.push_back(sb.ptr);
++            ptrs.push_back(acquire(out.data, out.size(), pass == 0).ptr);
++        }
++        for (auto& [k, e] : res_) { auto kp = reinterpret_cast<const float*>(k); if (overlaps(kp, e.count, S, sn) || overlaps(kp, e.count, out.data, out.size())) e.host_valid = false; }
++        std::vector<void*> args; for (auto& p : ptrs) args.push_back(&p);
++        if (fn == "delta_rule") { for (int i = 0; i < 6; ++i) args.push_back(&u[i]); args.push_back(&sc); }
++        else for (int i = 0; i < 3; ++i) args.push_back(&u[i]);
++        ++dispatches_[fn];
++        if (grid) ck(f_.launch(function("forge_" + fn), grid, 1, 1, 128, 1, 1, 0, stream_, args.data(), nullptr), "launch");
++        return true;
++    }
++
+     // Run one op over host views; false if there is no kernel for this op/shape. Inside a run (begin_run)
+     // buffers stay resident; outside, every buffer is uploaded and the output downloaded.
+     bool run_op(const std::string& op, const std::vector<tensor_view>& in, const spec::attrs& a, tensor_view out) {
+@@ -358,6 +398,8 @@ public:
+                 args.push_back(&f0); break;
+             }
+             unsigned block = 64, grid = (threads + block - 1) / block;
++            if (s == sig::attention && !std::getenv("FORGE_GPU_NO_FA") && has_fn_locked("forge_attention_fa")) {   // block per (row, head)
++                fn = function("forge_attention_fa"); block = 128; grid = rows * cols; }
+             if (grid) ck(f_.launch(fn, grid, 1, 1, block, 1, 1, 0, stream_, args.data(), nullptr), "launch");
+             if (!in_run_) { ck(f_.dtoh_async(out.data, ptrs.back(), out.size() * 4, stream_), "memcpy DtoH"); sync(); }
+         } catch (...) { if (!in_run_) sync(); free_temps(); throw; }
+diff --git a/spec/gen/gpu_gen.py b/spec/gen/gpu_gen.py
+index 01de5f9..13e85a0 100644
+--- a/spec/gen/gpu_gen.py
++++ b/spec/gen/gpu_gen.py
+@@ -341,6 +341,87 @@ FORGE_GLOBAL void forge_qmatmul_mmq(const float* a, const unsigned char* w, floa
+   for (unsigned i = 0; i < 4u; ++i) for (unsigned j = 0; j < 4u; ++j) {
+     unsigned r = r0 + ty + 16u * i, c = c0 + tx + 16u * j;
+     if (r < rows && c < cols) y[(unsigned long long)r * cols + c] = acc[i * 4u + j]; } }
++// Gated DeltaNet state ops on the device (flow/state_ops.hpp semantics; the state slot stays resident).
++// delta_rule: one 128-thread block per value head; each thread owns whole columns j of S[h] (dk x dv), so the
++// recurrence S *= exp(g); delta = (v - S^T k) * beta; S += k delta^T; out = S^T q needs no cross-thread sync
++// except for the per-token q/k l2 norms. Requires dk <= 256.
++FORGE_GLOBAL void forge_delta_rule(const float* q, const float* k, const float* v, const float* g, const float* beta, float* S, float* out,
++                                   unsigned s, unsigned hk, unsigned dk, unsigned hv, unsigned dv, unsigned l2, float scale) {
++  __attribute__((shared)) float qn[256]; __attribute__((shared)) float kn[256]; __attribute__((shared)) float red[2 * 128];
++  unsigned h = bid_(), t0 = tid_(), kh = h / (hv / hk);
++  float* Sh = S + (unsigned long long)h * dk * dv;
++  for (unsigned t = 0; t < s; ++t) {
++    const float* qt = q + ((unsigned long long)t * hk + kh) * dk; const float* kt = k + ((unsigned long long)t * hk + kh) * dk;
++    float qs = 0.0f, ks = 0.0f;
++    for (unsigned i = t0; i < dk; i += 128u) { float a = qt[i], b = kt[i]; qn[i] = a; kn[i] = b; qs += a * a; ks += b * b; }
++    red[t0] = qs; red[128u + t0] = ks; bar_();
++    for (unsigned st = 64u; st > 0u; st >>= 1) { if (t0 < st) { red[t0] += red[t0 + st]; red[128u + t0] += red[128u + t0 + st]; } bar_(); }
++    float qf = l2 ? scale / fsqrt(red[0] + 1e-6f) : scale, kf = l2 ? 1.0f / fsqrt(red[128] + 1e-6f) : 1.0f;
++    float decay = fexp(g[t * hv + h]), bt = beta[t * hv + h];
++    const float* vt = v + ((unsigned long long)t * hv + h) * dv; float* o = out + ((unsigned long long)t * hv + h) * dv;
++    for (unsigned j = t0; j < dv; j += 128u) {
++      float kv = 0.0f;
++      for (unsigned i = 0; i < dk; ++i) { float r = Sh[i * dv + j] * decay; Sh[i * dv + j] = r; kv = fma_(r, kn[i] * kf, kv); }
++      float d = (vt[j] - kv) * bt, acc = 0.0f;
++      for (unsigned i = 0; i < dk; ++i) { float r = fma_(kn[i] * kf, d, Sh[i * dv + j]); Sh[i * dv + j] = r; acc = fma_(r, qn[i] * qf, acc); }
++      o[j] = acc; }
++    bar_(); } }
++// causal_conv: one thread per channel; state [K-1, C] is the previous K-1 inputs. Requires K <= 9.
++FORGE_GLOBAL void forge_causal_conv(const float* x, const float* w, float* st, float* out, unsigned s, unsigned C, unsigned K) {
++  unsigned c = bid_() * 128u + tid_(); if (c >= C) return;
++  unsigned P = K - 1u;
++  for (unsigned t = 0; t < s; ++t) { float acc = 0.0f;
++    for (unsigned j = 0; j < K; ++j) { unsigned p = t + j; float xv = p < P ? st[p * C + c] : x[(unsigned long long)(p - P) * C + c]; acc = fma_(w[c * K + j], xv, acc); }
++    out[(unsigned long long)t * C + c] = acc; }
++  float nw[8];
++  for (unsigned i = 0; i < P; ++i) { unsigned p = s + i; nw[i] = p < P ? st[p * C + c] : x[(unsigned long long)(p - P) * C + c]; }
++  for (unsigned i = 0; i < P; ++i) st[i * C + c] = nw[i]; }
++// attention_fa: same contract as forge_attention, one 128-thread block per (query row, head). Keys are taken in
++// tiles of 128 (one score per thread), with an online softmax kept in shared memory; each thread then owns output
++// columns e = tid, tid+128 and accumulates the tile's V rows (coalesced). Head dims up to 256.
++FORGE_GLOBAL void forge_attention_fa(const float* q, const float* k, const float* v, float* y, unsigned s, unsigned hq, unsigned d,
++                                     unsigned t, unsigned hk, unsigned dv, unsigned flags, float scale) {
++  __attribute__((shared)) float qs[256]; __attribute__((shared)) float ws[128]; __attribute__((shared)) float red[128];
++  __attribute__((shared)) float ys[256]; __attribute__((shared)) float mrun[2];
++  unsigned id = bid_(), tx = tid_(); if (id >= s * hq) return;
++  unsigned i = id / hq, h = id % hq, kh = h / (hq / hk);
++  unsigned causal = flags & 1u, kc = (flags >> 1) & 7u, vc = (flags >> 4) & 7u, window = flags >> 7;
++  unsigned kw = kvwords(kc, d), vw = kvwords(vc, dv);
++  int pos = (int)t - (int)s + (int)i; const float* qp = q + (unsigned long long)id * d; float* yp = y + (unsigned long long)id * dv;
++  unsigned dk = kc >= 3u ? tbqdim(d) : d, dvp = vc >= 3u ? tbqdim(dv) : dv;
++  for (unsigned e = tx; e < dk; e += 128u) qs[e] = e < d ? (kc >= 3u ? qp[e] * tbqsign(e) : qp[e]) : 0.0f;
++  bar_();
++  if (kc >= 3u && tx == 0u) { FORGE_FWHT(qs, dk) }
++  float acc0 = 0.0f, acc1 = 0.0f;
++  if (tx == 0u) { mrun[0] = -__builtin_inff(); mrun[1] = 0.0f; }
++  bar_();
++  unsigned jend = t; if (causal) { int lim = pos + 1; jend = lim < 0 ? 0u : ((unsigned)lim < t ? (unsigned)lim : t); }
++  unsigned jbeg = 0u; if (window && pos - (int)window + 1 > 0) jbeg = (unsigned)(pos - (int)window + 1);
++  for (unsigned j0 = jbeg; j0 < jend; j0 += 128u) {
++    unsigned j = j0 + tx; float sc = -__builtin_inff();
++    if (j < jend) { const float* kp = k + ((unsigned long long)j * hk + kh) * kw; float dot = 0.0f;
++      for (unsigned e = 0; e < dk; ++e) dot = fma_(qs[e], kvat(kp, kc, e), dot); sc = dot * scale; }
++    red[tx] = sc; bar_();
++    for (unsigned st = 64u; st > 0u; st >>= 1) { if (tx < st) red[tx] = red[tx + st] > red[tx] ? red[tx + st] : red[tx]; bar_(); }
++    float mold = mrun[0], mnew = red[0] > mold ? red[0] : mold;
++    float w = j < jend ? fexp(sc - mnew) : 0.0f; ws[tx] = w; bar_();
++    red[tx] = w; bar_();
++    for (unsigned st = 64u; st > 0u; st >>= 1) { if (tx < st) red[tx] += red[tx + st]; bar_(); }
++    float rs = mold == -__builtin_inff() ? 0.0f : fexp(mold - mnew);
++    acc0 *= rs; acc1 *= rs;
++    unsigned nt = jend - j0 < 128u ? jend - j0 : 128u;
++    for (unsigned jj = 0; jj < nt; ++jj) { const float* vp = v + ((unsigned long long)(j0 + jj) * hk + kh) * vw; float wj = ws[jj];
++      if (tx < dvp) acc0 = fma_(wj, kvat(vp, vc, tx), acc0);
++      if (tx + 128u < dvp) acc1 = fma_(wj, kvat(vp, vc, tx + 128u), acc1); }
++    bar_();
++    if (tx == 0u) { mrun[1] = mrun[1] * rs + red[0]; mrun[0] = mnew; }
++    bar_(); }
++  float sum = mrun[1], inv = sum > 0.0f ? 1.0f / sum : 0.0f;
++  if (vc >= 3u) {
++    if (tx < dvp) ys[tx] = acc0; if (tx + 128u < dvp) ys[tx + 128u] = acc1; bar_();
++    if (tx == 0u) { FORGE_FWHT(ys, dvp) } bar_();
++    for (unsigned e = tx; e < dv; e += 128u) yp[e] = ys[e] * tbqsign(e) * inv;
++  } else { if (tx < dv) yp[tx] = acc0 * inv; if (tx + 128u < dv) yp[tx + 128u] = acc1 * inv; } }
+ """
+ 
+ CU_MATH = r"""// sin/cos in double after reduction by pi/2 (no libdevice/ocml needed); |x| up to ~1e9 is exact enough.
+diff --git a/tests/mock_cuda.c b/tests/mock_cuda.c
+index b1963a8..b18bd3c 100644
+--- a/tests/mock_cuda.c
++++ b/tests/mock_cuda.c
+@@ -119,7 +119,8 @@ static int mock_qmm(const float* a, const unsigned char* w, float* y, unsigned r
+     return 0; }
+ static int nargs_of(const char* op) {
+     if (!strcmp(op, "qmatmul_t") || !strcmp(op, "qmatmul_mmq")) return 8;
+-    if (!strcmp(op, "attention")) return 12; if (!strcmp(op, "rope")) return 8; if (!strcmp(op, "slice")) return 7;
++    if (!strcmp(op, "delta_rule")) return 14; if (!strcmp(op, "causal_conv")) return 7;
++    if (!strcmp(op, "attention") || !strcmp(op, "attention_fa")) return 12; if (!strcmp(op, "rope")) return 8; if (!strcmp(op, "slice")) return 7;
+     if (!strcmp(op, "gather")) return 6; if (!strcmp(op, "rms_norm") || !strcmp(op, "matmul_t")) return 6;
+     if (!strcmp(op, "scale") || !strcmp(op, "softmax")) return 4;
+     return 0; }
+@@ -154,7 +155,7 @@ static int run_kernel(void* f, unsigned gx, unsigned bx, void** args) {
+         for (i = 0; i < n && i < threads; ++i) { unsigned r = (unsigned)idx[i / cols]; y[i] = r < rows ? t[r * cols + i % cols] : 0; } return 0; }
+     if (!strcmp(op, "slice")) { float *x = P(ARG(0, dptr)), *y = P(ARG(1, dptr)); unsigned n = ARG(2, unsigned), lin = ARG(3, unsigned), inner = ARG(4, unsigned), st = ARG(5, unsigned), len = ARG(6, unsigned);
+         for (i = 0; i < n && i < threads; ++i) { unsigned in_ = i % inner, r = (i / inner) % len, o = i / (inner * len); y[i] = x[(o * lin + st + r) * inner + in_]; } return 0; }
+-    if (!strcmp(op, "attention")) { float *q = P(ARG(0, dptr)), *k = P(ARG(1, dptr)), *v = P(ARG(2, dptr)), *y = P(ARG(3, dptr));
++    if (!strcmp(op, "attention") || !strcmp(op, "attention_fa")) { float *q = P(ARG(0, dptr)), *k = P(ARG(1, dptr)), *v = P(ARG(2, dptr)), *y = P(ARG(3, dptr));
+         unsigned s = ARG(4, unsigned), hq = ARG(5, unsigned), d = ARG(6, unsigned), t = ARG(7, unsigned), hk = ARG(8, unsigned), dv = ARG(9, unsigned), fl = ARG(10, unsigned);
+         float sc = ARG(11, float);
+         unsigned causal = fl & 1, kc = (fl >> 1) & 3, vc = (fl >> 3) & 3, window = fl >> 5;
+@@ -178,6 +179,30 @@ static int run_kernel(void* f, unsigned gx, unsigned bx, void** args) {
+         unsigned rows = ARG(3, unsigned), cols = ARG(4, unsigned), k = ARG(5, unsigned), fmt = ARG(6, unsigned), rb = ARG(7, unsigned);
+         if (gx < ((cols + 63) / 64) * ((rows + 63) / 64) || bx != 256) return 1;   /* MMQ 64x64-tile launch shape */
+         return mock_qmm(a, w, y, rows, cols, k, fmt, rb); }
++    if (!strcmp(op, "delta_rule")) {   /* flow/state_ops.hpp delta_rule; one block per value head */
++        float *q = P(ARG(0, dptr)), *k = P(ARG(1, dptr)), *v = P(ARG(2, dptr)), *g = P(ARG(3, dptr)), *be = P(ARG(4, dptr)), *S = P(ARG(5, dptr)), *o = P(ARG(6, dptr));
++        unsigned s = ARG(7, unsigned), hk = ARG(8, unsigned), dk = ARG(9, unsigned), hv = ARG(10, unsigned), dv = ARG(11, unsigned), l2 = ARG(12, unsigned); float sc = ARG(13, float);
++        unsigned h, t, a, j; if (gx < hv || bx != 128 || dk > 256) return 1;
++        for (h = 0; h < hv; ++h) { float* Sh = S + (size_t)h * dk * dv; unsigned kh = h / (hv / hk);
++            for (t = 0; t < s; ++t) { const float *qt = q + ((size_t)t * hk + kh) * dk, *kt = k + ((size_t)t * hk + kh) * dk, *vt = v + ((size_t)t * hv + h) * dv;
++                float qs = 0, ks = 0, qf, kf, dec = expf(g[t * hv + h]), bt = be[t * hv + h]; float* ot = o + ((size_t)t * hv + h) * dv;
++                for (a = 0; a < dk; ++a) { qs += qt[a] * qt[a]; ks += kt[a] * kt[a]; }
++                qf = l2 ? sc / sqrtf(qs + 1e-6f) : sc; kf = l2 ? 1.0f / sqrtf(ks + 1e-6f) : 1.0f;
++                for (j = 0; j < dv; ++j) { float kv = 0, d, acc = 0;
++                    for (a = 0; a < dk; ++a) { Sh[a * dv + j] *= dec; kv = fmaf(Sh[a * dv + j], kt[a] * kf, kv); }
++                    d = (vt[j] - kv) * bt;
++                    for (a = 0; a < dk; ++a) { Sh[a * dv + j] = fmaf(kt[a] * kf, d, Sh[a * dv + j]); acc = fmaf(Sh[a * dv + j], qt[a] * qf, acc); }
++                    ot[j] = acc; } } }
++        return 0; }
++    if (!strcmp(op, "causal_conv")) {
++        float *x = P(ARG(0, dptr)), *w = P(ARG(1, dptr)), *st = P(ARG(2, dptr)), *o = P(ARG(3, dptr));
++        unsigned s = ARG(4, unsigned), C = ARG(5, unsigned), K = ARG(6, unsigned), c, t, j, P_ = K - 1; float nw[8];
++        if (gx * bx < C || K > 9) return 1;
++        for (c = 0; c < C; ++c) {
++            for (t = 0; t < s; ++t) { float acc = 0; for (j = 0; j < K; ++j) { unsigned p = t + j; acc = fmaf(w[c * K + j], p < P_ ? st[p * C + c] : x[(size_t)(p - P_) * C + c], acc); } o[(size_t)t * C + c] = acc; }
++            for (j = 0; j < P_; ++j) { unsigned p = s + j; nw[j] = p < P_ ? st[p * C + c] : x[(size_t)(p - P_) * C + c]; }
++            for (j = 0; j < P_; ++j) st[j * C + c] = nw[j]; }
++        return 0; }
+     if (!strcmp(op, "scale")) { float *x = P(ARG(0, dptr)), *y = P(ARG(1, dptr)); unsigned n = ARG(2, unsigned); float a = ARG(3, float);
+         for (i = 0; i < threads && i < n; ++i) y[i] = a * x[i]; return 0; }
+     if (!strcmp(op, "softmax")) { float *x = P(ARG(0, dptr)), *y = P(ARG(1, dptr)); unsigned rows = ARG(2, unsigned), cols = ARG(3, unsigned);
+diff --git a/tests/test_gpu.cpp b/tests/test_gpu.cpp
+index dac5615..8d1514c 100644
+--- a/tests/test_gpu.cpp
++++ b/tests/test_gpu.cpp
+@@ -74,6 +74,47 @@ template<class RT> static int qmatmul_check(flow::registry& reg, const std::stri
+     return fails;
+ }
+ 
++// Gated DeltaNet state ops on the device (run_state) vs the CPU executor: 3-token prefill, then token by token,
++// then reset() and again (the resident state must restart from zeros).
++static int state_ops_check(flow::registry& reg, const std::string& api) {
++    if (!reg.hooks || !reg.hooks->state) { std::printf("note %s: no device state ops\n", api.c_str()); return 0; }
++    using namespace flow;
++    const i64 S = 7, Hk = 2, Hv = 4, dk = 40, dv = 136, C = 150, K = 4;   // dv > 128 and C > 128: multi-column threads / blocks
++    auto rnd = [](std::size_t n, float ph) { std::vector<float> v(n); for (std::size_t i = 0; i < n; ++i) v[i] = std::sin(float(i) * 0.37f + ph); return v; };
++    auto q = rnd(S * Hk * dk, 1), k = rnd(S * Hk * dk, 2), v = rnd(S * Hv * dv, 3), gl = rnd(S * Hv, 4), bl = rnd(S * Hv, 5), xc = rnd(S * C, 6), wc = rnd(C * K, 7);
++    for (auto& x : gl) x = -std::fabs(x) * 0.5f;
++    for (auto& x : bl) x = 1.f / (1.f + std::exp(-x));
++    auto build = [&](i64 s) {
++        graph g;
++        auto iq = g.input("q", {s, Hk, dk}), ik = g.input("k", {s, Hk, dk}), iv = g.input("v", {s, Hv, dv});
++        auto ig = g.input("g", {s, Hv}), ib = g.input("b", {s, Hv}), ix = g.input("x", {s, C});
++        auto w = g.constant(tensor({C, K}, 0.f)); g.at(w).constant->data = wc;
++        g.output("o", g.state_op("ssm", "delta_rule", {iq, ik, iv, ig, ib}));
++        g.output("c", g.state_op("conv", "causal_conv", {ix, w}));
++        return g;
++    };
++    auto run = [&](registry* r) {
++        std::vector<float> out;
++        state_store st; pass_options po; po.lowerings = r;
++        auto p3 = compile(build(3), &st, po), p1 = compile(build(1), &st, po);
++        executor e3(*p3, &st), e1(*p1, &st);
++        auto feed = [&](executor& e, i64 t0, i64 s) {
++            auto sl = [&](const std::vector<float>& a, i64 row) { return std::span<const float>(a.data() + t0 * row, std::size_t(s * row)); };
++            e.set_input("q", sl(q, Hk * dk)); e.set_input("k", sl(k, Hk * dk)); e.set_input("v", sl(v, Hv * dv));
++            e.set_input("g", sl(gl, Hv)); e.set_input("b", sl(bl, Hv)); e.set_input("x", sl(xc, C)); e.run();
++            for (auto nm : {"o", "c"}) { auto t = e.output(nm); out.insert(out.end(), t.data.begin(), t.data.end()); }
++        };
++        for (int pass = 0; pass < 2; ++pass) { feed(e3, 0, 3); for (i64 t = 3; t < S; ++t) feed(e1, t, 1); st.reset(); }
++        return out;
++    };
++    auto dev = run(&reg), cpu = run(nullptr);
++    double worst = dev.size() == cpu.size() ? 0 : 1e9;
++    for (std::size_t i = 0; i < std::min(dev.size(), cpu.size()); ++i) worst = std::max(worst, std::fabs(double(dev[i]) - cpu[i]) / (1.0 + std::fabs(double(cpu[i]))));
++    bool ok = worst < 1e-4;
++    std::printf("%s %s delta_rule/causal_conv on the device match the CPU (worst rel %.3g)\n", ok ? "ok  " : "FAIL", api.c_str(), worst);
++    return ok ? 0 : 1;
++}
++
+ // Every runtime with the cuda.hpp contract: open(why, ordinal) via the Open functor.
+ template<class RT, class Open> static int device_t(Open open) {
+     std::string why; auto rt = open(&why, 0);
+@@ -89,6 +130,7 @@ template<class RT, class Open> static int device_t(Open open) {
+     }
+     std::printf("%s %d/%d %s lowerings pass the oracle\n", fails ? "FAIL" : "ok  ", n - fails, n, api.c_str());
+     fails += qmatmul_check<RT>(*reg, api);
++    fails += state_ops_check(*reg, api);
+     return fails ? 1 : 0;
+ }
+ 

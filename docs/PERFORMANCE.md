@@ -13,14 +13,14 @@ Version **2.0.22**. Post-ship performance features (MASTER-UPGRADE-PLAN Part 11,
 | `RETDEC_BIN2LLVMIR_DIAG` | off | Per-pass LLVM wall ms + pipeline / post-pipeline split |
 | `RETDEC_PROFILE_JSON` | off | Write `<output>.profile.json` (`auto` next to `-o`) |
 | `RETDEC_TYPE_INFERENCE` | off | Extra per-function type-inference loop (off = faster) |
-| `RETDEC_NEURAL_REFINE` | on | Offline llama.cpp refine (default on when GGUF present; `0` disables) |
+| `RETDEC_NEURAL_REFINE` | on | Offline Forge refine (default on when the model is present; `0` disables) |
 | `RETDEC_EMIT_BUILDABLE` | on | Write `.h` / `_stubs.c` / `.buildable.c` next to output C. `.buildable.c` is one linkable TU (libc headers, cloned prototypes, orphan break rewrite, weak stubs, `main` if missing). Default `.c` unchanged. CLI: `--buildable` (default) / `--no-buildable`. |
 | `RETDEC_SKIP_SEMANTIC_RECOVERY` | off | A/B only: skip post-pipeline detectors (default F5 still runs them) |
 | `RETDEC_NEURAL_REQUIRE_COMPILE` | off | Accept neural refine only if `cc -fsyntax-only` passes. C is not executed. `RETDEC_NEURAL_DIFF_GATE` is **not implemented** (`C-NEURAL-DIFF` withdrawn): if set, the gate warns and skips. |
 | `RETDEC_NEURAL_THINKING` | off | Qwen `/think` (slower; off = `/no_think`) |
 | `RETDEC_NEURAL_MAX_TOKENS` | `512` | Cap generated tokens per tier |
-| `RETDEC_NEURAL_THREADS` | llama default | llama.cpp generation threads |
-| `RETDEC_NEURAL_CTX` | `4096` | llama.cpp context length |
+| `RETDEC_NEURAL_THREADS` | Forge default | Sets `FORGE_THREADS` (generation threads) |
+| `RETDEC_NEURAL_CTX` | `4096` | Model context length (min 512) |
 | `RETDEC_NEURAL_N_BATCH` | `512` | Prompt decode chunk size |
 
 ## Incremental function cache
@@ -85,7 +85,7 @@ CUDA acceleration is **optional** and **off by default** in CI and full presets 
 `src/cuda_accel` / `src/opencl` are unintegrated. Post-LLVM analysis detectors (container, sort, algo) run on CPU; see
 [GUI_PHASE_D.md](internal/GUI_PHASE_D.md) for the product decision.
 
-Neural inference may use llama.cpp CUDA when enabled at build time.
+Neural inference may use a Forge GPU device (`RETDEC_NEURAL_DEVICE` / `FORGE_DEVICE`; runtimes loaded at run time, CPU fallback).
 
 Do not treat Docker Hub `imortek/retdec` or a default AppImage as the
 performance story (`C-DOCKER-HUB` unpublished; `C-APPIMAGE` opt-in). RISC-V
@@ -94,6 +94,5 @@ is unimplemented (`C-CXX-EMIT` withdrawn).
 
 ## Roadmap
 
-- Speculative MTP decode when llama.cpp exposes a C API (b10451 has `load_mtp` only)
 - LLVM-context-per-worker for full pipeline parallelism (11.2)
 - Hottest remaining static cost: `instcombine` / provider-init / decoder / llvmir2hll

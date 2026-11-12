@@ -20,8 +20,8 @@ that is not implemented.
 | YARA | `src/yaracpp`; `src/fileinfo/pattern_detector`; `src/bin2llvmir` provider init | Rule files plus the input binary | **No.** libyara runs in the decompiler process. |
 | Unpacker emulation | `src/unpacker`, `src/unpackertool` (UPX/mpress stubs, NRV, unfilter) | Packed payload and decompressor | **No.** Emulation is in-process as the analyst user. |
 | Neural prompt | `src/neural/prompts.cpp` | Decompiled text (may contain binary-lifted strings) | **No OS sandbox.** Prompts run `stripCStringLiterals` before the model sees function source (`tests/neural/mock_test.cpp`). |
-| GUI subprocess | `src/gui` `QProcess` → `retdec-decompiler` | Same untrusted input as CLI | **No.** Out-of-process only. No seccomp, AppContainer, or `sandbox_init`. Child inherits host rights. |
-| GPU kernel | `src/cuda_accel`, `src/opencl`; optional llama.cpp CUDA | Host buffers / model weights if those builds are enabled | **No.** `cuda_accel` / `opencl` are unintegrated and default **OFF**. llama.cpp GPU offload is a separate opt-in (`RETDEC_NEURAL_GPU_OFFLOAD`). Kernels are not isolated from the host. |
+| GUI subprocess | `src/gui` (Forge child process) → `retdec-decompiler` | Same untrusted input as CLI | **No.** Out-of-process only. No seccomp, AppContainer, or `sandbox_init`. Child inherits host rights. |
+| GPU kernel | `src/cuda_accel`, `src/opencl`; optional Forge GPU device for neural refine | Host buffers / model weights if those builds are enabled | **No.** `cuda_accel` / `opencl` are unintegrated and default **OFF**. Forge GPU inference is a separate opt-in (`RETDEC_NEURAL_DEVICE` / `RETDEC_NEURAL_GPU_OFFLOAD`). Kernels are not isolated from the host. |
 
 `SECURITY.md` tells operators to run untrusted binaries in an isolated VM
 or container. That isolation is **operator-provided**, not built into

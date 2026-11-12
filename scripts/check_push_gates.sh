@@ -108,7 +108,6 @@ CHECKS=(
 	"doc       ELF hardening (self-test):::${PY} scripts/ci/check_elf_hardening.py --self-test"
 	"doc       clang-tidy (self-test):::${PY} scripts/ci/run_clang_tidy.py --self-test"
 	"doc       keystone not installed:::${PY} scripts/ci/check_keystone_not_installed.py"
-	"doc       Qt dynamic link:::${PY} scripts/ci/check_qt_dynamic_link.py"
 	"doc       provenance summary:::${PY} scripts/ci/generate_provenance.py"
 	"doc       version drift:::${PY} scripts/ci/check_version_drift.py"
 	"doc       release binaries:::${PY} scripts/ci/check_release_binaries.py"

@@ -16,7 +16,7 @@ Human-facing docs (what the product does, how to build it, claims):
   in the source tree (odin-loki/RetDec-Decompiler).
 
 Native binaries emit C. Managed formats have input-keyed emitters.
-Optional llama.cpp refinement is off unless RETDEC_ENABLE_LLAMACPP and
-RETDEC_NEURAL_REFINE are set. CUDA acceleration is not in the default
+Optional neural refinement (on Forge) needs RETDEC_ENABLE_NEURAL at build
+time; RETDEC_NEURAL_REFINE=0 turns it off at run time. CUDA acceleration is not in the default
 pipeline.
 */

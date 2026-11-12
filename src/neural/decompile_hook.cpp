@@ -983,11 +983,11 @@ void maybeRefineDecompilerOutput(retdec::config::Config& config, std::string* ou
 	}
 	else
 	{
-		backend = createLlamaInference();
+		backend = createForgeInference();
 		if (!backend)
 		{
 #if defined(NDEBUG) && !defined(RETDEC_NEURAL_ALLOW_MOCK)
-			std::fprintf(stderr, "retdec-neural: no llama.cpp backend; mock fallback disabled in release\n");
+			std::fprintf(stderr, "retdec-neural: no Forge inference backend; mock fallback disabled in release\n");
 			return;
 #else
 			backend = createMockInference();
@@ -999,12 +999,12 @@ void maybeRefineDecompilerOutput(retdec::config::Config& config, std::string* ou
 	if (v >= 512) ctxLen = v;
 	if (!backend->loadModel(model, ctxLen))
 	{
-		std::fprintf(stderr, "retdec-neural: failed to load GGUF: %s\n", model.c_str());
+		std::fprintf(stderr, "retdec-neural: failed to load model: %s\n", model.c_str());
 		const std::string outPath = config.parameters.getOutputFile();
 		if (!outPath.empty())
 		{
 			std::ofstream(outPath + ".refinement-manifest.json")
-				<< R"({"accepted":false,"reason":"failed to load GGUF"})";
+				<< R"({"accepted":false,"reason":"failed to load model"})";
 		}
 		return;
 	}

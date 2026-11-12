@@ -15,7 +15,7 @@ target_include_directories(retdec-eh-reconstruct
         ${PROJECT_SOURCE_DIR}/include
 )
 
-target_compile_features(retdec-eh-reconstruct PUBLIC cxx_std_17)
+target_compile_features(retdec-eh-reconstruct PUBLIC cxx_std_23)
 
 set_target_properties(retdec-eh-reconstruct PROPERTIES
     POSITION_INDEPENDENT_CODE ON

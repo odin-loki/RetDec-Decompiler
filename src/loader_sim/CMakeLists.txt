@@ -11,6 +11,6 @@ target_include_directories(retdec-loader-sim
 )
 
 set_target_properties(retdec-loader-sim PROPERTIES
-    CXX_STANDARD          17
+    CXX_STANDARD          23
     CXX_STANDARD_REQUIRED ON
 )

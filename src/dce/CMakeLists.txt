@@ -16,7 +16,7 @@ target_link_libraries(retdec-dce PUBLIC
 )
 
 set_target_properties(retdec-dce PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
 )
 

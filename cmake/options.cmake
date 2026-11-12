@@ -70,9 +70,12 @@ option(RETDEC_ENABLE_UNPACKER "" OFF)
 option(RETDEC_ENABLE_UNPACKERTOOL "" OFF)
 option(RETDEC_ENABLE_UTILS "" OFF)
 option(RETDEC_ENABLE_CUDA_ACCEL "Build CUDA acceleration layer (CUDAContext, GPU analysis passes)" OFF)
-option(RETDEC_ENABLE_NEURAL "Build neural refinement library (mock inference; llama.cpp when enabled)" ON)
-option(RETDEC_ENABLE_LLAMACPP "Fetch and link llama.cpp for RETDEC_HAS_LLAMACPP backend" ON)
-option(RETDEC_NEURAL_GPU_OFFLOAD "Pass GGML_CUDA=ON into llama.cpp ExternalProject (CPU default)" OFF)
+option(RETDEC_ENABLE_NEURAL "Build neural refinement library (Forge inference backend, third_party/forge)" ON)
+# Forge loads GPU runtimes (CUDA, HIP, Vulkan, ...) at run time and needs no
+# GPU SDK to build. This only changes the default device: ON asks Forge for
+# the GPU (Metal on Apple, CUDA elsewhere) with a CPU fallback;
+# RETDEC_NEURAL_DEVICE / FORGE_DEVICE override it at run time.
+option(RETDEC_NEURAL_GPU_OFFLOAD "Default neural inference to Forge's GPU device (CPU fallback)" OFF)
 option(RETDEC_ENABLE_XSIMD "Fetch xsimd and vectorize confirmed-hot byte scans" OFF)
 option(RETDEC_ENABLE_LIEF "Build LIEF adapter for incremental fileformat migration (step 29)" OFF)
 # RETDEC_ENABLE_RELLIC used to be declared here. Nothing read it -- not this
@@ -83,7 +86,7 @@ option(RETDEC_ENABLE_LIEF "Build LIEF adapter for incremental fileformat migrati
 # status when it is missing. Its sibling RETDEC_ENABLE_LIEF is not like this --
 # cmake/lief_optional.cmake reads it.
 option(RETDEC_NEURAL_OFFLINE_ONLY "Compile out neural network egress paths (air-gapped builds)" OFF)
-option(RETDEC_REQUIRE_QT6 "Require Qt6 so retdec-gui configures; fail CMake if Qt6 is missing" OFF)
+option(RETDEC_GUI "Build retdec-gui (FuseUI; no external GUI toolkit needed)" ON)
 option(RETDEC_ENABLE_EXPERIMENTAL_SCAFFOLD "Build experimental task scaffold library (tasks 5-60 code anchors)" OFF)
 option(RETDEC_ENABLE_YARACPP "" OFF)
 

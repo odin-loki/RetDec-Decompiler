@@ -1,0 +1,15 @@
+allocs: allocation count limit reached
+allocs: within the limit 2
+allocs 0: OutOfMemoryError
+allocs: unlimited again (1000)
+handles: open-handle limit of 2 reached opening a file handle
+handles: reopened after close
+handles: 5 sequential opens with limit 1
+handles: nested open-handle limit of 1 reached opening a file handle
+procs: one
+procs: two
+procs: child-process limit of 2 reached
+procs: task
+procs: task child-process limit of 1 reached
+procs: unlimited again: four
+ValueError: limit: handles must not be negative

@@ -9,6 +9,10 @@
 > default**, optional llama.cpp. Do not treat later parts as current claims;
 > see `README.md`, `CHANGELOG.md` `[2.0.22]`, and `docs/CLAIMS.md`. The body
 > below is left as the August 2026 snapshot.
+>
+> **Later:** the GUI has since moved off Qt onto FuseUI + Forge, vendored in
+> `third_party/` (`CHANGELOG.md` Unreleased; `docs/gui/FUSEUI_PORT.md`). Qt
+> prerequisites below, and `LEG-12` (Qt LGPL evidence), no longer apply.
 
 **Subject:** `github.com/odin-loki/RetDec-Decompiler` @ `ebf3627` · v2.0.20 (CHANGELOG says 2.0.21) — snapshot; current tag is **v2.0.22**
 **Scope:** full tree — 504,305 LOC `src`+`include`, 185,893 LOC tests, 8,815 test cases, 97 modules, 215 scripts, 10 CI workflows
@@ -577,7 +581,7 @@ The unpackers are the worst omission — they parse attacker-authored packed exe
 
 # PART 5 — The AI programme
 
-**Model:** Qwen 3.5 9B · **Backend:** llama.cpp (pinned `b10451`) · **Subsystem:** `src/neural/` 3,448 LOC
+**Model:** Qwen 3.5 9B · **Backend:** Forge (`third_party/forge`; llama.cpp until the Forge move) · **Subsystem:** `src/neural/` 3,448 LOC
 
 ## 5.0 What already exists
 
@@ -585,15 +589,15 @@ Stated first so nothing gets rebuilt. This subsystem is better engineered than m
 
 | Capability | Where | State |
 |---|---|---|
-| llama.cpp backend + mock swap-in | `llama_inference.cpp`, `mock_inference.cpp` | working |
+| Forge backend + mock swap-in | `forge_inference.cpp`, `mock_inference.cpp` | working |
 | Model SHA-256 allowlist, fails closed | `model_verify.cpp` (20 KB) | working, **list empty** |
 | Deterministic sampling (seed 0 default) | `inference.h` | working |
-| GBNF grammar-constrained decode | `llama_sampler_init_grammar`, `namingRenameMapGbnf()` | working, **one grammar** |
+| GBNF grammar-constrained decode | Forge `inference::grammar_constraint`, `namingRenameMapGbnf()` | working, **one grammar** |
 | Prompt-injection stripping (strings + comments) | `prompts.cpp:stripCStringLiterals` | working |
 | Compile gate (`cc -fsyntax-only`) | `gates.cpp:spawnSyntaxOnlyCompiler` | working, **weakest link** |
 | Structural gate via tree-sitter C AST | `gates.cpp:408+` | working |
 | Spawn-family identifier rejection | `applyJsonRenameMap` (N15) | working |
-| Context-budget refusal + head/tail retry | `llama_inference.cpp` (N11) | working |
+| Context-budget refusal + head/tail retry | `forge_inference.cpp` (N11) | working |
 | Mean selected-token probability + abstain | `GenerationResult::meanTokenProb` (N17) | working |
 | Callee-before-caller topological refine | `orderFunctionsCalleeFirst` (N18) | working |
 | Rich semantic context in prompt | `serializeSemanticContext` (N16) | working |
@@ -1769,7 +1773,7 @@ Every figure in this document, with its source, for checking.
 | UBSan | **OFF** in `asan-ubsan` | `sanitizers.yml:46` |
 | `support/models.json` | `{"models": []}` | — |
 | HLL writers | 1 (`c_hll_writer.cpp`) | `src/llvmir2hll/hll/hll_writers/` |
-| Dependency pins | LLVM `avast/llvm@a776c2a`, Capstone 5.0.9, Keystone 0.9.2, OpenSSL 3.5.8, llama.cpp b10451, tree-sitter-c 0.24.2, support pkg 2019-03-08 | `cmake/deps.cmake` |
+| Dependency pins | LLVM `avast/llvm@a776c2a`, Capstone 5.0.9, Keystone 0.9.2, OpenSSL 3.5.8, tree-sitter-c 0.24.2, support pkg 2019-03-08 | `cmake/deps.cmake` |
 
 ## B.4 Corrections from earlier review parts
 

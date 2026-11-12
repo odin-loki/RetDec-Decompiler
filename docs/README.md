@@ -11,9 +11,9 @@ This directory contains **technical documentation** for building, operating, ext
 1. **[../QUICKSTART.md](../QUICKSTART.md)** — ten-minute decompile from GitHub Release assets (Docker when published, or a local binary).
 2. **[BUILD_REFERENCE.md](BUILD_REFERENCE.md)** — CMake 3.13 vs presets 3.26, directory layout (`build/linux`, `build/windows`, `dist/windows`), all presets, superbuild, install, CI workflows, testing, troubleshooting. **Start here** if you are compiling the project.
 3. **[INSTALL_LINUX.md](INSTALL_LINUX.md)** / **[INSTALL_WINDOWS.md](INSTALL_WINDOWS.md)** — unpacking the published tarball / NSIS / zip.
-4. **[WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md)** — MSVC, Qt6, `windeployqt`, bundled OpenSSL (CUDA toolkit optional, accel unintegrated).
+4. **[WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md)** — MSVC (C++23), bundled OpenSSL; the GUI is vendored, nothing to deploy (CUDA toolkit optional, accel unintegrated).
 5. **[MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md)** — Linux/WSL → Windows PE via MinGW (CLI-only); `llvm-tblgen`, OpenSSL, staging.
-6. **[user_manual.md](user_manual.md)** — Qt GUI layout, settings, shortcuts, optional neural refine, macOS `RetDec.app`.
+6. **[user_manual.md](user_manual.md)** — GUI (FuseUI) layout, settings, shortcuts, optional neural refine, macOS `RetDec.app`.
 7. **[CLAIMS.md](CLAIMS.md)** — claims register (status + verification). Do not invent F1 numbers.
 8. **[DUE_DILIGENCE.md](DUE_DILIGENCE.md)** — responses to Plan.md Part 2.
 9. **[../Plan.md](../Plan.md)** — historical August 2026 review (not the live ship checklist; bannered at v2.0.24).
@@ -50,7 +50,7 @@ This directory contains **technical documentation** for building, operating, ext
 | [BUILD_REFERENCE.md](BUILD_REFERENCE.md) | Everyone building | Presets, paths, superbuild, Docker, CI, `deps.cmake`, test commands |
 | [INSTALL_LINUX.md](INSTALL_LINUX.md) | Linux packagers | Tarball packaging, install prefixes |
 | [INSTALL_WINDOWS.md](INSTALL_WINDOWS.md) | Windows users | NSIS/portable install, PATH, smoke after install |
-| [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) | Windows developers | MSVC + Qt6 (CUDA optional), scripts, troubleshooting |
+| [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) | Windows developers | MSVC, C++23 (CUDA optional), scripts, troubleshooting |
 | [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md) | Linux/WSL packagers | MinGW cross, tblgen, OpenSSL, `dist/windows` |
 | [user_manual.md](user_manual.md) | GUI users | Layout, panels, settings, export, shortcuts, `RetDec.app` |
 | [architecture.md](architecture.md) | Contributors | Full pipeline, components, dependencies |
@@ -62,7 +62,7 @@ This directory contains **technical documentation** for building, operating, ext
 | [CLAIMS.md](CLAIMS.md) | Everyone quoting numbers | Claims register; withdrawn F1 / CUDA-pipe rows |
 | [BENCHMARKS.md](BENCHMARKS.md) | Releases | Harness and methodology |
 | [BENCHMARKS_TABLE.md](BENCHMARKS_TABLE.md) | Releases | Fork vs stock RetDec 5.0 + F1 gates |
-| [NEURAL_REFINEMENT.md](NEURAL_REFINEMENT.md) | Operators | llama.cpp opt-in, gates, allowlist |
+| [NEURAL_REFINEMENT.md](NEURAL_REFINEMENT.md) | Operators | Forge inference backend, model formats, devices, gates, allowlist |
 | [CUDA_CAPABILITIES.md](CUDA_CAPABILITIES.md) | Parked-research readers | CUDA vs CUDA-accel flags; unintegrated |
 | [PERFORMANCE.md](PERFORMANCE.md) | Maintainers | Profiling and perf-nightly |
 | [STANDALONE_CHECK.md](STANDALONE_CHECK.md) | Contributors | LLVM-free layer with just a compiler |
@@ -72,7 +72,6 @@ This directory contains **technical documentation** for building, operating, ext
 | [THREAT_MODEL.md](THREAT_MODEL.md) | Security readers | Untrusted-input model; no in-tree sandbox |
 | [PROVENANCE.md](PROVENANCE.md) | Diligence | Upstream MIT + Imortek dual-licence record |
 | [PROVENANCE-files.md](PROVENANCE-files.md) | Diligence | Generated file-level header classes |
-| [LGPL_QT.md](LGPL_QT.md) | Packagers / counsel | Qt 6 dynamic-link and relink evidence (`LEG-12`) |
 | [COMMERCIAL_WHITEPAPER.md](COMMERCIAL_WHITEPAPER.md) | Buyers | Commercial overview (must not outrun CLAIMS.md) |
 | [SYMBOL_SERVER.md](SYMBOL_SERVER.md) | Windows analysts | PDB / symbol-server setup for richer names |
 | [DUE_DILIGENCE.md](DUE_DILIGENCE.md) | Diligence readers | Plan.md Part 2 responses |
@@ -145,7 +144,7 @@ Workflows live under [.github/workflows/](../.github/workflows/). The table list
 | [sign-release-sbom.yml](../.github/workflows/sign-release-sbom.yml) | Dispatch / path push / after `release-installers` | Keyless-sign CycloneDX / tarball when `.sigstore.json` is missing |
 | [algorithm-recovery-nightly.yml](../.github/workflows/algorithm-recovery-nightly.yml) | Weekly + dispatch | Name-blind F1 corpus (needs a built decompiler) |
 | [perf-nightly.yml](../.github/workflows/perf-nightly.yml) | Weekly + dispatch | Performance trend JSON |
-| [qt-lgpl-evidence.yml](../.github/workflows/qt-lgpl-evidence.yml) | Weekly + dispatch | dumpbin `/dependents` on the published Windows portable zip |
+| [gui.yml](../.github/workflows/gui.yml) | Push (`main`, `claude/**`, `ccr-*`) + PR + dispatch | `cmake/gui_standalone` + `retdec-gui-tests` on Linux / Windows (MSVC) / macOS; Linux headless + Xvfb window smoke |
 | [cla.yml](../.github/workflows/cla.yml) | `pull_request_target` + issue comment | CLA Assistant (`cla-signatures` branch) |
 | [upload-sample-binary.yml](../.github/workflows/upload-sample-binary.yml) | Dispatch / path push / after `release-installers` | Attach `fib_smoke` / `fib_smoke.exe` to the Release |
 
@@ -202,7 +201,7 @@ Set to any non-empty value except `0` unless noted. These are **verbose logging*
 From the repo root (prefer a **native Linux filesystem** under `~/` for I/O performance, not `/mnt/c/...` if you can avoid it):
 
 ```bash
-# Full preset: Qt6 dev packages required (e.g. sudo apt install qt6-base-dev qt6-base-dev-tools).
+# Full preset: a C++23 compiler (GCC 13+ / Clang 17+); retdec-gui needs no packages (FuseUI is vendored).
 # RETDEC_ENABLE_CUDA_ACCEL defaults OFF; NVCC is not required.
 bash scripts/wsl_configure_nosudo.sh   # cmake --preset full-linux-debug → build/linux/
 cmake --build build/linux -j"$(nproc)"
@@ -229,7 +228,7 @@ On macOS the same `full-linux-*` presets write `build/linux/`. A shippable
 
 ---
 
-## Native Windows build (MSVC + Qt6 GUI)
+## Native Windows build (MSVC + GUI)
 
 Full GUI builds must run **on Windows** with MSVC. CUDA Toolkit is optional
 and unused unless you pass `-DRETDEC_ENABLE_CUDA_ACCEL=ON` (still unintegrated).

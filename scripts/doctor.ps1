@@ -4,8 +4,10 @@
   Check common RetDec build prerequisites (read-only).
 
 .DESCRIPTION
-  Verifies CMake >= 3.26, fetch-large-files marker, Qt6 hint, NSIS/makensis,
-  EnVar NSIS plugin, git-lfs, and python3. Prints a pass/fail summary.
+  Verifies CMake >= 3.26, a C++23 compiler (MSVC 2022 17.6+ / cl 19.36+),
+  fetch-large-files marker, NSIS/makensis, EnVar NSIS plugin, git-lfs, and
+  python3. Prints a pass/fail summary. There is no GUI toolkit to check for:
+  retdec-gui is built from FuseUI and Forge, vendored in third_party/.
 
 .EXAMPLE
   .\scripts\doctor.ps1
@@ -73,32 +75,40 @@ if (Test-Path -LiteralPath $marker) {
     Write-Fail "missing $LargeFileMarker - run: .\scripts\fetch-large-files.ps1"
 }
 
-# ── Qt6 hint ──────────────────────────────────────────────────────────────────
-$qtOk = $false
-if ($env:Qt6_DIR -and (Test-Path -LiteralPath $env:Qt6_DIR)) {
-    Write-Pass "Qt6 hint: Qt6_DIR=$($env:Qt6_DIR)"
-    $qtOk = $true
-} else {
-    foreach ($root in @("C:\Qt\6.11.0\msvc2022_64", "C:\Qt", "$env:USERPROFILE\Qt")) {
-        if (-not (Test-Path -LiteralPath $root)) { continue }
-        if (Test-Path (Join-Path $root "bin\Qt6Core.dll")) {
-            Write-Pass "Qt6 hint: $root"
-            $qtOk = $true
-            break
+# ── C++23 compiler (MSVC) ─────────────────────────────────────────────────────
+# The tree is C++23; retdec-gui's model layer uses std::expected and
+# std::format. cl 19.36 (Visual Studio 2022 17.6) is the oldest that builds it.
+$clMinMajor = 19
+$clMinMinor = 36
+$cl = Get-Command cl.exe -ErrorAction SilentlyContinue
+if ($cl) {
+    $banner = (& $cl.Source 2>&1 | Select-Object -First 1) -join ""
+    if ($banner -match 'Version (\d+)\.(\d+)') {
+        $clMaj = [int]$Matches[1]; $clMin = [int]$Matches[2]
+        if ($clMaj -gt $clMinMajor -or ($clMaj -eq $clMinMajor -and $clMin -ge $clMinMinor)) {
+            Write-Pass "C++23 compiler: cl $clMaj.$clMin"
+        } else {
+            Write-Fail "cl $clMaj.$clMin is too old for C++23 - need $clMinMajor.$clMinMinor+ (Visual Studio 2022 17.6+)"
         }
-        $found = Get-ChildItem "$root\*\msvc*_64" -Directory -ErrorAction SilentlyContinue |
-            Where-Object { Test-Path (Join-Path $_.FullName "bin\Qt6Core.dll") } |
-            Sort-Object FullName -Descending |
-            Select-Object -First 1
-        if ($found) {
-            Write-Pass "Qt6 hint: $($found.FullName)"
-            $qtOk = $true
-            break
-        }
+    } else {
+        Write-Warn "cl.exe on PATH but its version could not be read: $banner"
     }
-}
-if (-not $qtOk) {
-    Write-Warn "Qt6 not detected - GUI presets need Qt 6 MSVC x64 (see Install-RetdecWindowsDeps.ps1)"
+} else {
+    $vsWhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+    $vsVer = $null
+    if (Test-Path -LiteralPath $vsWhere) {
+        $vsVer = & $vsWhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property catalog_productDisplayVersion 2>$null
+    }
+    if ($vsVer -and $vsVer -match '^(\d+)\.(\d+)') {
+        $vsMaj = [int]$Matches[1]; $vsMin = [int]$Matches[2]
+        if ($vsMaj -gt 17 -or ($vsMaj -eq 17 -and $vsMin -ge 6)) {
+            Write-Pass "C++23 compiler: Visual Studio $vsVer with MSVC (run from a Developer shell, or the configure script finds vcvars64.bat)"
+        } else {
+            Write-Fail "Visual Studio $vsVer is too old for C++23 - need 2022 17.6+"
+        }
+    } else {
+        Write-Fail "no MSVC found - install Visual Studio 2022 17.6+ with 'Desktop development with C++'"
+    }
 }
 
 # ── NSIS / makensis ───────────────────────────────────────────────────────────

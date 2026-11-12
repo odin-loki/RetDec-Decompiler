@@ -1,0 +1,39 @@
+# Qwen3-MoE decoder (Qwen3-30B-A3B, Qwen3-235B-A22B): the qwen3 graph (QK-norm, NeoX RoPE) with every FFN a sparse
+# mixture of experts. moe_ffn routes each token to its top-k experts (softmax over the router logits, keep k,
+# renormalise when norm_topk_prob) and evaluates only those experts' SwiGLU FFNs. The experts of a layer are stored
+# stacked: W.layer[l].experts.w_gate / w_up [n_experts, moe_ffn, d_model], w_down [n_experts, d_model, moe_ffn].
+# Double-brace placeholders are substituted by `forge import` from config.json or the GGUF metadata.
+blueprint "decoder-lm-moe" opset 1
+
+params {
+  d_model: {{hidden_size}}  n_layers: {{num_hidden_layers}}  n_heads: {{num_attention_heads}}
+  n_kv: {{num_key_value_heads}}  head_dim: {{head_dim}}  moe_ffn: {{moe_intermediate_size}}
+  vocab: {{vocab_size}}  eps: {{rms_norm_eps}}
+  n_experts: {{num_experts}}  n_active: {{num_experts_per_tok}}  norm_topk: {{norm_topk_prob}}  routed_scale: {{routed_scaling_factor}}
+  rope: { base: {{rope_theta}} }
+}
+
+state kv[n_layers] : kv_cache(heads: n_kv, dim: head_dim)
+
+input tokens    : f32[seq]
+input positions : f32[seq]
+
+graph {
+  x = embed(W.tok_emb, tokens)
+  repeat l in 0..n_layers {
+    h = rms_norm(x, W.layer[l].attn_norm, eps)
+    q = rope(rms_norm(heads(linear(h, W.layer[l].wq), n_heads, head_dim), W.layer[l].q_norm, eps), positions, base: rope.base, neox: {{rope_neox}})
+    k = rope(rms_norm(heads(linear(h, W.layer[l].wk), n_kv, head_dim), W.layer[l].k_norm, eps), positions, base: rope.base, neox: {{rope_neox}})
+    v = heads(linear(h, W.layer[l].wv), n_kv, head_dim)
+    kk, vv = kv[l].append(k, v)
+    a = attention(q, kk, vv, causal: true, groups: n_heads / n_kv)
+    x = x + linear(merge(a, n_heads * head_dim), W.layer[l].wo)
+    h = rms_norm(x, W.layer[l].ffn_norm, eps)
+    x = x + moe_ffn(h, linear(h, W.layer[l].router), W.layer[l].experts.w_gate, W.layer[l].experts.w_up, W.layer[l].experts.w_down,
+                    k: n_active, norm: norm_topk, scale: routed_scale)
+  }
+  logits = linear(rms_norm(last(x, seq), W.out_norm, eps), W.lm_head)
+}
+
+output logits : f32[1, vocab]
+session generative_sequence

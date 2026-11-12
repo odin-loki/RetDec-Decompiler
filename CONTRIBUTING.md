@@ -22,14 +22,14 @@ and is not wired into the decompiler.
 **Linux / WSL / macOS** (Unix presets write `build/linux/`)
 
 ```bash
-bash scripts/wsl_configure_nosudo.sh   # cmake --preset full-linux-debug (needs Qt 6)
+bash scripts/wsl_configure_nosudo.sh   # cmake --preset full-linux-debug (C++23 compiler; GUI is vendored)
 cmake --build build/linux -j"$(nproc)"
 ```
 
 On macOS the same `full-linux-*` presets apply. `ctest-macos` uses
 `full-linux-release` on `macos-latest` (arm64).
 
-**Windows (MSVC + Qt6)**
+**Windows (MSVC 2022, C++23)**
 
 ```powershell
 .\scripts\Install-RetdecWindowsDeps.ps1
@@ -37,11 +37,19 @@ On macOS the same `full-linux-*` presets apply. `ctest-macos` uses
 .\scripts\windows_native_build.ps1
 ```
 
-See [docs/WINDOWS_NATIVE_BUILD.md](docs/WINDOWS_NATIVE_BUILD.md) for Qt
-deployment. CUDA Toolkit is optional and unused by the default pipeline.
+See [docs/WINDOWS_NATIVE_BUILD.md](docs/WINDOWS_NATIVE_BUILD.md). CUDA Toolkit
+is optional and unused by the default pipeline.
 
-CLI-only without mandating Qt: `cmake --preset core-debug` (or
-`core-release`).
+`retdec-gui` is built on FuseUI and Forge, vendored in
+[third_party/](third_party/README.md): nothing to install. CLI-only:
+`-DRETDEC_GUI=OFF`, or `cmake --preset core-debug` (or `core-release`). GUI
+work builds on its own in minutes, without LLVM — see
+[docs/gui/FUSEUI_PORT.md](docs/gui/FUSEUI_PORT.md):
+
+```bash
+cmake -S cmake/gui_standalone -B build/gui -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build/gui && ctest --test-dir build/gui --output-on-failure
+```
 
 ## Run tests locally
 
@@ -49,9 +57,10 @@ CLI-only without mandating Qt: `cmake --preset core-debug` (or
 ctest --test-dir build/linux --output-on-failure
 ```
 
-On Windows, use `build/windows` instead. GUI tests need a display or
-`RETDEC_GUI_HEADLESS=1` / `--headless` — copy variables from
-[.env.example](.env.example).
+On Windows, use `build/windows` instead. `retdec-gui-tests` drive a headless
+FuseUI `UiContext` and need no display; the `retdec-gui` executable runs
+without a window under `RETDEC_GUI_HEADLESS=1` / `--headless` — copy variables
+from [.env.example](.env.example).
 
 LLVM-free gates (no network): `./scripts/standalone_check.sh`,
 `./scripts/standalone_fuzz.sh --replay`, `./scripts/verify_esbmc.sh`.
@@ -89,6 +98,13 @@ included in the commercial licence. The **CLA Assistant** check comments on
 the PR; sign with the exact sentence in `CLA.md`. Dependabot is allowlisted.
 
 See [LICENSE](LICENSE) (dual AGPL-3.0+ / commercial).
+
+Do not edit `third_party/` in place for a RetDec change: FuseUI and Forge are
+first-party libraries (same owner, same AGPL-3.0 / commercial terms) copied
+from their upstream repositories, and local additions are listed in
+[third_party/README.md](third_party/README.md). Their bundled third-party code
+(stb, Open Sans, Lua, Monocypher) keeps its own licence; see [NOTICE](NOTICE)
+and [LICENSE-THIRD-PARTY](LICENSE-THIRD-PARTY).
 
 ## Security and conduct
 

@@ -1492,9 +1492,12 @@ bool PeLib::ImageLoader::processImageRelocations(
 					std::int16_t fixupValue = 0;
 
 					if (readImage(&fixupValue, fixupAddress, sizeof(fixupValue)) != sizeof(fixupValue)) break;
-					temp = (fixupValue << 16);
-					temp += (std::int32_t)difference;
-					fixupValue = (std::int16_t)(temp >> 16);
+					// Unsigned: the field is signed and file-controlled, and a
+					// negative int shifted left is undefined (fuzz-pr, UBSan).
+					// Two's-complement wrap-around is the defined intent here.
+					std::uint32_t t = std::uint32_t(std::uint16_t(fixupValue)) << 16;
+					t += std::uint32_t(difference);
+					fixupValue = (std::int16_t)(std::uint16_t)(t >> 16);
 					writeImage(&fixupValue, fixupAddress, sizeof(fixupValue));
 					break;
 				}
@@ -1508,11 +1511,11 @@ bool PeLib::ImageLoader::processImageRelocations(
 					// buffer itself when the block ends exactly at bufferEnd.
 					if ((i + 1) >= numRelocations) break;
 					if (readImage(&fixupValue, fixupAddress, sizeof(fixupValue)) != sizeof(fixupValue)) break;
-					temp = (fixupValue << 16);
-					temp += (std::int32_t)entryAt(++i);
-					temp += (std::int32_t)difference;
-					temp += 0x8000;
-					fixupValue = (std::int16_t)(temp >> 16);
+					std::uint32_t t = std::uint32_t(std::uint16_t(fixupValue)) << 16;
+					t += std::uint32_t(std::int32_t(entryAt(++i)));
+					t += std::uint32_t(difference);
+					t += 0x8000u;
+					fixupValue = (std::int16_t)(std::uint16_t)(t >> 16);
 					writeImage(&fixupValue, fixupAddress, sizeof(fixupValue));
 					break;
 				}

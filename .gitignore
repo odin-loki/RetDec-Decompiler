@@ -150,7 +150,6 @@ tests/algorithm_recovery/predictions/full-sim.json
 .venv-eval/
 docs/internal/nightly/20*.md
 keystone.zip
-llama.zip
 _license_preamble.txt
 _license_section7.txt
 LICENSE.full
@@ -199,3 +198,4 @@ scripts/run-linux-release-build.cmd
 # Managed-integration .NET build outputs (fixture sources stay tracked).
 /tests/managed_integration/fixtures/*/bin/
 /tests/managed_integration/fixtures/*/obj/
+/.capstone-ci/

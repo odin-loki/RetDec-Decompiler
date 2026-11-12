@@ -46,6 +46,23 @@ if ! command -v lcov &>/dev/null; then
     exit 1
 fi
 
+# lcov 2.x turns several conditions lcov 1.x tolerated into hard errors:
+# "inconsistent" fires on gtest's TEST() bodies (the macro moves a function's
+# end line), "unused" on a --remove pattern that matched nothing, and the
+# rest on GCC 15's exception-branch tags. None of them says the data is
+# wrong, and the scheduled coverage job died on the first. lcov 1.x rejects
+# the 2.x-only categories, so pick the list by version.
+LCOV_MAJOR="$(lcov --version 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -n1 | cut -d. -f1)"
+if [[ "${LCOV_MAJOR:-1}" -ge 2 ]]; then
+    LCOV_IGNORE=(--ignore-errors mismatch,mismatch,inconsistent,inconsistent,unused,unused,empty,negative,source,gcov,version,version)
+    GENHTML_IGNORE=(--ignore-errors inconsistent,inconsistent,source,unmapped,empty)
+else
+    # 1.x knows only gcov, source and graph; "mismatch" is a 2.x category and
+    # 1.x geninfo rejects it ("unknown argument for --ignore-errors").
+    LCOV_IGNORE=(--ignore-errors source)
+    GENHTML_IGNORE=()
+fi
+
 # ---------------------------------------------------------------------------
 # 1. Configure
 # ---------------------------------------------------------------------------
@@ -58,16 +75,38 @@ cmake --preset "$PRESET" -S "$REPO_ROOT" 2>&1 | tail -5
 echo "[2/5] Building..."
 cmake --build "$BUILD_DIR" --parallel "$(nproc)"
 
+# Capture RetDec's own object directories, not the whole build tree.
+# external/ is EP_PREFIX: the ExternalProject source and build trees (LLVM and
+# friends). LLVM's sources ship test inputs such as
+# llvm/test/tools/llvm-cov/gcov/Inputs/*.gcda with no matching .gcno, and
+# lcov 2.x stops with "ERROR: (path) cannot process .gcda file" on the first
+# one. deps/ holds the vendored dependencies and their ExternalProjects (yara);
+# everything it compiles is removed from the report below, so skip it too.
+# Every other top-level directory (src/, tests/, third_party/ for the
+# first-party Forge/FuseUI, ...) is captured as before.
+LCOV_DIRS=()
+for dir in "$BUILD_DIR"/*/; do
+    dir="${dir%/}"
+    case "${dir##*/}" in
+        external|deps) continue ;;
+    esac
+    LCOV_DIRS+=(--directory "$dir")
+done
+if [[ ${#LCOV_DIRS[@]} -eq 0 ]]; then
+    echo "ERROR: no object directories to capture under $BUILD_DIR" >&2
+    exit 1
+fi
+
 # ---------------------------------------------------------------------------
 # 3. Baseline coverage (zero-counters capture)
 # ---------------------------------------------------------------------------
 echo "[3/5] Capturing baseline coverage..."
 lcov \
     --capture --initial \
-    --directory "$BUILD_DIR" \
+    "${LCOV_DIRS[@]}" \
     --output-file "$BUILD_DIR/coverage_baseline.info" \
     --rc lcov_branch_coverage=1 \
-    --ignore-errors mismatch \
+    "${LCOV_IGNORE[@]}" \
     --quiet
 
 # ---------------------------------------------------------------------------
@@ -103,10 +142,10 @@ echo "[5/5] Generating coverage report..."
 
 lcov \
     --capture \
-    --directory "$BUILD_DIR" \
+    "${LCOV_DIRS[@]}" \
     --output-file "$BUILD_DIR/coverage_test.info" \
     --rc lcov_branch_coverage=1 \
-    --ignore-errors mismatch \
+    "${LCOV_IGNORE[@]}" \
     --quiet
 
 lcov \
@@ -114,6 +153,7 @@ lcov \
     --add-tracefile "$BUILD_DIR/coverage_test.info" \
     --output-file   "$BUILD_DIR/coverage_total.info" \
     --rc lcov_branch_coverage=1 \
+    "${LCOV_IGNORE[@]}" \
     --quiet
 
 # Remove third-party and system paths from the report
@@ -125,6 +165,7 @@ lcov \
         '*/build/*' \
     --output-file "$BUILD_DIR/coverage_filtered.info" \
     --rc lcov_branch_coverage=1 \
+    "${LCOV_IGNORE[@]}" \
     --quiet
 
 mkdir -p "$REPORT_DIR"
@@ -133,12 +174,14 @@ genhtml \
     --output-directory "$REPORT_DIR" \
     --branch-coverage \
     --title "RetDec Coverage ($(date +%Y-%m-%d))" \
+    "${GENHTML_IGNORE[@]}" \
     --quiet
 
 # Summary
 lcov \
     --summary "$BUILD_DIR/coverage_filtered.info" \
     --rc lcov_branch_coverage=1 \
+    "${LCOV_IGNORE[@]}" \
     2>&1 | grep -E "lines|branches|functions"
 
 echo ""

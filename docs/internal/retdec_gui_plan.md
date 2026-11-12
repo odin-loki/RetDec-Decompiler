@@ -3,6 +3,11 @@
 **Status as of v2.0.22:** GUI v3 shipped. This file is the design contract
 that was implemented, not an unimplemented mockup.
 
+**Later:** it was implemented in Qt, which the GUI no longer uses. The Qt names
+below (`QTabWidget`, `QTimer`, `QProcess`, ...) describe that former
+implementation; the FuseUI GUI ([../gui/FUSEUI_PORT.md](../gui/FUSEUI_PORT.md))
+keeps the same design.
+
 ## v3 — the "between" design
 
 v2 (six right-dock tabs + mode toolbar) was too busy. v3 keeps the parts

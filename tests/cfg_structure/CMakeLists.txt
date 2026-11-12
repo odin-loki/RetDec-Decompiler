@@ -9,7 +9,7 @@ target_link_libraries(retdec-cfg-structure-tests PRIVATE
 )
 
 set_target_properties(retdec-cfg-structure-tests PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
 )
 

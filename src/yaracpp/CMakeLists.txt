@@ -7,7 +7,7 @@ add_library(yaracpp STATIC
 )
 add_library(retdec::yaracpp ALIAS yaracpp)
 
-target_compile_features(yaracpp PUBLIC cxx_std_17)
+target_compile_features(yaracpp PUBLIC cxx_std_23)
 
 target_include_directories(yaracpp
 	PUBLIC

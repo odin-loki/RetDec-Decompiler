@@ -1,8 +1,14 @@
 # RetDec GUI Roadmap
 
 **Status as of v2.0.22:** GUI v3 shipped (Qt 6). Phases A–E below are
-complete. Optional leftovers (i18n) are not release blockers. macOS GUI
-tests use `QT_QPA_PLATFORM=cocoa`; MAC-01 checks the relocatable bundle.
+complete. Optional leftovers (i18n) are not release blockers.
+
+**Now:** the GUI has left Qt. It runs on FuseUI + Forge (`third_party/`); the
+port is complete and every phase below holds for it (the Qt implementation that
+served as the specification has been deleted). See
+[../gui/FUSEUI_PORT.md](../gui/FUSEUI_PORT.md).
+Headless runs set only `RETDEC_GUI_HEADLESS=1` on every platform; MAC-01 checks
+the relocatable bundle and its `Contents/share/retdec/gui` resources.
 
 Phased plan for GUI/product work. Update checkboxes as items ship.
 
@@ -43,7 +49,7 @@ Phased plan for GUI/product work. Update checkboxes as items ship.
 
 - [x] CUDA wiring into hot analysis paths — **documented CPU-only default** ([GUI_PHASE_D.md](GUI_PHASE_D.md))
 - [x] Reference decompiler plugin sample — `examples/decompiler_plugin/`
-- [x] AI assistant — Tools window (`AIAssistantPanel`); local GGUF / llama.cpp / optional Ollama. Not a neural-chat quality claim. No in-tree Qwen stack (`C-QWEN3-GPU` withdrawn) ([GUI_PHASE_D.md](GUI_PHASE_D.md))
+- [x] AI assistant — Tools window (`AIAssistantPanel`); local model (.fpk / .gguf / HF dir) on Forge (was llama.cpp) / optional Ollama. Not a neural-chat quality claim. No in-tree Qwen stack (`C-QWEN3-GPU` withdrawn) ([GUI_PHASE_D.md](GUI_PHASE_D.md))
 - [x] Multi-language output picker in GUI — Settings → Decompiler → Preferred output language (`--output-lang`)
 
 ## Phase E — GUI polish (May 2026)
@@ -63,7 +69,6 @@ Phased plan for GUI/product work. Update checkboxes as items ship.
 ```powershell
 # Unit tests (headless)
 $env:RETDEC_GUI_HEADLESS="1"
-$env:QT_QPA_PLATFORM="offscreen"
 build\windows\tests\gui\retdec-gui-tests.exe
 
 # CLI vs GUI subprocess parity (~2 min on 1 MB binary)

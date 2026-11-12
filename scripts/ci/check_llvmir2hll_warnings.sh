@@ -89,7 +89,7 @@ echo "L2HW-01: compiling ${#SRCS[@]} translation units with warnings on"
 # parameters their overrides do not read, by design, and there are hundreds.
 warn_one() {
 	f="$1"
-	g++ -std=c++17 -O0 -c -Wall -Wextra -Wno-unused-parameter \
+	g++ -std=c++23 -O0 -c -Wall -Wextra -Wno-unused-parameter \
 		${L2HW_INC} ${L2HW_LF} "$f" -o /dev/null \
 		2> "${L2HW_OUT}/$(echo "$f" | tr '/' '_').txt" || true
 }

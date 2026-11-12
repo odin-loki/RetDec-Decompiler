@@ -1,0 +1,14 @@
+// hello_app UI (fuse_app sample).
+{
+  "fuseui": 1,
+  "style": ".hello { gap: 10px; padding: 24px; align-items: start; } .big { font-size: 28px; }",
+  "root": {
+    "class": "panel", "id": "hello", "classes": ["hello"],
+    "children": [
+      { "class": "label", "id": "title", "classes": ["big"], "text": "Hello, FUSE" },
+      { "class": "label", "id": "count", "text": "Clicked {clicks} times" },
+      { "class": "button", "id": "click", "text": "Click me", "on": { "clicked": "click" } },
+      { "class": "button", "id": "quit", "text": "Quit", "on": { "clicked": "quit" } },
+    ],
+  },
+}

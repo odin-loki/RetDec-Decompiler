@@ -1,17 +1,17 @@
 # RetDec Imortek — Specification Extraction Decompiler
 
-**Version 2.0.26.** Repo:
+**Version 2.1.0.** Repo:
 [odin-loki/RetDec-Decompiler](https://github.com/odin-loki/RetDec-Decompiler).
 Release tag
-[v2.0.26](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.0.26).
+[v2.1.0](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.1.0).
 
 **A specification-extraction tool that contains a decompiler** — algorithm
 recovery, semantic export, and offline neural refinement are the product;
 recovered C pseudocode is a supporting artefact, not the headline.
 
 Built on upstream [RetDec](https://github.com/avast/retdec) v5.0 (dormant since
-2022), this fork adds semantic library recovery, a Qt 6 GUI, default-on offline
-neural refinement (llama.cpp; `RETDEC_NEURAL_REFINE=0` disables), packaged Linux /
+2022), this fork adds semantic library recovery, a GUI (FuseUI), default-on offline
+neural refinement (Forge; `RETDEC_NEURAL_REFINE=0` disables), packaged Linux /
 macOS / Windows installs, and structured algorithm/concurrency/serialisation
 detection no stock decompiler ships. Dual-licensed AGPL-3.0+ / commercial
 (Imortek).
@@ -152,8 +152,11 @@ Not in `decompile()`: `CudaHostRecovery` (tests only), `src/idiom_reconstruct/`,
 
 ### Offline neural refinement
 
-Optional verified, air-gapped refinement via **llama.cpp** and GGUF models.
-Release installers link llama.cpp. Refine is **on by default** when
+Optional verified, air-gapped refinement on **Forge** (`third_party/forge`, the
+vendored inference library; CPU by default, GPU runtimes loaded at run time)
+with GGUF, Hugging Face or `.fpk` models. A GGUF or Hugging Face model is
+imported once into Forge's cache (`$FORGE_CACHE`, default `~/.cache/forge`),
+as `forge run` does. Refine is **on by default** when
 `share/retdec/models/Qwen3.5-9B-Q4_K_M.gguf` is present (or
 `RETDEC_NEURAL_MODEL`). Disable with `RETDEC_NEURAL_REFINE=0`.
 The tested Unsloth `Qwen3.5-9B-Q4_K_M.gguf` SHA is in `support/models.json`;
@@ -170,14 +173,23 @@ See [docs/NEURAL_REFINEMENT.md](docs/NEURAL_REFINEMENT.md).
 See **Results** above. Tables: [docs/BENCHMARKS_TABLE.md](docs/BENCHMARKS_TABLE.md).
 Harness: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
-### Qt 6 GUI (v3)
+### GUI (FuseUI)
+
+`retdec-gui` no longer uses Qt. It is built on **FuseUI**, a GUI
+toolkit vendored in [third_party/fuseui](third_party/README.md) whose native
+window backends (X11, Win32, macOS Cocoa) blit a CPU-rasterised frame, and
+**Forge** ([third_party/forge](third_party/README.md)) for processes, files,
+JSON, settings and threads. There is no toolkit to install, no platform plugin
+and no deploy tool; the GUI's themes, fonts and pass presets ship in
+`share/retdec/gui`. See [docs/gui/FUSEUI_PORT.md](docs/gui/FUSEUI_PORT.md).
 
 Decompilation runs the same `retdec-decompiler` subprocess as the CLI. **Cache
 reuse** on re-open. The former “~24% faster Fast decompile” figure is
 **withdrawn**. Post-decompile loads `.c`, `.config.json`, `.dsm`, and `.ll`.
 macOS Release packages ship **`RetDec.app`** (ad-hoc signed, not notarised).
 
-Shipped panels (constructed in `createPanels()`):
+The port from the former Qt GUI is complete: the FuseUI GUI has the same panel
+set, menus, shortcuts and behaviour:
 
 | Place | Panels |
 |-------|--------|
@@ -260,14 +272,14 @@ CLI flag.
 ### Prerequisites
 
 On Windows, run `.\scripts\doctor.ps1` first for a read-only check of CMake,
-Qt6, NSIS, Python, git-lfs, and other common build prerequisites.
+a C++23 MSVC, NSIS, Python, git-lfs, and other common build prerequisites
+(`bash scripts/doctor.sh` elsewhere).
 
 | Dependency | Version | Required for |
 |------------|---------|-------------|
 | CMake | **3.13+** to configure (`CMakeLists.txt`); **3.26+** for [CMakePresets.json](CMakePresets.json) | All targets |
-| GCC or Clang | GCC 11+ / Clang 14+ | Linux / WSL / macOS build |
+| GCC or Clang | **C++23**: GCC 13+ / Clang 17+ / Apple Clang 15+ (MSVC 2022 17.6+ on Windows) | All targets (`CMAKE_CXX_STANDARD 23`) |
 | MinGW-w64 | `g++-mingw-w64-x86-64` | Windows cross-compile |
-| Qt 6 | 6.4+ (Widgets, Core, Gui, Test) | **Required** for `full-linux-*` / `full-windows-release` / `full-windows-debug` presets (`retdec-gui`) |
 | Python 3 | 3.4+ | LLVM TableGen scripts |
 | CUDA Toolkit | 11.8+ | **Optional / opt-in** (`RETDEC_ENABLE_CUDA_ACCEL` defaults **OFF**, including full presets). Experimental `cuda_accel` layer is unintegrated — not required to evaluate or build. |
 | Ninja | any | Recommended generator |
@@ -281,11 +293,11 @@ put the build tree under **`build/linux/`** or **`build/windows/`** (from `CMake
 A shippable **`RetDec.app`** is produced by `scripts/build-macos-installer.sh`
 and published as `retdec-2.0.24-macos-arm64.tar.gz` (ad-hoc signed, not
 notarised).
-The **`full-linux-*` presets require Qt 6** (same idea as the native Windows full build). CUDA acceleration is **opt-in** (`RETDEC_ENABLE_CUDA_ACCEL=OFF` by default). Install Qt dev packages first, for example on Ubuntu:
-
-```bash
-sudo apt install qt6-base-dev qt6-base-dev-tools
-```
+The **`full-*` presets build `retdec-gui`** (`RETDEC_GUI=ON`, the default). It
+needs nothing beyond the C++23 compiler: FuseUI and Forge are vendored in
+`third_party/`, and on Linux the X11 backend loads `libX11` at run time, so
+there are no GUI development packages to install. CUDA acceleration is
+**opt-in** (`RETDEC_ENABLE_CUDA_ACCEL=OFF` by default).
 
 For faster I/O you can clone the repo on a Linux native filesystem (`~/projects/retdec`)
 instead of `/mnt/c/...`.
@@ -297,7 +309,14 @@ bash scripts/wsl_configure_nosudo.sh   # cmake --preset full-linux-debug
 cmake --build build/linux -j"$(nproc)"
 ```
 
-For a **smaller CLI-only tree** without mandating Qt, use e.g. `cmake --preset core-debug` (or pass `-DRETDEC_REQUIRE_QT6=OFF` to override a full preset).
+For a **CLI-only tree**, pass `-DRETDEC_GUI=OFF`; for a smaller core tree, use e.g. `cmake --preset core-debug`.
+
+The GUI alone builds in minutes, without LLVM (needs GoogleTest for its tests):
+
+```bash
+cmake -S cmake/gui_standalone -B build/gui -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build/gui && ctest --test-dir build/gui --output-on-failure
+```
 
 Or any preset from [CMakePresets.json](CMakePresets.json):
 
@@ -306,10 +325,10 @@ cmake --preset full-linux-release
 cmake --build --preset full-linux-release
 ```
 
-### Windows — full build (native MSVC + Qt6 GUI)
+### Windows — full build (native MSVC + GUI)
 
-For a complete Windows build with the **Qt6 GUI**,
-you must build natively on Windows. The CUDA Toolkit is **optional**
+For a complete Windows build with the **GUI**,
+build natively on Windows with MSVC. The CUDA Toolkit is **optional**
 (`RETDEC_ENABLE_CUDA_ACCEL` defaults OFF). Experimental GPU accel is
 unintegrated and is not required to evaluate the product.
 
@@ -318,7 +337,6 @@ unintegrated and is not required to evaluate the product.
 |------|--------|
 | Visual Studio Build Tools 2022 (MSVC v143 + Windows SDK) | [visualstudio.microsoft.com](https://visualstudio.microsoft.com/downloads/) |
 | CUDA Toolkit 11.8+ (optional) | [developer.nvidia.com/cuda-downloads](https://developer.nvidia.com/cuda-downloads) — not required; `RETDEC_ENABLE_CUDA_ACCEL` defaults OFF |
-| Qt 6 for Windows (MSVC 2019/2022 x64) | [qt.io/download-qt-installer](https://www.qt.io/download-qt-installer) |
 | CMake **3.26+**, Ninja | via winget or [cmake.org](https://cmake.org) |
 
 **Build steps (from Developer PowerShell for VS 2022):**
@@ -327,7 +345,7 @@ unintegrated and is not required to evaluate the product.
 # 1. Install prerequisites (run once, as Administrator):
 .\scripts\Install-RetdecWindowsDeps.ps1
 
-# 2. Configure (auto-detects CUDA, Qt6, and MSVC):
+# 2. Configure (auto-detects CUDA and MSVC; -NoGui for CLI-only):
 .\scripts\windows_native_configure.ps1
 
 # 3. Build and stage into dist\windows\:
@@ -344,19 +362,17 @@ unintegrated and is not required to evaluate the product.
 
 The `dist\windows\` folder contains the complete deployment:
 - `retdec-decompiler.exe`, `retdec-gui.exe`, `retdec-unpacker.exe`
-- Qt6 DLLs (deployed by `windeployqt`)
+- `share\retdec\` support data, including the GUI's resources in `share\retdec\gui\`
+  (the GUI has no toolkit DLLs or plugins to deploy)
 - MSVC runtime DLLs (`msvcp140.dll`, `vcruntime140.dll`)
 - CUDA runtime DLLs (`cudart64_*.dll`) **only** if you configured
   `-DRETDEC_ENABLE_CUDA_ACCEL=ON` (default **OFF**, unintegrated)
 
-> If Qt6 is not in a standard location, pass its path explicitly:
-> ```powershell
-> .\scripts\windows_native_configure.ps1 -QtDir "C:\Qt\6.7.3\msvc2019_64\lib\cmake\Qt6"
-> ```
 
 ### Windows cross-compilation (Linux/WSL → Windows PE via MinGW-w64)
 
-This produces a **CLI-only** build (no Qt6 GUI, no CUDA) but requires no
+This produces a **CLI-only** build (the superbuild's MinGW presets set
+`RETDEC_SUPERBUILD_ENABLE_GUI=OFF`; no CUDA) but requires no
 Windows tools — everything runs from WSL. The toolchain is `x86_64-w64-mingw32-g++`.
 
 **Install the toolchain (WSL Ubuntu):**
@@ -416,7 +432,7 @@ bytecode-parser layers — needs nothing but a C++17 compiler. Three checks run
 against it directly, with no network and no LLVM:
 
 ```bash
-./scripts/standalone_check.sh    # 64 suites over 62 modules (+493 GUI tests with Qt6), ~2 min from cold
+./scripts/standalone_check.sh    # 64 suites over 62 modules (+ retdec-gui-tests via cmake/gui_standalone when libgtest is installed), ~2 min from cold
 ./scripts/standalone_fuzz.sh --replay   # the parser crash corpus, deterministic
 ./scripts/verify_esbmc.sh        # 286 SMT proofs of the arithmetic every parser depends on
 ```
@@ -473,7 +489,7 @@ retdec-decompiler classes.dex -o decompiled.java
 # Decompile WebAssembly to WAT
 retdec-decompiler module.wasm -o module.wat
 
-# Decompile with offline neural refine (llama.cpp build + 9B Instruct GGUF)
+# Decompile with offline neural refine (Forge backend + 9B Instruct GGUF)
 export RETDEC_NEURAL_REFINE=1
 export RETDEC_NEURAL_MODEL=models/Qwen3.5-9B-Q4_K_M.gguf
 retdec-decompiler binary.elf -o output.c
@@ -502,11 +518,11 @@ retdec-decompiler binary.elf -o output.c
 | [docs/algorithm_reference.md](docs/algorithm_reference.md) | Mathematical descriptions of key algorithms |
 | [docs/pipeline_stage_map.md](docs/pipeline_stage_map.md) | Stage names ↔ source directories |
 | [docs/MINGW_CROSS_DEEP_DIVE.md](docs/MINGW_CROSS_DEEP_DIVE.md) | Linux/WSL → Windows PE (MinGW), `llvm-tblgen`, OpenSSL, staging |
-| [docs/WINDOWS_NATIVE_BUILD.md](docs/WINDOWS_NATIVE_BUILD.md) | Native Windows: MSVC + Qt6 (CUDA optional / unintegrated) |
+| [docs/WINDOWS_NATIVE_BUILD.md](docs/WINDOWS_NATIVE_BUILD.md) | Native Windows: MSVC, C++23 (CUDA optional / unintegrated) |
 | [docs/STANDALONE_CHECK.md](docs/STANDALONE_CHECK.md) | LLVM-free compile + unit suites |
 | [docs/FUZZING.md](docs/FUZZING.md) | Parser fuzz harnesses and crash corpus |
 | [docs/VERIFICATION.md](docs/VERIFICATION.md) | 286 ESBMC proofs over 14 verified kernels — what is proved, which solver proved it, and what is not |
-| [docs/NEURAL_REFINEMENT.md](docs/NEURAL_REFINEMENT.md) | Optional llama.cpp refine, gates, model allowlist |
+| [docs/NEURAL_REFINEMENT.md](docs/NEURAL_REFINEMENT.md) | Optional neural refine (Forge), gates, model allowlist |
 | [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) | Untrusted-input model; no in-tree sandbox |
 | [docs/CUDA_CAPABILITIES.md](docs/CUDA_CAPABILITIES.md) | Experimental CUDA accel (default OFF, unintegrated) |
 | [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | Profiling and perf-nightly |

@@ -1,0 +1,3 @@
+caught: bad thing
+div
+!RuntimeError

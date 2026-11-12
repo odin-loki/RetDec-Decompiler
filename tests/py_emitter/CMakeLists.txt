@@ -16,7 +16,7 @@ target_link_libraries(retdec-py-emitter-tests
 )
 
 set_target_properties(retdec-py-emitter-tests PROPERTIES
-    CXX_STANDARD 20
+    CXX_STANDARD 23
     CXX_STANDARD_REQUIRED YES
 )
 

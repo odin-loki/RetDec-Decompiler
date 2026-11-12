@@ -66,7 +66,6 @@ add_subdirectory(cxx_backend)
 add_subdirectory(dex_parser)
 add_subdirectory(pdbparser)
 add_subdirectory(pelib)
-# Qt6 imported targets are not always visible here; gate on the real GUI target.
 if(TARGET retdec-gui)
     add_subdirectory(gui)
 else()

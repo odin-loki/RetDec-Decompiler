@@ -141,7 +141,7 @@ LLVM_CPPFLAGS="$("${LLVM_CONFIG}" --cxxflags | tr ' ' '\n' | grep -E '^-I|^-D' |
 # rapidjson and elfio are vendored in deps/, so no fetch step is needed.
 # RAPIDJSON_HAS_STDSTRING mirrors deps/rapidjson/CMakeLists.txt; retdec/serdes
 # hands std::string straight to rapidjson and does not compile without it.
-CXXFLAGS="-std=c++17 -O0 -g0 -Iinclude -Isrc -Itests"
+CXXFLAGS="-std=c++23 -O0 -g0 -Iinclude -Isrc -Itests"
 CXXFLAGS+=" -Ideps/rapidjson/include -DRAPIDJSON_HAS_STDSTRING=1"
 CXXFLAGS+=" -Ideps/elfio/include ${LLVM_CPPFLAGS} -w"
 

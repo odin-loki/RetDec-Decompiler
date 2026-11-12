@@ -13,7 +13,7 @@
 | AR-3 | Detector raw F1 on stand-in corpus | **done** | v2.0.19; benchmark-tuned caveat |
 | CC-1 | Default-`.c` recompile 216/216 | **done** | CC-01; stock remains 0/216 |
 | REL-1 | Linux + Windows + macOS GitHub Release | **done** | `release-installers.yml`; Windows job has no `needs: release` |
-| REL-2 | Relocatable macOS Qt bundle | **done** | MAC-01; ad-hoc codesign, not notarised |
+| REL-2 | Relocatable macOS GUI bundle | **done** | MAC-01; ad-hoc codesign, not notarised. Was a Qt bundle; now FuseUI (no frameworks to deploy) |
 | CI-1 | ctest-linux / macos / windows + smoke/fuzz/codeql | **done** | Windows is schedule/dispatch |
 | LLVM-1 | Further LLVM pin bump | **out of scope** | Pin stays 23.1.0 unless tasked |
 | LIEF-1 | `install_lief_sdk.sh` | **done** | |

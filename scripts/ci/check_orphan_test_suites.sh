@@ -131,13 +131,13 @@ for d in ${EXPECTED_ORPHANS}; do
 	objs=""
 	while IFS= read -r f; do
 		o="${WORK}/$(echo "$f" | tr '/' '_' | sed 's/\.cpp$/.o/')"
-		g++ -std=c++17 -O0 -w ${INC} ${LLVM_FLAGS} -c "$f" -o "$o" \
+		g++ -std=c++23 -O0 -w ${INC} ${LLVM_FLAGS} -c "$f" -o "$o" \
 			2>"${o}.err" || { sed -n '1,10p' "${o}.err" >&2; die "tests/$d: $f did not compile"; }
 		objs="${objs} ${o}"
 	done < <(find "tests/$d" -name '*.cpp' | sort)
 	[ -n "${objs}" ] || die "tests/$d has no sources"
 
-	g++ -std=c++17 -O0 -w ${objs} "${B2L_DIR}/dwarf_stub.o" -o "${WORK}/$d.bin" \
+	g++ -std=c++23 -O0 -w ${objs} "${B2L_DIR}/dwarf_stub.o" -o "${WORK}/$d.bin" \
 		-Wl,--start-group "${B2L_DIR}/libretdec.a" "${B2L_DIR}"/dep/*.o -Wl,--end-group \
 		-lgtest -lgtest_main -lgmock \
 		$("${LLVM_CONFIG}" --libs) $("${LLVM_CONFIG}" --system-libs) \

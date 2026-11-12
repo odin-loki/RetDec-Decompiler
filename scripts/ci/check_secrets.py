@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """CI-10 — fail if high-confidence secret material is committed.
 
-Scans tracked-looking text under the repo (not deps/, build/, .git/).
+Scans tracked-looking text under the repo (not deps/, third_party/, build/, .git/).
 This is a local pattern gate, not GitHub's native secret-scanning product.
 
 Usage:
@@ -21,6 +21,10 @@ SKIP_DIR_NAMES = frozenset(
     {
         ".git",
         "deps",
+        # Vendored upstream trees (FuseUI, Forge). Forge's own test suite
+        # carries a throwaway TLS key fixture (tests/fixtures/tls/server.key)
+        # that RetDec neither builds nor ships.
+        "third_party",
         "build",
         "node_modules",
         "__pycache__",

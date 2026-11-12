@@ -26,6 +26,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -165,13 +166,27 @@ def ensure_hello_pyc(fixtures_dir: Path) -> None:
     py_compile.compile(str(src), cfile=str(dest), doraise=True)
 
 
-def read_decompiled_text(tmp_out: Path, fixture: Path) -> Optional[str]:
+def output_dir_for(fixture: Path) -> Path:
+    """Private scratch directory for one decompiler run.
+
+    Output used to go to <fixture>.retdec_out next to the fixture, in the
+    source tree. ctest runs managed_integration (every language) at the same
+    time as managed_integration_<lang>, so two processes wrote, read and
+    unlinked the same path, and one of them reported "wrote no decompiled
+    text" for files the other had just deleted. A per-run directory keeps
+    concurrent runners (and --jobs workers) apart and leaves the checkout
+    clean.
+    """
+    return Path(tempfile.mkdtemp(prefix="retdec_it_" + fixture.name + "_"))
+
+
+def read_decompiled_text(tmp_out: Path) -> Optional[str]:
+    # Only the run's own output: files beside the fixture are shared between
+    # concurrent runners and may be stale.
     candidates = [
         tmp_out,
         Path(str(tmp_out) + ".c"),
         Path(str(tmp_out) + ".ll"),
-        fixture.parent / (fixture.name + ".c"),
-        fixture.parent / (fixture.name + ".ll"),
     ]
     for path in candidates:
         if not path.is_file() or path.stat().st_size <= 0:
@@ -187,7 +202,8 @@ def read_decompiled_text(tmp_out: Path, fixture: Path) -> Optional[str]:
 
 def run_one(retdec: Path, test: TestCase, timeout: int, verbose: bool) -> TestResult:
     start = time.monotonic()
-    tmp_out = test.fixture_path.parent / (test.fixture_path.name + ".retdec_out")
+    out_dir = output_dir_for(test.fixture_path)
+    tmp_out = out_dir / (test.fixture_path.name + ".retdec_out")
     actual_text: Optional[str] = None
     try:
         proc = subprocess.run(
@@ -197,7 +213,7 @@ def run_one(retdec: Path, test: TestCase, timeout: int, verbose: bool) -> TestRe
         succeeded = proc.returncode == 0
         stdout = proc.stdout
         stderr = proc.stderr
-        actual_text = read_decompiled_text(tmp_out, test.fixture_path)
+        actual_text = read_decompiled_text(tmp_out)
     except subprocess.TimeoutExpired:
         duration = time.monotonic() - start
         return TestResult(test, False, duration, f"TIMEOUT after {timeout}s")
@@ -205,12 +221,7 @@ def run_one(retdec: Path, test: TestCase, timeout: int, verbose: bool) -> TestRe
         duration = time.monotonic() - start
         return TestResult(test, False, duration, f"EXEC ERROR: {e}")
     finally:
-        for p in [tmp_out, Path(str(tmp_out) + ".c"), Path(str(tmp_out) + ".ll")]:
-            if p.exists():
-                try:
-                    p.unlink()
-                except OSError:
-                    pass
+        shutil.rmtree(out_dir, ignore_errors=True)
 
     duration = time.monotonic() - start
 
@@ -254,13 +265,14 @@ def run_one(retdec: Path, test: TestCase, timeout: int, verbose: bool) -> TestRe
 # Golden-file update
 # ---------------------------------------------------------------------------
 def update_golden(retdec: Path, test: TestCase, timeout: int):
-    tmp_out = test.fixture_path.parent / (test.fixture_path.name + ".retdec_out")
+    out_dir = output_dir_for(test.fixture_path)
+    tmp_out = out_dir / (test.fixture_path.name + ".retdec_out")
     try:
         subprocess.run(
             decompile_cmd(retdec, test.fixture_path, tmp_out),
             capture_output=True, text=True, timeout=timeout,
         )
-        text = read_decompiled_text(tmp_out, test.fixture_path)
+        text = read_decompiled_text(tmp_out)
         if text:
             test.golden_path.parent.mkdir(parents=True, exist_ok=True)
             test.golden_path.write_text(text, errors="replace")
@@ -268,12 +280,7 @@ def update_golden(retdec: Path, test: TestCase, timeout: int):
             return
         print(f"  [golden] no output file found for {test.fixture_path.name}")
     finally:
-        for p in [tmp_out, Path(str(tmp_out) + ".c"), Path(str(tmp_out) + ".ll")]:
-            if p.exists():
-                try:
-                    p.unlink()
-                except OSError:
-                    pass
+        shutil.rmtree(out_dir, ignore_errors=True)
 
 # ---------------------------------------------------------------------------
 # Reporting

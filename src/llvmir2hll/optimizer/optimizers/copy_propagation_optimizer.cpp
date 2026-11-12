@@ -9,6 +9,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <exception>
 #include <iostream>
 #include <limits>
 #include <mutex>

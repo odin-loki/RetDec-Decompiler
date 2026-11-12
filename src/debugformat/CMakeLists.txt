@@ -6,7 +6,7 @@ add_library(debugformat STATIC
 )
 add_library(retdec::debugformat ALIAS debugformat)
 
-target_compile_features(debugformat PUBLIC cxx_std_17)
+target_compile_features(debugformat PUBLIC cxx_std_23)
 
 target_include_directories(debugformat
 	PUBLIC

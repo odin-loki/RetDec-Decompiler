@@ -13,7 +13,7 @@ target_include_directories(retdec-ssa
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
-target_compile_features(retdec-ssa PUBLIC cxx_std_17)
+target_compile_features(retdec-ssa PUBLIC cxx_std_23)
 
 set_target_properties(retdec-ssa PROPERTIES
     POSITION_INDEPENDENT_CODE ON

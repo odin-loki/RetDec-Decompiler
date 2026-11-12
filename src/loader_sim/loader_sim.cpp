@@ -732,25 +732,66 @@ LoaderSim::findElfSection(const std::vector<ElfSection>& secs, const std::string
 
 // ── ELF RELA/REL relocations ─────────────────────────────────────────────────
 
+namespace {
+
+// Smallest on-disk relocation entry for the class: Elf32_Rel is
+// { Addr r_offset; Word r_info } = 8 bytes, Elf64_Rel is 16; the RELA forms
+// add an addend, 12 and 24.
+std::size_t minElfRelocEntry(bool isRela, bool is64Bit)
+{
+	if (is64Bit) return isRela ? 24u : 16u;
+	return isRela ? 12u : 8u;
+}
+
+// The most relocation (or PLT import) records a file of @a size bytes can
+// honestly describe.
+//
+// Each section's walk is bounded by the file -- an entry that would run past
+// the end stops it -- but the sum over sections is not. sh_entsize, sh_offset
+// and sh_size all come out of the file, so 1,600 section headers can each
+// claim a one-byte entsize over the same 64 kB. A hand-built input of that
+// shape (tests/crash_corpus/loadersim/oom_elf_rela_sections_sharing_entries)
+// grows one std::vector<RelocRecord> to a single 512 MB allocation and the
+// process to 1 GB; libFuzzer reported this target out of memory at 2.2 GB.
+//
+// In a well-formed ELF every record consumes one distinct entry of at least
+// minElfRelocEntry() bytes, and every entry lives in the file. So the file
+// size divided by the smallest entry for the class is the real bound, the
+// same reasoning as maxImportRecords() on the PE side.
+std::size_t maxElfRelocRecords(std::size_t fileSize, bool is64Bit)
+{
+	return (fileSize / minElfRelocEntry(/*isRela=*/false, is64Bit)) + 1u;
+}
+
+} // anonymous namespace
+
 std::vector<RelocRecord> LoaderSim::applyELFRelocations(uint64_t newBase) const
 {
 	std::vector<RelocRecord> recs;
 	auto elfSecs = parseElfSections();
 	uint64_t delta = newBase - _imageBase;
 
+	const std::size_t recCap = maxElfRelocRecords(_size, _is64Bit);
+
 	for (const auto& sec: elfSecs)
 	{
+		if (recs.size() >= recCap) break;
 		if (sec.type != kSHT_RELA && sec.type != kSHT_REL) continue;
 		if (sec.entsize == 0) continue;
 		// Filter: only .rela.dyn / .rel.dyn (not .plt)
 		if (sec.name.find(".plt") != std::string::npos) continue;
 
 		bool isRela = (sec.type == kSHT_RELA);
+		// An entsize below the structure's own size is not a relocation
+		// table: the fields read below would straddle the next entry, and a
+		// one-byte entsize turns every byte of the file into a record.
+		if (sec.entsize < minElfRelocEntry(isRela, _is64Bit)) continue;
 		std::size_t entSz = static_cast<std::size_t>(sec.entsize);
-		std::size_t numEnt = entSz > 0 ? static_cast<std::size_t>(sec.size / entSz) : 0;
+		std::size_t numEnt = static_cast<std::size_t>(sec.size / entSz);
 
 		for (std::size_t i = 0; i < numEnt; ++i)
 		{
+			if (recs.size() >= recCap) break;
 			std::size_t eOff = static_cast<std::size_t>(sec.offset) + i * entSz;
 			if (!inBounds(eOff, entSz)) break;
 
@@ -813,9 +854,15 @@ std::vector<ImportRef> LoaderSim::resolveELFImports() const
 	if (!relaPlt) return imports;
 
 	bool isRela = (relaPlt->type == kSHT_RELA);
+	// sh_entsize is the file's word. Zero means "use the standard size"; any
+	// other value below the structure's own size would make the walk below
+	// produce one record per byte, each carrying a symbol name, so it is
+	// treated the same way.
+	const std::size_t minEnt = minElfRelocEntry(isRela, _is64Bit);
 	std::size_t entSz = static_cast<std::size_t>(relaPlt->entsize);
-	if (entSz == 0) entSz = isRela ? (_is64Bit ? 24u : 12u) : (_is64Bit ? 16u : 8u);
+	if (entSz < minEnt) entSz = minEnt;
 	std::size_t numEnt = static_cast<std::size_t>(relaPlt->size / entSz);
+	numEnt = std::min(numEnt, maxElfRelocRecords(_size, _is64Bit));
 
 	// Symbol entry size.
 	std::size_t symSz = _is64Bit ? 24u : 16u;

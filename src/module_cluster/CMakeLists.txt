@@ -8,7 +8,7 @@ target_include_directories(retdec-module-cluster
 )
 
 set_target_properties(retdec-module-cluster PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
 )
 

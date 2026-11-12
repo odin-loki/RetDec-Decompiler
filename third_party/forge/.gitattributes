@@ -1,0 +1,2 @@
+# Shell scripts run under sh/bash (WSL, CI runners, the Android emulator): keep LF even in a Windows checkout.
+*.sh text eol=lf

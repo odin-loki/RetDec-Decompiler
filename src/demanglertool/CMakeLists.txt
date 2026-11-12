@@ -3,7 +3,7 @@ add_executable(demanglertool
 	demangler.cpp
 )
 
-target_compile_features(demanglertool PUBLIC cxx_std_17)
+target_compile_features(demanglertool PUBLIC cxx_std_23)
 
 target_link_libraries(demanglertool
 	retdec::demangler

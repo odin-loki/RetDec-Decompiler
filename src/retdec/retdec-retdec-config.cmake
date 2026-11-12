@@ -31,6 +31,30 @@ if(NOT TARGET retdec::retdec)
         endif()
     endforeach()
     unset(_retdec_ts)
+
+    # retdec-neural's Forge inference backend (src/neural/forge_inference.cpp)
+    # is header-only Forge code plus two static archives, installed next to
+    # the RetDec libraries: forge_simd_mv (CPU kernels) and forge_trust
+    # (Monocypher). The export names retdec-forge-simd-mv; declare both here.
+    if(NOT TARGET retdec-forge-trust)
+        add_library(retdec-forge-trust STATIC IMPORTED)
+        set_target_properties(retdec-forge-trust PROPERTIES
+            IMPORTED_LOCATION
+                "${_retdec_prefix}/@RETDEC_INSTALL_LIB_DIR@/@CMAKE_STATIC_LIBRARY_PREFIX@forge_trust@CMAKE_STATIC_LIBRARY_SUFFIX@")
+    endif()
+    if(NOT TARGET retdec-forge-simd-mv)
+        find_package(Threads REQUIRED)
+        add_library(retdec-forge-simd-mv STATIC IMPORTED)
+        set(_retdec_forge_libs retdec-forge-trust Threads::Threads ${CMAKE_DL_LIBS})
+        if(WIN32)
+            list(APPEND _retdec_forge_libs ws2_32 bcrypt advapi32)
+        endif()
+        set_target_properties(retdec-forge-simd-mv PROPERTIES
+            IMPORTED_LOCATION
+                "${_retdec_prefix}/@RETDEC_INSTALL_LIB_DIR@/@CMAKE_STATIC_LIBRARY_PREFIX@forge_simd_mv@CMAKE_STATIC_LIBRARY_SUFFIX@"
+            INTERFACE_LINK_LIBRARIES "${_retdec_forge_libs}")
+        unset(_retdec_forge_libs)
+    endif()
     unset(_retdec_prefix)
 
     include(${CMAKE_CURRENT_LIST_DIR}/retdec-retdec-targets.cmake)

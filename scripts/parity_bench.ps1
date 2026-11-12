@@ -82,7 +82,6 @@ Write-Host ""
 
 Write-Host "(2) GUI subprocess (retdec-gui --headless-decompile, file redirect):"
 $env:RETDEC_GUI_HEADLESS = "1"
-$env:QT_QPA_PLATFORM = "offscreen"
 $guiArgs = @("--headless", "--headless-decompile", $absBinary)
 if ($Fast) { $guiArgs = @("--headless", "--headless-decompile", "--fast-decompile", $absBinary) }
 
@@ -105,7 +104,7 @@ if (Test-Path $timingFile) {
 $guiSubSec = if ($guiSubMs -gt 0) { $guiSubMs / 1000.0 } else { $guiWallSec }
 
 if (-not (Test-Path $guiOutputPath)) { throw "GUI decompile did not produce $guiOutputPath" }
-Write-Host ("  subprocess: {0:F1} s (wall including Qt: {1:F1} s)" -f $guiSubSec, $guiWallSec)
+Write-Host ("  subprocess: {0:F1} s (wall including GUI start-up: {1:F1} s)" -f $guiSubSec, $guiWallSec)
 Write-Host ""
 
 $h1 = Get-Sha256Hex $outCli

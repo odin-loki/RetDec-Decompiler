@@ -30,10 +30,11 @@ bump. Never edit `deps/llvm/`.
   there is no dedicated C++ writer. Managed inputs ignore `--output-lang`
   and use format-specific emitters. `--buildable` sidecars are **on by
   default**.
-- Qt 6 GUI (`retdec-gui`) runs the same `retdec-decompiler` child as the
+- The GUI (`retdec-gui`, now on FuseUI + Forge from `third_party/`; the
+  port from Qt is complete) runs the same `retdec-decompiler` child as the
   CLI. macOS ships `RetDec.app` in the arm64 tarball (ad-hoc signed, not
   notarised).
-- Optional neural refine is `RETDEC_ENABLE_LLAMACPP` at build and
+- Optional neural refine (Forge backend) is `RETDEC_ENABLE_NEURAL` at build and
   `RETDEC_NEURAL_REFINE` / `RETDEC_NEURAL_MODEL` at run. Compile gate is
   `cc`/`gcc -fsyntax-only`; the differential gate is not implemented.
   There is no in-tree `src/qwen3` and no CLI `--model` flag.

@@ -80,7 +80,6 @@ if (-not (Test-Path -LiteralPath $outCli)) { throw "CLI output missing: $outCli"
 
 # (2) GUI headless (run from GUI directory so retdec-decompiler is found beside retdec-gui)
 $env:RETDEC_GUI_HEADLESS = "1"
-$env:QT_QPA_PLATFORM = "offscreen"
 $guiArgs = @("--headless", "--headless-decompile", $absBinary)
 if ($Fast) { $guiArgs = @("--headless", "--headless-decompile", "--fast-decompile", $absBinary) }
 

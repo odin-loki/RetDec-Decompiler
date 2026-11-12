@@ -70,7 +70,7 @@ INC="-Iinclude -Isrc -Ideps/rapidjson/include -Ideps/elfio/include -DRAPIDJSON_H
 
 for f in src/bin2llvmir/optimizations/idioms/*.cpp; do
 	o="${WORKDIR}/$(basename "$f" .cpp).o"
-	g++ -std=c++17 -O0 -w -fPIC ${INC} ${LLVM_FLAGS} -c "$f" -o "$o" \
+	g++ -std=c++23 -O0 -w -fPIC ${INC} ${LLVM_FLAGS} -c "$f" -o "$o" \
 		2>"${WORKDIR}/cc.err" \
 		|| { sed -n '1,20p' "${WORKDIR}/cc.err" >&2; die "$f did not compile"; }
 done
@@ -79,7 +79,7 @@ g++ -shared -o "${WORKDIR}/libid.so" "${WORKDIR}"/*.o \
 	-Wl,--unresolved-symbols=ignore-all 2>"${WORKDIR}/so.err" \
 	|| { sed -n '1,20p' "${WORKDIR}/so.err" >&2; die "could not build the idiom library"; }
 
-g++ -std=c++17 -O0 -w ${INC} ${LLVM_FLAGS} \
+g++ -std=c++23 -O0 -w ${INC} ${LLVM_FLAGS} \
 	scripts/ci/idiom_shared_use_check.cpp -o "${WORKDIR}/probe" \
 	-L"${WORKDIR}" -lid -Wl,-rpath,"${WORKDIR}" \
 	-Wl,--unresolved-symbols=ignore-all \

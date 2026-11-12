@@ -5,7 +5,7 @@ add_library(config STATIC
 )
 add_library(retdec::config ALIAS config)
 
-target_compile_features(config PUBLIC cxx_std_17)
+target_compile_features(config PUBLIC cxx_std_23)
 
 target_include_directories(config PUBLIC
 	PUBLIC

@@ -1,0 +1,49 @@
+{
+    "functions": [
+        {
+            "name": "fib",
+            "demangledName": "fib",
+            "startAddr": "0x401000",
+            "endAddr": "0x401030",
+            "startLine": "17",
+            "endLine": "22",
+            "callingConvention": "cdecl",
+            "fncType": "decompilerDefined",
+            "basicBlocks": [
+                { "startAddr": "0x401000", "endAddr": "0x401010", "preds": [], "succs": ["0x401010", "0x401018"], "calls": [] },
+                { "startAddr": "0x401010", "endAddr": "0x401018", "preds": ["0x401000"], "succs": [], "calls": [] },
+                { "startAddr": "0x401018", "endAddr": "0x401030", "preds": ["0x401000"], "succs": [], "calls": [ { "srcAddr": "0x401020", "targetAddr": "0x401000" } ] }
+            ]
+        },
+        {
+            "name": "main",
+            "demangledName": "main",
+            "startAddr": "0x401030",
+            "endAddr": "0x401060",
+            "startLine": "25",
+            "endLine": "28",
+            "callingConvention": "cdecl",
+            "fncType": "decompilerDefined",
+            "basicBlocks": [
+                { "startAddr": "0x401030", "endAddr": "0x401060", "preds": [], "succs": [], "calls": [ { "srcAddr": "0x401040", "targetAddr": "0x401000" } ] }
+            ],
+            "semanticDetections": [
+                { "kind": "algorithm", "label": "fibonacci", "confidence": 0.93, "detail": "recursive" }
+            ]
+        }
+    ],
+    "globals": [
+        {
+            "name": "str_fib",
+            "realName": "fib(10) = %d\n",
+            "type": { "llvmIr": "[14 x i8]", "isWideString": false },
+            "storage": { "type": "global", "value": "0x402000" }
+        },
+        {
+            "name": "g_magic",
+            "type": { "llvmIr": "i32", "isWideString": false },
+            "storage": { "type": "global", "value": "0x403000" },
+            "integer": "0x5A4D"
+        }
+    ]
+}

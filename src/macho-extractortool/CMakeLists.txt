@@ -3,7 +3,7 @@ add_executable(macho-extractortool
 	macho_extractor.cpp
 )
 
-target_compile_features(macho-extractortool PUBLIC cxx_std_17)
+target_compile_features(macho-extractortool PUBLIC cxx_std_23)
 
 target_link_libraries(macho-extractortool
 	retdec::macho-extractor

@@ -48,6 +48,12 @@ EXTRA_CXXFLAGS="${EXTRA_CXXFLAGS:-}"
 # deps/elfio is header-only and pulls in nothing else, so the ELF reader's
 # bounds can be driven here even though src/fileformat as a whole needs LLVM.
 INCLUDES="-Iinclude -Ideps/rapidjson/include -Ideps/whereami -Ideps/elfio/include"
+# Forge's header-only layers (third_party/forge, vendored): core, the OS layer
+# and the support libraries. -isystem, as cmake/first_party.cmake marks them:
+# their warnings are Forge's, not this tree's. The OS layer needs -pthread and
+# libdl at link time (FORGE_LINK_LIBS).
+INCLUDES="$INCLUDES -isystem third_party/forge/core/include -isystem third_party/forge/os/include -isystem third_party/forge/support/include"
+FORGE_LINK_LIBS="-pthread -ldl"
 
 # RAPIDJSON_HAS_STDSTRING mirrors deps/rapidjson/CMakeLists.txt; retdec/serdes
 # passes std::string straight to rapidjson and does not compile without it.
@@ -59,11 +65,11 @@ DEFINES="$DEFINES -DRETDEC_GIT_VERSION_TAG=\"standalone\""
 DEFINES="$DEFINES -DRETDEC_BUILD_DATE=\"standalone\""
 
 # -Wno-unused-parameter: the upstream style leaves interface parameters named.
-CXXFLAGS="-std=c++17 $INCLUDES $DEFINES -O1 -g0 -fno-omit-frame-pointer -Wall -Wno-unused-parameter ${EXTRA_CXXFLAGS}"
-TESTFLAGS="-std=c++17 $INCLUDES $DEFINES -Itests/standalone -O1 -g0 -Wall -Wno-unused-parameter ${EXTRA_CXXFLAGS}"
+CXXFLAGS="-std=c++23 $INCLUDES $DEFINES -O1 -g0 -fno-omit-frame-pointer -Wall -Wno-unused-parameter ${EXTRA_CXXFLAGS}"
+TESTFLAGS="-std=c++23 $INCLUDES $DEFINES -Itests/standalone -O1 -g0 -Wall -Wno-unused-parameter ${EXTRA_CXXFLAGS}"
 
 # Modules that build with no third-party dependency.  Keep alphabetical.
-# A module belongs here only if `$CXX -std=c++17 $INCLUDES $DEFINES -fsyntax-only src/<m>/*.cpp`
+# A module belongs here only if `$CXX -std=c++23 $INCLUDES $DEFINES -fsyntax-only src/<m>/*.cpp`
 # succeeds; scripts/standalone_check.sh --audit re-verifies that claim.
 readonly MODULES=(
 	algo_recover alias_analysis bc_module call_conv cfg cfg_structure
@@ -119,6 +125,7 @@ readonly EXCLUDED_SUITES=(
 readonly EXCLUDED_TEST_SOURCES=(
 	"utils/byte_value_storage_tests.cpp:includes <gmock/gmock.h>, which the shim does not provide"
 	"utils/version_tests.cpp:includes <gmock/gmock.h>, which the shim does not provide"
+	"neural/forge_inference_test.cpp:runs src/neural/forge_inference.cpp, which this gate does not build (see EXCLUDED_SOURCES); CMake's retdec-neural-forge-tests runs it"
 )
 
 # Modules compiled here that have no tests/ directory at all, with the reason.
@@ -163,7 +170,7 @@ readonly GATED_ELSEWHERE=(
 	# four files in its PARTIAL_SUITES entry run here, and FF-01 runs all
 	# sixteen against the system LLVM. It is named here so that removing the
 	# partial entry cannot silently take the other twelve with it.
-	"gui:built and run directly by ctest-linux.yml's 'GUI unit tests (headless)' step"
+	"gui:built through cmake/gui_standalone and run by this script's check_gui, by gui.yml on Linux, Windows and macOS, and by ctest-linux.yml's 'GUI unit tests (headless)' step"
 	"decompiler:script-driven tests that set LABELS themselves, so ctest -L unit reaches them"
 	"managed_integration:sets LABELS itself, so ctest -L unit reaches it"
 	"algorithm_recovery:python suites run by ci-smoke.yml via scripts/check_push_gates.sh"
@@ -262,20 +269,20 @@ readonly PARTIAL_SUITES=(
 # Sources inside an included module that must NOT be compiled here, mirroring a
 # conditional in that module's CMakeLists.  "module/file.cpp:reason".
 readonly EXCLUDED_SOURCES=(
-	"neural/llama_inference.cpp:only built with retdec::deps::llamacpp; mock_inference.cpp provides createLlamaInference() otherwise"
+	"neural/forge_inference.cpp:needs Forge's inference stack (generated op tables, the forge_simd_mv kernels), which only CMake builds; mock_inference.cpp provides a null createForgeInference() otherwise"
 )
 
 # Modules that happen to compile standalone but are deliberately not part of the
 # fast path, with the reason.  --audit consults this so it can distinguish
 # "nobody wired this up" from "we decided not to".
 #
-# The five that name a third-party library are here because otherwise --audit's
+# The ones that name a third-party library are here because otherwise --audit's
 # answer depends on what is installed on the machine running it.  This gate's
 # contract is a C++17/20 compiler plus the headers vendored in deps/, and
 # $INCLUDES carries nothing else -- but a system include path is free, so a
 # module that includes <capstone/capstone.h> compiles on a box with
 # libcapstone-dev and does not compile on the CI runner, which installs only
-# Qt6.  Measured: sem_decoder was reported as "compiles standalone but is
+# GoogleTest.  Measured: sem_decoder was reported as "compiles standalone but is
 # missing from MODULES" here and silently passed on CI.  Listing them makes the
 # verdict the same everywhere, and says which library each one needs.
 readonly EXCLUDED_REASONS=(
@@ -284,6 +291,11 @@ readonly EXCLUDED_REASONS=(
 	"capstone2llvmir:needs LLVM and <capstone/capstone.h>"
 	"capstone2llvmirtool:needs <keystone/keystone.h> and capstone2llvmir"
 	"yaracpp:needs <yara.h>"
+	# Compiles wherever opencl-c-headers is installed: under C++23 every file
+	# builds with only <CL/cl.h> beyond the tree, so --audit began reporting it
+	# on boxes with the headers. Linking needs an OpenCL ICD loader too, and
+	# OCL-01 (GATED_ELSEWHERE) builds it, its kernels and tests/opencl.
+	"opencl:needs <CL/cl.h> and an OpenCL ICD loader; scripts/ci/check_opencl_tests.sh (OCL-01) builds and runs it"
 	"pat2yara:needs the pat2yara headers, which are generated by its own build"
 )
 
@@ -330,8 +342,8 @@ if [ "$MODE" = list ]; then
 	say "suites (${#SUITES[@]}):"
 	printf '  %s\n' "${SUITES[@]}"
 	say ""
-	say "suites needing Qt6 (1):"
-	say "  gui   (moc + rcc + QApplication; skipped when Qt6 is absent)"
+	say "suites built through CMake (1):"
+	say "  gui   (cmake/gui_standalone: FuseUI + Forge; skipped without cmake or GoogleTest)"
 	exit 0
 fi
 
@@ -365,8 +377,8 @@ if [ "$MODE" = audit ]; then
 			fi
 		done
 		[ ${#srcs[@]} -eq 0 ] && continue
-		std=c++17
-		for c20 in "${CXX20_MODULES[@]}"; do [ "$c20" = "$m" ] && std=c++20; done
+		std=c++23
+		for c20 in "${CXX20_MODULES[@]}"; do [ "$c20" = "$m" ] && std=c++23; done
 		# shellcheck disable=SC2086
 		if $CXX -std=$std $INCLUDES $DEFINES -fsyntax-only -x c++ "${srcs[@]}" >/dev/null 2>&1; then
 			if [ -z "${declared[$m]:-}" ] && [ -z "${excluded[$m]:-}" ]; then
@@ -505,14 +517,13 @@ compile_one() {
 	local compiler="$CXX"
 	case "$kind" in
 		test)  flags="$SC_TESTFLAGS" ;;
-		test20) flags="${SC_TESTFLAGS/-std=c++17/-std=c++20}" ;;
+		test20) flags="${SC_TESTFLAGS/-std=c++23/-std=c++23}" ;;
 		# whereami is vendored C, not C++; retdec/utils links against it.
 		cc)    flags="-O1 -g0 -w $SC_EXTRA_CXXFLAGS"; compiler="${CC:-cc}" ;;
-		mod20)   flags="${SC_CXXFLAGS/-std=c++17/-std=c++20}" ;;
+		mod20)   flags="${SC_CXXFLAGS/-std=c++23/-std=c++23}" ;;
 		# -x c++ so the compiler does not refuse an unknown .cu extension.
 		modcu)   flags="$SC_CXXFLAGS -x c++" ;;
-		mod20cu) flags="${SC_CXXFLAGS/-std=c++17/-std=c++20} -x c++" ;;
-		gui)   flags="$SC_GUIFLAGS" ;;
+		mod20cu) flags="${SC_CXXFLAGS/-std=c++23/-std=c++23} -x c++" ;;
 		*)     flags="$SC_CXXFLAGS" ;;
 	esac
 
@@ -713,7 +724,7 @@ compile_cuda_accel() {
 			printf '#include "%s"\n' "$stripped"
 		} > "$tu"
 		# shellcheck disable=SC2086
-		if ! "$CXX" -std=c++20 $INCLUDES $DEFINES -DRETDEC_HAS_CUDA -Wall -Wextra \
+		if ! "$CXX" -std=c++23 $INCLUDES $DEFINES -DRETDEC_HAS_CUDA -Wall -Wextra \
 				-I"$ROOT/tests/utils/cuda_stub" -fsyntax-only -x c++ "$tu" > "$log" 2>&1; then
 			bad_srcs+=("$src")
 			printf '\n%s--- %s%s\n' "$C_RED" "$src" "$C_OFF"
@@ -786,7 +797,7 @@ check_kernel_headers() {
 	for h in "${headers[@]}"; do
 		printf '#include "%s"\nint main(void) { return 0; }\n' "${h#include/}" > "$tu"
 		# shellcheck disable=SC2086
-		if ! $CXX -std=c++17 $INCLUDES $DEFINES $KERNEL_WARN_FLAGS $EXTRA_CXXFLAGS \
+		if ! $CXX -std=c++23 $INCLUDES $DEFINES $KERNEL_WARN_FLAGS $EXTRA_CXXFLAGS \
 				-fsyntax-only "$tu" > "$log" 2>&1; then
 			bad_headers+=("$h")
 			printf '\n%s--- %s%s\n' "$C_RED" "$h" "$C_OFF"
@@ -802,140 +813,78 @@ check_kernel_headers() {
 	ok "${#headers[@]} kernel headers compile standalone, warnings as errors (${KERNEL_HEADER_DIRS[*]})"
 	return 0
 }
-# ── src/gui, which nothing else in this repository compiles ─────────────────
+# ── src/gui, built through cmake/gui_standalone ────────────────────────────
 #
-# The GUI is 37 sources and 493 tests behind find_package(Qt6 REQUIRED), so it
-# builds only in a tree that has Qt -- and none of the fast gates did. That is
-# not a small blind spot: seven defects were found there by reading, including
-# two use-after-frees where a reference into a model vector outlived the modal
-# dialog whose event loop replaced it. Nothing would have caught a compile
-# error, let alone those.
+# retdec-gui is FuseUI (third_party/fuseui) plus Forge (third_party/forge), both
+# vendored, and talks to the decompiler only as a child process -- so it needs
+# none of LLVM, Capstone or YARA and fits here. It is not compiled object by
+# object like the modules above: FuseUI and Forge bring their own CMake, so this
+# configures cmake/gui_standalone (the same tree gui.yml builds) and runs
+# retdec-gui-tests from it.
 #
-# It needs more than a compiler: moc for every Q_OBJECT class, rcc for the
-# resource bundle, and a QApplication before the first widget. What it does not
-# need is the rest of retdec -- the whole suite links against Qt alone, which is
-# why it fits here at all. RETDEC_GUI_HEADLESS is what the project's own ctest
-# run sets (tests/gui/CMakeLists.txt, ctest-linux.yml); without it the panels
-# defer a rehighlight into an offscreen widget with no viewport and the run
-# stalls, which is what the comment at tri_pane_code_view.cpp:441 is about.
+# What it needs beyond a C++23 compiler is CMake and the system GoogleTest
+# (libgtest-dev); without either the suite is skipped, with the reason, rather
+# than fetched -- this gate works offline. RETDEC_GUI_FETCH_GTEST=OFF stops
+# cmake/gui_standalone from falling back to downloading googletest.
 #
-# RETDEC_GUI_HAS_NEURAL is defined because a default build defines it
-# (RETDEC_ENABLE_NEURAL is ON, and src/gui/CMakeLists.txt keys the define off
-# the resulting target). Compiling without it would check the #else branches --
-# the ones a default build does not use.
-GUI_QT_MODULES="Qt6Widgets Qt6Gui Qt6Core Qt6Test"
-gui_qt_available() {
-	command -v pkg-config >/dev/null 2>&1 || return 1
-	# shellcheck disable=SC2086
-	pkg-config --exists $GUI_QT_MODULES 2>/dev/null || return 1
-	GUI_MOC="$(pkg-config --variable=libexecdir Qt6Core 2>/dev/null)/moc"
-	GUI_RCC="$(pkg-config --variable=libexecdir Qt6Core 2>/dev/null)/rcc"
-	[ -x "$GUI_MOC" ] || GUI_MOC="$(command -v moc 2>/dev/null || true)"
-	[ -x "$GUI_RCC" ] || GUI_RCC="$(command -v rcc 2>/dev/null || true)"
-	[ -x "$GUI_MOC" ] && [ -x "$GUI_RCC" ]
+# EXTRA_CXXFLAGS (the sanitizer flags under the asan+ubsan job) reach both the
+# compile and the link line.
+gui_gtest_available() {
+	local d
+	for d in /usr/include /usr/local/include /opt/homebrew/include; do
+		[ -f "$d/gtest/gtest.h" ] && return 0
+	done
+	command -v pkg-config >/dev/null 2>&1 && pkg-config --exists gtest 2>/dev/null
 }
 
 check_gui() {
-	[ -d src/gui ] || return 2
-	if ! gui_qt_available; then
-		skip "gui — Qt6 development files not found (install qt6-base-dev to run 493 GUI tests)"
+	[ -d src/gui ] && [ -f cmake/gui_standalone/CMakeLists.txt ] || return 2
+	if ! command -v cmake >/dev/null 2>&1; then
+		skip "gui — cmake not found (needed to build cmake/gui_standalone)"
 		return 2
 	fi
-
-	local gen="$BUILD_DIR/gui"
-	mkdir -p "$gen/moc" "$gen/obj"
-
-	# One moc per Q_OBJECT header. An empty output means moc found no
-	# Q_OBJECT after all, which would leave an empty translation unit; the
-	# grep above should make that impossible, so treat it as an error.
-	local h out mocs=()
-	while IFS= read -r h; do
-		out="$gen/moc/moc_$(printf '%s' "${h#include/retdec/gui/}" | tr '/' '_' | sed 's/\.h$/.cpp/')"
-		if [ ! -f "$out" ] || [ "$h" -nt "$out" ]; then
-			if ! "$GUI_MOC" -Iinclude "$h" -o "$out" 2> "$out.log"; then
-				bad "moc failed on $h:"
-				head -10 "$out.log"
-				return 1
-			fi
-		fi
-		[ -s "$out" ] || { bad "moc produced nothing for $h"; return 1; }
-		mocs+=("$out")
-	done < <(grep -rl 'Q_OBJECT' include/retdec/gui | sort)
-
-	local qrc="src/gui/resources/resources.qrc" qrcOut="$gen/qrc_resources.cpp"
-	if [ -f "$qrc" ]; then
-		if [ ! -f "$qrcOut" ] || [ "$qrc" -nt "$qrcOut" ]; then
-			"$GUI_RCC" --name resources "$qrc" -o "$qrcOut" || { bad "rcc failed on $qrc"; return 1; }
-		fi
-	else
-		qrcOut=""
+	if ! gui_gtest_available; then
+		skip "gui — GoogleTest not found (install libgtest-dev to build and run retdec-gui-tests)"
+		return 2
 	fi
-
-	# main.cpp owns the application's own main(); the suite brings its own.
-	local guiSrcs=() testSrcs=() f
-	while IFS= read -r f; do guiSrcs+=("$f"); done < <(find src/gui -name '*.cpp' ! -name 'main.cpp' | sort)
-	while IFS= read -r f; do testSrcs+=("$f"); done < <(find tests/gui -name '*_test.cpp' | sort)
-	if [ ${#testSrcs[@]} -eq 0 ]; then
+	if [ -z "$(find tests/gui -name '*_test.cpp' 2>/dev/null | head -1)" ]; then
 		skip "gui (no test sources)"
 		return 2
 	fi
 
-	local qtCflags qtLibs
-	# shellcheck disable=SC2086
-	qtCflags="$(pkg-config --cflags $GUI_QT_MODULES)"
-	# shellcheck disable=SC2086
-	qtLibs="$(pkg-config --libs $GUI_QT_MODULES)"
-
-	# Compiled in parallel and cached the same way the modules above are: the
-	# whole suite is ~55 translation units and a serial build of it is minutes.
-	local joblist; joblist="$(mktemp)"
-	local src obj
-	for src in "${guiSrcs[@]}" "${testSrcs[@]}" "${mocs[@]}" ${qrcOut:+"$qrcOut"} tests/standalone/qt_gtest_lite_main.cpp; do
-		obj="$gen/obj/$(printf '%s' "$src" | tr '/' '_' | sed 's/\.cpp$/.o/')"
-		printf '%s\t%s\tgui\n' "$src" "$obj" >> "$joblist"
-	done
-
-	export SC_GUIFLAGS="-std=c++20 -fPIC $qtCflags -Iinclude -Isrc/gui -Itests/standalone -Itests/gui -DRETDEC_GUI_HAS_NEURAL -O1 -g0 -Wall -Wno-unused-parameter ${EXTRA_CXXFLAGS}"
-	local guiStatus=0
-	if ! xargs -d '\n' -P "$JOBS" -n 1 bash -c 'compile_one "$0"' < "$joblist"; then
-		guiStatus=1
+	local gen="$BUILD_DIR/gui" log
+	mkdir -p "$gen"
+	log="$gen/build.log"
+	local genArgs=()
+	command -v ninja >/dev/null 2>&1 && genArgs=(-G Ninja)
+	# A cache from another generator cannot be reused.
+	if [ -f "$gen/CMakeCache.txt" ] && ! grep -q "CMAKE_GENERATOR:INTERNAL=${genArgs[1]:-Unix Makefiles}\$" "$gen/CMakeCache.txt"; then
+		rm -rf "$gen"; mkdir -p "$gen"
 	fi
-	if [ $guiStatus -ne 0 ]; then
-		bad "gui (compile)"
-		find "$gen/obj" -name '*.log' -size +0 | head -3 | while read -r log; do
-			printf '\n%s--- %s%s\n' "$C_RED" "$log" "$C_OFF"
-			head -20 "$log"
-		done
-		rm -f "$joblist"
+	if ! cmake -S cmake/gui_standalone -B "$gen" "${genArgs[@]}" \
+		-DCMAKE_BUILD_TYPE=Debug \
+		-DCMAKE_CXX_COMPILER="$(command -v "$CXX")" \
+		-DCMAKE_CXX_FLAGS="-O1 -g0 ${EXTRA_CXXFLAGS}" \
+		-DCMAKE_EXE_LINKER_FLAGS="${EXTRA_CXXFLAGS}" \
+		-DRETDEC_GUI_FETCH_GTEST=OFF > "$log" 2>&1; then
+		bad "gui (configure)"
+		tail -30 "$log"
+		return 1
+	fi
+	if ! cmake --build "$gen" --target retdec-gui-tests retdec-gui --parallel "$JOBS" >> "$log" 2>&1; then
+		bad "gui (build)"
+		grep -nE 'error|undefined reference' "$log" | head -20
 		return 1
 	fi
 
-	local objs=()
-	while IFS= read -r src; do objs+=("${src}"); done < <(cut -f2 "$joblist")
-	rm -f "$joblist"
-
-	local bin="$BUILD_DIR/bin/gui"
-	# The panels reach retdec::neural for the assistant's backend, and the
-	# GoogleTest shim is an object rather than an archive. Everything else the
-	# GUI needs is Qt. --start-group because the module archives have
-	# undeclared cycles, exactly as the suite loop above does.
-	#
-	# EXTRA_CXXFLAGS carries the sanitizer flags under the asan+ubsan job, and
-	# -fsanitize has to reach the link line too or every __asan_report_* the
-	# instrumented objects call is undefined. Leaving it off linked fine here
-	# and would have failed only in CI.
-	# shellcheck disable=SC2086
-	if ! $CXX ${EXTRA_CXXFLAGS} "${objs[@]}" -Wl,--start-group "${libargs[@]}" -Wl,--end-group "$BUILD_DIR/obj/gtest_lite.o" $qtLibs -o "$bin" > "$bin.buildlog" 2>&1; then
-		bad "gui (link)"
-		grep -nE 'undefined reference|cannot find' "$bin.buildlog" | head -15
-		head -10 "$bin.buildlog"
+	local bin out
+	bin="$(find "$gen" -type f -name retdec-gui-tests -perm -u+x | head -1)"
+	if [ -z "$bin" ]; then
+		bad "gui (retdec-gui-tests not found under $gen)"
 		return 1
 	fi
-	rm -f "$bin.buildlog"
-
-	local out
-	if out="$(RETDEC_GUI_HEADLESS=1 QT_QPA_PLATFORM=offscreen "$bin" --gtest_brief 2>&1)"; then
-		ok "gui — $(printf '%s' "$out" | grep -o '[0-9]* tests\? ran' | head -1)"
+	if out="$(RETDEC_GUI_HEADLESS=1 "$bin" --gtest_brief=1 2>&1)"; then
+		ok "gui — $(printf '%s' "$out" | grep -oE '[0-9]+ tests? from [0-9]+ test suites? ran' | tail -1)"
 		return 0
 	fi
 	bad "gui (tests)"
@@ -1150,13 +1099,13 @@ for s in "${run_suites[@]}"; do
 	# --start-group/--end-group resolves the undeclared cycles between module
 	# archives without needing a topological order.
 	suiteFlags="$TESTFLAGS"
-	for c20 in "${CXX20_MODULES[@]}"; do [ "$c20" = "$s" ] && suiteFlags="${TESTFLAGS/-std=c++17/-std=c++20}"; done
+	for c20 in "${CXX20_MODULES[@]}"; do [ "$c20" = "$s" ] && suiteFlags="${TESTFLAGS/-std=c++23/-std=c++23}"; done
 
 	# The archive readers (JAR, APK) call into zlib, which is a system library
 	# rather than anything vendored; link it when it is present.
-	extraLibs=""
+	extraLibs="$FORGE_LINK_LIBS"
 	if [ -n "${ZLIB_LIB:-}" ] || printf 'int main(void){return 0;}' | $CXX -x c++ - -lz -o /dev/null >/dev/null 2>&1; then
-		extraLibs="${ZLIB_LIB:--lz}"
+		extraLibs="$extraLibs ${ZLIB_LIB:--lz}"
 	fi
 	# shellcheck disable=SC2086
 	if ! $CXX $suiteFlags "${srcs[@]}" \
@@ -1294,8 +1243,9 @@ run_cuda_half() {
 	return 0
 }
 
-# gui is not one of SUITES: it needs moc, rcc and a QApplication before the
-# first widget, so it has its own builder above. It still counts here.
+# gui is not one of SUITES: it is built by CMake through cmake/gui_standalone
+# (FuseUI and Forge bring their own build), so it has its own builder above.
+# It still counts here.
 gui_selected=1
 if [ ${#WANTED[@]} -gt 0 ]; then
 	gui_selected=0
@@ -1303,7 +1253,7 @@ if [ ${#WANTED[@]} -gt 0 ]; then
 fi
 gui_total=0
 if [ $gui_selected -eq 1 ]; then
-	# 2 means the suite was skipped for want of Qt6, which is neither a pass
+	# 2 means the suite was skipped for want of CMake or GoogleTest, which is neither a pass
 	# nor a failure and must not be counted as either -- a skipped suite that
 	# reported "1 / 1 passed" would be a green run for work nothing did.
 	check_gui

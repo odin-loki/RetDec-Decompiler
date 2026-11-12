@@ -107,7 +107,7 @@ echo "PSEUDO-01: compiling ${n_srcs} translation units with ${JOBS} job(s)"
 export WORKDIR
 xargs -P "${JOBS}" -I{} sh -c '
 	o="${WORKDIR}/obj/$(echo "$1" | tr "/" "_").o"
-	g++ -std=c++17 -c -O0 '"${INC} ${LLVM_FLAGS}"' "$1" -o "$o" \
+	g++ -std=c++23 -c -O0 '"${INC} ${LLVM_FLAGS}"' "$1" -o "$o" \
 		2>>"${WORKDIR}/cc.err" || echo "FAILED $1" >> "${WORKDIR}/cc.err"
 ' _ {} < "${srcs}"
 

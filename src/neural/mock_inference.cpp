@@ -31,9 +31,9 @@ const std::vector<MockRule>& mockRules()
 
 class MockInference : public Inference {
 public:
-	bool loadModel(const std::string& ggufPath, int /*contextLen*/) override
+	bool loadModel(const std::string& modelPath, int /*contextLen*/) override
 	{
-		if (!verifyModelSha256(ggufPath)) return false;
+		if (!verifyModelSha256(modelPath)) return false;
 		loaded_ = true;
 		return true;
 	}
@@ -59,7 +59,7 @@ public:
 		const char* ctxFail = std::getenv("RETDEC_NEURAL_MOCK_CONTEXT_FAIL");
 		if (ctxFail && ctxFail[0] && ctxFail[0] != '0' && prompt.find("[truncated for context]") == std::string::npos)
 		{
-			result.error = "llama: prompt exceeds context budget";
+			result.error = "mock: prompt exceeds context budget";
 			return result;
 		}
 		result.hasTokenProb = true;
@@ -106,10 +106,10 @@ std::unique_ptr<Inference> createMockInference()
 	return std::make_unique<MockInference>();
 }
 
-#ifndef RETDEC_HAS_LLAMACPP
-std::unique_ptr<Inference> createLlamaInference()
+#ifndef RETDEC_HAS_FORGE_INFERENCE
+std::unique_ptr<Inference> createForgeInference()
 {
-	return nullptr; // Implemented in llama_inference.cpp when llama.cpp is linked
+	return nullptr; // Implemented in forge_inference.cpp, which every CMake build compiles
 }
 #endif
 

@@ -1,9 +1,105 @@
 #!/usr/bin/env bash
-# install-licence-files.sh — Split monolithic LICENSE into condensed set.
-# Usage: bash scripts/install-licence-files.sh [REPO_ROOT]
+# install-licence-files.sh — Split monolithic LICENSE into condensed set, and
+# collect the licence texts of the vendored third-party components into
+# LICENSE-THIRD-PARTY (installed to share/retdec by the top-level CMakeLists).
+#
+# Usage:
+#   bash scripts/install-licence-files.sh [REPO_ROOT]
+#   bash scripts/install-licence-files.sh --third-party-only [REPO_ROOT]
+#       only (re)generate LICENSE-THIRD-PARTY from third_party/
 set -euo pipefail
 
+THIRD_PARTY_ONLY=0
+if [[ "${1:-}" == "--third-party-only" ]]; then
+	THIRD_PARTY_ONLY=1
+	shift
+fi
+
 REPO="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+
+# ── LICENSE-THIRD-PARTY ──────────────────────────────────────────────────────
+# retdec-gui is built from two first-party libraries vendored in third_party/
+# (FuseUI and Forge: AGPL-3.0-or-later with a commercial option, same owner as
+# RetDec) and the third-party code they carry. Their licence texts travel with
+# every binary package.
+write_third_party() {
+	local out="${REPO}/LICENSE-THIRD-PARTY" tp="${REPO}/third_party"
+	local stb="${tp}/fuseui/vendor/stb/stb_truetype.h"
+	local f
+	for f in "${tp}/fuseui/LICENSE.md" "${tp}/forge/NOTICE" \
+		"${tp}/forge/third_party/monocypher/LICENCE.md" \
+		"${tp}/fuseui/vendor/fonts/opensans/LICENSE.txt" \
+		"${tp}/fuseui/vendor/fonts/jetbrainsmono/OFL.txt" \
+		"${tp}/fuseui/vendor/fonts/dejavu/LICENSE" \
+		"${tp}/fuseui/vendor/lua/LICENSE.txt" "${stb}"; do
+		[[ -f "${f}" ]] || { echo "Missing ${f}" >&2; exit 1; }
+	done
+	{
+		cat <<'TXT'
+Third-party licence texts for components vendored in third_party/
+==================================================================
+
+retdec-gui is built on FuseUI (third_party/fuseui) and Forge (third_party/forge).
+Both are first-party: Copyright (c) 2026 Odin Loch (Imortek), the owner of
+RetDec, dual-licensed AGPL-3.0-or-later or commercial, exactly like RetDec
+itself (LICENSE, LICENSE-AGPL, LICENSE-COMMERCIAL). The AGPL-3.0 text is in
+LICENSE-AGPL and is not repeated here.
+
+The code and data below are third-party and keep their own licences.
+
+  stb (stb_truetype, stb_image, stb_image_write, stb_image_resize2)
+                         third_party/fuseui/vendor/stb      MIT or public domain (Unlicense)
+  Open Sans font         third_party/fuseui/vendor/fonts    Apache-2.0
+  JetBrains Mono font    third_party/fuseui/vendor/fonts    OFL-1.1
+  DejaVu Sans font       third_party/fuseui/vendor/fonts    Bitstream Vera / Arev (permissive)
+  Lua 5.2                third_party/fuseui/vendor/lua      MIT (vendored; not linked
+                                                              into retdec-gui)
+  Monocypher 4.0.2       third_party/forge/third_party      BSD-2-Clause or CC0-1.0
+  Level Zero API header  third_party/forge/third_party      MIT (see the Forge NOTICE)
+
+TXT
+		echo "=================================================================="
+		echo "Forge NOTICE (third_party/forge/NOTICE)"
+		echo "=================================================================="
+		cat "${tp}/forge/NOTICE"
+		echo
+		echo "=================================================================="
+		echo "Monocypher (third_party/forge/third_party/monocypher/LICENCE.md)"
+		echo "=================================================================="
+		cat "${tp}/forge/third_party/monocypher/LICENCE.md"
+		echo
+		echo "=================================================================="
+		echo "stb (licence block of third_party/fuseui/vendor/stb/stb_truetype.h)"
+		echo "=================================================================="
+		sed -n '/^This software is available under 2 licenses/,/^\*\//p' "${stb}" | sed '$d'
+		echo
+		echo "=================================================================="
+		echo "Lua (third_party/fuseui/vendor/lua/LICENSE.txt)"
+		echo "=================================================================="
+		cat "${tp}/fuseui/vendor/lua/LICENSE.txt"
+		echo
+		echo "=================================================================="
+		echo "Open Sans (third_party/fuseui/vendor/fonts/opensans/LICENSE.txt)"
+		echo "=================================================================="
+		cat "${tp}/fuseui/vendor/fonts/opensans/LICENSE.txt"
+		echo
+		echo "=================================================================="
+		echo "JetBrains Mono (third_party/fuseui/vendor/fonts/jetbrainsmono/OFL.txt)"
+		echo "=================================================================="
+		cat "${tp}/fuseui/vendor/fonts/jetbrainsmono/OFL.txt"
+		echo
+		echo "=================================================================="
+		echo "DejaVu Sans (third_party/fuseui/vendor/fonts/dejavu/LICENSE)"
+		echo "=================================================================="
+		cat "${tp}/fuseui/vendor/fonts/dejavu/LICENSE"
+	} > "${out}"
+	echo "Installed: LICENSE-THIRD-PARTY"
+}
+
+if [[ "${THIRD_PARTY_ONLY}" -eq 1 ]]; then
+	write_third_party
+	exit 0
+fi
 OLD="${REPO}/LICENSE"
 BACKUP="${REPO}/LICENSE.full"
 
@@ -124,9 +220,13 @@ Copyright (c) 2025-2026 Odin Loch, trading as Imortek.
 This product includes software developed by Avast and contributors
 (original RetDec, https://github.com/avast/retdec).
 
+The MIT copyright and permission notice for upstream RetDec v5.0
+(Copyright (c) 2017 Avast Software) are in LICENSE-MIT and must be
+retained in all copies and substantial portions of the Software.
+
 Third-party components (see cmake/deps.cmake for pinned versions):
 
-  LLVM (University of Illinois/NCSA) — via avast/llvm fork
+  LLVM (Apache-2.0-with-LLVM-exceptions) — via avast/llvm fork (LLVM 8-era pin)
   Capstone (BSD-3-Clause)
   YARA (BSD-3-Clause)
   yaramod (MIT)
@@ -134,7 +234,6 @@ Third-party components (see cmake/deps.cmake for pinned versions):
   OpenSSL (Apache-2.0)
   zlib (Zlib)
   googletest (BSD-3-Clause)
-  Qt6 (LGPL/GPL/commercial — runtime dependency when GUI enabled)
   Eigen (MPL-2.0)
   rapidjson (MIT)
   tinyxml2 (Zlib)
@@ -146,8 +245,27 @@ Third-party components (see cmake/deps.cmake for pinned versions):
 Keystone (GPL-2.0) is used only in capstone2llvmirtool and related tests.
 It must not be included in commercial distribution packages.
 
-llama.cpp (MIT) — when RETDEC_ENABLE_NEURAL is enabled.
+Vendored in third_party/ (see third_party/README.md; full licence texts in
+LICENSE-THIRD-PARTY):
+
+  FuseUI (third_party/fuseui) — the GUI toolkit retdec-gui is built on.
+  Forge  (third_party/forge)  — OS layer, JSON, hashing, thread pool, and the
+          inference stack behind neural refinement (RETDEC_ENABLE_NEURAL).
+    Both first-party: Copyright (c) 2026 Odin Loch (Imortek), the owner of
+    RetDec; AGPL-3.0-or-later with a commercial option, like RetDec itself.
+    No other GUI toolkit is linked or shipped.
+  stb (MIT or public domain) — third_party/fuseui/vendor/stb
+  Open Sans font (Apache-2.0) — third_party/fuseui/vendor/fonts/opensans
+  JetBrains Mono font (OFL-1.1) — third_party/fuseui/vendor/fonts/jetbrainsmono
+  DejaVu Sans font (Bitstream Vera / Arev licences, permissive) —
+    third_party/fuseui/vendor/fonts/dejavu
+  Lua 5.2 (MIT) — third_party/fuseui/vendor/lua (vendored; not linked
+    into retdec-gui)
+  Monocypher 4.0.2 (BSD-2-Clause or CC0-1.0) — third_party/forge/third_party
+  Level Zero API header (MIT) — third_party/forge/third_party/level-zero
 EOF
+
+write_third_party
 
 echo "Installed: LICENSE LICENSE-AGPL LICENSE-COMMERCIAL NOTICE"
 echo "Backup of previous monolithic file: ${BACKUP}"

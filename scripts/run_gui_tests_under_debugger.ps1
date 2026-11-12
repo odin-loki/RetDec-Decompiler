@@ -47,7 +47,6 @@ if (Test-Path $LogFile) { Remove-Item $LogFile }
 if (Test-Path $DumpFile) { Remove-Item $DumpFile }
 
 $env:RETDEC_GUI_HEADLESS = "1"
-$env:QT_QPA_PLATFORM = "offscreen"
 
 $gtestArgs = @()
 if ($GtestFilter) { $gtestArgs += "--gtest_filter=$GtestFilter" }

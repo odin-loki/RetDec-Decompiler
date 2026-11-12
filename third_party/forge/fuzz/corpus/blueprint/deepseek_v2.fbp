@@ -1,0 +1,71 @@
+# DeepSeek-V2 / V2-Lite style decoder: Multi-head Latent Attention (MLA) + DeepSeekMoE.
+#
+# MLA runs in the weight-absorbed form: kv_b is split at import into per-head W_uk [h, nope, kv_lora]
+# and W_uv [h, kv_lora, v_dim]. Queries are absorbed into latent space (q_nope @ W_uk), attention runs
+# as MQA directly over the cached latent (one shared "KV head"), and W_uv maps the result back.
+# The cache holds only the normalised latent and the shared rotary key per token: slot k = [c | k_pe]
+# (kv_lora + rope_dim) and slot v = c (kv_lora), versus 2 * n_heads * head_dim for MHA.
+# RoPE is the interleaved (GPT-J) form, matching HF DeepseekV2's permuted rotary application.
+# Layers [0, first_dense) use a dense SwiGLU MLP; the rest are MoE: shared experts + top-k
+# routed experts (softmax scoring, greedy top-k, optional renormalisation, routed scaling).
+blueprint "decoder-lm-mla-moe" opset 1
+
+params {
+  d_model: {{hidden_size}}  n_layers: {{num_hidden_layers}}  n_heads: {{num_attention_heads}}
+  vocab: {{vocab_size}}  eps: {{rms_norm_eps}}  ffn: {{intermediate_size}}
+  kv_lora: {{kv_lora_rank}}  nope: {{qk_nope_head_dim}}  rope_dim: {{qk_rope_head_dim}}  v_dim: {{v_head_dim}}
+  qk_dim: {{qk_head_dim}}  attn_scale: {{attn_scale}}
+  first_dense: {{first_k_dense_replace}}  n_experts: {{n_routed_experts}}  n_active: {{num_experts_per_tok}}
+  norm_topk: {{norm_topk_prob}}  routed_scale: {{routed_scaling_factor}}
+  rope: { base: {{rope_theta}} }
+}
+
+state kv[n_layers] : mla_cache(latent: kv_lora, rope: rope_dim)
+
+input tokens    : f32[seq]
+input positions : f32[seq]
+
+graph {
+  x = embed(W.tok_emb, tokens)
+  repeat l in 0..first_dense {
+    h = rms_norm(x, W.layer[l].attn_norm, eps)
+    q = heads({{mla_q_expr}}, n_heads, qk_dim)
+    q = concat(slice(q, axis: 2, start: 0, end: nope), rope(slice(q, axis: 2, start: nope, end: qk_dim), positions, base: rope.base, neox: 0), axis: 2)
+    ckv = linear(h, W.layer[l].wkv_a)
+    c = heads(rms_norm(slice(ckv, axis: 1, start: 0, end: kv_lora), W.layer[l].kv_norm, eps), 1, kv_lora)
+    kp = rope(heads(slice(ckv, axis: 1, start: kv_lora, end: kv_lora + rope_dim), 1, rope_dim), positions, base: rope.base, neox: 0)
+    kc, cv = kv[l].append(concat(c, kp, axis: 2), c)
+    qa = transpose(matmul(transpose(slice(q, axis: 2, start: 0, end: nope), perm: [1, 0, 2]), W.layer[l].w_uk), perm: [1, 0, 2])
+    qa = concat(qa, slice(q, axis: 2, start: nope, end: qk_dim), axis: 2)
+    al = attention(qa, kc, cv, causal: true, groups: n_heads, scale: attn_scale)
+    a = transpose(matmul(transpose(al, perm: [1, 0, 2]), W.layer[l].w_uv), perm: [1, 0, 2])
+    x = x + linear(merge(a, n_heads * v_dim), W.layer[l].wo)
+    h = rms_norm(x, W.layer[l].ffn_norm, eps)
+    x = x + linear(silu(linear(h, W.layer[l].w_gate)) * linear(h, W.layer[l].w_up), W.layer[l].w_down)
+  }
+  repeat l in first_dense..n_layers {
+    h = rms_norm(x, W.layer[l].attn_norm, eps)
+    q = heads({{mla_q_expr}}, n_heads, qk_dim)
+    q = concat(slice(q, axis: 2, start: 0, end: nope), rope(slice(q, axis: 2, start: nope, end: qk_dim), positions, base: rope.base, neox: 0), axis: 2)
+    ckv = linear(h, W.layer[l].wkv_a)
+    c = heads(rms_norm(slice(ckv, axis: 1, start: 0, end: kv_lora), W.layer[l].kv_norm, eps), 1, kv_lora)
+    kp = rope(heads(slice(ckv, axis: 1, start: kv_lora, end: kv_lora + rope_dim), 1, rope_dim), positions, base: rope.base, neox: 0)
+    kc, cv = kv[l].append(concat(c, kp, axis: 2), c)
+    qa = transpose(matmul(transpose(slice(q, axis: 2, start: 0, end: nope), perm: [1, 0, 2]), W.layer[l].w_uk), perm: [1, 0, 2])
+    qa = concat(qa, slice(q, axis: 2, start: nope, end: qk_dim), axis: 2)
+    al = attention(qa, kc, cv, causal: true, groups: n_heads, scale: attn_scale)
+    a = transpose(matmul(transpose(al, perm: [1, 0, 2]), W.layer[l].w_uv), perm: [1, 0, 2])
+    x = x + linear(merge(a, n_heads * v_dim), W.layer[l].wo)
+    h = rms_norm(x, W.layer[l].ffn_norm, eps)
+    x = x + linear(silu(linear(h, W.layer[l].shared.w_gate)) * linear(h, W.layer[l].shared.w_up), W.layer[l].shared.w_down)
+    g = scale(moe_gate(linear(h, W.layer[l].router), k: n_active, norm: norm_topk), alpha: routed_scale)
+    repeat e in 0..n_experts {
+      y = linear(silu(linear(h, W.layer[l].expert[e].w_gate)) * linear(h, W.layer[l].expert[e].w_up), W.layer[l].expert[e].w_down)
+      x = x + slice(g, axis: 1, start: e, end: e + 1) * y
+    }
+  }
+  logits = linear(rms_norm(last(x, seq), W.out_norm, eps), W.lm_head)
+}
+
+output logits : f32[1, vocab]
+session generative_sequence

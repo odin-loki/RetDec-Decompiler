@@ -2,181 +2,197 @@
  * @file tests/gui/export_bundle_test.cpp
  */
 
-#include "retdec/gui/export_bundle.h"
-#include "retdec/gui/zip_writer.h"
+#include "retdec/gui/model/export_bundle.h"
+#include "retdec/gui/model/zip_writer.h"
+
+#include <forge/os/fs.hpp>
+#include <forge/os/os.hpp>
 
 #include <gtest/gtest.h>
 
-#include <QFile>
-#include <QFileInfo>
-#include <QTemporaryDir>
+#include <filesystem>
+#include <fstream>
+
+namespace m = retdec::gui::model;
+namespace fs = std::filesystem;
 
 namespace {
 
-bool zipContainsEntryName(const QByteArray& zipBytes, const QByteArray& name)
+struct TempDir
 {
-	return zipBytes.contains(name);
+	fs::path path;
+	TempDir()
+	{
+		path = fs::path(forge::os::fs::make_temp_dir("retdec-gui-bundle-").value);
+	}
+	~TempDir()
+	{
+		std::error_code ec;
+		fs::remove_all(path, ec);
+	}
+};
+
+void writeFile(const fs::path& p, std::string_view data)
+{
+	std::ofstream f(p, std::ios::binary | std::ios::trunc);
+	f << data;
 }
+
+std::string readAll(const fs::path& p)
+{
+	auto r = forge::os::read_file(p.string());
+	return r ? r.value : std::string{};
+}
+
+bool zipContainsEntryName(const std::string& zipBytes, std::string_view name)
+{
+	return zipBytes.find(name) != std::string::npos;
+}
+
+m::DecompileBundleInput sampleInput(const fs::path& cPath)
+{
+	m::DecompileBundleInput in;
+	in.cPath = cPath;
+	in.decompilerExe = "C:/tools/retdec-decompiler.exe";
+	in.decompilerCwd = "C:/tools";
+	in.decompilerArgs = {"--input-file", "sample.exe"};
+	in.logInline = "stage: done\n";
+	return in;
+}
+
+/// A directory with sample.gui-decompiled.c and its config.
+struct Sample
+{
+	TempDir tmp;
+	fs::path cPath = tmp.path / "sample.gui-decompiled.c";
+	fs::path zipPath = tmp.path / "out.zip";
+	Sample()
+	{
+		writeFile(cPath, "int main(void) { return 0; }\n");
+		writeFile(tmp.path / "sample.gui-decompiled.config.json", "{}");
+	}
+};
 
 } // namespace
 
 TEST(ZipWriter, RoundTripStoreEntry)
 {
-	QTemporaryDir tmp;
-	ASSERT_TRUE(tmp.isValid());
-	const QString zipPath = tmp.path() + QStringLiteral("/test.zip");
-
+	TempDir tmp;
+	const fs::path zipPath = tmp.path / "test.zip";
 	{
-		retdec::gui::ZipWriter zip(zipPath);
+		m::ZipWriter zip(zipPath);
 		ASSERT_TRUE(zip.isOpen());
-		ASSERT_TRUE(zip.addEntry(QStringLiteral("hello.txt"), QByteArray("hello bundle")));
-		ASSERT_TRUE(zip.close());
+		ASSERT_TRUE(zip.addEntry("hello.txt", "hello bundle").has_value());
+		ASSERT_TRUE(zip.close().has_value());
 	}
-
-	QFile f(zipPath);
-	ASSERT_TRUE(f.open(QIODevice::ReadOnly));
-	const QByteArray bytes = f.readAll();
-	EXPECT_GE(bytes.size(), 22);
-	EXPECT_EQ(bytes.left(4), QByteArray("PK\x03\x04", 4));
+	const std::string bytes = readAll(zipPath);
+	EXPECT_GE(bytes.size(), 22u);
+	EXPECT_EQ(bytes.substr(0, 4), std::string("PK\x03\x04", 4));
 	EXPECT_TRUE(zipContainsEntryName(bytes, "hello.txt"));
+	EXPECT_TRUE(zipContainsEntryName(bytes, "hello bundle"));
 }
 
 TEST(ExportBundle, IncludesArtifactsAndCommand)
 {
-	QTemporaryDir tmp;
-	ASSERT_TRUE(tmp.isValid());
-	const QString cPath = tmp.path() + QStringLiteral("/sample.gui-decompiled.c");
-	const QString cfgPath = tmp.path() + QStringLiteral("/sample.gui-decompiled.config.json");
-	const QString zipPath = tmp.path() + QStringLiteral("/out.zip");
+	Sample s;
+	auto in = sampleInput(s.cPath);
+	auto r = m::exportDecompileBundle(in, s.zipPath);
+	ASSERT_TRUE(r.has_value()) << r.error();
+	ASSERT_TRUE(fs::exists(s.zipPath));
 
-	QFile cFile(cPath);
-	ASSERT_TRUE(cFile.open(QIODevice::WriteOnly));
-	cFile.write("int main(void) { return 0; }\n");
-	cFile.close();
-
-	QFile cfgFile(cfgPath);
-	ASSERT_TRUE(cfgFile.open(QIODevice::WriteOnly));
-	cfgFile.write("{}");
-	cfgFile.close();
-
-	retdec::gui::DecompileBundleInput in;
-	in.cPath = cPath;
-	in.decompilerExe = QStringLiteral("C:/tools/retdec-decompiler.exe");
-	in.decompilerCwd = QStringLiteral("C:/tools");
-	in.decompilerArgs = {QStringLiteral("--input-file"), QStringLiteral("sample.exe")};
-	in.logInline = QByteArray("stage: done\n");
-
-	QString err;
-	ASSERT_TRUE(retdec::gui::exportDecompileBundle(in, zipPath, &err)) << qPrintable(err);
-	ASSERT_TRUE(QFileInfo::exists(zipPath));
-
-	QFile zipFile(zipPath);
-	ASSERT_TRUE(zipFile.open(QIODevice::ReadOnly));
-	const QByteArray bytes = zipFile.readAll();
+	const std::string bytes = readAll(s.zipPath);
 	EXPECT_TRUE(zipContainsEntryName(bytes, "sample.gui-decompiled.c"));
 	EXPECT_TRUE(zipContainsEntryName(bytes, "sample.gui-decompiled.config.json"));
 	EXPECT_TRUE(zipContainsEntryName(bytes, "decompiler-command.txt"));
 	EXPECT_TRUE(zipContainsEntryName(bytes, "decompiler.log"));
-	EXPECT_TRUE(bytes.contains("--input-file"));
+	EXPECT_TRUE(zipContainsEntryName(bytes, "--input-file"));
+	EXPECT_TRUE(zipContainsEntryName(bytes, "stage: done"));
+	EXPECT_FALSE(zipContainsEntryName(bytes, "sample.gui-decompiled.dsm"));
 }
 
 TEST(ExportBundle, ExportBundleIncludesOptionalSidecars)
 {
-	QTemporaryDir tmp;
-	ASSERT_TRUE(tmp.isValid());
-	const QString cPath = tmp.path() + QStringLiteral("/sample.gui-decompiled.c");
-	const QString cfgPath = tmp.path() + QStringLiteral("/sample.gui-decompiled.config.json");
-	const QString zipPath = tmp.path() + QStringLiteral("/out.zip");
+	Sample s;
+	writeFile(s.tmp.path / "sample.gui-decompiled.c.refined.c", "int refined(void) { return 1; }\n");
+	writeFile(s.tmp.path / "sample.gui-decompiled.c.refinement-manifest.json", "{\"accepted\":true}");
+	writeFile(s.tmp.path / "sample.gui-decompiled.c.type-inference.json", "{\"ok\":true}");
+	writeFile(s.tmp.path / "sample.gui-decompiled.dsm", "0x1: nop\n");
+	writeFile(s.tmp.path / "sample.gui-decompiled.ll", "; ll\n");
 
-	QFile cFile(cPath);
-	ASSERT_TRUE(cFile.open(QIODevice::WriteOnly));
-	cFile.write("int main(void) { return 0; }\n");
-	cFile.close();
-
-	QFile cfgFile(cfgPath);
-	ASSERT_TRUE(cfgFile.open(QIODevice::WriteOnly));
-	cfgFile.write("{}");
-	cfgFile.close();
-
-	QFile refinedFile(cPath + QStringLiteral(".refined.c"));
-	ASSERT_TRUE(refinedFile.open(QIODevice::WriteOnly));
-	refinedFile.write("int refined(void) { return 1; }\n");
-	refinedFile.close();
-
-	QFile manifestFile(cPath + QStringLiteral(".refinement-manifest.json"));
-	ASSERT_TRUE(manifestFile.open(QIODevice::WriteOnly));
-	manifestFile.write("{\"accepted\":true}");
-	manifestFile.close();
-
-	QFile typeFile(cPath + QStringLiteral(".type-inference.json"));
-	ASSERT_TRUE(typeFile.open(QIODevice::WriteOnly));
-	typeFile.write("{\"ok\":true}");
-	typeFile.close();
-
-	retdec::gui::DecompileBundleInput in;
-	in.cPath = cPath;
-	in.decompilerExe = QStringLiteral("C:/tools/retdec-decompiler.exe");
-	in.decompilerCwd = QStringLiteral("C:/tools");
-	in.decompilerArgs = {QStringLiteral("--input-file"), QStringLiteral("sample.exe")};
-	in.logInline = QByteArray("stage: done\n");
-
-	QString err;
-	ASSERT_TRUE(retdec::gui::exportDecompileBundle(in, zipPath, &err)) << qPrintable(err);
-	ASSERT_TRUE(QFileInfo::exists(zipPath));
-
-	QFile zipFile(zipPath);
-	ASSERT_TRUE(zipFile.open(QIODevice::ReadOnly));
-	const QByteArray bytes = zipFile.readAll();
+	auto r = m::exportDecompileBundle(sampleInput(s.cPath), s.zipPath);
+	ASSERT_TRUE(r.has_value()) << r.error();
+	const std::string bytes = readAll(s.zipPath);
 	EXPECT_TRUE(zipContainsEntryName(bytes, "sample.gui-decompiled.c.refined.c"));
 	EXPECT_TRUE(zipContainsEntryName(bytes, "sample.gui-decompiled.c.refinement-manifest.json"));
 	EXPECT_TRUE(zipContainsEntryName(bytes, "sample.gui-decompiled.c.type-inference.json"));
+	EXPECT_TRUE(zipContainsEntryName(bytes, "sample.gui-decompiled.dsm"));
+	EXPECT_TRUE(zipContainsEntryName(bytes, "sample.gui-decompiled.ll"));
 }
 
 TEST(ExportBundle, ExportBundleIncludesDotSidecars)
 {
-	QTemporaryDir tmp;
-	ASSERT_TRUE(tmp.isValid());
-	const QString cPath = tmp.path() + QStringLiteral("/sample.gui-decompiled.c");
-	const QString cfgPath = tmp.path() + QStringLiteral("/sample.gui-decompiled.config.json");
-	const QString zipPath = tmp.path() + QStringLiteral("/out.zip");
+	Sample s;
+	writeFile(s.tmp.path / "sample.gui-decompiled.cg.dot", "digraph {}");
+	writeFile(s.tmp.path / "sample.gui-decompiled.cfg.main.dot", "digraph {}");
+	writeFile(s.tmp.path / "other.cfg.main.dot", "digraph {}");
 
-	QFile cFile(cPath);
-	ASSERT_TRUE(cFile.open(QIODevice::WriteOnly));
-	cFile.write("int main(void) { return 0; }\n");
-	cFile.close();
-
-	QFile cfgFile(cfgPath);
-	ASSERT_TRUE(cfgFile.open(QIODevice::WriteOnly));
-	cfgFile.write("{}");
-	cfgFile.close();
-
-	QFile cgFile(tmp.path() + QStringLiteral("/sample.gui-decompiled.cg.dot"));
-	ASSERT_TRUE(cgFile.open(QIODevice::WriteOnly));
-	cgFile.write("digraph {}");
-	cgFile.close();
-
-	retdec::gui::DecompileBundleInput in;
-	in.cPath = cPath;
-	in.decompilerExe = QStringLiteral("C:/tools/retdec-decompiler.exe");
-	in.decompilerCwd = QStringLiteral("C:/tools");
-	in.decompilerArgs = {QStringLiteral("--input-file"), QStringLiteral("sample.exe")};
-	in.logInline = QByteArray("stage: done\n");
-
-	QString err;
-	ASSERT_TRUE(retdec::gui::exportDecompileBundle(in, zipPath, &err)) << qPrintable(err);
-	ASSERT_TRUE(QFileInfo::exists(zipPath));
-
-	QFile zipFile(zipPath);
-	ASSERT_TRUE(zipFile.open(QIODevice::ReadOnly));
-	const QByteArray bytes = zipFile.readAll();
+	auto r = m::exportDecompileBundle(sampleInput(s.cPath), s.zipPath);
+	ASSERT_TRUE(r.has_value()) << r.error();
+	const std::string bytes = readAll(s.zipPath);
 	EXPECT_TRUE(zipContainsEntryName(bytes, "sample.gui-decompiled.cg.dot"));
+	EXPECT_TRUE(zipContainsEntryName(bytes, "sample.gui-decompiled.cfg.main.dot"));
+	EXPECT_FALSE(zipContainsEntryName(bytes, "other.cfg.main.dot"));
+}
+
+TEST(ExportBundle, LogFileWinsOverInlineLog)
+{
+	Sample s;
+	const fs::path log = s.tmp.path / "run.log";
+	writeFile(log, "from the log file\n");
+	auto in = sampleInput(s.cPath);
+	in.logFilePath = log;
+	ASSERT_TRUE(m::exportDecompileBundle(in, s.zipPath).has_value());
+	const std::string bytes = readAll(s.zipPath);
+	EXPECT_TRUE(zipContainsEntryName(bytes, "from the log file"));
+	EXPECT_FALSE(zipContainsEntryName(bytes, "stage: done"));
+
+	// An empty / missing log file falls back to the inline log.
+	in.logFilePath = s.tmp.path / "missing.log";
+	ASSERT_TRUE(m::exportDecompileBundle(in, s.zipPath).has_value());
+	EXPECT_TRUE(zipContainsEntryName(readAll(s.zipPath), "stage: done"));
+
+	// No log at all: no decompiler.log entry.
+	in.logInline.clear();
+	ASSERT_TRUE(m::exportDecompileBundle(in, s.zipPath).has_value());
+	EXPECT_FALSE(zipContainsEntryName(readAll(s.zipPath), "decompiler.log"));
+}
+
+TEST(ExportBundle, CommandText)
+{
+	m::DecompileBundleInput in;
+	in.decompilerExe = "/opt/retdec/bin/retdec-decompiler";
+	in.decompilerArgs = {"a.out", "-o", "a.c"};
+	EXPECT_EQ(
+		m::formatDecompilerCommandText(in), "executable: /opt/retdec/bin/retdec-decompiler\ncommand: a.out -o a.c\n");
+	in.decompilerCwd = "/opt";
+	EXPECT_EQ(
+		m::formatDecompilerCommandText(in),
+		"executable: /opt/retdec/bin/retdec-decompiler\ncwd: /opt\ncommand: a.out -o a.c\n");
 }
 
 TEST(ExportBundle, MissingCFileFails)
 {
-	retdec::gui::DecompileBundleInput in;
-	in.cPath = QStringLiteral("C:/missing/sample.gui-decompiled.c");
-	QString err;
-	EXPECT_FALSE(retdec::gui::exportDecompileBundle(in, QStringLiteral("C:/out.zip"), &err));
-	EXPECT_FALSE(err.isEmpty());
+	m::DecompileBundleInput in;
+	in.cPath = "C:/missing/sample.gui-decompiled.c";
+	auto r = m::exportDecompileBundle(in, "C:/out.zip");
+	ASSERT_FALSE(r.has_value());
+	EXPECT_FALSE(r.error().empty());
+}
+
+TEST(ExportBundle, UnwritableZipFails)
+{
+	Sample s;
+	auto r = m::exportDecompileBundle(sampleInput(s.cPath), s.tmp.path / "no-such-dir" / "out.zip");
+	ASSERT_FALSE(r.has_value());
+	EXPECT_FALSE(r.error().empty());
 }

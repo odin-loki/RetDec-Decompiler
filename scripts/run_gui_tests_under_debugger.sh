@@ -54,7 +54,6 @@ CORE_FILE="$OUT_DIR/tests.core"
 rm -f "$LOG_FILE" "$CORE_FILE"
 
 export RETDEC_GUI_HEADLESS=1
-export QT_QPA_PLATFORM=offscreen
 
 GTEST_ARGS=()
 if [[ -n "$FILTER" ]]; then GTEST_ARGS+=("--gtest_filter=$FILTER"); fi

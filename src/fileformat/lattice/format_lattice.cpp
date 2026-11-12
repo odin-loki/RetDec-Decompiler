@@ -289,6 +289,22 @@ static FormatResult parseELF(const uint8_t* data, size_t size, bool is64, bool i
 		e_shnum = 0; // skip section parsing for absurd counts
 	}
 
+	// Every section header read below reaches 40 (ELF32) / 64 (ELF64) bytes
+	// into the entry, but inBounds() is only asked about e_shentsize bytes, so
+	// a file claiming e_shentsize = 1 read past the buffer (fuzz: lattice
+	// heap-buffer-overflow in u32le). Require the real header size, and an
+	// e_shoff inside the file so e_shoff + i * e_shentsize cannot wrap.
+	const uint16_t minShent = is64 ? 64u : 40u;
+	if (e_shnum != 0 && (e_shentsize < minShent || e_shoff >= size))
+	{
+		res.corruption.sectionOffsetsInvalid = true;
+		e_shnum = 0;
+	}
+	if (e_phoff >= size)
+	{
+		e_phnum = 0;
+	}
+
 	// ── Determine load bias from PT_LOAD ─────────────────────────────────────
 	uint64_t minLoadVA = UINT64_MAX;
 	uint64_t imageBase = 0;
@@ -1068,7 +1084,12 @@ parseAR(const uint8_t* data, size_t size, const std::string& name, const FormatL
 		if (hdr[58] != '`' || hdr[59] != '\n') break;
 
 		size_t dataOff = off + 60;
-		if (dataOff + memberSize > size) memberSize = size - dataOff;
+		// Compared without forming the sum: the size field is ASCII the file
+		// controls, and strtoull() takes "-55" to 2^64 - 55, so
+		// `dataOff + memberSize > size` wrapped to a small number, the clamp
+		// was skipped, and the member was classified with that size -- a read
+		// past the end of the buffer on its fourth byte (fuzz-pr, lattice).
+		if (memberSize > size - dataOff) memberSize = size - dataOff;
 
 		// Skip special members: "/", "//", "/SYM64/"
 		bool isSpecial = (memberName[0] == '/' && (memberName[1] == 0 || memberName[1] == '/'));

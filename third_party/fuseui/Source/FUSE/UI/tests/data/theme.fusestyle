@@ -1,0 +1,11 @@
+/* Example .fusestyle sheet (cooked by fuse_ui_cook; used by fuse_ui_style_cooked / fuse_ui_markup_roundtrip). */
+:root { --accent: #FF8A3D; --pad: 10px; --panel: #1C2230; }
+panel.card { background: var(--panel); padding: var(--pad); gap: 6px; border-radius: 8px; }
+.card > label { color: #DDE3EE; font-size: 15px; }
+#settings .hp { color: var(--accent); }
+button { background: #2B3446; color: #FFFFFF; }
+button:hover { background: #36425A; }
+button:disabled { opacity: 0.4; }
+checkbox:checked { color: var(--accent); }
+.grid { layout: grid; grid-template-columns: 1fr 2fr 80px; }
+.bogus { not-a-property: 3px; color: notacolor; }

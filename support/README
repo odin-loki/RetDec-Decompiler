@@ -22,7 +22,7 @@ Avast-only build.
 | `install-yara.py` | Compile/install YARA patterns with `retdec-yarac` at install time |
 | `install-share.py` | Fetch the versioned support tarball into `share/retdec/support` |
 | `CMakeLists.txt` | Single install script for ordinals + YARA + share package |
-| `models.json` / `models.md` | Metadata for optional GGUF neural models (llama.cpp is opt-in; not required) |
+| `models.json` / `models.md` | Metadata for optional GGUF neural models (Forge imports them; not required) |
 
 YARA **compilation** at install time uses in-tree `retdec-yarac` (YARA sources
 live under `deps/yara`). It is driven by `support/CMakeLists.txt` and

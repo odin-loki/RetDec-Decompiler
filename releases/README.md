@@ -71,12 +71,12 @@ Or copy `install.sh` / `uninstall.sh` from this repo and run them from inside an
 
 ## macOS
 
-`macos-installer` produces `retdec-<ver>-macos-<arch>.tar.gz`. MAC-01 (`scripts/ci/check_macos_bundle.py`) checks that rpaths stay inside `RetDec.app`. The package is **ad-hoc signed, not notarised**.
+`macos-installer` produces `retdec-<ver>-macos-<arch>.tar.gz`. MAC-01 (`scripts/ci/check_macos_bundle.py`) checks that rpaths stay inside `RetDec.app` and that the GUI's resources are in `RetDec.app/Contents/share/retdec/gui`. The GUI is FuseUI with a Cocoa window backend: there are no toolkit frameworks in the bundle. The package is **ad-hoc signed, not notarised**.
 
 **Build locally** (tarball in `dist/`, scripts synced to `releases/macos/`). Unix CMake presets install to `install/linux/`; pass that path through:
 
 ```bash
-brew install ninja qt@6 pkg-config autoconf automake libtool
+brew install ninja pkg-config autoconf automake libtool
 cmake --preset full-linux-release -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
 cmake --build build/linux --target install
 ./scripts/build-macos-installer.sh --skip-install --install-dir install/linux

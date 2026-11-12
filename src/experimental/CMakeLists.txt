@@ -4,7 +4,7 @@ add_library(retdec-experimental STATIC
 )
 add_library(retdec::experimental ALIAS retdec-experimental)
 
-target_compile_features(retdec-experimental PUBLIC cxx_std_17)
+target_compile_features(retdec-experimental PUBLIC cxx_std_23)
 
 target_include_directories(retdec-experimental
 	PUBLIC

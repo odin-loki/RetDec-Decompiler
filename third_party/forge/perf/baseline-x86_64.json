@@ -1,0 +1,13 @@
+{
+  "machine": "x86_64",
+  "cpu": "Intel(R) Xeon(R) Processor",
+  "threads": 8,
+  "metrics": {
+    "decode_tok_s": 85.9,
+    "gemm256_grid_prims_gflops": 77.77,
+    "gemm256_lane_avx2_gflops": 73.44,
+    "gemm256_lane_avx512_gflops": 84.62,
+    "gemm256_lane_scalar_gflops": 0.97,
+    "prefill_tok_s": 1282.4
+  }
+}

@@ -22,11 +22,6 @@ on:
 
 env:
   RETDEC_GUI_HEADLESS: "1"
-  # cocoa, not offscreen: macdeployqt puts libqcocoa.dylib in the bundle and
-  # MAC-01 then stops the app searching Homebrew. offscreen is not in the
-  # bundle; gui_headless_decompile_fib aborted with "Available platform
-  # plugins are: cocoa."
-  QT_QPA_PLATFORM: cocoa
 
 # A push on top of a push leaves the older run building for another
 # forty minutes on a result nobody will read. standalone-check has had
@@ -55,23 +50,12 @@ jobs:
       # its configure step runs ./bootstrap.sh, and the first run of this job
       # died on `autoreconf: command not found`. macOS runners ship neither.
       #
-      # Qt is Homebrew's, and that was tried the other way round first. The
-      # official Qt 6.7.3 macOS archive -- the one ctest-windows uses, through
-      # jurplel/install-qt-action -- puts `-framework AGL` on the link line of
-      # anything that links Qt6::Gui, and Apple removed AGL from the macOS SDK:
-      #
-      #     ld: framework 'AGL' not found
-      #
-      # It is a clean configure and a dead link, so that route is closed until
-      # the pinned Qt version moves. Homebrew's Qt builds. What it costs is
-      # relocatability -- its frameworks carry absolute install names into
-      # /opt/homebrew -- and that is what MAC-01 exists to repair and verify,
-      # below.
+      # retdec-gui needs nothing from Homebrew: FuseUI and Forge are vendored in
+      # third_party/ and the macOS window backend is Cocoa, from the SDK.
       - name: Install dependencies
         run: |
           brew update
-          brew install ninja qt@6 pkg-config autoconf automake libtool
-          echo "CMAKE_PREFIX_PATH=$(brew --prefix qt@6)" >> "$GITHUB_ENV"
+          brew install ninja pkg-config autoconf automake libtool
 
       # Not the Homebrew interpreter CMake would otherwise pick. Two reasons,
       # both measured:
@@ -114,9 +98,9 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: build/linux
-          key: ctest-macos-qt5-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'cmake/deps.cmake', 'deps/**/CMakeLists.txt', 'scripts/bootstrap_openssl_bundle.cmake', 'deps/openssl/vendored/**') }}-${{ github.run_id }}
+          key: ctest-macos-fuseui1-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'cmake/deps.cmake', 'deps/**/CMakeLists.txt', 'scripts/bootstrap_openssl_bundle.cmake', 'deps/openssl/vendored/**') }}-${{ github.run_id }}
           restore-keys: |
-            ctest-macos-qt5-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'cmake/deps.cmake', 'deps/**/CMakeLists.txt', 'scripts/bootstrap_openssl_bundle.cmake', 'deps/openssl/vendored/**') }}-
+            ctest-macos-fuseui1-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'cmake/deps.cmake', 'deps/**/CMakeLists.txt', 'scripts/bootstrap_openssl_bundle.cmake', 'deps/openssl/vendored/**') }}-
 
       # Same failure macos-package hit: a restored PCH does not match a newer
       # MacOSX SDK, and clang stops on the first translation unit that uses it.
@@ -193,14 +177,13 @@ jobs:
       - name: Build the tests
         run: cmake --build build/linux --parallel
 
-      # The bundle the macOS installer job ships. macdeployqt leaves some of
-      # its libraries pointing into this machine's Homebrew prefix -- libwebp,
-      # libsharpyuv and libbrotlicommon, which Qt's image-format plugins pull
-      # in -- and then reports "code object is not signed at all". An app whose
-      # libraries live on the build machine opens nowhere else, so this is a
-      # step and not a note. --fix brings them in and re-signs; the check then
-      # looks again and fails if anything still points out of the bundle or the
-      # signature does not verify.
+      # The bundle the macOS installer job ships. retdec-gui itself links only
+      # Cocoa and libc++, but anything in the bundle that points into this
+      # machine's Homebrew prefix, or an unsigned bundle, opens nowhere else,
+      # so this is a step and not a note. --fix brings stray libraries in and
+      # re-signs; the check then looks again and fails if anything still points
+      # out of the bundle, the signature does not verify, or
+      # Contents/share/retdec/gui (the GUI's resources) is missing.
       - name: MAC-01 the GUI bundle resolves inside itself and verifies
         run: |
           python3 scripts/ci/check_macos_bundle.py --self-test
@@ -227,7 +210,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: build/linux
-          key: ctest-macos-qt5-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'cmake/deps.cmake', 'deps/**/CMakeLists.txt', 'scripts/bootstrap_openssl_bundle.cmake', 'deps/openssl/vendored/**') }}-${{ github.run_id }}
+          key: ctest-macos-fuseui1-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'cmake/deps.cmake', 'deps/**/CMakeLists.txt', 'scripts/bootstrap_openssl_bundle.cmake', 'deps/openssl/vendored/**') }}-${{ github.run_id }}
 
       - name: Upload the build log on failure
         if: failure()

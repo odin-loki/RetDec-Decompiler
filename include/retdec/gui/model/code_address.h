@@ -1,0 +1,49 @@
+/**
+ * @file include/retdec/gui/model/code_address.h
+ * @brief Address parsing shared by the code views' context menus and the
+ *        assembly view's "follow jump" (the non-UI half of the Qt
+ *        address_context_menu.h).
+ * @copyright (c) 2026 Odin Loch trading as Imortek
+ */
+
+#ifndef RETDEC_GUI_MODEL_CODE_ADDRESS_H
+#define RETDEC_GUI_MODEL_CODE_ADDRESS_H
+
+#include "retdec/gui/model/address.h"
+
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <string_view>
+
+namespace retdec::gui::model {
+
+// formatAddressHex / parseFirstAddress / the menu labels live in address.h.
+
+/// Parses a user-typed address for "Go to address": hex with or without a
+/// "0x" prefix, surrounding whitespace ignored.
+std::optional<uint64_t> parseAddressInput(std::string_view text);
+
+/// Parses "0x…" or bare hex (fileinfo JSON values); 0 when unparsable.
+uint64_t parseHexU64(std::string_view text);
+
+/**
+ * Target of the jump / call on an assembly line ("Enter follows jump"):
+ * only lines with call / jmp / jcc mnemonics qualify. With two or more 0x
+ * tokens on the line the last one is the target (the first is the line's own
+ * address); otherwise the first address after the mnemonic. nullopt when the
+ * line is not a branch, has no target, or the target is the line's own
+ * address (the first 0x token before the mnemonic).
+ */
+std::optional<uint64_t> jumpTarget(std::string_view line);
+
+/// Address of an assembly listing line: its leading "0x401000:" /
+/// "401000:" token (at least 4 hex digits), nullopt for other lines.
+std::optional<uint64_t> listingAddress(std::string_view line);
+
+/// True when @p line contains a call / jmp / jcc mnemonic as a whole word.
+bool isBranchLine(std::string_view line);
+
+} // namespace retdec::gui::model
+
+#endif // RETDEC_GUI_MODEL_CODE_ADDRESS_H

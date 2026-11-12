@@ -344,7 +344,7 @@ def self_test(llvm_src, llvm_build):
     with tempfile.TemporaryDirectory() as td:
         src = Path(td) / "probe.cpp"
         src.write_text(probe)
-        argv = ["g++", "-std=c++17", "-fsyntax-only", "-w",
+        argv = ["g++", "-std=c++23", "-fsyntax-only", "-w",
                 "-isystem", str(llvm_src / "llvm" / "include"),
                 "-isystem", str(llvm_build / "include"), str(src)]
         p = subprocess.run(argv, capture_output=True, text=True)

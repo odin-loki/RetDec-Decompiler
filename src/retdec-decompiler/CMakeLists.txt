@@ -5,7 +5,7 @@ add_executable(retdec-decompiler
 	output_lang.cpp
 )
 
-target_compile_features(retdec-decompiler PUBLIC cxx_std_20)
+target_compile_features(retdec-decompiler PUBLIC cxx_std_23)
 
 target_include_directories(retdec-decompiler
 	PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}

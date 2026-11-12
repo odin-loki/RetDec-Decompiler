@@ -103,41 +103,11 @@ class SiClassTypeInfo : public ClassTypeInfo
 };
 
 /**
- * ABI: @c __vmi_class_type_info
- *
- * For classes with bases that don't satisfy the @c SiClassTypeInfo constraints.
- */
-class VmiClassTypeInfo : public ClassTypeInfo
-{
-	// ABI specification.
-	//
-	public:
-		enum eFlagMasks
-		{
-			NON_DIAMOND_REPEAT_MASK = 0x1,
-			DIAMOND_SHAPED_MASK = 0x2
-		};
-
-	public:
-		/// Details about the class structure. Flags refer to both
-		/// direct and indirect bases.
-		uint32_t flags = 0;
-		/// Number of direct proper base class descriptions that follow
-		uint32_t baseCount = 0;
-		std::vector<BaseClassTypeInfo> baseInfo;
-
-	// Our methods and data.
-	//
-		// nothing
-};
-
-/**
  * ABI: @c __base_class_type_info
  *
  * Base class descriptions -- one for every direct proper base.
  */
-class BaseClassTypeInfo
-{
+class BaseClassTypeInfo {
 	// ABI specification.
 	//
 	public:
@@ -154,11 +124,39 @@ class BaseClassTypeInfo
 		/// High 3 bytes are signed offset.
 		uint32_t offsetFlags = 0;
 
-	// Our methods and data.
-	//
+		// Our methods and data.
+		//
 	public:
 		/// Object created for base on address @c baseClassAddr.
 		std::shared_ptr<ClassTypeInfo> baseClass;
+};
+
+/**
+ * ABI: @c __vmi_class_type_info
+ *
+ * For classes with bases that don't satisfy the @c SiClassTypeInfo constraints.
+ */
+class VmiClassTypeInfo : public ClassTypeInfo {
+	// ABI specification.
+	//
+public:
+	enum eFlagMasks
+	{
+		NON_DIAMOND_REPEAT_MASK = 0x1,
+		DIAMOND_SHAPED_MASK = 0x2
+	};
+
+public:
+	/// Details about the class structure. Flags refer to both
+	/// direct and indirect bases.
+	uint32_t flags = 0;
+	/// Number of direct proper base class descriptions that follow
+	uint32_t baseCount = 0;
+	std::vector<BaseClassTypeInfo> baseInfo;
+
+	// Our methods and data.
+	//
+	// nothing
 };
 
 /**

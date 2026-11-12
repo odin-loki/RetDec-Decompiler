@@ -3,7 +3,7 @@ add_executable(bin2pat
 	bin2pat.cpp
 )
 
-target_compile_features(bin2pat PUBLIC cxx_std_17)
+target_compile_features(bin2pat PUBLIC cxx_std_23)
 
 target_link_libraries(bin2pat
 	retdec::patterngen

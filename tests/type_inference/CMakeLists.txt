@@ -15,7 +15,7 @@ target_include_directories(retdec-type-inference-tests
         ${PROJECT_SOURCE_DIR}/include
 )
 
-target_compile_features(retdec-type-inference-tests PRIVATE cxx_std_17)
+target_compile_features(retdec-type-inference-tests PRIVATE cxx_std_23)
 
 include(GoogleTest)
 gtest_discover_tests(retdec-type-inference-tests)

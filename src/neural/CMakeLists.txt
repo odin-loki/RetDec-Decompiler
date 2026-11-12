@@ -8,14 +8,42 @@ add_library(retdec-neural STATIC
     model_verify.cpp
 )
 
-if(TARGET retdec::deps::llamacpp)
-    target_sources(retdec-neural PRIVATE llama_inference.cpp)
-    target_link_libraries(retdec-neural PRIVATE retdec::deps::llamacpp)
-    target_compile_definitions(retdec-neural PRIVATE RETDEC_HAS_LLAMACPP)
-    if(RETDEC_NEURAL_GPU_OFFLOAD)
-        target_compile_definitions(retdec-neural PRIVATE RETDEC_NEURAL_GPU_OFFLOAD)
-    endif()
+# The inference backend: Forge (third_party/forge, cmake/first_party.cmake).
+# RETDEC_HAS_FORGE_INFERENCE tells mock_inference.cpp not to define the null
+# createForgeInference() that the dependency-free standalone check links.
+#
+# BUILD_INTERFACE: retdec_forge_inference is not in the retdec-targets export
+# set and cannot be (it is a tree of Forge's own targets). The two archives it
+# contributes to a static retdec-neural are installed below instead, and
+# src/retdec/retdec-retdec-config.cmake declares them for installed consumers,
+# the way cmake/tree_sitter.cmake does for tree-sitter.
+target_sources(retdec-neural PRIVATE forge_inference.cpp)
+target_link_libraries(retdec-neural PRIVATE $<BUILD_INTERFACE:retdec::forge_inference>)
+# Not a target name in this build (that would make install(EXPORT) demand
+# forge_simd_mv in the export set); the installed config declares it.
+target_link_libraries(retdec-neural INTERFACE $<INSTALL_INTERFACE:retdec-forge-simd-mv>)
+target_compile_definitions(retdec-neural PRIVATE RETDEC_HAS_FORGE_INFERENCE)
+if(RETDEC_NEURAL_GPU_OFFLOAD)
+    target_compile_definitions(retdec-neural PRIVATE RETDEC_NEURAL_GPU_OFFLOAD)
 endif()
+# The importers (.gguf / Hugging Face -> .fpk) read Forge's blueprint
+# templates. Forge bakes in its source tree; an installed RetDec ships them in
+# its support directory and forge_inference.cpp finds them relative to the
+# binary when that tree is gone.
+install(DIRECTORY ${RETDEC_THIRD_PARTY_DIR}/forge/import/templates/
+    DESTINATION ${RETDEC_INSTALL_SUPPORT_DIR}/forge/templates
+)
+file(RELATIVE_PATH _RETDEC_NEURAL_FORGE_TEMPLATES_REL
+    "${CMAKE_INSTALL_PREFIX}/${RETDEC_INSTALL_BIN_DIR}"
+    "${CMAKE_INSTALL_PREFIX}/${RETDEC_INSTALL_SUPPORT_DIR}/forge/templates")
+target_compile_definitions(retdec-neural PRIVATE
+    "RETDEC_NEURAL_FORGE_TEMPLATES_REL=\"${_RETDEC_NEURAL_FORGE_TEMPLATES_REL}\""
+)
+install(FILES
+    $<TARGET_FILE:forge_simd_mv>
+    $<TARGET_FILE:forge_trust>
+    DESTINATION ${RETDEC_INSTALL_LIB_DIR}
+)
 
 if(RETDEC_NEURAL_OFFLINE_ONLY)
     target_compile_definitions(retdec-neural PUBLIC RETDEC_NEURAL_OFFLINE_ONLY)
@@ -56,7 +84,7 @@ if(TARGET OpenSSL::Crypto)
     endif()
 endif()
 
-target_compile_features(retdec-neural PUBLIC cxx_std_17)
+target_compile_features(retdec-neural PUBLIC cxx_std_23)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     target_compile_options(retdec-neural PRIVATE -Werror)

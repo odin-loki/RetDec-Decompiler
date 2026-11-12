@@ -18,7 +18,7 @@ redesign. For a stage-by-stage map of that redesign onto real files, see
 3. [Running Pipeline](#pipeline)
 4. [Managed-Language Dispatch](#managed)
 5. [Core Library Details](#libraries)
-6. [Qt GUI Architecture](#gui)
+6. [GUI Architecture](#gui)
 7. [AI Inference Engine](#ai)
 8. [Plugin System](#plugins)
 9. [Performance and Threading Model](#threading)
@@ -69,7 +69,7 @@ Default native extras:
 - **Post-pipeline semantic detectors** (comments + `.config.json`), not
   production-quality STL reconstruction. Name-blind algorithm-recovery F1 on
   the 216-binary corpus is **0.056** ([BENCHMARKS.md](BENCHMARKS.md)).
-- **Optional llama.cpp refine** (`RETDEC_ENABLE_LLAMACPP`, runtime
+- **Optional neural refine on Forge** (`RETDEC_ENABLE_NEURAL`, runtime
   `RETDEC_NEURAL_REFINE`). See [NEURAL_REFINEMENT.md](NEURAL_REFINEMENT.md).
 
 Native CPU architectures: see [ARCHITECTURE_TARGETS.md](ARCHITECTURE_TARGETS.md).
@@ -98,7 +98,7 @@ a leftover manifest that no CMake file, preset, script, or workflow reads.
 RetDec/
 ├── CMakeLists.txt            Root project (VERSION 2.0.22, cmake 3.13)
 ├── CMakePresets.json         core/full debug and release, asan, coverage
-├── cmake/deps.cmake          LLVM 23.1.0, Capstone 5.0.9, llama.cpp b10451, …
+├── cmake/deps.cmake          LLVM 23.1.0, Capstone 5.0.9, …
 ├── include/retdec/           Public headers
 ├── src/                      Implementations (see developer_guide.md)
 ├── tests/                    Unit, integration, managed, algorithm-recovery
@@ -321,13 +321,36 @@ Thread-safe `Profiler` with `std::mutex`. `RssTracker`: Linux
 
 ---
 
-## Qt GUI Architecture {#gui}
+## GUI Architecture {#gui}
 
-`retdec-gui` is optional (`RETDEC_REQUIRE_QT6` or Qt6 found). Decompilation
-is **not** in-process: `RetDecMainWindow` starts `retdec-decompiler` as a
-`QProcess` (`src/gui/decompiler_launch.cpp`).
+`retdec-gui` is built on **FuseUI** (`third_party/fuseui`) and **Forge**
+(`third_party/forge`); it contains no Qt. It is on by default (`RETDEC_GUI`,
+`-DRETDEC_GUI=OFF` for CLI-only) and needs nothing outside the tree. FuseUI's
+native window backends — X11 (libX11 loaded at run time, software presenter),
+Win32 and macOS Cocoa — blit a CPU-rasterised frame; there is no Vulkan, no
+platform plugin and no deploy step. The port from the former Qt GUI is
+complete; [gui/FUSEUI_PORT.md](gui/FUSEUI_PORT.md) is the guide.
 
-### Window layout (`src/gui/mainwindow.cpp`)
+Decompilation is **not** in-process: the GUI launches `retdec-decompiler` as a
+child process through Forge (`forge/os/process.hpp`), exactly as the CLI would
+(`src/gui/model/decompiler_launch.cpp`), and loads the artefacts it writes.
+
+### Layers (`src/gui/CMakeLists.txt`)
+
+| Target | Directory | Contents |
+|--------|-----------|----------|
+| `retdec-gui-model` | `src/gui/model`, `include/retdec/gui/model` | No UI. C++23 + Forge: artifact loading, decompiler launch, projects, settings, export, graph layout, filtering, diffing, log parsing. Unit-tested without a window. |
+| `retdec-gui-ui` | `src/gui/ui`, `include/retdec/gui/ui` | FuseUI views: main window, panels, dialogs. Testable through a headless `fuse::ui::UiContext`. |
+| `retdec-gui` | `src/gui/app` | The executable: native window, or headless with `RETDEC_GUI_HEADLESS=1` / `--headless`. |
+| resources | `src/gui/resources` → `share/retdec/gui` | Themes (FuseUI CSS), LLVM pass presets, fonts; found at run time at `<bin>/../share/retdec/gui` (`Contents/share/retdec/gui` in `RetDec.app`). |
+
+A panel is a class that owns a FuseUI subtree, takes data through setters and
+reports events through `std::function` callbacks; the main window owns the
+panels, places them in docks and tabs and wires them together. FuseUI has one
+owner thread: background work (Forge thread pool) hands results back with
+`ui.post(...)`.
+
+### Window layout (specification, from the Qt GUI)
 
 ```
 MainWindow
@@ -338,20 +361,22 @@ MainWindow
                              AI Assistant (Tools menu; not a default dock)
 ```
 
-`AnalysisBridge` reports progress to `ProgressPanel`. It does **not** run
-pipeline stages on `QThreadPool`.
+Progress is parsed from the decompiler's output in the model layer; no
+pipeline stage runs inside the GUI process.
 
-### SettingsDialog
+### Settings
 
-Eight tabs (`src/gui/panels/settings_dialog.cpp`): General, Analysis, **CUDA**,
-ML, Recovery, Advanced, Decompiler, Plugins. There is **no** OpenCL tab.
-Analysis checkboxes (module clustering, C++ lifter, CUDA host recovery) are
-GUI-only in-process toggles; F5 still uses the CLI pipeline above.
+Eight groups, as in the Qt GUI: General, Analysis, **CUDA**, ML, Recovery,
+Advanced, Decompiler, Plugins. There is **no** OpenCL group. Analysis
+checkboxes (module clustering, C++ lifter, CUDA host recovery) are GUI-only
+toggles; F5 still uses the CLI pipeline above.
 
-`AppSettings` uses `QSettings(QSettings::IniFormat, QSettings::UserScope,
-"retdec", "settings")` — INI on every platform. Typical paths:
-`~/.config/retdec/settings.ini` (Linux) and
-`%APPDATA%/retdec/settings.ini` (Windows). Not the Windows registry.
+`AppSettings` (`include/retdec/gui/model/settings.h`) persists JSON at
+`<config dir>/retdec/settings.json` — `~/.config/retdec` on Linux,
+`~/Library/Application Support/retdec` on macOS, `%APPDATA%\retdec` on
+Windows (Forge `config_dir()`), written atomically. Group and key names are
+the ones the Qt version used, so values and defaults carry over. Not the
+Windows registry.
 
 ### Plugin System {#plugins}
 
@@ -363,8 +388,10 @@ Plugin file (.so / .dll)
     retdec_plugin_api_version() → const char*  (must == "1.0")
 ```
 
-`PluginManager` uses `QPluginLoader`, checks `RETDEC_PLUGIN_API_VERSION`
-(`"1.0"`), and topological-sorts declared dependencies.
+`PluginManager` loads plugins as shared libraries through Forge
+(`forge/os/dynlib.hpp`), checks `RETDEC_PLUGIN_API_VERSION` (`"1.0"`), and
+topological-sorts declared dependencies. (The Qt GUI used `QPluginLoader`; the
+contract above is unchanged.)
 
 | Interface | Hook |
 |-----------|------|
@@ -385,18 +412,19 @@ Two separate consumers:
 
 1. **Post-decompile refine** — `neural::maybeRefineDecompilerOutput` when
    `RETDEC_NEURAL_REFINE=1` and a GGUF path is set. Requires
-   `RETDEC_ENABLE_LLAMACPP` at build time for a real backend; otherwise the
+   `RETDEC_ENABLE_NEURAL` at build time for the Forge backend; otherwise the
    stub in `src/retdec/neural_refine_stub.cpp` is a no-op. Compile gate is
    `cc`/`gcc -fsyntax-only`. Differential gate is **not implemented**
    (`RETDEC_NEURAL_DIFF_GATE=1` warns and skips). See
    [NEURAL_REFINEMENT.md](NEURAL_REFINEMENT.md).
-2. **GUI Tools → AI Assistant…** — `InferenceWorker` on a `QThread` loads a
+2. **GUI Tools → AI Assistant…** — an inference worker on a background
+   thread (Forge thread pool; results posted back to the UI thread) loads a
    GGUF in-process when neural is linked. Independent of the refine sidecar.
 
 ```
 maybeRefineDecompilerOutput
   ├── model_verify     SHA-256 allowlist (fails closed if empty)
-  ├── llama.cpp        GGUF generate (optional n_gpu_layers)
+  ├── Forge            .fpk / .gguf / HF-dir generate (cpu or GPU device)
   ├── gates            -fsyntax-only + tree-sitter AST (structural)
   └── applyJsonRenameMap  Naming-tier GBNF JSON map
 ```
@@ -445,10 +473,12 @@ Detectors in `src/algo_recover` and friends consume `retdec::ssa`, not
 llvmir2hll BIR. `buildSsaModule` is an adapter. It does not replace
 mem2reg / llvmir2hll.
 
-### Why llama.cpp instead of a custom Qwen engine?
+### Why Forge instead of a custom Qwen engine?
 
-`src/qwen3/` was deleted. Optional refinement uses pinned llama.cpp
-**b10451** in `cmake/deps.cmake`.
+`src/qwen3/` was deleted. Optional refinement first used a pinned llama.cpp;
+it now runs on Forge (`third_party/forge`, first-party, vendored), the same
+library the GUI uses for its OS layer, so there is no external inference
+dependency to fetch or pin.
 
 ### Why INI for GUI settings?
 
@@ -476,7 +506,7 @@ Post-pipeline SSA rebuild
     call_conv → ipa → (optional type_inference)
     → container / algo / sort / concurrency / crypto / serial / patterns
     → comments + config JSON
-    → optional llama.cpp refine (*.refined.c)
+    → optional Forge neural refine (*.refined.c)
     → default --buildable sidecars
     → OclHostRecovery log
     │

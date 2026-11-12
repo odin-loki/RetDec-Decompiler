@@ -10,7 +10,7 @@ add_library(retdec-mini-emu STATIC
 )
 add_library(retdec::mini-emu ALIAS retdec-mini-emu)
 
-target_compile_features(retdec-mini-emu PUBLIC cxx_std_17)
+target_compile_features(retdec-mini-emu PUBLIC cxx_std_23)
 
 target_include_directories(retdec-mini-emu
     PUBLIC

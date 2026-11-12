@@ -113,6 +113,9 @@ class UpxStub : public retdec::unpacker::UnpackingStub
 public:
 	UpxStub(retdec::loader::Image* inputFile, const UpxStubData* stubData, const DynamicBuffer& stubCapturedData,
 			std::unique_ptr<Decompressor> decompressor, const UpxMetadata& metadata);
+	/// Out of line: Decompressor is incomplete here (libc++ instantiates
+	/// ~unique_ptr<Decompressor> wherever the destructor is defined).
+	~UpxStub() override;
 
 	static std::shared_ptr<UpxStub> createStub(retdec::loader::Image* file);
 	static std::shared_ptr<UpxStub> createStub(retdec::loader::Image* file, const DynamicBuffer& stubBytes);

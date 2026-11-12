@@ -11,6 +11,6 @@ target_include_directories(retdec-func-boundary
 )
 
 set_target_properties(retdec-func-boundary PROPERTIES
-    CXX_STANDARD          17
+    CXX_STANDARD          23
     CXX_STANDARD_REQUIRED ON
 )

@@ -89,7 +89,7 @@ fi
 mkdir -p "${WORK}/obj"
 
 printf '#include <gmock/gmock.h>\nint main(){ return 0; }\n' > "${WORK}/probe.cpp"
-if ! "${CXX_BIN}" -std=c++17 "${WORK}/probe.cpp" -lgmock -lgtest -lpthread \
+if ! "${CXX_BIN}" -std=c++23 "${WORK}/probe.cpp" -lgmock -lgtest -lpthread \
 	-o "${WORK}/probe" > "${WORK}/probe.log" 2>&1
 then
 	echo "FF-01: no usable gmock found." >&2
@@ -155,7 +155,7 @@ build_and_run() {
 	while IFS= read -r f; do srcs+=("$f"); done < <(find "tests/${suite}" -name '*.cpp' | sort)
 
 	local bin="${WORK}/${suite}_test"
-	if ! "${CXX_BIN}" -std=c++17 -O0 -g0 "${INCLUDES[@]}" "${LLVM_CPPFLAGS[@]}" -w \
+	if ! "${CXX_BIN}" -std=c++23 -O0 -g0 "${INCLUDES[@]}" "${LLVM_CPPFLAGS[@]}" -w \
 		"${srcs[@]}" "${C_OBJS[@]}" -o "${bin}" \
 		"${LLVM_LDFLAGS[@]}" "${LLVM_LIBS[@]}" \
 		-lgmock_main -lgmock -lgtest -lpthread -lcrypto -lz \

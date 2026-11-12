@@ -22,9 +22,9 @@ Design notes
 * macOS:  prefers lldb -o run -o bt -o quit.
 * Auto-detects retdec-gui next to this script (../../build/<plat>/src/gui)
   or honours --gui-exe.
-* In headless mode (default) we use Qt offscreen via the GUI's built-in
-  --headless plus --headless-exit-ms, so the run is reproducible on
-  truly headless boxes.
+* In headless mode (default) we use the GUI's built-in --headless plus
+  --headless-exit-ms (RETDEC_GUI_HEADLESS=1: the FuseUI AppWindow presents
+  to nothing), so the run is reproducible on truly headless boxes.
 
 Example invocations
 -------------------
@@ -303,7 +303,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     parser.add_argument("--headless-exit-ms", type=int, default=4000,
                         help="Pass --headless-exit-ms N to the GUI (default: 4000; 0 disables)")
     parser.add_argument("--no-headless", action="store_true",
-                        help="Do not request Qt offscreen mode (debug visible UI)")
+                        help="Do not request headless mode (debug visible UI)")
     parser.add_argument("--extra-arg", action="append", default=[],
                         help="Extra positional/flag argument forwarded to retdec-gui (repeatable)")
     args = parser.parse_args(list(argv) if argv is not None else None)
@@ -372,9 +372,8 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     # Environment for headless runs.
     env = os.environ.copy()
-    if not args.no_headless and "QT_QPA_PLATFORM" not in env:
-        env["QT_QPA_PLATFORM"] = "offscreen"
-    env.setdefault("QT_LOGGING_RULES", "qt.qpa.window=false")
+    if not args.no_headless:
+        env.setdefault("RETDEC_GUI_HEADLESS", "1")
 
     # AddressSanitizer wiring: route reports to stderr / sink with verbose
     # symbolisation. The GUI must have been built with -DRETDEC_GUI_ASAN=ON.

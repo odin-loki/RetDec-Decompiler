@@ -1,0 +1,162 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  CTEST_OUTPUT_ON_FAILURE: "1"
+  FORGE_THREADS: "2"
+jobs:
+  linux:
+    name: linux-${{ matrix.cc }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { cc: gcc,   cxx: g++-14,     c: gcc-14 }
+          - { cc: clang, cxx: clang++-18, c: clang-18 }
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build g++-14 clang-18 ccache
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: python -m pip install numpy safetensors onnx cryptography blake3
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: linux-${{ matrix.cc }}
+      - run: cmake --preset dev -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DCMAKE_C_COMPILER=${{ matrix.c }} -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache
+      - run: cmake --build --preset dev -j4
+      - run: ctest --test-dir build/dev -LE "slow|emu" -j2 --timeout 1200
+  linux-tsan:
+    runs-on: ubuntu-24.04
+    env:
+      TSAN_OPTIONS: halt_on_error=1 second_deadlock_stack=1
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build clang-18 python3-numpy
+      - run: sudo sysctl vm.mmap_rnd_bits=28
+      - run: cmake -S . -B build-tsan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_COMPILER=clang++-18 -DCMAKE_C_COMPILER=clang-18 -DFORGE_TSAN=ON -DFORGE_BUILD_EXAMPLES=OFF
+      - run: cmake --build build-tsan -j4 --target test_script forge
+      - run: ./build-tsan/test_script
+  linux-asan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build clang-18 python3-numpy
+      - run: sudo sysctl vm.mmap_rnd_bits=28
+      - run: cmake -S . -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++-18 -DCMAKE_C_COMPILER=clang-18 -DFORGE_SANITIZE=ON -DFORGE_BUILD_EXAMPLES=OFF
+      - run: cmake --build build-asan -j4 --target test_script forge
+      - run: ./build-asan/test_script
+  shells:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: install shells
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++-14 ccache zsh dash busybox ksh mksh yash fish tcsh csh posh rc es xonsh || true
+          sudo apt-get install -y oksh || true
+          sudo snap install powershell --classic || true
+          pip install --user oils-for-unix 2>/dev/null || true
+          ls -l /bin/*sh /usr/bin/*sh 2>/dev/null || true
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with: { key: shells }
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_COMPILER=g++-14 -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DFORGE_BUILD_EXAMPLES=OFF
+      - run: cmake --build build -j4 --target test_script forge
+      - run: FORGE_TEST_ONLY=emit ./build/test_script
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install ninja ccache
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: python -m pip install numpy safetensors onnx cryptography blake3
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with: { key: macos }
+      - run: cmake --preset dev -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache
+      - run: cmake --build --preset dev -j4
+      - run: ctest --test-dir build/dev -LE "slow|emu" -j2 --timeout 1200
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build/ios -G Xcode -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/ios.cmake -DFORGE_BUILD_TESTS=OFF -DFORGE_BUILD_APPS=OFF -DFORGE_BUILD_EXAMPLES=OFF
+      - run: cmake --build build/ios --config Release --target forge_c -- -quiet CODE_SIGNING_ALLOWED=NO
+  windows-msvc:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: python -m pip install numpy safetensors onnx cryptography blake3
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_COMPILER=cl -DCMAKE_C_COMPILER=cl -DFORGE_BUILD_EXAMPLES=OFF
+      - run: cmake --build build -j4
+      - run: ctest --test-dir build -LE "slow|emu" -j2 --timeout 1200
+      - name: emitted cmd / pwsh / powershell 5.1 goldens
+        shell: cmd
+        run: set FORGE_TEST_ONLY=emit&& build\test_script.exe
+  windows-mingw:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-python mingw-w64-ucrt-x86_64-python-numpy mingw-w64-ucrt-x86_64-python-cryptography
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DFORGE_BUILD_EXAMPLES=OFF
+      - run: cmake --build build -j4
+      - run: ctest --test-dir build -LE "slow|emu" -j2 --timeout 1200
+  freebsd:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          release: "14.3"
+          usesh: true
+          mem: 8192
+          prepare: |
+            pkg install -y cmake ninja python3 bash zsh mksh fish
+            py=$(python3 -c 'import sys; print("py%d%d" % sys.version_info[:2])')
+            pkg install -y $py-numpy $py-cryptography || true
+          run: |
+            cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DFORGE_BUILD_EXAMPLES=OFF
+            cmake --build build -j4
+            ctest --test-dir build -LE "slow|emu|gpu" -j2 --timeout 1200 --output-on-failure
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build g++-14
+      - name: NDK cross builds (arm64-v8a, x86_64)
+        run: |
+          export ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME
+          sh tests/mobile_build.sh android arm64-v8a
+          cmake -S . -B build/android-x86_64 -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/android-arm64.cmake -DANDROID_ABI=x86_64 -DCMAKE_BUILD_TYPE=Release -DFORGE_BUILD_EXAMPLES=OFF
+          cmake --build build/android-x86_64 -j4 --target forge test_script forge_script_example_plugin
+      - name: host forge for --emit android
+        run: |
+          cmake -S . -B build/host -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++-14 -DCMAKE_C_COMPILER=gcc-14 -DFORGE_BUILD_TESTS=OFF -DFORGE_BUILD_EXAMPLES=OFF
+          cmake --build build/host -j4 --target forge
+          mkdir -p emit && for g in functions flat batch; do ./build/host/forge script --emit android tests/data/emit/$g.cpp > emit/$g.sh; rc=0; ./build/host/forge script tests/data/emit/$g.cpp > emit/$g.want || rc=$?; echo $rc > emit/$g.rc; done
+      - name: enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: sh .github/android_check.sh

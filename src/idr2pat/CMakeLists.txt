@@ -3,7 +3,7 @@ add_executable(idr2pat
 	idr2pat.cpp
 )
 
-target_compile_features(idr2pat PUBLIC cxx_std_17)
+target_compile_features(idr2pat PUBLIC cxx_std_23)
 
 target_link_libraries(idr2pat
 	retdec::utils

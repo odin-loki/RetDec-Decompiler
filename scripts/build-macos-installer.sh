@@ -7,11 +7,14 @@
 #
 #   1. The GUI is an .app bundle, not a file in bin/. `cmake --install` puts it
 #      at the top of the prefix (install(TARGETS retdec-gui BUNDLE DESTINATION .)).
-#   2. Its Qt frameworks and their dependencies are deployed by macdeployqt,
-#      which leaves some of them pointing into the build machine's Homebrew
-#      prefix. MAC-01 (scripts/ci/check_macos_bundle.py --fix) brings those in
-#      and re-signs; this script runs it on the STAGED copy and fails if it
-#      cannot make the bundle resolve and verify.
+#   2. It has to work once dragged to /Applications, away from the prefix. The
+#      GUI is FuseUI (vendored, static, Cocoa window backend), so there are no
+#      toolkit frameworks or plugins to deploy -- but its resources must be
+#      inside the bundle (Contents/share/retdec/gui, <bin>/../share/retdec/gui
+#      from Contents/MacOS), and nothing in it may point into the build
+#      machine's Homebrew prefix. MAC-01 (scripts/ci/check_macos_bundle.py
+#      --fix) checks both and re-signs; this script runs it on the STAGED copy
+#      and fails if it cannot make the bundle resolve and verify.
 #   3. Anything downloaded through a browser carries com.apple.quarantine, and
 #      an ad-hoc signed binary under quarantine does not open at all. The
 #      generated install.sh strips it from what it installs, and says so.
@@ -427,10 +430,18 @@ if [[ "$WANT_BUNDLE" -eq 1 && -d "${BUNDLE_SRC}" ]]; then
 	echo ""
 	echo "--- RetDec.app ---"
 	_run cp -a "${BUNDLE_SRC}" "${STAGE_DIR}/RetDec.app"
+	# The GUI's resources normally arrive inside the bundle (its POST_BUILD
+	# step stages them into Contents/share/retdec/gui). If an install tree
+	# has them only at the prefix, bring them in: the .app has to stand alone.
+	if [[ ! -d "${STAGE_DIR}/RetDec.app/Contents/share/retdec/gui" && -d "${INSTALL_DIR}/share/retdec/gui" ]]; then
+		_run mkdir -p "${STAGE_DIR}/RetDec.app/Contents/share/retdec"
+		_run cp -a "${INSTALL_DIR}/share/retdec/gui" "${STAGE_DIR}/RetDec.app/Contents/share/retdec/"
+	fi
 	# MAC-01 on the staged copy, never on the install tree: what ships is what
-	# is checked. --fix brings in the libraries macdeployqt left pointing at
-	# this machine's Homebrew prefix, then re-signs, then verifies. A bundle
-	# that cannot be made to verify does not get packaged silently.
+	# is checked. --fix brings in any library left pointing at this machine's
+	# Homebrew prefix, then re-signs, then verifies (including that
+	# Contents/share/retdec/gui is there). A bundle that cannot be made to
+	# verify does not get packaged silently.
 	_run python3 "${SCRIPT_DIR}/ci/check_macos_bundle.py" --fix "${STAGE_DIR}/RetDec.app"
 	GUI_LINE="RetDec.app      The GUI. Open it, or copy it to /Applications"
 elif [[ "$WANT_BUNDLE" -eq 1 ]]; then
@@ -467,7 +478,7 @@ if [[ "$WANT_DMG" -eq 1 ]]; then
 	echo ""
 	echo "--- Disk image ${DMG} ---"
 	# hdiutil create fails with "File exists" rather than overwriting, which is
-	# what made macdeployqt's POST_BUILD -dmg break every incremental build.
+	# what once made a POST_BUILD -dmg step break every incremental build.
 	_run rm -f "${DMG}"
 	_run hdiutil create -quiet -volname "RetDec ${VERSION_SAFE}" \
 		-srcfolder "${STAGE_DIR}" -ov -format UDZO "${DMG}"

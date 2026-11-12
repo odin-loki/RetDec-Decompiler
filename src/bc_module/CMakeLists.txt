@@ -13,7 +13,7 @@ target_include_directories(retdec-bc-module
 )
 
 set_target_properties(retdec-bc-module PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 23
     CXX_STANDARD_REQUIRED YES
 )
 

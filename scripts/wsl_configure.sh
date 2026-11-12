@@ -9,7 +9,8 @@ log() { echo -e "\n\033[1;34m[$(date +%H:%M:%S)] $*\033[0m"; }
 
 log "Checking build dependencies (sudo may prompt)"
 PKGS=""
-for pkg in libxkbcommon-dev ninja-build; do
+# retdec-gui needs no GUI packages (FuseUI is vendored; libX11 is loaded at run time).
+for pkg in ninja-build; do
 	dpkg -l "$pkg" &>/dev/null || PKGS="$PKGS $pkg"
 done
 if [[ -n "$PKGS" ]]; then

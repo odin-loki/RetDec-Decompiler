@@ -37,7 +37,7 @@ suites against a shim, and runs them.
 |---|---|---|
 | Prerequisites | network, ~30 GB, CMake, Ninja | a C++17 compiler |
 | Cold time | hours | ~1 minute |
-| Coverage | whole product | 65 suites, ~4000 test cases over 63 modules, plus 493 GUI tests where Qt6 is installed and `gpu_scanner.cu`'s device half |
+| Coverage | whole product | 65 suites, ~4000 test cases over 63 modules, plus `retdec-gui-tests` (via `cmake/gui_standalone`) where GoogleTest is installed and `gpu_scanner.cu`'s device half |
 
 ## The CUDA device half
 
@@ -66,28 +66,24 @@ race passes here and fails on a device.
 
 ## The GUI suite
 
-`src/gui` is the one part of this fork that is not header-only-plus-C++17: it is
-37 sources and 493 tests behind `find_package(Qt6 REQUIRED)`, and before it was
-added here nothing in any fast gate compiled a line of it. Seven defects were
-found there by reading alone, two of them use-after-frees.
+`src/gui` is not built object by object like the other suites. `retdec-gui` is
+FuseUI (`third_party/fuseui`) plus Forge (`third_party/forge`), both vendored
+with their own CMake, and it talks to the decompiler only as a child process —
+so it needs none of LLVM, Capstone or YARA, and `cmake/gui_standalone` builds it
+and its tests on their own in a couple of minutes. `check_gui` in the script
+configures that project into `$BUILD_DIR/gui` (Ninja when available, the
+compiler from `CXX`, `EXTRA_CXXFLAGS` on both the compile and the link line so
+the sanitizer job instruments it too), builds `retdec-gui` and
+`retdec-gui-tests`, and runs the tests with `RETDEC_GUI_HEADLESS=1`. Model tests
+need no window; view tests drive a headless FuseUI `UiContext`, so no display is
+involved anywhere.
 
-It does not fit the loop that builds the other suites. Every `Q_OBJECT` class
-needs `moc`, the resource bundle needs `rcc`, and a `QApplication` has to exist
-before the first widget — so `check_gui` in the script does those three things
-itself and links the result against Qt plus `retdec-neural`, which is all the
-suite actually needs. `RETDEC_GUI_HEADLESS=1` and `QT_QPA_PLATFORM=offscreen`
-are what `ctest-linux.yml` and `ctest-windows.yml` set; the first is load-bearing, because
-without it the panels defer a rehighlight into an offscreen widget that has no
-viewport and the run stalls. `ctest-macos.yml` uses `QT_QPA_PLATFORM=cocoa`
-instead (the relocatable bundle does not ship the offscreen plugin). This
-standalone script runs on Linux CI and keeps offscreen.
-
-`RETDEC_GUI_HAS_NEURAL` is defined, because a default build defines it —
-compiling without it would check the `#else` branches, which is not what ships.
-
-Where Qt6 is absent the suite skips itself, says so, and counts as neither a
-pass nor a failure. Install `qt6-base-dev` and `qt6-base-dev-tools` to run it;
-the CI workflow does.
+It needs CMake and the system GoogleTest (`libgtest-dev`). Where either is
+absent the suite skips itself, says which, and counts as neither a pass nor a
+failure; it is configured with `RETDEC_GUI_FETCH_GTEST=OFF`, so this gate never
+downloads googletest. The standalone-check workflow installs `libgtest-dev`.
+The same project is what [gui.yml](../.github/workflows/gui.yml) builds on
+Linux, Windows and macOS.
 
 Two vendored header-only dependencies are used because they are already in the
 tree and cost nothing: `deps/rapidjson` (which unlocks `config`, `serdes`,
@@ -250,10 +246,15 @@ regenerating it means one `--update-warnings` run per configuration from a clean
 `BUILD_DIR`, unioned.
 
 `EXCLUDED_SOURCES` in the script mirrors a conditional in a module's own
-CMakeLists — `neural/llama_inference.cpp` is only built when llama.cpp is
-present, and compiling it here would collide with `mock_inference.cpp`.
+CMakeLists — `neural/forge_inference.cpp` needs Forge's inference stack
+(generated op tables, the `forge_simd_mv` kernels), which only CMake builds;
+`mock_inference.cpp` provides a null `createForgeInference()` here instead.
 `EXCLUDED_REASONS` records modules that compile standalone but are deliberately
 left out, so `--audit` can tell "nobody wired this up" from "we decided not to".
+A module that needs a header from outside the tree is listed there even when it
+compiles on some machine: `opencl` builds wherever `opencl-c-headers` is
+installed (every file compiles under C++23), but it needs `<CL/cl.h>` and an ICD
+loader, so OCL-01 owns it and the audit's verdict does not depend on the box.
 
 ## What it has already caught
 

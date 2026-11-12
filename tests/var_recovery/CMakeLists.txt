@@ -15,7 +15,7 @@ target_include_directories(retdec-var-recovery-tests
         ${PROJECT_SOURCE_DIR}/include
 )
 
-target_compile_features(retdec-var-recovery-tests PRIVATE cxx_std_17)
+target_compile_features(retdec-var-recovery-tests PRIVATE cxx_std_23)
 
 include(GoogleTest)
 gtest_discover_tests(retdec-var-recovery-tests)

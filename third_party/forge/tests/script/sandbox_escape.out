@@ -1,0 +1,40 @@
+denied: fs direct call
+denied: fs alias taken outside the sandbox
+denied: fs alias taken inside the sandbox
+denied: fs through std::function
+denied: fs lambda defined outside
+denied: fs function stored in a map
+denied: fs method of an object made outside
+denied: fs higher-order std::transform
+denied: fs higher-order std::for_each
+denied: fs through eval
+denied: fs eval defining a function
+denied: fs through reflect::call
+denied: fs handle opened outside: read
+denied: fs handle opened outside: write
+denied: fs import
+denied: fs in a thread
+denied: fs in std::thread
+denied: fs in forge::parallel
+denied: fs nested sandbox re-enabling fs
+denied: fs limit block inside the sandbox
+denied: fs glob
+denied: proc shell call
+denied: proc shell alias
+denied: proc bash
+denied: proc host shell
+denied: proc run alias
+denied: proc proc::start
+denied: proc through eval
+denied: proc through reflect::call
+denied: proc in a thread
+denied: proc ProcessPool asking for proc
+denied: net resolve
+denied: net alias
+denied: net port_open
+denied: net through eval
+denied: net remote script
+denied: env os::env
+denied: env std::getenv
+denied: env setenv
+after: secret

@@ -38,17 +38,6 @@ int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)
 	return n;
 }
 
-bool hasSelfCall(const ssa::SSAFunction& fn)
-{
-	for (const auto& blk: fn.blocks())
-	{
-		if (!blk) continue;
-		for (const auto* i: blk->instrs)
-			if (i && i->op == ssa::IrInstr::Op::Call && i->calleeName == fn.name()) return true;
-	}
-	return false;
-}
-
 template <typename F>
 void forEachLoopInstr(const ssa::SSAFunction& fn, F&& f);
 bool immOperand(const ssa::SSAFunction& fn, const ssa::IrInstr& i, uint64_t value);

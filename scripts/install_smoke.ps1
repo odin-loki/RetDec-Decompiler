@@ -96,7 +96,6 @@ try {
 
     Write-Host "==> retdec-gui --headless --headless-decompile $sample"
     $env:RETDEC_GUI_HEADLESS = "1"
-    $env:QT_QPA_PLATFORM = "offscreen"
 
     $workDir = Join-Path $env:TEMP "retdec-install-smoke"
     New-Item -ItemType Directory -Force -Path $workDir | Out-Null

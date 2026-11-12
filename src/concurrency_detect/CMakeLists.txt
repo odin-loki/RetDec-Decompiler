@@ -9,7 +9,7 @@ target_include_directories(retdec-concurrency-detect
 )
 
 set_target_properties(retdec-concurrency-detect PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
 )
 

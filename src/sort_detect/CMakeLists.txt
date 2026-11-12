@@ -20,7 +20,7 @@ target_link_libraries(retdec_sort_detect
         retdec_ssa
 )
 
-target_compile_features(retdec_sort_detect PUBLIC cxx_std_17)
+target_compile_features(retdec_sort_detect PUBLIC cxx_std_23)
 
 install(TARGETS retdec_sort_detect
     EXPORT  retdec-targets

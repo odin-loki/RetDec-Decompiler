@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <future>
+#include <iostream>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -64,6 +65,20 @@
 
 #include <rapidjson/document.h>
 #include <rapidjson/error/en.h>
+
+// Last, so its macros reach none of the headers above.
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#if defined(_MSC_VER)
+#include <crtdbg.h>
+#endif
+#endif
 
 using namespace retdec::utils::io;
 using retdec::decompiler::applyNativeOutputLanguage;
@@ -1318,6 +1333,23 @@ void cleanup(ProgramOptions& po)
 
 int main(int argc, char** argv)
 {
+#if defined(_WIN32)
+	// A command-line tool must never wait on a dialog nobody can click. The
+	// Debug CRT reports assertions, abort() and invalid-parameter calls in a
+	// message box, and Windows Error Reporting shows one for a crash; under
+	// ctest or a script either one is a hang until the timeout instead of a
+	// failure with a message. Send all of them to stderr and fail.
+	SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+#if defined(_MSC_VER)
+	_set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+	for (int type: {_CRT_WARN, _CRT_ERROR, _CRT_ASSERT})
+	{
+		_CrtSetReportMode(type, _CRTDBG_MODE_FILE | _CRTDBG_MODE_DEBUG);
+		_CrtSetReportFile(type, _CRTDBG_FILE_STDERR);
+	}
+#endif
+#endif
+
 	// Set LLVM debug.
 	//
 	llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
@@ -1348,8 +1380,16 @@ int main(int argc, char** argv)
 	}
 	catch (const std::runtime_error& e)
 	{
+		// Leave the way --help and --version do: exit() after the message.
+		// Returning from here unwound main's locals and llvm_shutdown() over
+		// a half-loaded configuration, and on the Debug MSVC build every
+		// usage error hung until ctest's timeout (cli_diagnostics: four
+		// "timed out" cases) while --help, which calls exit(), returned at
+		// once. Nothing has been written yet, so there is nothing to clean.
 		Log::error() << Log::Error << e.what() << std::endl;
-		return EXIT_FAILURE;
+		std::cout.flush();
+		std::cerr.flush();
+		std::exit(EXIT_FAILURE);
 	}
 
 	// Limit program memory.

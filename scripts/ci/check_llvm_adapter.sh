@@ -95,9 +95,13 @@ SRCS=(
 )
 mapfile -t SSA_SRCS < <(find src/ssa -name '*.cpp' | sort)
 SRCS+=("${SSA_SRCS[@]}")
+# The adapter tests also run the algo_recover detectors over the SSA they
+# build (binary search vs. partition), so that library is linked too.
+mapfile -t ALGO_SRCS < <(find src/algo_recover -name '*.cpp' | sort)
+SRCS+=("${ALGO_SRCS[@]}")
 
 BIN="${WORK}/llvm_to_ssa_test"
-if ! "${CXX:-g++}" -std=c++17 -O0 -g \
+if ! "${CXX:-g++}" -std=c++23 -O0 -g \
 	-Iinclude -Isrc/retdec -Itests/standalone \
 	"${LLVM_CPPFLAGS[@]}" -fexceptions -frtti \
 	"${SRCS[@]}" -o "${BIN}" \
@@ -105,7 +109,7 @@ if ! "${CXX:-g++}" -std=c++17 -O0 -g \
 	> "${WORK}/build.log" 2>&1
 then
 	echo "ADAPT-01: FAIL the adapter did not build against LLVM ${LLVM_VERSION}" >&2
-	grep -E 'error:' "${WORK}/build.log" | head -n 20 >&2 || tail -n 20 "${WORK}/build.log" >&2
+	grep -E 'error:|undefined reference' "${WORK}/build.log" | head -n 20 >&2 || tail -n 20 "${WORK}/build.log" >&2
 	exit 1
 fi
 

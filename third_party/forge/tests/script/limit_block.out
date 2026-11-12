@@ -1,0 +1,16 @@
+statement block: 5
+expression block: 42
+qualified name: 6
+options from a variable
+timeout: time limit reached
+mem "64K": OutOfMemoryError
+mem "1MiB": ok 3
+nested: inner block stopped by the outer timeout
+short block
+after the blocks
+loop: 012
+ValueError: limit: unknown size unit in mem "2X" (use K, M, G or T)
+ValueError: limit: bad mem value "lots"
+ValueError: limit: bad mem value ""
+ValueError: limit: unknown time unit in timeout "5 fortnights" (use ms, s, m or h)
+ValueError: limit: unknown option 'timeuot' (timeout, cpu_s, mem, proc_mem, proc_cpu, allocs, handles, procs)

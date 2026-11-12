@@ -1,0 +1,2024 @@
+{
+ "isa": "x86",
+ "source": "curated subset (see build_x86_db.py)",
+ "intrinsics": [
+  {
+   "name": "_mm_add_ps",
+   "ret": "__m128",
+   "params": [
+    "__m128",
+    "__m128"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_add_pd",
+   "ret": "__m128d",
+   "params": [
+    "__m128d",
+    "__m128d"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_sub_ps",
+   "ret": "__m128",
+   "params": [
+    "__m128",
+    "__m128"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_sub_pd",
+   "ret": "__m128d",
+   "params": [
+    "__m128d",
+    "__m128d"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_mul_ps",
+   "ret": "__m128",
+   "params": [
+    "__m128",
+    "__m128"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_mul_pd",
+   "ret": "__m128d",
+   "params": [
+    "__m128d",
+    "__m128d"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_div_ps",
+   "ret": "__m128",
+   "params": [
+    "__m128",
+    "__m128"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_div_pd",
+   "ret": "__m128d",
+   "params": [
+    "__m128d",
+    "__m128d"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_min_ps",
+   "ret": "__m128",
+   "params": [
+    "__m128",
+    "__m128"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_min_pd",
+   "ret": "__m128d",
+   "params": [
+    "__m128d",
+    "__m128d"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_max_ps",
+   "ret": "__m128",
+   "params": [
+    "__m128",
+    "__m128"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_max_pd",
+   "ret": "__m128d",
+   "params": [
+    "__m128d",
+    "__m128d"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_sqrt_ps",
+   "ret": "__m128",
+   "params": [
+    "__m128"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_sqrt_pd",
+   "ret": "__m128d",
+   "params": [
+    "__m128d"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_and_ps",
+   "ret": "__m128",
+   "params": [
+    "__m128",
+    "__m128"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_and_pd",
+   "ret": "__m128d",
+   "params": [
+    "__m128d",
+    "__m128d"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_or_ps",
+   "ret": "__m128",
+   "params": [
+    "__m128",
+    "__m128"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_or_pd",
+   "ret": "__m128d",
+   "params": [
+    "__m128d",
+    "__m128d"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_xor_ps",
+   "ret": "__m128",
+   "params": [
+    "__m128",
+    "__m128"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_xor_pd",
+   "ret": "__m128d",
+   "params": [
+    "__m128d",
+    "__m128d"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_andnot_ps",
+   "ret": "__m128",
+   "params": [
+    "__m128",
+    "__m128"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_andnot_pd",
+   "ret": "__m128d",
+   "params": [
+    "__m128d",
+    "__m128d"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_and_si128",
+   "ret": "__m128i",
+   "params": [
+    "__m128i",
+    "__m128i"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_or_si128",
+   "ret": "__m128i",
+   "params": [
+    "__m128i",
+    "__m128i"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_xor_si128",
+   "ret": "__m128i",
+   "params": [
+    "__m128i",
+    "__m128i"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_andnot_si128",
+   "ret": "__m128i",
+   "params": [
+    "__m128i",
+    "__m128i"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_add_epi8",
+   "ret": "__m128i",
+   "params": [
+    "__m128i",
+    "__m128i"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_sub_epi8",
+   "ret": "__m128i",
+   "params": [
+    "__m128i",
+    "__m128i"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_adds_epi8",
+   "ret": "__m128i",
+   "params": [
+    "__m128i",
+    "__m128i"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_subs_epi8",
+   "ret": "__m128i",
+   "params": [
+    "__m128i",
+    "__m128i"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_add_epi16",
+   "ret": "__m128i",
+   "params": [
+    "__m128i",
+    "__m128i"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_sub_epi16",
+   "ret": "__m128i",
+   "params": [
+    "__m128i",
+    "__m128i"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_adds_epi16",
+   "ret": "__m128i",
+   "params": [
+    "__m128i",
+    "__m128i"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_subs_epi16",
+   "ret": "__m128i",
+   "params": [
+    "__m128i",
+    "__m128i"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_add_epi32",
+   "ret": "__m128i",
+   "params": [
+    "__m128i",
+    "__m128i"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_sub_epi32",
+   "ret": "__m128i",
+   "params": [
+    "__m128i",
+    "__m128i"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_add_epi64",
+   "ret": "__m128i",
+   "params": [
+    "__m128i",
+    "__m128i"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_sub_epi64",
+   "ret": "__m128i",
+   "params": [
+    "__m128i",
+    "__m128i"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_mullo_epi16",
+   "ret": "__m128i",
+   "params": [
+    "__m128i",
+    "__m128i"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_mullo_epi32",
+   "ret": "__m128i",
+   "params": [
+    "__m128i",
+    "__m128i"
+   ],
+   "feature": "sse4_1"
+  },
+  {
+   "name": "_mm_madd_epi16",
+   "ret": "__m128i",
+   "params": [
+    "__m128i",
+    "__m128i"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_maddubs_epi16",
+   "ret": "__m128i",
+   "params": [
+    "__m128i",
+    "__m128i"
+   ],
+   "feature": "ssse3"
+  },
+  {
+   "name": "_mm_cvtps_epi32",
+   "ret": "__m128i",
+   "params": [
+    "__m128"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_cvtepi32_ps",
+   "ret": "__m128",
+   "params": [
+    "__m128i"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_cvttps_epi32",
+   "ret": "__m128i",
+   "params": [
+    "__m128"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_set1_ps",
+   "ret": "__m128",
+   "params": [
+    "float"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_set1_pd",
+   "ret": "__m128d",
+   "params": [
+    "double"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_set1_epi32",
+   "ret": "__m128i",
+   "params": [
+    "int"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_setzero_ps",
+   "ret": "__m128",
+   "params": [],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_loadu_ps",
+   "ret": "__m128",
+   "params": [
+    "const float*"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_storeu_ps",
+   "ret": "void",
+   "params": [
+    "float*",
+    "__m128"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_loadu_pd",
+   "ret": "__m128d",
+   "params": [
+    "const double*"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm_storeu_pd",
+   "ret": "void",
+   "params": [
+    "double*",
+    "__m128d"
+   ],
+   "feature": "sse2"
+  },
+  {
+   "name": "_mm256_add_ps",
+   "ret": "__m256",
+   "params": [
+    "__m256",
+    "__m256"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_add_pd",
+   "ret": "__m256d",
+   "params": [
+    "__m256d",
+    "__m256d"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_sub_ps",
+   "ret": "__m256",
+   "params": [
+    "__m256",
+    "__m256"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_sub_pd",
+   "ret": "__m256d",
+   "params": [
+    "__m256d",
+    "__m256d"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_mul_ps",
+   "ret": "__m256",
+   "params": [
+    "__m256",
+    "__m256"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_mul_pd",
+   "ret": "__m256d",
+   "params": [
+    "__m256d",
+    "__m256d"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_div_ps",
+   "ret": "__m256",
+   "params": [
+    "__m256",
+    "__m256"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_div_pd",
+   "ret": "__m256d",
+   "params": [
+    "__m256d",
+    "__m256d"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_min_ps",
+   "ret": "__m256",
+   "params": [
+    "__m256",
+    "__m256"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_min_pd",
+   "ret": "__m256d",
+   "params": [
+    "__m256d",
+    "__m256d"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_max_ps",
+   "ret": "__m256",
+   "params": [
+    "__m256",
+    "__m256"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_max_pd",
+   "ret": "__m256d",
+   "params": [
+    "__m256d",
+    "__m256d"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_sqrt_ps",
+   "ret": "__m256",
+   "params": [
+    "__m256"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_sqrt_pd",
+   "ret": "__m256d",
+   "params": [
+    "__m256d"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_and_ps",
+   "ret": "__m256",
+   "params": [
+    "__m256",
+    "__m256"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_and_pd",
+   "ret": "__m256d",
+   "params": [
+    "__m256d",
+    "__m256d"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_or_ps",
+   "ret": "__m256",
+   "params": [
+    "__m256",
+    "__m256"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_or_pd",
+   "ret": "__m256d",
+   "params": [
+    "__m256d",
+    "__m256d"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_xor_ps",
+   "ret": "__m256",
+   "params": [
+    "__m256",
+    "__m256"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_xor_pd",
+   "ret": "__m256d",
+   "params": [
+    "__m256d",
+    "__m256d"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_andnot_ps",
+   "ret": "__m256",
+   "params": [
+    "__m256",
+    "__m256"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_andnot_pd",
+   "ret": "__m256d",
+   "params": [
+    "__m256d",
+    "__m256d"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_and_si256",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_or_si256",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_xor_si256",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_andnot_si256",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_add_epi8",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_sub_epi8",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_adds_epi8",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_subs_epi8",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_add_epi16",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_sub_epi16",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_adds_epi16",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_subs_epi16",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_add_epi32",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_sub_epi32",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_add_epi64",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_sub_epi64",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_mullo_epi16",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_mullo_epi32",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_madd_epi16",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_maddubs_epi16",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_cvtps_epi32",
+   "ret": "__m256i",
+   "params": [
+    "__m256"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_cvtepi32_ps",
+   "ret": "__m256",
+   "params": [
+    "__m256i"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_cvttps_epi32",
+   "ret": "__m256i",
+   "params": [
+    "__m256"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_set1_ps",
+   "ret": "__m256",
+   "params": [
+    "float"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_set1_pd",
+   "ret": "__m256d",
+   "params": [
+    "double"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_set1_epi32",
+   "ret": "__m256i",
+   "params": [
+    "int"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_setzero_ps",
+   "ret": "__m256",
+   "params": [],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_loadu_ps",
+   "ret": "__m256",
+   "params": [
+    "const float*"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_storeu_ps",
+   "ret": "void",
+   "params": [
+    "float*",
+    "__m256"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_loadu_pd",
+   "ret": "__m256d",
+   "params": [
+    "const double*"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_storeu_pd",
+   "ret": "void",
+   "params": [
+    "double*",
+    "__m256d"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm512_add_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_add_pd",
+   "ret": "__m512d",
+   "params": [
+    "__m512d",
+    "__m512d"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_sub_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_sub_pd",
+   "ret": "__m512d",
+   "params": [
+    "__m512d",
+    "__m512d"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_mul_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_mul_pd",
+   "ret": "__m512d",
+   "params": [
+    "__m512d",
+    "__m512d"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_div_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_div_pd",
+   "ret": "__m512d",
+   "params": [
+    "__m512d",
+    "__m512d"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_min_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_min_pd",
+   "ret": "__m512d",
+   "params": [
+    "__m512d",
+    "__m512d"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_max_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_max_pd",
+   "ret": "__m512d",
+   "params": [
+    "__m512d",
+    "__m512d"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_sqrt_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_sqrt_pd",
+   "ret": "__m512d",
+   "params": [
+    "__m512d"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_and_si512",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_or_si512",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_xor_si512",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_andnot_si512",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_add_epi8",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512bw"
+  },
+  {
+   "name": "_mm512_sub_epi8",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512bw"
+  },
+  {
+   "name": "_mm512_adds_epi8",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512bw"
+  },
+  {
+   "name": "_mm512_subs_epi8",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512bw"
+  },
+  {
+   "name": "_mm512_add_epi16",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512bw"
+  },
+  {
+   "name": "_mm512_sub_epi16",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512bw"
+  },
+  {
+   "name": "_mm512_adds_epi16",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512bw"
+  },
+  {
+   "name": "_mm512_subs_epi16",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512bw"
+  },
+  {
+   "name": "_mm512_add_epi32",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_sub_epi32",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_add_epi64",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_sub_epi64",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_mullo_epi16",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512bw"
+  },
+  {
+   "name": "_mm512_mullo_epi32",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_madd_epi16",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512bw"
+  },
+  {
+   "name": "_mm512_maddubs_epi16",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512bw"
+  },
+  {
+   "name": "_mm512_cvtps_epi32",
+   "ret": "__m512i",
+   "params": [
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_cvtepi32_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512i"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_cvttps_epi32",
+   "ret": "__m512i",
+   "params": [
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_set1_ps",
+   "ret": "__m512",
+   "params": [
+    "float"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_set1_pd",
+   "ret": "__m512d",
+   "params": [
+    "double"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_set1_epi32",
+   "ret": "__m512i",
+   "params": [
+    "int"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_setzero_ps",
+   "ret": "__m512",
+   "params": [],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_loadu_ps",
+   "ret": "__m512",
+   "params": [
+    "const float*"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_storeu_ps",
+   "ret": "void",
+   "params": [
+    "float*",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_loadu_pd",
+   "ret": "__m512d",
+   "params": [
+    "const double*"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_storeu_pd",
+   "ret": "void",
+   "params": [
+    "double*",
+    "__m512d"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm_fmadd_ps",
+   "ret": "__m128",
+   "params": [
+    "__m128",
+    "__m128",
+    "__m128"
+   ],
+   "feature": "fma"
+  },
+  {
+   "name": "_mm_fmadd_pd",
+   "ret": "__m128d",
+   "params": [
+    "__m128d",
+    "__m128d",
+    "__m128d"
+   ],
+   "feature": "fma"
+  },
+  {
+   "name": "_mm_fmsub_ps",
+   "ret": "__m128",
+   "params": [
+    "__m128",
+    "__m128",
+    "__m128"
+   ],
+   "feature": "fma"
+  },
+  {
+   "name": "_mm_fmsub_pd",
+   "ret": "__m128d",
+   "params": [
+    "__m128d",
+    "__m128d",
+    "__m128d"
+   ],
+   "feature": "fma"
+  },
+  {
+   "name": "_mm_fnmadd_ps",
+   "ret": "__m128",
+   "params": [
+    "__m128",
+    "__m128",
+    "__m128"
+   ],
+   "feature": "fma"
+  },
+  {
+   "name": "_mm_fnmadd_pd",
+   "ret": "__m128d",
+   "params": [
+    "__m128d",
+    "__m128d",
+    "__m128d"
+   ],
+   "feature": "fma"
+  },
+  {
+   "name": "_mm_fnmsub_ps",
+   "ret": "__m128",
+   "params": [
+    "__m128",
+    "__m128",
+    "__m128"
+   ],
+   "feature": "fma"
+  },
+  {
+   "name": "_mm_fnmsub_pd",
+   "ret": "__m128d",
+   "params": [
+    "__m128d",
+    "__m128d",
+    "__m128d"
+   ],
+   "feature": "fma"
+  },
+  {
+   "name": "_mm256_fmadd_ps",
+   "ret": "__m256",
+   "params": [
+    "__m256",
+    "__m256",
+    "__m256"
+   ],
+   "feature": "fma"
+  },
+  {
+   "name": "_mm256_fmadd_pd",
+   "ret": "__m256d",
+   "params": [
+    "__m256d",
+    "__m256d",
+    "__m256d"
+   ],
+   "feature": "fma"
+  },
+  {
+   "name": "_mm256_fmsub_ps",
+   "ret": "__m256",
+   "params": [
+    "__m256",
+    "__m256",
+    "__m256"
+   ],
+   "feature": "fma"
+  },
+  {
+   "name": "_mm256_fmsub_pd",
+   "ret": "__m256d",
+   "params": [
+    "__m256d",
+    "__m256d",
+    "__m256d"
+   ],
+   "feature": "fma"
+  },
+  {
+   "name": "_mm256_fnmadd_ps",
+   "ret": "__m256",
+   "params": [
+    "__m256",
+    "__m256",
+    "__m256"
+   ],
+   "feature": "fma"
+  },
+  {
+   "name": "_mm256_fnmadd_pd",
+   "ret": "__m256d",
+   "params": [
+    "__m256d",
+    "__m256d",
+    "__m256d"
+   ],
+   "feature": "fma"
+  },
+  {
+   "name": "_mm256_fnmsub_ps",
+   "ret": "__m256",
+   "params": [
+    "__m256",
+    "__m256",
+    "__m256"
+   ],
+   "feature": "fma"
+  },
+  {
+   "name": "_mm256_fnmsub_pd",
+   "ret": "__m256d",
+   "params": [
+    "__m256d",
+    "__m256d",
+    "__m256d"
+   ],
+   "feature": "fma"
+  },
+  {
+   "name": "_mm512_fmadd_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512",
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_fmadd_pd",
+   "ret": "__m512d",
+   "params": [
+    "__m512d",
+    "__m512d",
+    "__m512d"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_fmsub_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512",
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_fmsub_pd",
+   "ret": "__m512d",
+   "params": [
+    "__m512d",
+    "__m512d",
+    "__m512d"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_fnmadd_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512",
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_fnmadd_pd",
+   "ret": "__m512d",
+   "params": [
+    "__m512d",
+    "__m512d",
+    "__m512d"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_fnmsub_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512",
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_fnmsub_pd",
+   "ret": "__m512d",
+   "params": [
+    "__m512d",
+    "__m512d",
+    "__m512d"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_mask_add_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512",
+    "__mmask16",
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_maskz_add_ps",
+   "ret": "__m512",
+   "params": [
+    "__mmask16",
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_mask_sub_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512",
+    "__mmask16",
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_maskz_sub_ps",
+   "ret": "__m512",
+   "params": [
+    "__mmask16",
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_mask_mul_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512",
+    "__mmask16",
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_maskz_mul_ps",
+   "ret": "__m512",
+   "params": [
+    "__mmask16",
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_mask_div_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512",
+    "__mmask16",
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_maskz_div_ps",
+   "ret": "__m512",
+   "params": [
+    "__mmask16",
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_mask_max_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512",
+    "__mmask16",
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_maskz_max_ps",
+   "ret": "__m512",
+   "params": [
+    "__mmask16",
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_mask_min_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512",
+    "__mmask16",
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_maskz_min_ps",
+   "ret": "__m512",
+   "params": [
+    "__mmask16",
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_mask_blend_ps",
+   "ret": "__m512",
+   "params": [
+    "__mmask16",
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_maskz_loadu_ps",
+   "ret": "__m512",
+   "params": [
+    "__mmask16",
+    "const void*"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_mask_storeu_ps",
+   "ret": "void",
+   "params": [
+    "void*",
+    "__mmask16",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_scalef_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_getexp_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_rcp14_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_rsqrt14_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_reduce_add_ps",
+   "ret": "float",
+   "params": [
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_reduce_max_ps",
+   "ret": "float",
+   "params": [
+    "__m512"
+   ],
+   "feature": "avx512f"
+  },
+  {
+   "name": "_mm512_maskz_add_epi8",
+   "ret": "__m512i",
+   "params": [
+    "__mmask64",
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512bw"
+  },
+  {
+   "name": "_mm512_mask_add_epi8",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__mmask64",
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512bw"
+  },
+  {
+   "name": "_mm512_dpbusd_epi32",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512vnni"
+  },
+  {
+   "name": "_mm512_dpwssd_epi32",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512vnni"
+  },
+  {
+   "name": "_mm256_dpbusd_epi32",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avxvnni"
+  },
+  {
+   "name": "_mm512_popcnt_epi8",
+   "ret": "__m512i",
+   "params": [
+    "__m512i"
+   ],
+   "feature": "avx512bitalg"
+  },
+  {
+   "name": "_mm512_popcnt_epi32",
+   "ret": "__m512i",
+   "params": [
+    "__m512i"
+   ],
+   "feature": "avx512vpopcntdq"
+  },
+  {
+   "name": "_mm512_permutexvar_epi8",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512vbmi"
+  },
+  {
+   "name": "_mm512_madd52lo_epu64",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512ifma"
+  },
+  {
+   "name": "_mm512_cvtne2ps_pbh",
+   "ret": "__m512bh",
+   "params": [
+    "__m512",
+    "__m512"
+   ],
+   "feature": "avx512bf16"
+  },
+  {
+   "name": "_mm512_dpbf16_ps",
+   "ret": "__m512",
+   "params": [
+    "__m512",
+    "__m512bh",
+    "__m512bh"
+   ],
+   "feature": "avx512bf16"
+  },
+  {
+   "name": "_mm256_cvtph_ps",
+   "ret": "__m256",
+   "params": [
+    "__m128i"
+   ],
+   "feature": "f16c"
+  },
+  {
+   "name": "_mm256_cvtps_ph",
+   "ret": "__m128i",
+   "params": [
+    "__m256",
+    "const int"
+   ],
+   "feature": "f16c"
+  },
+  {
+   "name": "_mm_crc32_u32",
+   "ret": "unsigned int",
+   "params": [
+    "unsigned int",
+    "unsigned int"
+   ],
+   "feature": "sse4_2"
+  },
+  {
+   "name": "_mm_popcnt_u64",
+   "ret": "long long",
+   "params": [
+    "unsigned long long"
+   ],
+   "feature": "popcnt"
+  },
+  {
+   "name": "_pdep_u64",
+   "ret": "unsigned long long",
+   "params": [
+    "unsigned long long",
+    "unsigned long long"
+   ],
+   "feature": "bmi2"
+  },
+  {
+   "name": "_pext_u64",
+   "ret": "unsigned long long",
+   "params": [
+    "unsigned long long",
+    "unsigned long long"
+   ],
+   "feature": "bmi2"
+  },
+  {
+   "name": "_mm256_permutevar8x32_ps",
+   "ret": "__m256",
+   "params": [
+    "__m256",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_i32gather_ps",
+   "ret": "__m256",
+   "params": [
+    "const float*",
+    "__m256i",
+    "const int"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm256_maskload_ps",
+   "ret": "__m256",
+   "params": [
+    "const float*",
+    "__m256i"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_maskstore_ps",
+   "ret": "void",
+   "params": [
+    "float*",
+    "__m256i",
+    "__m256"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_blendv_ps",
+   "ret": "__m256",
+   "params": [
+    "__m256",
+    "__m256",
+    "__m256"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm256_movemask_ps",
+   "ret": "int",
+   "params": [
+    "__m256"
+   ],
+   "feature": "avx"
+  },
+  {
+   "name": "_mm_shuffle_epi8",
+   "ret": "__m128i",
+   "params": [
+    "__m128i",
+    "__m128i"
+   ],
+   "feature": "ssse3"
+  },
+  {
+   "name": "_mm256_shuffle_epi8",
+   "ret": "__m256i",
+   "params": [
+    "__m256i",
+    "__m256i"
+   ],
+   "feature": "avx2"
+  },
+  {
+   "name": "_mm512_shuffle_epi8",
+   "ret": "__m512i",
+   "params": [
+    "__m512i",
+    "__m512i"
+   ],
+   "feature": "avx512bw"
+  },
+  {
+   "name": "_tile_zero",
+   "ret": "void",
+   "params": [
+    "const int"
+   ],
+   "feature": "amx_tile"
+  },
+  {
+   "name": "_tile_release",
+   "ret": "void",
+   "params": [],
+   "feature": "amx_tile"
+  }
+ ]
+}

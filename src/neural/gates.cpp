@@ -3,17 +3,14 @@
 #include "retdec/utils/c_source_scan.h"
 
 #include <cctype>
-#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <iterator>
 #include <string>
 #include <system_error>
-#include <thread>
 #include <vector>
 
 #ifdef RETDEC_HAS_TREE_SITTER
@@ -21,22 +18,8 @@
 #include <tree_sitter/tree-sitter-c.h>
 #endif
 
-#if defined(_WIN32)
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#else
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <csignal>
-#include <sys/wait.h>
-#include <unistd.h>
-#endif
+#include <forge/os/fs.hpp>
+#include <forge/os/process.hpp>
 
 namespace retdec::neural {
 
@@ -60,68 +43,13 @@ struct ScopedTempDir
 	ScopedTempDir& operator=(const ScopedTempDir&) = delete;
 };
 
+/// A private (0700 / owner-only DACL) directory for the gate's source file.
+/// Empty when none could be made.
 fs::path createUniqueTempDir()
 {
-#if defined(_WIN32)
-	wchar_t tmp[MAX_PATH];
-	const DWORD n = GetTempPathW(MAX_PATH, tmp);
-	if (n == 0 || n >= MAX_PATH) return {};
-
-	const DWORD pid = GetCurrentProcessId();
-	const ULONGLONG ticks = GetTickCount64();
-	for (int i = 0; i < 256; ++i)
-	{
-		wchar_t name[MAX_PATH];
-		if (swprintf_s(name, L"%sretdec_gate_%lu_%llu_%d", tmp, static_cast<unsigned long>(pid), ticks, i) < 0)
-			return {};
-		if (CreateDirectoryW(name, nullptr)) return fs::path(name);
-		if (GetLastError() != ERROR_ALREADY_EXISTS) return {};
-	}
-	return {};
-#else
-	const fs::path tmpl = fs::temp_directory_path() / "retdec_gate_XXXXXX";
-	std::string s = tmpl.string();
-	std::vector<char> buf(s.begin(), s.end());
-	buf.push_back('\0');
-	if (!mkdtemp(buf.data())) return {};
-	const fs::path dir(buf.data());
-	::chmod(dir.c_str(), 0700);
-	return dir;
-#endif
-}
-
-#if defined(_WIN32)
-std::wstring utf8ToWide(const std::string& s)
-{
-	if (s.empty()) return {};
-	const int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
-	if (n <= 0) return {};
-	std::wstring w(static_cast<std::size_t>(n - 1), L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, w.data(), n);
-	return w;
-}
-
-std::wstring quoteWinArg(const std::wstring& a)
-{
-	if (a.find_first_of(L" \t\"") == std::wstring::npos) return a;
-	std::wstring out = L"\"";
-	for (wchar_t c: a)
-	{
-		if (c == L'"')
-			out += L"\"\"";
-		else
-			out += c;
-	}
-	out += L'"';
-	return out;
-}
-#endif
-
-std::string readAll(const fs::path& p)
-{
-	std::ifstream in(p, std::ios::binary);
-	if (!in) return {};
-	return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+	auto dir = forge::os::fs::make_temp_dir("retdec_gate_");
+	if (!dir) return {};
+	return fs::path(dir.value);
 }
 
 /// How long the gate waits for the compiler before killing it.
@@ -141,99 +69,29 @@ unsigned gateCompilerTimeoutMs()
 	return 20000;
 }
 
-bool spawnSyntaxOnlyCompiler(const char* cc, const fs::path& src, const fs::path& diagFile)
+/// Diagnostics beyond this are dropped: they go back into a model prompt.
+constexpr std::uint64_t kGateMaxDiagnostics = 1u << 20;
+
+/// Runs `cc -fsyntax-only -w <src>` through Forge's process layer: argv, no
+/// shell; stdin from the null device; stdout and stderr captured together
+/// into `diagnostics`; and bounded -- the C handed to this compiler is model
+/// output, so anything that makes the preprocessor block (an #include of a
+/// FIFO, a macro expansion bomb) would otherwise hang the decompiler. On the
+/// timeout Forge kills the whole process tree (process group / Job Object),
+/// so the cc1 the driver started goes too, not only the driver.
+bool spawnSyntaxOnlyCompiler(const char* cc, const fs::path& src, std::string* diagnostics)
 {
-#if defined(_WIN32)
-	const std::wstring wcc = utf8ToWide(cc);
-	const std::wstring cmd = quoteWinArg(wcc) + L" -fsyntax-only -w " + quoteWinArg(src.wstring());
-	std::vector<wchar_t> cmdline(cmd.begin(), cmd.end());
-	cmdline.push_back(L'\0');
+	forge::os::spawn_spec spec;
+	spec.argv = {cc, "-fsyntax-only", "-w", src.string()};
+	spec.merge_stderr = true;
+	spec.capture_stdout = true;
+	spec.max_output = kGateMaxDiagnostics;
+	spec.timeout_ms = gateCompilerTimeoutMs();
 
-	SECURITY_ATTRIBUTES sa{};
-	sa.nLength = sizeof(sa);
-	sa.bInheritHandle = TRUE;
-	HANDLE err = CreateFileW(
-		diagFile.empty() ? L"NUL" : diagFile.wstring().c_str(),
-		GENERIC_WRITE,
-		FILE_SHARE_READ | FILE_SHARE_WRITE,
-		&sa,
-		diagFile.empty() ? OPEN_EXISTING : CREATE_ALWAYS,
-		FILE_ATTRIBUTE_NORMAL,
-		nullptr);
-
-	STARTUPINFOW si{};
-	si.cb = sizeof(si);
-	si.dwFlags = STARTF_USESTDHANDLES;
-	if (err != INVALID_HANDLE_VALUE)
-	{
-		si.hStdOutput = err;
-		si.hStdError = err;
-		si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-	}
-
-	PROCESS_INFORMATION pi{};
-	const BOOL ok =
-		CreateProcessW(nullptr, cmdline.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
-	if (err != INVALID_HANDLE_VALUE) CloseHandle(err);
-	if (!ok) return false;
-
-	// Bounded. The C handed to this compiler is model output, so anything
-	// that makes the preprocessor block -- an #include of a FIFO, a macro
-	// expansion bomb -- used to hang the decompiler here permanently.
-	DWORD code = 1;
-	if (WaitForSingleObject(pi.hProcess, gateCompilerTimeoutMs()) != WAIT_OBJECT_0)
-	{
-		TerminateProcess(pi.hProcess, 1);
-		WaitForSingleObject(pi.hProcess, 5000);
-		CloseHandle(pi.hProcess);
-		CloseHandle(pi.hThread);
-		return false;
-	}
-	GetExitCodeProcess(pi.hProcess, &code);
-	CloseHandle(pi.hProcess);
-	CloseHandle(pi.hThread);
-	return code == 0;
-#else
-	const std::string srcPath = src.string();
-	const std::string errPath = diagFile.empty() ? std::string() : diagFile.string();
-	const pid_t pid = fork();
-	if (pid < 0) return false;
-	if (pid == 0)
-	{
-		int outfd = -1;
-		if (!errPath.empty()) outfd = open(errPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
-		if (outfd < 0) outfd = open("/dev/null", O_WRONLY);
-		if (outfd >= 0)
-		{
-			dup2(outfd, STDOUT_FILENO);
-			dup2(outfd, STDERR_FILENO);
-			close(outfd);
-		}
-		const char* argv[] = {cc, "-fsyntax-only", "-w", srcPath.c_str(), nullptr};
-		execvp(cc, const_cast<char* const*>(argv));
-		_exit(127);
-	}
-	// Bounded, for the reason above: `waitpid(pid, &status, 0)` waited for as
-	// long as the refinement output told it to. Measured: a refinement that
-	// includes a FIFO never returned, and the cc1 child had to be killed by
-	// hand.
-	int status = 0;
-	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(gateCompilerTimeoutMs());
-	for (;;)
-	{
-		const pid_t r = waitpid(pid, &status, WNOHANG);
-		if (r < 0) return false;
-		if (r == pid) break;
-		if (std::chrono::steady_clock::now() >= deadline)
-		{
-			kill(pid, SIGKILL);
-			waitpid(pid, &status, 0);
-			return false;
-		}
-		std::this_thread::sleep_for(std::chrono::milliseconds(5));
-	}
-	return WIFEXITED(status) && WEXITSTATUS(status) == 0;
-#endif
+	const auto r = forge::os::spawn_wait(spec);
+	if (!r) return false;
+	if (diagnostics) *diagnostics = r.value.out;
+	return !r.value.timed_out && !r.value.cancelled && r.value.exit_code == 0;
 }
 
 const char* gateCompiler()
@@ -364,10 +222,7 @@ bool tryCompileCheck(const std::string& sourceC, std::string* diagnostics)
 		if (!out) return false;
 	}
 
-	const fs::path diag = dir / "gate.err";
-	const bool ok = spawnSyntaxOnlyCompiler(gateCompiler(), src, diag);
-	if (diagnostics) *diagnostics = readAll(diag);
-	return ok;
+	return spawnSyntaxOnlyCompiler(gateCompiler(), src, diagnostics);
 }
 
 bool tryCompileCheck(const std::string& sourceC)

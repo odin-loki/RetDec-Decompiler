@@ -22,6 +22,7 @@
 
 #include "llvmir2hll/llvm/llvmir2bir_converter_tests/base_tests.h"
 #include "retdec/llvmir2hll/analysis/alias_analysis/alias_analyses/simple_alias_analysis.h"
+#include "retdec/llvmir2hll/analysis/used_vars_visitor.h"
 #include "retdec/llvmir2hll/analysis/value_analysis.h"
 #include "retdec/llvmir2hll/evaluator/arithm_expr_evaluators/strict_arithm_expr_evaluator.h"
 #include "retdec/llvmir2hll/hll/hll_writers/c_hll_writer.h"
@@ -1186,6 +1187,132 @@ TEST_F(OptimizerManagerPipelineTests, AndKeepsItThroughThePipeline)
 	EXPECT_THAT(emitC(module), Not(HasSubstr("(void * *)0x4025")));
 }
 
+
+/// The loop CC-01 reports `'v3' undeclared` on, from
+/// generated_float_newton_sqrt-gcc-O2 (and -O3), reduced to the one function.
+///
+/// The header 10a5 computes the next estimate `%5 = 0.5 * (2 / x + x)` and
+/// tests `fabs(%5 - x)`; the latch 10a0 stores %5 back into x; and the exit
+/// block 10d1 uses %5 -- not x -- on both of its incoming edges. The emitted C
+/// was
+///
+///     while (fabs(v1 - v3) >= 1.0e-12 && v2 != 1) {
+///         v1 = 0.5 * (2.0 / v1 + v1);
+///         ...
+///     }
+///     float64_t v4 = 1000.0 * v1;
+///
+/// with v3 (= %5) declared nowhere: its definition had been folded into the
+/// latch store while the loop condition still read it, and the exit block
+/// read the old x where the IR reads the new one.
+constexpr const char* kNewtonSqrtFunction1060 = R"(source_filename = "test"
+target datalayout = "e-m:e-p:64:64-i64:64-f80:128-n8:16:32:64-S128"
+
+@global_var_2004 = constant [4 x i8] c"%d\0A\00"
+
+define i64 @function_1060() {
+dec_label_pc_1060:
+  %rax.0.reg2mem = alloca i64, align 8, !insn.addr !11
+  %.reg2mem = alloca double, align 8, !insn.addr !11
+  store double 2.000000e+00, ptr %.reg2mem, align 8, !retdec.pointee !12, !insn.addr !13
+  store i64 24, ptr %rax.0.reg2mem, align 8, !retdec.pointee !2, !insn.addr !13
+  br label %dec_label_pc_10a5, !insn.addr !13
+
+dec_label_pc_10a0:
+  %rax.0.reload = load i64, ptr %rax.0.reg2mem, align 8, !retdec.pointee !2
+  %0 = add nuw nsw i64 %rax.0.reload, 4294967295
+  %1 = icmp eq i64 %rax.0.reload, 1
+  %2 = urem i64 %0, 4294967296
+  store double %5, ptr %.reg2mem, align 8, !retdec.pointee !12, !insn.addr !14
+  store i64 %2, ptr %rax.0.reg2mem, align 8, !retdec.pointee !2, !insn.addr !14
+  br i1 %1, label %dec_label_pc_10d1, label %dec_label_pc_10a5, !insn.addr !14
+
+dec_label_pc_10a5:
+  %.reload = load double, ptr %.reg2mem, align 8, !retdec.pointee !12
+  %3 = fdiv double 2.000000e+00, %.reload, !insn.addr !15
+  %4 = fadd double %3, %.reload, !insn.addr !16
+  %5 = fmul double %4, 5.000000e-01, !insn.addr !17
+  %6 = fsub double %5, %.reload, !insn.addr !18
+  %.i07 = call double @llvm.fabs.f64(double %6)
+  %7 = fcmp uge double %.i07, 0x3D719799812DEA11
+  br i1 %7, label %dec_label_pc_10a0, label %dec_label_pc_10d1, !insn.addr !19
+
+dec_label_pc_10d1:
+  %8 = fmul double %5, 1.000000e+03, !insn.addr !20
+  %9 = fcmp olt double %8, 0x41E0000000000000, !insn.addr !21
+  %10 = fcmp oge double %8, 0xC1E0000000000000, !insn.addr !21
+  %11 = and i1 %10, %9, !insn.addr !21
+  %12 = fptosi double %8 to i32
+  %13 = zext i32 %12 to i64
+  %14 = select i1 %11, i64 %13, i64 2147483648
+  %15 = call i32 (i32, ptr, ...) @__printf_chk(i32 2, ptr nonnull @global_var_2004, i64 %14), !insn.addr !22
+  ret i64 0, !insn.addr !23
+}
+
+declare i32 @__printf_chk(i32, ptr, ...)
+
+declare double @llvm.fabs.f64(double)
+
+!2 = !{!"i64"}
+!11 = !{i64 4192}
+!12 = !{!"double"}
+!13 = !{i64 4245}
+!14 = !{i64 4259}
+!15 = !{i64 4269}
+!16 = !{i64 4273}
+!17 = !{i64 4277}
+!18 = !{i64 4285}
+!19 = !{i64 4303}
+!20 = !{i64 4305}
+!21 = !{i64 4327}
+!22 = !{i64 4331}
+!23 = !{i64 4342})";
+
+namespace {
+
+/// Every local variable read or written in a function's body that the
+/// function does not own -- what gcc reports as `'vN' undeclared`.
+StringSet undeclaredLocals(ShPtr<Module> m)
+{
+	StringSet bad;
+	for (auto i = m->func_definition_begin(); i != m->func_definition_end(); ++i)
+	{
+		const auto& func = *i;
+		const auto owned = func->getLocalVars(true);
+		auto used = UsedVarsVisitor::getUsedVars(func->getBody());
+		for (const auto& var: used->getAllVars())
+		{
+			if (owned.count(var) || m->isGlobalVar(var) || m->getFuncByName(var->getName()))
+			{
+				continue;
+			}
+			bad.insert(func->getName() + ":" + var->getName());
+		}
+	}
+	return bad;
+}
+
+} // namespace
+
+TEST_F(OptimizerManagerPipelineTests, NewtonSqrtLoopConditionKeepsItsVariableDeclared)
+{
+	auto module = convertLLVMIR2BIR(kNewtonSqrtFunction1060);
+	ASSERT_TRUE(module);
+	ASSERT_TRUE(undeclaredLocals(module).empty()) << "undeclared straight out of the converter";
+
+	runPipeline(module);
+
+	const auto code = emitC(module);
+	const auto bad = undeclaredLocals(module);
+	EXPECT_TRUE(bad.empty()) << "uses " << (bad.empty() ? std::string() : *bad.begin()) << " without declaring it:\n"
+							 << code;
+
+	// Declared is not the same as right. With the stale reads fixed and
+	// nothing else, the temporary was substituted away and the exit test
+	// became `fabs(x - x)`, folded to a constant: a loop that never converges
+	// and prints the guess from one step too early.
+	EXPECT_THAT(code, Not(HasSubstr("fabs_f64(0.0)"))) << code;
+}
 
 } // namespace tests
 } // namespace llvmir2hll

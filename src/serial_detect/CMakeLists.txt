@@ -11,7 +11,7 @@ target_include_directories(retdec-serial-detect
 )
 
 set_target_properties(retdec-serial-detect PROPERTIES
-    CXX_STANDARD          17
+    CXX_STANDARD          23
     CXX_STANDARD_REQUIRED YES
 )
 

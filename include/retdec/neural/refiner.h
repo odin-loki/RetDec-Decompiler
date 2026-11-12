@@ -42,7 +42,7 @@ std::string buildRefinementPrompt(const RefinementRequest& request);
 /// Keys/values must be C identifiers. Word-boundary only; skips C keywords.
 std::string applyJsonRenameMap(const std::string& source, const std::string& jsonObject);
 
-/// GBNF that forces a JSON rename-map object (llama_sampler_init_grammar).
+/// GBNF that forces a JSON rename-map object (Forge inference::grammar).
 const char* namingRenameMapGbnf();
 
 class Refiner {

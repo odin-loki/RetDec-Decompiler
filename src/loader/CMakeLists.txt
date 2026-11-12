@@ -16,7 +16,7 @@ add_library(loader STATIC
 )
 add_library(retdec::loader ALIAS loader)
 
-target_compile_features(loader PUBLIC cxx_std_17)
+target_compile_features(loader PUBLIC cxx_std_23)
 
 target_include_directories(loader
 	PUBLIC

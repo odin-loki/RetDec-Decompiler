@@ -21,7 +21,7 @@ add_executable(retdec-fileformat-tests
     raw_data_format_tests.cpp
 )
 
-target_compile_features(retdec-fileformat-tests PRIVATE cxx_std_17)
+target_compile_features(retdec-fileformat-tests PRIVATE cxx_std_23)
 
 # The format tests include "fileformat/fileformat_tests.h" relative to tests/.
 target_include_directories(retdec-fileformat-tests PRIVATE ${PROJECT_SOURCE_DIR}/tests)

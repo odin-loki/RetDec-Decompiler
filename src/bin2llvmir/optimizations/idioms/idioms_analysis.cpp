@@ -22,7 +22,11 @@ namespace bin2llvmir {
  * @param exchanger instruction idiom exchanger
  * @param fname instruction idiom exchanger name (for debug purpose only)
  */
-bool IdiomsAnalysis::analyse(llvm::BasicBlock & bb, llvm::Instruction * (IdiomsAnalysis::*exchanger)(llvm::BasicBlock::iterator) const, const char * fname) {
+bool IdiomsAnalysis::analyseWith(
+	llvm::BasicBlock& bb,
+	const std::function<llvm::Instruction*(llvm::BasicBlock::iterator)>& exchanger,
+	const char* fname)
+{
 	bool change_made = false;
 
 	for (BasicBlock::iterator iter = bb.begin(), end = bb.end(); iter != end; /**/) {
@@ -30,7 +34,7 @@ bool IdiomsAnalysis::analyse(llvm::BasicBlock & bb, llvm::Instruction * (IdiomsA
 		++iter; // go to next instruction to use valid iterator in next loop
 
 		// call exchanger on every instruction
-		Instruction * res = (this->*exchanger)(insn);
+		Instruction* res = exchanger(insn);
 
 		if (res) {
 			change_made = true;

@@ -20,17 +20,17 @@ Paths are relative to the **repository root**. See [docs/BUILD_REFERENCE.md](../
 |--------|------|
 | `retdec-paths.ps1` | Dot-source: `Get-RetDecRepoRoot`, `Get-RetDecBuildDir`, VS Dev Shell |
 | `build-install-run-windows.ps1` | `cmake --preset`, build, install, run `retdec-decompiler` / GUI / tests |
-| `windows_native_configure.ps1` | Toolchain env + `cmake --preset full-windows-release` (Qt6 required; `RETDEC_ENABLE_CUDA_ACCEL` stays OFF unless you pass it ON; `-NoCuda` skips the NVCC probe) |
+| `windows_native_configure.ps1` | Toolchain env + `cmake --preset full-windows-release` (GUI vendored, nothing to find; `-NoGui` for CLI-only; `RETDEC_ENABLE_CUDA_ACCEL` stays OFF unless you pass it ON; `-NoCuda` skips the NVCC probe) |
 | `windows_native_build.ps1` | Build, `cmake --install` → `install/windows/`, stage `dist/windows/` |
 | `windows_prepare_debuggable_gui.ps1` | PDB / debuggable GUI bundle |
-| `run-gui-headless-debug.ps1` | Qt offscreen + `RETDEC_GUI_HEADLESS` |
+| `run-gui-headless-debug.ps1` | `RETDEC_GUI_HEADLESS=1` + `--headless` (no OS window) |
 | `run-qwen3-trace.ps1` | leftover wrapper for withdrawn `retdec-qwen3-runner` (does not ship). Neural path is `RETDEC_NEURAL_REFINE` |
 | `Install-RetdecWindowsDeps.ps1` | winget dependency check |
 | `Test-RetdecWindows.ps1` | Smoke tests against a dist folder |
 | `run_gui_with_procdump.ps1` / `windows_analyze_crash_dump.ps1` | Crash capture |
 | `profile_all.bat` | Baseline/verbose decompile profiling; defaults to `dist\windows`, falls back to `build-win\win-runtime` (`DECOMPILER_DIR` overrides) |
 | `compile/*.{cmd,bat}` | MSVC incremental capstone2llvmir compile/run helpers only ([compile/README.md](compile/README.md)); not CI |
-| `install-licence-files.sh` | Split monolithic `LICENSE` → `LICENSE-AGPL`, `LICENSE-COMMERCIAL`, `NOTICE` |
+| `install-licence-files.sh` | Split monolithic `LICENSE` → `LICENSE-AGPL`, `LICENSE-COMMERCIAL`, `NOTICE`; writes `LICENSE-THIRD-PARTY` from the vendored `third_party/` licence texts (`--third-party-only` for just that) |
 | `superbuild-build-all-windows.ps1` | Superbuild (MSVC): configure+build `superbuild-debug` and `superbuild-release` → `build\windows\<preset>\` |
 
 ## Linux / WSL
@@ -55,7 +55,7 @@ Paths are relative to the **repository root**. See [docs/BUILD_REFERENCE.md](../
 | `build-linux-installer.sh` | `cmake --install` + portable tarball (optional AppImage when `APPIMAGE=1` / `.deb` when `fpm` is present) |
 | `install-linux.sh` | User wrapper: build+package or install from a tarball |
 | `make-appimage.sh` | Wrap a staged Linux tree as an AppImage |
-| `standalone_check.sh` | LLVM-free compile + gtest shim (`docs/STANDALONE_CHECK.md`) |
+| `standalone_check.sh` | LLVM-free compile + gtest shim, plus `retdec-gui-tests` via `cmake/gui_standalone` when libgtest is installed (`docs/STANDALONE_CHECK.md`) |
 | `standalone_fuzz.sh` | Same idea for libFuzzer harnesses |
 
 ## macOS
@@ -94,7 +94,7 @@ Paths are relative to the **repository root**. See [docs/BUILD_REFERENCE.md](../
 | Script / workflow | Role |
 |--------|------|
 | `ci/benchmark_rename_guard.sh` | B6: decompile named vs SHA-256-renamed corpus copies; fail if detections appear only on the named file |
-| `doctor.ps1` / `doctor.sh` | Read-only prerequisite check: CMake 3.26+, fetch-large-files marker, Qt6 hint, git-lfs, python3; Windows also checks NSIS/makensis and EnVar |
+| `doctor.ps1` / `doctor.sh` | Read-only prerequisite check: CMake 3.26+, a C++23 compiler, fetch-large-files marker, git-lfs, python3; Windows also checks NSIS/makensis and EnVar |
 | `fetch-large-files.ps1` / `fetch-large-files.sh` | Download support files omitted from git (~60 MiB; required before first build). Use `bash scripts/fetch-large-files.sh` when `.sh` is not executable |
 | `.github/workflows/ci-smoke.yml` | Lightweight CI on every push/PR: fetch-large-files, format, CMake/docs checks, ship checklist (no LLVM compile) |
 | `validate_pipeline_json.py` | Validate pipeline JSON against `docs/pipeline_builder_schema.json` (`python3 scripts/validate_pipeline_json.py --all-profiles`) |
@@ -114,7 +114,6 @@ Paths are relative to the **repository root**. See [docs/BUILD_REFERENCE.md](../
 | `ci/check_elf_hardening.py` | QUAL-08: RELRO/PIE/NX/canary-style ELF hardening on shipped Linux binaries |
 | `ci/check_doc_vs_code.py` | E9 / CI-03: advertised tokens in public docs must resolve in the tree |
 | `ci/check_macos_bundle.py` | MAC-01 relocatable RetDec.app / `retdec-gui.app` (see macOS section) |
-| `ci/check_qt_dynamic_link.py` | LGPL: refuse `find_package(Qt6 STATIC …)` |
 | `ci/check_cmake_presets.py` | Presets sharing a binary dir must set the same cache-variable key set |
 | `ci/check_workflow_yaml.py` | Every workflow parses; no duplicate keys |
 | `ci/generate_cyclonedx.py` | CycloneDX SBOM from CMake pins |

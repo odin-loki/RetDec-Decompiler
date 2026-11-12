@@ -55,8 +55,8 @@ Out of scope:
   Recovered C is data. Optional neural refinement never **executes**
   decompiled C; the compile gate is `cc`/`gcc -fsyntax-only`.
 - Use `RETDEC_NO_NETWORK=1` for air-gapped analysis; neural refinement
-  uses local llama.cpp only when `RETDEC_ENABLE_LLAMACPP` was built and
-  `RETDEC_NEURAL_REFINE=1`.
+  uses the local Forge backend only when `RETDEC_ENABLE_NEURAL` was built
+  and `RETDEC_NEURAL_REFINE=1`.
 - Release blobs on GitHub may carry keyless Sigstore
   `.sigstore.json` bundles. Authenticode is not applied. macOS
   `RetDec.app` is ad-hoc signed, not notarised.

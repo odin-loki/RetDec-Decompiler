@@ -9,7 +9,6 @@ on:
 
 env:
   RETDEC_GUI_HEADLESS: "1"
-  QT_QPA_PLATFORM: offscreen
 
 # A push on top of a push leaves the older run building for another
 # forty minutes on a result nobody will read. standalone-check has had
@@ -56,18 +55,6 @@ jobs:
             ninja-build \
             python3 \
             python3-yaml \
-            qt6-base-dev \
-            qt6-base-dev-tools \
-            libqt6svg6-dev \
-            libgl1-mesa-dev \
-            libxkbcommon-dev \
-            libxcb-cursor0 \
-            libxcb-icccm4 \
-            libxcb-image0 \
-            libxcb-keysyms1 \
-            libxcb-render-util0 \
-            libxcb-xinerama0 \
-            libxcb-xfixes0 \
             clang-tidy \
             llvm
 
@@ -124,6 +111,7 @@ jobs:
           retdec-decompiler-runtime-share
           retdec-decompiler-corpus-fixtures
           retdec-gui-decompiler-staging
+          parallel_decompile_check
 
       - name: QUAL-08 ELF hardening (readelf)
         run: python3 scripts/ci/check_elf_hardening.py build/linux

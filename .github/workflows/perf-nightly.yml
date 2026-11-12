@@ -10,7 +10,14 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 360
     steps:
+      # The bundled OpenSSL is built from the openssl-src submodule. Without
+      # it, and without the bootstrap step below, configure stops at
+      # deps/openssl/CMakeLists.txt ("Bundled OpenSSL is not bootstrapped"),
+      # which is where every scheduled run of this job ended. Same steps as
+      # ctest-windows.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
 
       - name: Fetch large support files
         shell: pwsh
@@ -35,6 +42,17 @@ jobs:
           key: perf-windows-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}
           restore-keys: |
             perf-windows-${{ runner.os }}-
+
+      - name: Cache OpenSSL vendored bundle
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: deps/openssl/vendored/bundle
+          key: openssl-vendored-bundle-${{ hashFiles('scripts/bootstrap_openssl_bundle.cmake', 'deps/openssl/vendored/wrapper/**', '.gitmodules') }}-${{ hashFiles('deps/openssl/vendored/openssl-src/VERSION.dat') }}
+          restore-keys: openssl-vendored-bundle-
+
+      - name: Bootstrap bundled OpenSSL (if needed)
+        shell: pwsh
+        run: cmake -P scripts/bootstrap_openssl_bundle.cmake
 
       - name: Configure (core-debug-msvc, CPU-only)
         shell: pwsh

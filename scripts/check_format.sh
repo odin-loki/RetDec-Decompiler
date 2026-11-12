@@ -178,7 +178,14 @@ if ! clang-format --dump-config >/dev/null; then
   exit 1
 fi
 
-is_source() { [[ "$1" =~ \.(cpp|h|hpp|cc|c|cu)$ ]]; }
+# tests/<suite>/data/ holds fixtures -- inputs a test reads or compares byte for
+# byte, such as tests/gui/data/main_window/fixture.c, which stands in for real
+# retdec-decompiler output (its style and line numbers are the point). They are
+# not this project's code to format.
+is_source() {
+  [[ "$1" == tests/*/data/* ]] && return 1
+  [[ "$1" =~ \.(cpp|h|hpp|cc|c|cu)$ ]]
+}
 
 MODE=changed
 FIX=0

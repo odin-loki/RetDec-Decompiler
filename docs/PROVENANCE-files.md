@@ -1,16 +1,16 @@
 # Generated provenance summary
 
 Produced by `scripts/ci/generate_provenance.py`. Do not hand-edit.
-Scanned `4102` C/C++ files under `src/`, `include/`, `tests/`.
+Scanned `3339` C/C++ files under `src/`, `include/`, `tests/`.
 
 | Class | Count |
 |-------|------:|
-| `avast-mit` | 1941 |
+| `avast-mit` | 1939 |
 | `pelib-porst` | 25 |
-| `imortek-or-undated` | 2136 |
+| `imortek-or-undated` | 1375 |
 | `rewrite-tell-leftover` | 0 |
 
-Odin-only files in known-upstream modules: **178** (Imortek additions inside Avast directories, or undated headers).
+Odin-only files in known-upstream modules: **226** (Imortek additions inside Avast directories, or undated headers).
 
 ## Rewrite-tell leftovers (must be zero)
 
@@ -31,13 +31,36 @@ None.
 - `src/bin2llvmir/optimizations/simple_types/simple_types_fp_ext.h`
 - `src/bin2llvmir/optimizations/strength_reduction/strength_reduction.cpp`
 - `src/bin2llvmir/optimizations/struct_recovery/struct_recovery.cpp`
+- `src/bin2llvmir/optimizations/syscalls/powerpc.cpp`
 - `src/bin2llvmir/optimizations/tail_calls/tail_calls.cpp`
 - `src/bin2llvmir/optimizations/x87_fpu/x87_fpu_ext.cpp`
+- `src/bin2llvmir/providers/abi/riscv.cpp`
+- `src/bin2llvmir/providers/abi/riscv64.cpp`
+- `src/bin2llvmir/providers/abi/sparc.cpp`
+- `src/bin2llvmir/providers/abi/sparc64.cpp`
+- `src/bin2llvmir/providers/abi/sysz.cpp`
+- `src/bin2llvmir/providers/abi/xcore.cpp`
+- `src/bin2llvmir/providers/calling_convention/riscv/riscv_conv.cpp`
 - `src/bin2llvmir/utils/ctypes2llvm.cpp`
 - `src/capstone2llvmir/arm/arm_thumb_interwork.cpp`
 - `src/capstone2llvmir/arm64/arm64_fp_ext.cpp`
+- `src/capstone2llvmir/arm64/arm64_sve2.cpp`
+- `src/capstone2llvmir/capstone6_compat.h`
+- `src/capstone2llvmir/riscv/riscv.cpp`
+- `src/capstone2llvmir/riscv/riscv_impl.h`
+- `src/capstone2llvmir/riscv/riscv_init.cpp`
+- `src/capstone2llvmir/sparc/sparc.cpp`
+- `src/capstone2llvmir/sparc/sparc_impl.h`
+- `src/capstone2llvmir/sparc/sparc_init.cpp`
+- `src/capstone2llvmir/sysz/sysz.cpp`
+- `src/capstone2llvmir/sysz/sysz_impl.h`
+- `src/capstone2llvmir/sysz/sysz_init.cpp`
 - `src/capstone2llvmir/x86/x86_avx512.cpp`
 - `src/capstone2llvmir/x86/x86_sse.cpp`
+- `src/capstone2llvmir/x86/x86_sys.cpp`
+- `src/capstone2llvmir/xcore/xcore.cpp`
+- `src/capstone2llvmir/xcore/xcore_impl.h`
+- `src/capstone2llvmir/xcore/xcore_init.cpp`
 - `src/fileformat/file_format/pe/pe_dll_list.cpp`
 - `src/fileformat/lattice/format_lattice.cpp`
 - `src/fileformat/lief_adapter.cpp`
@@ -47,6 +70,7 @@ None.
 - `src/llvmir2hll/analysis/alias_analysis/alias_analyses/simple_alias_analysis_ext.cpp`
 - `src/llvmir2hll/analysis/loop_bound_jump_analysis.cpp`
 - `src/llvmir2hll/llvm/llvm_intrinsic_converter_ext.cpp`
+- `src/llvmir2hll/llvm/llvmir2bir_converter/irreducible_cycle_splitter.cpp`
 - `src/llvmir2hll/llvmir2hll.cpp`
 - `src/llvmir2hll/optimizer/optimizers/cast_simplifier_optimizer.cpp`
 - `src/llvmir2hll/optimizer/optimizers/char_array_to_string_optimizer.cpp`
@@ -74,27 +98,4 @@ None.
 - `src/retdec-decompiler/output_lang.cpp`
 - `src/retdec-decompiler/output_lang.h`
 - `src/serdes/semantic_detection.cpp`
-- `src/unpackertool/main.cpp`
-- `src/utils/crc32.cpp`
-- `src/utils/gpu_scanner_cpu.cpp`
-- `src/utils/version.cpp`
-- `include/retdec/bin2llvmir/optimizations/cond_branch_opt/cond_branch_opt_ext.h`
-- `include/retdec/bin2llvmir/optimizations/global_const_prop/global_const_prop.h`
-- `include/retdec/bin2llvmir/optimizations/idioms/idioms_ext.h`
-- `include/retdec/bin2llvmir/optimizations/inst_opt/inst_opt_ext.h`
-- `include/retdec/bin2llvmir/optimizations/inst_opt_rda/inst_opt_rda_ext.h`
-- `include/retdec/bin2llvmir/optimizations/jump_table_recovery/jump_table_recovery.h`
-- `include/retdec/bin2llvmir/optimizations/phi_to_select/phi_to_select.h`
-- `include/retdec/bin2llvmir/optimizations/redundant_load_store/redundant_load_store.h`
-- `include/retdec/bin2llvmir/optimizations/simple_types/simple_types_fp_ext.h`
-- `include/retdec/bin2llvmir/optimizations/strength_reduction/strength_reduction.h`
-- `include/retdec/bin2llvmir/optimizations/struct_recovery/struct_recovery.h`
-- `include/retdec/bin2llvmir/optimizations/tail_calls/tail_calls.h`
-- `include/retdec/capstone2llvmir/arm/arm_thumb_interwork.h`
-- `include/retdec/common/semantic_detection.h`
-- `include/retdec/fileformat/lattice/format_lattice.h`
-- `include/retdec/fileformat/lattice/format_result.h`
-- `include/retdec/fileformat/lief_adapter.h`
-- `include/retdec/fileformat/types/certificate_table/certificate.h`
-- `include/retdec/fileformat/types/certificate_table/certificate_table.h`
-- … 98 more
+- … 146 more
