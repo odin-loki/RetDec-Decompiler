@@ -47,7 +47,7 @@ set(RETDEC_SUPERBUILD_BUILD_TYPE
 
 # ─── Options ──────────────────────────────────────────────────────────────────
 option(RETDEC_SUPERBUILD_ENABLE_RETDEC_CORE "Build RetDec core from this repo"         ON)
-option(RETDEC_SUPERBUILD_ENABLE_QT_GUI      "Build Qt6 GUI component"                  ON)
+option(RETDEC_SUPERBUILD_ENABLE_GUI         "Build retdec-gui (FuseUI, vendored)"      ON)
 option(RETDEC_SUPERBUILD_ENABLE_CUDA_LAYER "Parked CUDA stub (not product)"            OFF)
 option(RETDEC_SUPERBUILD_ENABLE_ML_FRAMEWORK "Parked ML stub (not src/qwen3; C-QWEN3-GPU withdrawn)" OFF)
 option(RETDEC_SUPERBUILD_ENABLE_TESTS       "Build unit/integration tests in RetDec core" ON)
@@ -102,6 +102,9 @@ if(RETDEC_SUPERBUILD_ENABLE_RETDEC_CORE)
             # Do not pass individual RETDEC_ENABLE_* here: that turns RETDEC_ENABLE_ALL OFF and
             # leaves retdec-decompiler dependencies (e.g. ar-extractor) disabled — see cmake/options.cmake.
             -DRETDEC_ENABLE_ALL:BOOL=ON
+            # The real GUI (src/gui, FuseUI + Forge from third_party/) is part
+            # of the core tree; it installs bin/retdec-gui and share/retdec/gui.
+            -DRETDEC_GUI:BOOL=${RETDEC_SUPERBUILD_ENABLE_GUI}
         BUILD_ALWAYS OFF
         STEP_TARGETS build install
         LOG_CONFIGURE ON
@@ -123,11 +126,24 @@ if(RETDEC_SUPERBUILD_ENABLE_ML_FRAMEWORK)
     add_subdirectory(stubs/retdec-ml)
 endif()
 
-# ─── 4. retdec-gui (Qt6 GUI application) ──────────────────────────────────────
-# Produces: retdec-gui executable installed to bin/.
-# Falls back to a no-op stub when Qt6 is not available.
-if(RETDEC_SUPERBUILD_ENABLE_QT_GUI)
-    add_subdirectory(stubs/retdec-gui)
+# ─── 4. retdec-gui (FuseUI) ───────────────────────────────────────────────────
+# With retdec-core enabled the GUI is built inside it (RETDEC_GUI above). Without
+# it, build the same GUI on its own from cmake/gui_standalone -- FuseUI and Forge
+# only, no LLVM -- and install bin/retdec-gui and share/retdec/gui.
+if(RETDEC_SUPERBUILD_ENABLE_GUI AND NOT RETDEC_SUPERBUILD_ENABLE_RETDEC_CORE)
+    ExternalProject_Add(retdec-gui
+        SOURCE_DIR "${RETDEC_SUPERBUILD_SOURCE_DIR}/cmake/gui_standalone"
+        BINARY_DIR "${CMAKE_BINARY_DIR}/retdec-gui-build"
+        INSTALL_DIR "${RETDEC_SUPERBUILD_INSTALL_PREFIX}"
+        CMAKE_ARGS
+            ${_COMMON_CMAKE_ARGS}
+            -DRETDEC_GUI_STANDALONE_TESTS:BOOL=${RETDEC_SUPERBUILD_ENABLE_TESTS}
+        BUILD_ALWAYS OFF
+        STEP_TARGETS build install
+        LOG_CONFIGURE ON
+        LOG_BUILD ON
+        LOG_INSTALL ON
+    )
 endif()
 
 # ─── Aggregate convenience target ─────────────────────────────────────────────
@@ -147,6 +163,7 @@ endforeach()
 #   lib/        — libretdec-*.a / .so, libretdec-cuda-accel.a, libretdec-ml.a
 #   include/    — public headers (retdec/, retdec/cuda_accel/, retdec/ml/)
 #   share/retdec/ — support data, YARA signatures, patterns, config files
+#   share/retdec/gui/ — retdec-gui resources (FuseUI themes, fonts, presets)
 message(STATUS "RetDec superbuild install prefix: ${RETDEC_SUPERBUILD_INSTALL_PREFIX}")
 message(STATUS "  bin/       → ${RETDEC_SUPERBUILD_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}")
 message(STATUS "  lib/       → ${RETDEC_SUPERBUILD_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")

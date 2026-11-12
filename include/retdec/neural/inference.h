@@ -1,6 +1,6 @@
 /**
  * @file include/retdec/neural/inference.h
- * @brief Neural inference interface (llama.cpp backend + mock for tests).
+ * @brief Neural inference interface (Forge backend + mock for tests).
  */
 
 #ifndef RETDEC_NEURAL_INFERENCE_H
@@ -19,7 +19,7 @@ struct GenerationConfig
 	float minP = 0.0f;
 	int topK = 20;
 	int maxTokens = 512;
-	/// Sampler seed. 0 is a deterministic seed (not llama's random default).
+	/// Sampler seed. 0 is a deterministic seed, like any other value.
 	unsigned seed = 0;
 	bool thinkingMode = false;
 	/// Keep shared prompt-prefix KV between generate() calls on the same function.
@@ -36,8 +36,9 @@ struct GenerationResult
 	int tokensGenerated = 0;
 	bool ok = false;
 	std::string error;
-	/// Mean selected-token probability after sampler apply (N17). Unset if
-	/// the backend did not observe post-sampler `llama_token_data.p`.
+	/// Mean selected-token probability after the whole sampler chain
+	/// (grammar, top-k/p, min-p, temperature) (N17). Unset if the backend did
+	/// not observe the post-sampler distribution.
 	bool hasTokenProb = false;
 	float meanTokenProb = 0.0f;
 };
@@ -46,7 +47,9 @@ class Inference {
 public:
 	virtual ~Inference() = default;
 
-	virtual bool loadModel(const std::string& ggufPath, int contextLen = 16384) = 0;
+	/// `modelPath` is a Forge `.fpk`, a `.gguf` or a Hugging Face model
+	/// directory (the last two are imported once into Forge's model cache).
+	virtual bool loadModel(const std::string& modelPath, int contextLen = 16384) = 0;
 	virtual void unloadModel() = 0;
 	virtual bool isLoaded() const = 0;
 
@@ -54,7 +57,10 @@ public:
 };
 
 std::unique_ptr<Inference> createMockInference();
-std::unique_ptr<Inference> createLlamaInference();
+/// The Forge backend (third_party/forge). Null in a build that does not
+/// compile src/neural/forge_inference.cpp (the dependency-free standalone
+/// check); every CMake build with RETDEC_ENABLE_NEURAL has it.
+std::unique_ptr<Inference> createForgeInference();
 
 } // namespace retdec::neural
 

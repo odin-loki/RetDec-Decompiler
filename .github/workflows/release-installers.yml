@@ -173,16 +173,6 @@ jobs:
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
         run: choco install nsis -y --no-progress
 
-      - name: Install Qt 6 (MSVC x64)
-        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
-        uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4.4.1
-        with:
-          version: "6.7.3"
-          host: windows
-          target: desktop
-          arch: win64_msvc2019_64
-          archives: qtbase qtsvg
-
       - uses: lukka/get-cmake@a89e43e22a96abafcd7a62db652a65ecd33052c9 # v4.4.4
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
         with:
@@ -375,12 +365,7 @@ jobs:
             flex \
             bison \
             libssl-dev \
-            zlib1g-dev \
-            qt6-base-dev \
-            qt6-base-dev-tools \
-            libqt6svg6-dev \
-            libgl1-mesa-dev \
-            libxkbcommon-dev
+            zlib1g-dev
 
       - uses: lukka/get-cmake@a89e43e22a96abafcd7a62db652a65ecd33052c9 # v4.4.4
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
@@ -547,7 +532,8 @@ jobs:
   # It mirrors linux-installer step for step, with the three things that are
   # different about macOS handled in scripts/build-macos-installer.sh and
   # scripts/ci/check_macos_bundle.py rather than here: the GUI is an .app
-  # bundle, its Qt libraries need bringing in off the build machine, and
+  # bundle that carries its resources (Contents/share/retdec/gui) and must
+  # resolve inside itself and verify, and
   # Gatekeeper quarantines anything a browser downloaded.
   macos-installer:
     needs: release
@@ -579,23 +565,18 @@ jobs:
 
       # autoconf/automake/libtool are for YARA, which bootstraps with autotools
       # and is not on a macOS runner by default.
-      # Homebrew's Qt, for the reason spelled out in ctest-macos.yml: the
-      # official 6.7.3 macOS archive links `-framework AGL`, which Apple has
-      # removed from the SDK. MAC-01 is what makes the resulting bundle
-      # relocatable, and it runs twice below -- on the staged copy and on the
-      # copy extracted back out of the tarball.
+      # retdec-gui needs nothing from Homebrew (FuseUI and Forge are vendored;
+      # the window backend is Cocoa). MAC-01 still runs twice below -- on the
+      # staged copy and on the copy extracted back out of the tarball -- so the
+      # bundle is proven relocatable and signed.
       - name: Install dependencies
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
         run: |
           brew update --quiet || true
-          # No `|| true` on the install. `brew --prefix qt@6` prints a path and
-          # exits 0 whether or not the formula is there, so swallowing a failed
-          # install sets CMAKE_PREFIX_PATH to a directory that does not exist
-          # and the real error surfaces hundreds of lines later as a Qt6
-          # find_package failure -- or as `autoreconf: command not found`
-          # inside YARA, which is the error ctest-macos was written to stop.
-          brew install ninja qt@6 pkg-config autoconf automake libtool
-          echo "CMAKE_PREFIX_PATH=$(brew --prefix qt@6)" >> "$GITHUB_ENV"
+          # No `|| true` on the install: a failed install surfaces hundreds of
+          # lines later as `autoreconf: command not found` inside YARA, which
+          # is the error ctest-macos was written to stop.
+          brew install ninja pkg-config autoconf automake libtool
 
       # `cmake --build --target install` is the only place in this repository
       # that runs support/install-share.py and support/install-yara.py on

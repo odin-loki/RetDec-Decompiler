@@ -15,8 +15,14 @@
 #
 # Requires:
 #   FUSE (for AppImage mounting; on CI: APPIMAGE_EXTRACT_AND_RUN=1)
-#   linuxdeploy + linuxdeploy-plugin-qt (auto-downloaded from GitHub releases)
+#   linuxdeploy (auto-downloaded from GitHub releases)
 #   appimagetool (auto-downloaded from GitHub releases)
+#
+# retdec-gui needs no deploy plugin: it is FuseUI (vendored, statically
+# linked) drawing a CPU-rasterised frame into an X11 window, and libX11 is
+# loaded at run time from the host -- like every AppImage, which relies on the
+# host's X/Wayland client libraries. Its resources travel in
+# share/retdec/gui, which the install tree already has.
 
 set -euo pipefail
 
@@ -67,13 +73,6 @@ if [[ -z "$LINUXDEPLOY" ]]; then
         "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
 fi
 
-# linuxdeploy-plugin-qt (for Qt6 library bundling when retdec-gui is present)
-LINUXDEPLOY_PLUGIN_QT="$TOOLS_DIR/linuxdeploy-plugin-qt-x86_64.AppImage"
-if [[ -x "${INSTALL_DIR}/bin/retdec-gui" ]]; then
-    _download_if_missing "$LINUXDEPLOY_PLUGIN_QT" \
-        "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
-fi
-
 # appimagetool
 if [[ -z "$APPIMAGE_TOOL" ]]; then
     APPIMAGE_TOOL="$TOOLS_DIR/appimagetool-x86_64.AppImage"
@@ -95,6 +94,9 @@ _run mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 _run mkdir -p "$APPDIR/usr/share/metainfo"
 
 if [[ -x "${INSTALL_DIR}/bin/retdec-gui" ]]; then
+    if [[ ! -d "${INSTALL_DIR}/share/retdec/gui" ]]; then
+        echo "WARNING: ${INSTALL_DIR}/bin/retdec-gui has no share/retdec/gui beside it; the GUI will start unstyled" >&2
+    fi
     APPIMAGE_EXEC="retdec-gui"
     APPIMAGE_TERMINAL="false"
 else
@@ -131,7 +133,7 @@ cat > "$APPDIR/usr/share/metainfo/io.github.odin_loki.retdec.metainfo.xml" <<XML
   <description>
     <p>
       RetDec is an open-source retargetable machine-code decompiler based on LLVM.
-      This package ships the CLI and, when built, the Qt 6 GUI. CUDA/OpenCL
+      This package ships the CLI and, when built, the GUI (FuseUI). CUDA/OpenCL
       acceleration is parked research, not a product feature.
     </p>
   </description>
@@ -202,7 +204,6 @@ fi
 echo ""
 echo "=== Running linuxdeploy ==="
 export APPIMAGE_EXTRACT_AND_RUN=1   # Avoid FUSE requirement in CI
-export QT_SELECT=qt6
 
 LINUXDEPLOY_ARGS=(
     --appdir "$APPDIR"
@@ -211,9 +212,6 @@ LINUXDEPLOY_ARGS=(
 )
 if [[ -f "$APPDIR/usr/share/icons/hicolor/256x256/apps/retdec.png" ]]; then
     LINUXDEPLOY_ARGS+=(--icon-file "$APPDIR/usr/share/icons/hicolor/256x256/apps/retdec.png")
-fi
-if [[ -x "${INSTALL_DIR}/bin/retdec-gui" ]]; then
-    LINUXDEPLOY_ARGS+=(--plugin qt)
 fi
 
 _run env \

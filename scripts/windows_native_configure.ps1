@@ -1,15 +1,12 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Configure RetDec for a full native Windows build (MSVC + Qt6 required; RETDEC_ENABLE_CUDA_ACCEL=OFF).
+    Configure RetDec for a full native Windows build (MSVC with C++23; RETDEC_ENABLE_CUDA_ACCEL=OFF).
+    retdec-gui is built from the vendored FuseUI and Forge (third_party/); no GUI toolkit is installed.
     Self-bootstrapping: automatically finds and sources vcvars64.bat.
 
 .PARAMETER Preset
     CMake preset (default: full-windows-release). Binary dir: build\windows\.
-
-.PARAMETER QtDir
-    Path to Qt6 CMake config dir, e.g. C:\Qt\6.11.0\msvc2022_64\lib\cmake\Qt6
-    Auto-detected if not supplied.
 
 .PARAMETER CudaPath
     Path to CUDA Toolkit root. Auto-detected from CUDA_PATH env or registry.
@@ -17,8 +14,8 @@
 .PARAMETER NoCuda
     Disable CUDA acceleration in CMake (RETDEC_ENABLE_CUDA_ACCEL=OFF; full presets do not default CUDA ON).
 
-.PARAMETER AllowOptionalQt
-    Allow configure without Qt6 by passing -DRETDEC_REQUIRE_QT6=OFF (full-* presets normally require Qt for retdec-gui).
+.PARAMETER NoGui
+    Configure without retdec-gui (-DRETDEC_GUI=OFF; CLI-only).
 
 .PARAMETER BuildDir
     Override CMake binary directory (default: build\windows under the repo). Use a path outside OneDrive if Ninja fails with "recompaction: Permission denied".
@@ -30,17 +27,16 @@
     .\scripts\windows_native_configure.ps1
 
 .EXAMPLE
-    .\scripts\windows_native_configure.ps1 -QtDir "C:\Qt\6.11.0\msvc2022_64\lib\cmake\Qt6"
+    .\scripts\windows_native_configure.ps1 -Preset full-windows-debug
 #>
 
 param(
     [string]$Preset     = "full-windows-release",
-    [string]$QtDir      = "",
     [string]$CudaPath   = "",
     [string]$BuildDir   = "",
     [string]$InstallPrefix = "",
     [switch]$NoCuda,
-    [switch]$AllowOptionalQt
+    [switch]$NoGui
 )
 
 $ErrorActionPreference = "Stop"
@@ -172,38 +168,6 @@ if ($NoCuda) {
     Write-Host "  [--] CUDA disabled by -NoCuda flag (RETDEC_ENABLE_CUDA_ACCEL=OFF)" -ForegroundColor Gray
 }
 
-# ── Step 6: Resolve Qt6 ───────────────────────────────────────────────────
-Write-Host ""
-Write-Host "--- Qt6 ---" -ForegroundColor White
-if ($QtDir -eq "" -and $env:Qt6_DIR) { $QtDir = $env:Qt6_DIR }
-if ($QtDir -eq "") {
-    $qtRoots = @("C:\Qt", "$env:USERPROFILE\Qt", "${env:ProgramFiles}\Qt", "${env:ProgramFiles(x86)}\Qt")
-    foreach ($r in $qtRoots) {
-        if (-not (Test-Path $r)) { continue }
-        # Search for any Qt6 cmake config under any version / any msvc kit
-        $found = Get-ChildItem "$r\*\*\lib\cmake\Qt6" -ErrorAction SilentlyContinue |
-                 Where-Object { $_.FullName -match "msvc" } |
-                 Sort-Object FullName -Descending | Select-Object -First 1
-        if ($found) { $QtDir = $found.FullName; break }
-    }
-}
-if ($QtDir -ne "" -and (Test-Path $QtDir)) {
-    Write-Host "  [OK] Qt6: $QtDir" -ForegroundColor Green
-    $env:Qt6_DIR = $QtDir
-    # Kit root = grandparent of lib/cmake/Qt6
-    $QtKitRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $QtDir))
-    # Add Qt bin to PATH for windeployqt
-    $env:PATH = "$QtKitRoot\bin;" + $env:PATH
-} else {
-    if ($Preset -match '^full-' -and -not $AllowOptionalQt) {
-        Write-Error "Preset '$Preset' requires Qt6 for retdec-gui. Install Qt 6 (MSVC x64), set `$env:Qt6_DIR or -QtDir, or pass -AllowOptionalQt for CLI-only."
-        exit 1
-    }
-    Write-Warning "Qt6 not found; preset may skip GUI unless you use -AllowOptionalQt with a non-full preset."
-    $QtDir   = ""
-    $QtKitRoot = ""
-}
-
 # ── Step 7: CMake preset (default: build\windows\, install\windows\) ───────
 if ([string]::IsNullOrWhiteSpace($BuildDir)) {
     $BuildDirFull = Join-Path $RepoRoot "build\windows"
@@ -219,15 +183,11 @@ if (-not [string]::IsNullOrWhiteSpace($BuildDir)) {
 if (-not [string]::IsNullOrWhiteSpace($InstallPrefix)) {
     $cmakeArgs += "-D", "CMAKE_INSTALL_PREFIX=$InstallPrefix"
 }
-if ($QtDir -ne "") {
-    $cmakeArgs += "-D", "Qt6_DIR=$QtDir"
-    if ($QtKitRoot) { $cmakeArgs += "-D", "CMAKE_PREFIX_PATH=$QtKitRoot" }
-}
 if ($NoCuda) {
     $cmakeArgs += "-D", "RETDEC_ENABLE_CUDA_ACCEL=OFF"
 }
-if ($AllowOptionalQt) {
-    $cmakeArgs += "-D", "RETDEC_REQUIRE_QT6=OFF"
+if ($NoGui) {
+    $cmakeArgs += "-D", "RETDEC_GUI=OFF"
 }
 
 Write-Host ""
@@ -237,9 +197,9 @@ Write-Host "======================================================" -ForegroundC
 Write-Host "  Preset    : $Preset" -ForegroundColor White
 Write-Host "  Build dir : $BuildDirFull" -ForegroundColor White
 $cudaDisplay = if ($enableCuda) { $CudaPath } else { "OFF" }
-$qtDisplay   = if ($QtDir -ne "") { $QtDir } else { "auto / optional" }
+$guiDisplay  = if ($NoGui) { "OFF" } else { "ON (FuseUI, vendored)" }
 Write-Host "  CUDA      : $cudaDisplay" -ForegroundColor White
-Write-Host "  Qt6       : $qtDisplay" -ForegroundColor White
+Write-Host "  GUI       : $guiDisplay" -ForegroundColor White
 Write-Host ""
 
 cmake @cmakeArgs

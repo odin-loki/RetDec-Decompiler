@@ -17,7 +17,7 @@ namespace retdec::neural {
 /**
  * @brief Refine multiple requests sequentially on one backend session.
  *
- * Real llama.cpp batched decode is not implemented (N13). Each request is
+ * Batched decode (Forge's inference::batch scheduler) is not wired up (N13). Each request is
  * refined independently so output does not depend on prior functions.
  */
 class BatchRefiner {

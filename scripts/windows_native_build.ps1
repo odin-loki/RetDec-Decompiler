@@ -1,13 +1,14 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Build RetDec natively on Windows (MSVC + Qt6 GUI; CUDA toolkit optional) and stage
+    Build RetDec natively on Windows (MSVC; GUI on FuseUI; CUDA toolkit optional) and stage
     a self-contained deployment in dist\windows\.
 
 .DESCRIPTION
     1. Runs cmake --build on build\windows\ (from windows_native_configure.ps1 or cmake --preset).
     2. Runs cmake --install into install\windows\ (CMake preset installDir).
-    3. Copies Qt6 and MSVC runtime DLLs into dist\windows\ so the result is portable.
+    3. Copies the MSVC runtime DLLs and share\retdec (including the GUI's share\retdec\gui
+       resources) into dist\windows\ so the result is portable. The GUI has no toolkit DLLs.
        CUDA runtime DLLs are copied if a toolkit is installed; cuda_accel stays OFF.
 
 .PARAMETER Preset
@@ -109,23 +110,6 @@ if (-not (Get-Command "ninja" -ErrorAction SilentlyContinue)) {
             $env:PATH = (Split-Path $vsNinja) + ";" + $env:PATH
         }
     }
-}
-
-# Qt bin on PATH (windeployqt) — same discovery as windows_native_configure.ps1
-$qt6Dir = $env:Qt6_DIR
-if (-not $qt6Dir) {
-    $qtRoots = @("C:\Qt", "$env:USERPROFILE\Qt", "${env:ProgramFiles}\Qt", "${env:ProgramFiles(x86)}\Qt")
-    foreach ($r in $qtRoots) {
-        if (-not (Test-Path $r)) { continue }
-        $found = Get-ChildItem "$r\*\*\lib\cmake\Qt6" -ErrorAction SilentlyContinue |
-                 Where-Object { $_.FullName -match "msvc" } |
-                 Sort-Object FullName -Descending | Select-Object -First 1
-        if ($found) { $qt6Dir = $found.FullName; break }
-    }
-}
-if ($qt6Dir -and (Test-Path $qt6Dir)) {
-    $QtKitRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $qt6Dir))
-    $env:PATH = "$QtKitRoot\bin;" + $env:PATH
 }
 
 # CUDA_PATH for runtime DLL copy (fresh shells do not inherit configure.ps1 env)
@@ -239,65 +223,22 @@ if (Test-Path $shareRetdec) {
     }
 }
 
-# ── windeployqt - copy Qt6 DLLs ──────────────────────────────────────────
-Write-Host ""
-Write-Host "--- Qt6 DLL deployment (windeployqt) ---" -ForegroundColor White
-
-$winDeployQtMode = "--release"
-$cacheFile = Join-Path $BuildDirFull "CMakeCache.txt"
-if (Test-Path $cacheFile) {
-    $bt = Select-String -Path $cacheFile -Pattern "^CMAKE_BUILD_TYPE:STRING=(.+)$" -ErrorAction SilentlyContinue |
-          Select-Object -First 1
-    if ($bt -and $bt.Matches.Groups[1].Value.Trim() -eq "Debug") {
-        $winDeployQtMode = "--debug"
-    }
-}
-
+# ── retdec-gui resources ──────────────────────────────────────────────────
+# retdec-gui is FuseUI drawing into a Win32 window (user32/gdi32 only): there
+# are no toolkit DLLs or platform plugins to deploy. What it does need is its
+# resource tree (FuseUI themes, fonts, LLVM pass presets), installed to
+# share\retdec\gui and copied above with the rest of share\retdec.
 $guiExe = Join-Path $DistDirFull "retdec-gui.exe"
-if (Test-Path $guiExe) {
-    # Find windeployqt6 on PATH or Qt kit root
-    $winDeploy = Get-Command "windeployqt6.exe" -ErrorAction SilentlyContinue
-    if (-not $winDeploy) {
-        $winDeploy = Get-Command "windeployqt.exe" -ErrorAction SilentlyContinue
-    }
-    if ($winDeploy) {
-        Write-Host "  Running $($winDeploy.Source) $winDeployQtMode ..." -ForegroundColor Cyan
-        & $winDeploy.Source $winDeployQtMode --no-translations `
-            --no-system-d3d-compiler `
-            "$guiExe"
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "  [OK] Qt6 DLLs deployed." -ForegroundColor Green
-        } else {
-            Write-Warning "  windeployqt returned $LASTEXITCODE - Qt DLLs may be incomplete."
-        }
+$guiRes = Join-Path $destShare "gui"
+if ((Test-Path $guiExe) -and -not (Test-Path $guiRes)) {
+    $guiResSrc = Join-Path $RepoRoot "src\gui\resources"
+    if (Test-Path $guiResSrc) {
+        New-Item -ItemType Directory -Force -Path $guiRes | Out-Null
+        Copy-Item "$guiResSrc\*" $guiRes -Recurse -Force
+        Write-Host "  [OK] share/retdec/gui (repo fallback)" -ForegroundColor Green
     } else {
-        Write-Warning @"
-  windeployqt6.exe / windeployqt.exe not found on PATH.
-  Qt6 DLLs were NOT copied. Add Qt bin directory to PATH:
-      `$env:PATH = 'C:\Qt\6.x.x\msvc2019_64\bin;' + `$env:PATH
-  then re-run this script with -SkipBuild.
-"@
+        Write-Warning "retdec-gui.exe staged without share/retdec/gui resources."
     }
-} else {
-    Write-Host "  retdec-gui.exe not present - skipping Qt deployment." -ForegroundColor Gray
-}
-
-# Qt6Test.dll — not pulled by windeployqt for retdec-gui.exe; needed to run retdec-gui-tests from dist/deploy.
-if ($qt6Dir -and (Test-Path $qt6Dir)) {
-    $qtBinForTests = Join-Path $QtKitRoot "bin"
-    $qtTestDll = Join-Path $qtBinForTests "Qt6Test.dll"
-    if (Test-Path $qtTestDll) {
-        Copy-Item $qtTestDll (Join-Path $DistDirFull "Qt6Test.dll") -Force
-        Write-Host "  [OK] Qt6Test.dll (GUI unit tests)" -ForegroundColor Green
-    }
-}
-
-# retdec-gui-tests.exe — copy into dist next to retdec-gui.exe so platforms/ from windeployqt applies
-# (Qt resolves plugins from the .exe directory, not the current working directory).
-$guiTestsExe = Join-Path $BuildDirFull "tests\gui\retdec-gui-tests.exe"
-if (Test-Path $guiTestsExe) {
-    Copy-Item $guiTestsExe (Join-Path $DistDirFull "retdec-gui-tests.exe") -Force
-    Write-Host "  [OK] retdec-gui-tests.exe (same folder as Qt platforms/)" -ForegroundColor Green
 }
 
 # ── CUDA runtime DLLs ─────────────────────────────────────────────────────
@@ -364,12 +305,12 @@ if ($msvcRedistCopied -eq 0) {
 # ── Create a README in dist dir ───────────────────────────────────────────
 $readmePath = Join-Path $DistDirFull "README.txt"
 @"
-RetDec - Windows Native Build (MSVC + Qt6 GUI)
+RetDec - Windows Native Build (MSVC; GUI on FuseUI)
 Copyright (c) 2025 Odin Loch Trading as Imortek
 
 Contents:
   retdec-decompiler.exe   Main decompiler (CLI)
-  retdec-gui.exe          Qt6 GUI application
+  retdec-gui.exe          GUI application (FuseUI; resources in share\retdec\gui)
   retdec-unpacker.exe     Archive unpacker
   retdec-fileinfo.exe     File-format inspector
 

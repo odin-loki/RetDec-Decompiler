@@ -18,8 +18,6 @@ Third-party components (see cmake/deps.cmake for pinned versions):
   OpenSSL (Apache-2.0)
   zlib (Zlib)
   googletest (BSD-3-Clause)
-  Qt6 (LGPL/GPL/commercial — runtime dependency when GUI enabled).
-    Evidence: docs/LGPL_QT.md (dynamic link + relink).
   Eigen (MPL-2.0)
   rapidjson (MIT)
   tinyxml2 (Zlib)
@@ -32,3 +30,18 @@ Keystone (GPL-2.0) is used only in capstone2llvmirtool and related tests.
 It must not be included in commercial distribution packages.
 
 llama.cpp (MIT) — when RETDEC_ENABLE_NEURAL is enabled.
+
+Vendored in third_party/ (see third_party/README.md; full licence texts in
+LICENSE-THIRD-PARTY):
+
+  FuseUI (third_party/fuseui) — the GUI toolkit retdec-gui is built on.
+  Forge  (third_party/forge)  — OS layer, JSON, hashing, thread pool.
+    Both first-party: Copyright (c) 2026 Odin Loch (Imortek), the owner of
+    RetDec; AGPL-3.0-or-later with a commercial option, like RetDec itself.
+    No other GUI toolkit is linked or shipped.
+  stb (MIT or public domain) — third_party/fuseui/vendor/stb
+  Open Sans font (Apache-2.0) — third_party/fuseui/vendor/fonts/opensans
+  Lua 5.2 (MIT) — third_party/fuseui/vendor/lua (vendored; not linked
+    into retdec-gui)
+  Monocypher 4.0.2 (BSD-2-Clause or CC0-1.0) — third_party/forge/third_party
+  Level Zero API header (MIT) — third_party/forge/third_party/level-zero

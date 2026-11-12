@@ -1,13 +1,12 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Install prerequisites for a native Windows RetDec build (CUDA + Qt6 GUI + MSVC).
+    Install prerequisites for a native Windows RetDec build (MSVC with C++23; CUDA optional).
 
 .DESCRIPTION
     Checks for and installs (via winget where possible):
       - Visual Studio Build Tools 2022 (MSVC v143, C++, Windows SDK)
       - CUDA Toolkit (NVIDIA — requires an NVIDIA GPU; skipped gracefully if absent)
-      - Qt 6 for Windows (MSVC 2019/2022 x64 build)
       - CMake 3.28+
       - Ninja build system
       - Git
@@ -20,8 +19,7 @@
 .NOTES
     - Run as Administrator.
     - winget must be available (ships with Windows 10 21H2+ / Windows 11).
-    - Qt6 installation via winget installs the Qt Maintenance Tool; the
-      script also provides a direct offline-installer download link.
+    - The GUI needs no toolkit: FuseUI and Forge are vendored in third_party/.
     - CUDA Toolkit must match your driver version. Check
       https://developer.nvidia.com/cuda-downloads for the latest installer.
 #>
@@ -137,40 +135,11 @@ if ($hasCuda) {
 
 Write-Host ""
 
-# ── Qt6 ───────────────────────────────────────────────────────────────────
-Write-Host "--- Qt 6 (MSVC 2019/2022 x64) ---" -ForegroundColor White
-# Check common Qt install locations
-$qt6Candidates = @(
-    "C:\Qt",
-    "$env:USERPROFILE\Qt",
-    "${env:ProgramFiles}\Qt",
-    "${env:ProgramFiles(x86)}\Qt"
-)
-$qt6Root = $null
-foreach ($c in $qt6Candidates) {
-    if (Test-Path $c) {
-        # Look for any Qt 6.x msvc directory
-        $found = Get-ChildItem "$c\6.*\msvc*_64\lib\cmake\Qt6" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($found) { $qt6Root = $found.FullName; break }
-    }
-}
-# Also check CMAKE_PREFIX_PATH env
-if (-not $qt6Root -and $env:Qt6_DIR) { $qt6Root = $env:Qt6_DIR }
-
-$hasQt6 = ($qt6Root -ne $null)
-$qt6Hint = @"
-Download the Qt Online Installer from: https://www.qt.io/download-qt-installer
-During install, select: Qt 6.7.x (or latest) > MSVC 2019 64-bit (or MSVC 2022 64-bit)
-After install, set Qt6_DIR to the cmake config dir, e.g.:
-    `$env:Qt6_DIR = 'C:\Qt\6.7.3\msvc2019_64\lib\cmake\Qt6'
-Or set CMAKE_PREFIX_PATH to the kit root:
-    `$env:CMAKE_PREFIX_PATH = 'C:\Qt\6.7.3\msvc2019_64'
-"@
-Write-Check "Qt 6 (MSVC x64)" $hasQt6 $qt6Hint
-if ($hasQt6) {
-    Write-Host "        Qt6 found at: $qt6Root" -ForegroundColor Gray
-}
-
+# ── GUI ───────────────────────────────────────────────────────────────────
+# Nothing to install: retdec-gui is built from FuseUI and Forge, vendored in
+# third_party/, on the Win32 API (user32/gdi32) that the Windows SDK provides.
+Write-Host "--- GUI (FuseUI) ---" -ForegroundColor White
+Write-Host "  [OK]  vendored in third_party/ - no GUI toolkit to install" -ForegroundColor Green
 Write-Host ""
 
 # ── Summary ────────────────────────────────────────────────────────────────
@@ -187,9 +156,7 @@ Write-Host ""
 Write-Host "  Next steps:" -ForegroundColor White
 Write-Host "    1. Open 'x64 Native Tools Command Prompt for VS 2022'" -ForegroundColor White
 Write-Host "       (or 'Developer PowerShell for VS 2022')" -ForegroundColor White
-Write-Host "    2. Set Qt6_DIR if not auto-detected:" -ForegroundColor White
-Write-Host "       `$env:Qt6_DIR = 'C:\Qt\6.x.x\msvc2019_64\lib\cmake\Qt6'" -ForegroundColor Cyan
-Write-Host "    3. Run: .\scripts\windows_native_configure.ps1" -ForegroundColor White
-Write-Host "    4. Run: .\scripts\windows_native_build.ps1" -ForegroundColor White
+Write-Host "    2. Run: .\scripts\windows_native_configure.ps1" -ForegroundColor White
+Write-Host "    3. Run: .\scripts\windows_native_build.ps1" -ForegroundColor White
 Write-Host "======================================================" -ForegroundColor Cyan
 Write-Host ""

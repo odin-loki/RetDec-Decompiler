@@ -7,7 +7,6 @@ on:
 
 env:
   RETDEC_GUI_HEADLESS: "1"
-  QT_QPA_PLATFORM: offscreen
 
 jobs:
   integration:
@@ -35,15 +34,6 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:
           arch: x64
-
-      - name: Install Qt 6 (MSVC x64)
-        uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4.4.1
-        with:
-          version: "6.7.3"
-          host: windows
-          target: desktop
-          arch: win64_msvc2019_64
-          archives: qtbase qtsvg
 
       - uses: lukka/get-cmake@a89e43e22a96abafcd7a62db652a65ecd33052c9 # v4.4.4
         with:

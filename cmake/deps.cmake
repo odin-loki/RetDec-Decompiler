@@ -94,17 +94,6 @@ set(SUPPORT_PKG_VERSION
     CACHE STRING ""
 )
 
-# llama.cpp — enable with -DRETDEC_ENABLE_LLAMACPP=ON; bump via scripts/upgrade-dep.sh LLAMACPP
-# v0.4.1 is the latest stable semver (nightly line is bNNNN; do not pin nightlies).
-set(LLAMACPP_URL
-    "https://github.com/ggml-org/llama.cpp/archive/refs/tags/v0.4.1.zip"
-    CACHE STRING "URL of llama.cpp archive to use."
-)
-set(LLAMACPP_ARCHIVE_SHA256
-    "cc4ddb85b68fc4a03f606d7911528796815966273c3a61dfba6fc69932b15cfa"
-    CACHE STRING ""
-)
-
 # xsimd — header-only; enable with -DRETDEC_ENABLE_XSIMD=ON. Do not vendor under deps/xsimd/.
 set(XSIMD_URL
     "https://github.com/xtensor-stack/xsimd/archive/refs/tags/14.3.0.zip"

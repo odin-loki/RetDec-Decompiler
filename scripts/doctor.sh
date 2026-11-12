@@ -5,8 +5,11 @@
 #   bash scripts/doctor.sh
 #   ./scripts/doctor.sh
 #
-# Checks: CMake >= 3.26, fetch-large-files marker, Qt6 hint, git-lfs,
-#         python3. On Windows Git Bash also reports NSIS/makensis.
+# Checks: CMake >= 3.26, a C++23 compiler (std::expected + std::format, which
+#         RetDec and retdec-gui's FuseUI/Forge need), fetch-large-files marker,
+#         git-lfs, python3. On Windows Git Bash also reports NSIS/makensis.
+#         There is no GUI toolkit to check for: FuseUI and Forge are vendored
+#         in third_party/.
 
 set -euo pipefail
 
@@ -60,23 +63,39 @@ else
     fail_check "missing $LARGE_FILE_MARKER - run: bash scripts/fetch-large-files.sh"
 fi
 
-# ── Qt6 (optional hint for GUI presets) ───────────────────────────────────────
-qt_ok=0
-if command -v qmake6 >/dev/null 2>&1; then
-    qt_ok=1
-    pass_check "Qt6 hint: qmake6 on PATH ($(qmake6 -query QT_VERSION 2>/dev/null || echo unknown))"
-elif command -v qmake >/dev/null 2>&1 && qmake -query QT_VERSION 2>/dev/null | grep -q '^6\.'; then
-    qt_ok=1
-    pass_check "Qt6 hint: qmake on PATH (Qt $(qmake -query QT_VERSION))"
-elif pkg-config --exists Qt6Core 2>/dev/null; then
-    qt_ok=1
-    pass_check "Qt6 hint: pkg-config Qt6Core ($(pkg-config --modversion Qt6Core))"
-elif [[ -n "${Qt6_DIR:-}" && -d "${Qt6_DIR}" ]]; then
-    qt_ok=1
-    pass_check "Qt6 hint: Qt6_DIR=${Qt6_DIR}"
-fi
-if [[ "$qt_ok" -eq 0 ]]; then
-    warn_check "Qt6 not detected - GUI presets need qt6-base-dev (Linux) or Qt 6 MSVC kit (Windows)"
+# ── C++23 compiler ────────────────────────────────────────────────────────────
+# The tree is C++23 (CMAKE_CXX_STANDARD 23); retdec-gui's model layer uses
+# std::expected and std::format, which is where an older compiler stops.
+cxx23_probe() {
+    local cxx="$1" dir
+    dir="$(mktemp -d)"
+    cat > "$dir/probe.cpp" <<'CPP'
+#include <expected>
+#include <format>
+#include <string>
+std::expected<int, std::string> f(int v) { if (v < 0) return std::unexpected("neg"); return v; }
+int main() { return std::format("{}", f(2).value()) == "2" ? 0 : 1; }
+CPP
+    "$cxx" -std=c++23 -fsyntax-only "$dir/probe.cpp" >/dev/null 2>&1
+    local rc=$?
+    rm -rf "$dir"
+    return $rc
+}
+cxx_found=""
+for cand in "${CXX:-}" c++ g++ clang++; do
+    [[ -n "$cand" ]] || continue
+    command -v "$cand" >/dev/null 2>&1 || continue
+    cxx_found="$cand"
+    if cxx23_probe "$cand"; then
+        pass_check "C++23 compiler: $cand ($("$cand" --version 2>/dev/null | head -n1))"
+        cxx_found="ok"
+        break
+    fi
+done
+if [[ -z "$cxx_found" ]]; then
+    fail_check "no C++ compiler on PATH - need GCC 13+, Clang 17+ (libc++/libstdc++ 13+) or MSVC 2022"
+elif [[ "$cxx_found" != "ok" ]]; then
+    fail_check "no C++23 compiler: ${CXX:-c++/g++/clang++} cannot compile std::expected + std::format with -std=c++23 (need GCC 13+, Clang 17+, Apple Clang 15+, MSVC 2022)"
 fi
 
 # ── NSIS (Windows packaging only) ─────────────────────────────────────────────

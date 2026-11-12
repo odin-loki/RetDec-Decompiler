@@ -1,0 +1,189 @@
+# retdec-gui on its own: FuseUI + Forge (both vendored in third_party/) built
+# through cmake/gui_standalone, with no LLVM and no other RetDec dependency, on
+# the three desktop platforms the GUI has a window backend for -- X11 (software
+# presenter), Win32 and macOS (Cocoa). Minutes rather than the hours the full
+# ctest-* workflows take, so a GUI change gets a signal on every push.
+#
+# There is no GUI toolkit to install anywhere: no Qt, no platform plugins, no
+# deploy tool. What each runner needs is a C++23 compiler, CMake + Ninja and
+# GoogleTest -- apt libgtest-dev on Linux, brew googletest on macOS, and on
+# Windows the googletest release pinned in cmake/deps.cmake, which
+# cmake/gui_standalone fetches when find_package(GTest) finds none.
+name: gui
+
+on:
+  push:
+    branches: [main, 'claude/**', 'ccr-*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gui-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: linux (gcc, X11)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # libgtest-dev for the tests; xvfb and x11-utils for the window smoke.
+      # FuseUI loads libX11 at run time, so there is no X11 development
+      # package to install.
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libgtest-dev ninja-build xvfb x11-utils
+
+      - uses: lukka/get-cmake@a89e43e22a96abafcd7a62db652a65ecd33052c9 # v4.4.4
+        with:
+          cmakeVersion: "3.31.6"
+
+      - name: Configure
+        run: >
+          cmake -S cmake/gui_standalone -B build/gui -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DRETDEC_GUI_FETCH_GTEST=OFF
+
+      - name: Build
+        run: cmake --build build/gui --parallel
+
+      - name: retdec-gui-tests
+        env:
+          RETDEC_GUI_HEADLESS: "1"
+        run: ctest --test-dir build/gui --output-on-failure --timeout 600
+
+      - name: Resources are staged beside the binary
+        run: |
+          set -euo pipefail
+          GUI="$(find build/gui -type f -name retdec-gui -perm -u+x | head -n1)"
+          test -n "${GUI}" || { echo "retdec-gui was not built"; exit 1; }
+          test -d "$(dirname "${GUI}")/../share/retdec/gui" || {
+            echo "no share/retdec/gui beside ${GUI}"; exit 1; }
+          echo "GUI=${GUI}" >> "$GITHUB_ENV"
+
+      - name: Start Xvfb
+        run: |
+          Xvfb :99 -screen 0 1600x1000x24 -nolisten tcp &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+          for _ in $(seq 1 50); do
+            xdpyinfo -display :99 >/dev/null 2>&1 && exit 0
+            sleep 0.2
+          done
+          echo "Xvfb did not come up"; exit 1
+
+      # Headless: the AppWindow presents to nothing and the app quits itself
+      # after 2 s. The timeout is a backstop, not the expected exit.
+      - name: Headless smoke
+        run: timeout 60 "${GUI}" --headless-exit-ms 2000
+
+      # Windowed, on the X11 software presenter: the process has to stay up,
+      # map a top-level window titled RetDec, and still be running when it is
+      # asked to stop.
+      - name: Window smoke (X11)
+        run: |
+          set -uo pipefail
+          "${GUI}" > /tmp/gui-window.log 2>&1 &
+          pid=$!
+          found=0
+          for _ in $(seq 1 50); do
+            if ! kill -0 "${pid}" 2>/dev/null; then
+              echo "retdec-gui exited before mapping a window"
+              cat /tmp/gui-window.log
+              exit 1
+            fi
+            if xwininfo -root -tree | grep -q '"RetDec'; then found=1; break; fi
+            sleep 0.2
+          done
+          xwininfo -root -tree | grep -i retdec || true
+          if [ "${found}" -ne 1 ]; then
+            echo "no RetDec window appeared on ${DISPLAY}"
+            cat /tmp/gui-window.log
+            kill "${pid}" 2>/dev/null || true
+            exit 1
+          fi
+          sleep 2
+          kill -0 "${pid}" || { echo "retdec-gui died after mapping its window"; cat /tmp/gui-window.log; exit 1; }
+          kill "${pid}"
+          wait "${pid}" 2>/dev/null || true
+          echo "window smoke OK"
+
+  windows:
+    name: windows (MSVC, Win32)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: x64
+
+      - uses: lukka/get-cmake@a89e43e22a96abafcd7a62db652a65ecd33052c9 # v4.4.4
+        with:
+          cmakeVersion: "3.31.6"
+
+      # No GoogleTest on the runner: cmake/gui_standalone fetches the release
+      # pinned in cmake/deps.cmake (RETDEC_GUI_FETCH_GTEST, ON by default).
+      - name: Configure
+        shell: pwsh
+        run: >
+          cmake -S cmake/gui_standalone -B build/gui -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build/gui --parallel
+
+      - name: retdec-gui-tests
+        shell: pwsh
+        env:
+          RETDEC_GUI_HEADLESS: "1"
+        run: ctest --test-dir build/gui --output-on-failure --timeout 600
+
+  macos:
+    name: macos (clang, Cocoa)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install dependencies
+        run: |
+          brew update --quiet || true
+          brew install ninja googletest
+
+      - uses: lukka/get-cmake@a89e43e22a96abafcd7a62db652a65ecd33052c9 # v4.4.4
+        with:
+          cmakeVersion: "3.31.6"
+
+      - name: Configure
+        run: >
+          cmake -S cmake/gui_standalone -B build/gui -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_PREFIX_PATH="$(brew --prefix)"
+          -DRETDEC_GUI_FETCH_GTEST=OFF
+
+      - name: Build
+        run: cmake --build build/gui --parallel
+
+      - name: retdec-gui-tests
+        env:
+          RETDEC_GUI_HEADLESS: "1"
+        run: ctest --test-dir build/gui --output-on-failure --timeout 600
+
+      # retdec-gui is a MACOSX_BUNDLE; its resources are staged into
+      # Contents/share/retdec/gui, which is <bin>/../share/retdec/gui.
+      - name: The bundle carries its resources
+        run: |
+          set -euo pipefail
+          APP="$(find build/gui -maxdepth 3 -name 'retdec-gui.app' -type d | head -n1)"
+          test -n "${APP}" || { echo "no retdec-gui.app was built"; exit 1; }
+          test -d "${APP}/Contents/share/retdec/gui"
+          otool -L "${APP}/Contents/MacOS/retdec-gui"

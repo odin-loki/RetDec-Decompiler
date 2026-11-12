@@ -8,12 +8,15 @@
 # Options:
 #   --build-dir DIR     Directory produced by cmake --build (contains bin/ etc.)
 #   --out-dir DIR       Destination bundle directory (will be created / cleared)
-#   --qt-root DIR       Root of a Qt6 Windows cross-build (optional;
-#                       auto-detected from RETDEC_QT6_WIN_ROOT env var)
 #   --mingw-sysroot DIR MinGW sysroot with runtime DLLs
 #                       (default: /usr/x86_64-w64-mingw32)
 #   --zip               Also produce <out-dir>.zip
 #   --dry-run           Print what would be done without doing it
+#
+# retdec-gui.exe is FuseUI drawing into a Win32 window (user32/gdi32 only), so
+# there are no toolkit DLLs or plugins to collect. It does need its resources
+# at <bin>/../share/retdec/gui -- bundle/share/retdec/gui -- which an install
+# tree has; when it does not, they are copied from src/gui/resources.
 #
 # Dependencies (on the Linux/WSL host):
 #   x86_64-w64-mingw32-objdump  (binutils-mingw-w64-x86-64)
@@ -24,7 +27,6 @@ set -euo pipefail
 # ─── Argument parsing ──────────────────────────────────────────────────────────
 BUILD_DIR=""
 OUT_DIR=""
-QT_ROOT="${RETDEC_QT6_WIN_ROOT:-}"
 MINGW_SYSROOT="/usr/x86_64-w64-mingw32"
 DO_ZIP=0
 DRY_RUN=0
@@ -33,7 +35,6 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --build-dir)   BUILD_DIR="$2";    shift 2 ;;
         --out-dir)     OUT_DIR="$2";      shift 2 ;;
-        --qt-root)     QT_ROOT="$2";      shift 2 ;;
         --mingw-sysroot) MINGW_SYSROOT="$2"; shift 2 ;;
         --zip)         DO_ZIP=1;          shift ;;
         --dry-run)     DRY_RUN=1;         shift ;;
@@ -53,13 +54,10 @@ _mkdir() { _run mkdir -p "$@"; }
 echo "=== RetDec Windows Bundle ==="
 echo "  build-dir:     $BUILD_DIR"
 echo "  out-dir:       $OUT_DIR"
-echo "  qt-root:       ${QT_ROOT:-(not set)}"
 echo "  mingw-sysroot: $MINGW_SYSROOT"
 
 # ─── Create output layout ──────────────────────────────────────────────────────
 _mkdir "$OUT_DIR/bin"
-_mkdir "$OUT_DIR/platforms"
-_mkdir "$OUT_DIR/imageformats"
 _mkdir "$OUT_DIR/share/retdec"
 
 # ─── Copy RetDec binaries ──────────────────────────────────────────────────────
@@ -108,46 +106,6 @@ for _dll in "${_MINGW_RUNTIME_DLLS[@]}"; do
     fi
 done
 
-# ─── Copy Qt6 DLLs (if Qt cross-build root is available) ──────────────────────
-echo ""
-echo "--- Copying Qt6 DLLs ---"
-if [[ -n "$QT_ROOT" && -d "$QT_ROOT" ]]; then
-    _QT6_DLLS=(
-        "Qt6Core.dll"
-        "Qt6Gui.dll"
-        "Qt6Widgets.dll"
-        "Qt6Network.dll"
-        "Qt6OpenGL.dll"
-        "Qt6Charts.dll"
-        "Qt6Svg.dll"
-    )
-    for _dll in "${_QT6_DLLS[@]}"; do
-        _path=$(find "$QT_ROOT" -name "$_dll" 2>/dev/null | head -1 || true)
-        if [[ -n "$_path" ]]; then
-            _cp "$_path" "$OUT_DIR/bin/"
-        else
-            echo "  (skipping $_ — not found in QT_ROOT)" >&2
-        fi
-    done
-
-    # Qt platform plugin: platforms/qwindows.dll
-    for _plug_name in qwindows.dll qoffscreen.dll; do
-        _plug=$(find "$QT_ROOT" -name "$_plug_name" 2>/dev/null | head -1 || true)
-        if [[ -n "$_plug" ]]; then
-            _cp "$_plug" "$OUT_DIR/platforms/"
-        fi
-    done
-
-    # Image format plugins
-    for _fmt in qjpeg.dll qpng.dll qgif.dll qico.dll qsvg.dll; do
-        _plug=$(find "$QT_ROOT" -name "$_fmt" 2>/dev/null | head -1 || true)
-        [[ -n "$_plug" ]] && _cp "$_plug" "$OUT_DIR/imageformats/" || true
-    done
-else
-    echo "  Qt6 root not set or does not exist — skipping Qt DLL copy."
-    echo "  Set RETDEC_QT6_WIN_ROOT or pass --qt-root to include Qt6 DLLs."
-fi
-
 # ─── Copy CUDA runtime DLLs (optional, NVIDIA only) ───────────────────────────
 echo ""
 echo "--- Copying CUDA runtime ---"
@@ -174,6 +132,17 @@ if [[ -d "$BUILD_DIR/install/share/retdec" ]]; then
     _run cp -rv "$BUILD_DIR/install/share/retdec" "$OUT_DIR/share/"
 elif [[ -d "$BUILD_DIR/share/retdec" ]]; then
     _run cp -rv "$BUILD_DIR/share/retdec" "$OUT_DIR/share/"
+fi
+
+# retdec-gui finds its themes, fonts and pass presets at <bin>/../share/retdec/gui.
+if [[ -f "$OUT_DIR/bin/retdec-gui.exe" || "$DRY_RUN" -eq 1 ]] && [[ ! -d "$OUT_DIR/share/retdec/gui" ]]; then
+    _REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    if [[ -d "$_REPO_ROOT/src/gui/resources" ]]; then
+        _mkdir "$OUT_DIR/share/retdec/gui"
+        _run cp -rv "$_REPO_ROOT/src/gui/resources/." "$OUT_DIR/share/retdec/gui/"
+    else
+        echo "WARNING: retdec-gui.exe bundled without share/retdec/gui" >&2
+    fi
 fi
 
 # ─── DLL dependency check ─────────────────────────────────────────────────────

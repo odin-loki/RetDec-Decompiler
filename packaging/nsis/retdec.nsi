@@ -2,7 +2,7 @@
 ;
 ; Build this installer AFTER running scripts/build-windows-installer.ps1 (or
 ; scripts/bundle-windows.sh on Linux/WSL) to populate BUNDLE_DIR:
-;   bin/*.exe, bin/*.dll, platforms/, imageformats/, share/retdec/
+;   bin/*.exe, bin/*.dll (MSVC/MinGW runtime only), share/retdec/ (incl. share/retdec/gui/)
 ;
 ; Usage:
 ;   makensis /DVERSION=5.0 /DBUNDLE_DIR=..\..\dist\windows-bundle retdec.nsi
@@ -135,29 +135,14 @@ Section "RetDec Core & CLI tools" SEC_CORE
   EnVar::AddValue "PATH" "$INSTDIR\bin"
 SectionEnd
 
-Section "RetDec GUI (Qt6)" SEC_GUI
+Section "RetDec GUI" SEC_GUI
   SetOutPath "$INSTDIR\bin"
   File /nonfatal "${BUNDLE_DIR}\bin\retdec-gui.exe"
 
-  ; Qt6 DLLs
-  File /nonfatal "${BUNDLE_DIR}\bin\Qt6Core.dll"
-  File /nonfatal "${BUNDLE_DIR}\bin\Qt6Gui.dll"
-  File /nonfatal "${BUNDLE_DIR}\bin\Qt6Widgets.dll"
-  File /nonfatal "${BUNDLE_DIR}\bin\Qt6Network.dll"
-  File /nonfatal "${BUNDLE_DIR}\bin\Qt6OpenGL.dll"
-  File /nonfatal "${BUNDLE_DIR}\bin\Qt6Charts.dll"
-  File /nonfatal "${BUNDLE_DIR}\bin\Qt6Svg.dll"
-
-  ; Qt platform plugins
-  SetOutPath "$INSTDIR\bin\platforms"
-  File /nonfatal "${BUNDLE_DIR}\platforms\qwindows.dll"
-  File /nonfatal "${BUNDLE_DIR}\platforms\qoffscreen.dll"
-
-  ; Qt image format plugins
-  SetOutPath "$INSTDIR\bin\imageformats"
-  ${If} ${FileExists} "${BUNDLE_DIR}\imageformats\*.dll"
-    File /r "${BUNDLE_DIR}\imageformats\*.dll"
-  ${EndIf}
+  ; retdec-gui is FuseUI on Win32 (user32/gdi32): no toolkit DLLs or platform
+  ; plugins. Its resources (themes, fonts, pass presets) are share\retdec\gui,
+  ; installed with the rest of share\retdec by the core section, where the GUI
+  ; looks for them (<bin>\..\share\retdec\gui).
 
   ; Start Menu shortcut
   CreateDirectory "$SMPROGRAMS\RetDec"
@@ -187,7 +172,7 @@ SectionEnd
 ; ─── Section descriptions ──────────────────────────────────────────────────────
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
   !insertmacro MUI_DESCRIPTION_TEXT ${SEC_CORE} "RetDec decompiler, fileinfo, and command-line tools. Required."
-  !insertmacro MUI_DESCRIPTION_TEXT ${SEC_GUI}  "Qt6-based graphical user interface with tri-pane code view, CFG visualiser, and AI assistant panel."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SEC_GUI}  "Graphical user interface (FuseUI) with tri-pane code view, CFG visualiser, and AI assistant panel."
   !insertmacro MUI_DESCRIPTION_TEXT ${SEC_OCL}  "OpenCL ICD runtime for GPU-accelerated analysis. Only needed if no GPU driver is installed."
   ; !insertmacro MUI_DESCRIPTION_TEXT ${SEC_ASSOC} "Adds RetDec GUI to the Open with menu for .exe files."
 !insertmacro MUI_FUNCTION_DESCRIPTION_END

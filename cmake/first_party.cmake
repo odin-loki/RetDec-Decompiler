@@ -31,6 +31,30 @@ if(NOT TARGET retdec_forge)
 	add_library(retdec::forge ALIAS retdec_forge)
 endif()
 
+# Forge's inference stack (model, session, sampler, GBNF grammar, importers),
+# for src/neural. Beyond the header-only layers it builds two static
+# libraries: forge_simd_mv (the CPU kernels, one TU per ISA) and forge_trust
+# (vendored Monocypher). GPU runtimes are loaded at run time, so nothing GPU
+# is linked here.
+if(NOT TARGET retdec_forge_inference)
+	add_library(retdec_forge_inference INTERFACE)
+	target_link_libraries(retdec_forge_inference INTERFACE
+		forge_inference forge_verify forge_simd_mv retdec_forge)
+	target_compile_features(retdec_forge_inference INTERFACE cxx_std_23)
+	add_library(retdec::forge_inference ALIAS retdec_forge_inference)
+endif()
+
+# RetDec's warning flags (-Wold-style-cast, -Wcast-qual, ...) and src/neural's
+# -Werror are for RetDec's code: consumers see Forge's headers as system
+# headers. CMake 3.25 is Forge's own minimum, so the property is always there.
+foreach(_forge_tgt
+		forge_core forge_os forge_ops forge_simd forge_gpu forge_graph
+		forge_modelfile forge_security forge_inference forge_verify forge_trust)
+	if(TARGET ${_forge_tgt})
+		set_property(TARGET ${_forge_tgt} PROPERTY SYSTEM TRUE)
+	endif()
+endforeach()
+
 # ---- FuseUI ------------------------------------------------------------------
 if(RETDEC_GUI)
 	set(FUSE_BUILD_UI_WIDGETS ON CACHE BOOL "" FORCE)

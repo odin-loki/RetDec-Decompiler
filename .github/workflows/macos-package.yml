@@ -46,8 +46,7 @@ jobs:
       - name: Install dependencies
         run: |
           brew update
-          brew install ninja qt@6 pkg-config autoconf automake libtool
-          echo "CMAKE_PREFIX_PATH=$(brew --prefix qt@6)" >> "$GITHUB_ENV"
+          brew install ninja pkg-config autoconf automake libtool
 
       # Same pin, same reason as release-installers: --target install runs
       # support/install-share.py, and 3.14 changed tarfile.extractall's default

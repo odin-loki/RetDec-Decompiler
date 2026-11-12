@@ -1,23 +1,21 @@
 #!/usr/bin/env python3
 """MAC-01 -- retdec-gui.app must resolve and verify, or it is not shippable.
 
-What was wrong
+What it guards
 --------------
-The first macOS build of this tree assembled `retdec-gui.app` and macdeployqt
-reported, on every run:
+retdec-gui is built on FuseUI, whose macOS backend is a Cocoa window that
+blits a CPU-rasterised frame. The GUI itself therefore needs nothing from the
+system but Cocoa/AppKit and libc++ -- there are no toolkit frameworks or
+platform plugins to deploy, and no deploy tool runs. But the bundle also
+carries the decompiler staged next to the GUI (retdec-gui-decompiler-staging)
+and its runtime share/ tree, and anything that links a Homebrew library, an
+Xcode path or someone's home directory makes an app that opens on the machine
+that built it and nowhere else. A bundle whose signature does not verify is
+the same failure, later.
 
-    ERROR: no file at "/opt/homebrew/opt/webp/lib/libwebp.7.dylib"
-    ERROR: no file at "/opt/homebrew/opt/webp/lib/libsharpyuv.0.dylib"
-    ERROR: no file at "/opt/homebrew/opt/brotli/lib/libbrotlicommon.1.dylib"
-    ...
-    retdec-gui.app: code object is not signed at all
-    codesign verification error
-
-It did not fail the build, and nothing depended on the bundle, so it was
-recorded and left. The moment there is a macOS installer job that ships the
-bundle, a bundle whose libraries live in someone else's Homebrew prefix and
-whose signature does not verify stops being cosmetic: it is an app that does
-not open on any machine but the one that built it.
+The first macOS bundle of this tree shipped exactly that: libraries resolved
+into /opt/homebrew, and `code object is not signed at all`. It did not fail the
+build, which is why this is a gate and not a note.
 
 What this does
 --------------
@@ -32,6 +30,9 @@ Walks every Mach-O file in the bundle and follows its load commands.
     deep comes along with the two above it.
   * Everything touched is re-signed ad-hoc, innermost first, and the bundle
     last. `codesign --verify --deep --strict` then has to pass.
+  * If the bundle is retdec-gui's, `Contents/share/retdec/gui` (FuseUI themes,
+    fonts and pass presets, found at run time beside the binary) has to be
+    there: without it the GUI starts unstyled.
 
 With `--fix` it repairs and then verifies. Without, it only verifies, which is
 what a release job wants after the repair has already happened.
@@ -78,11 +79,11 @@ def parse_otool_D(out: str) -> str | None:
     """The LC_ID_DYLIB install name from `otool -D`, or None for a program.
 
     This matters: `otool -L` prints a dylib's OWN install name as its first
-    line, so without it the id reads as a dependency on itself. Homebrew's Qt
-    frameworks have an absolute id into /opt/homebrew, and that is how the
-    first version of this check "found" a foreign dependency in a framework it
-    had already copied into the bundle -- and then copied the Homebrew one in
-    beside it under a flat name."""
+    line, so without it the id reads as a dependency on itself. Homebrew's
+    libraries and frameworks have an absolute id into /opt/homebrew, and that
+    is how the first version of this check "found" a foreign dependency in a
+    library it had already copied into the bundle -- and then copied the
+    Homebrew one in beside it under a flat name."""
     lines = [l for l in out.splitlines() if l.strip()]
     # First line is the file that was asked about; a second line, if any, is
     # the install name.
@@ -209,10 +210,10 @@ def rpath_to_frameworks(holder: Path, bundle: Path) -> str:
 def bundled_dep_candidates(dep: str, fw: Path, flat_target: Path) -> list[Path]:
     """Where an @rpath / basename load command would live inside Frameworks.
 
-    Flat dylibs are Frameworks/<basename>. Qt frameworks are
-    Frameworks/QtCore.framework/Versions/A/QtCore -- looking up only the
-    basename misses those, which is why --fix left 17 @rpath framework
-    deps unresolved on the first ctest-macos run that executed MAC-01.
+    Flat dylibs are Frameworks/<basename>. Frameworks are
+    Frameworks/Foo.framework/Versions/A/Foo -- looking up only the basename
+    misses those, which is why --fix once left 17 @rpath framework deps
+    unresolved on the first ctest-macos run that executed MAC-01.
     """
     out: list[Path] = []
     if dep.startswith("@rpath/"):
@@ -272,10 +273,9 @@ def walk(bundle: Path, fix: bool) -> Report:
 
         # An install name that points out of the bundle is not a load and does
         # not break dyld -- what a binary loads is decided by the DEPENDENT's
-        # load command, not by the id. macdeployqt still normally rewrites it,
-        # and four of Homebrew's Qt frameworks come through with
-        # /opt/homebrew/... ids. Leaving them is a trap for whoever links
-        # against the bundled framework next, so --fix rewrites them; without
+        # load command, not by the id. A library copied in from Homebrew
+        # comes with an /opt/homebrew/... id. Leaving it is a trap for whoever
+        # links against the bundled copy next, so --fix rewrites it; without
         # --fix they are listed and do not fail the check.
         if own_id is not None and not own_id.startswith("@") and \
                 not own_id.startswith(SYSTEM_PREFIXES) and \
@@ -323,8 +323,8 @@ def walk(bundle: Path, fix: bool) -> Report:
                     # uploads the tarball -- reported OK for a bundle that
                     # cannot start, as long as a same-named file happened to be
                     # sitting in Frameworks. Basename-only lookup then repeated
-                    # the hole for Qt frameworks: Frameworks/QtCore does not
-                    # exist, Frameworks/QtCore.framework/Versions/A/QtCore does.
+                    # the hole for frameworks: Frameworks/Foo does not exist,
+                    # Frameworks/Foo.framework/Versions/A/Foo does.
                     shown = present.relative_to(fw) if inside(present, fw) else present.name
                     if fix:
                         add_rpath(f, rpath_to_frameworks(f, bundle))
@@ -336,14 +336,12 @@ def walk(bundle: Path, fix: bool) -> Report:
                              f"{dep} (present as Frameworks/{shown}, but no "
                              f"LC_RPATH here reaches it)"))
                     continue
-                # A PLUGIN whose dependency is nowhere cannot load, so it is
-                # not providing anything -- it is a file macdeployqt copied in
-                # for a Qt module this build does not have. Homebrew ships
-                # QtPdf and QtVirtualKeyboard in separate formulas, so its
-                # qt@6 leaves libqpdf.dylib and libqtvirtualkeyboardplugin.dylib
-                # in the bundle naming modules that are not on the machine.
-                # Deleting one is safe by construction; deleting anything
-                # under MacOS/ or Frameworks/ would not be, and is not done.
+                # A PLUGIN (Contents/PlugIns) whose dependency is nowhere
+                # cannot load, so it is not providing anything. retdec-gui
+                # ships no plug-ins of its own; anything here was copied in by
+                # hand. Deleting one is safe by construction; deleting
+                # anything under MacOS/ or Frameworks/ would not be, and is
+                # not done.
                 if fix and is_plugin(f, bundle):
                     rel = f.relative_to(bundle)
                     try:
@@ -357,11 +355,11 @@ def walk(bundle: Path, fix: bool) -> Report:
                 continue
 
             # A framework is a directory with a version layout, a Resources
-            # tree and an Info.plist, and relocating one is macdeployqt's job.
-            # Flattening it to Contents/Frameworks/<name> produces a file that
-            # loads and a bundle that does not verify, so this reports and does
-            # not touch it. In practice one here means the Qt in use is not
-            # relocatable -- Homebrew's is not.
+            # tree and an Info.plist. Flattening it to
+            # Contents/Frameworks/<name> produces a file that loads and a
+            # bundle that does not verify, so this reports and does not touch
+            # it. retdec-gui links only system frameworks (Cocoa), so one here
+            # means something in the bundle picked up a third-party framework.
             if ".framework/" in dep or ".framework/" in str(resolved):
                 rep.frameworks.append((str(f.relative_to(bundle)), dep))
                 continue
@@ -408,10 +406,10 @@ def _inside_framework(p: Path) -> bool:
 
 
 def strip_ambiguous_contents(fw: Path) -> None:
-    """Homebrew Qt frameworks ship Contents -> Versions/Current beside Versions/.
+    """Some Homebrew frameworks ship Contents -> Versions/Current beside Versions/.
 
     codesign then reports `bundle format is ambiguous (could be app or
-    framework)` for every Qt*.framework, including QtCore. An app bundle
+    framework)` for each of them. An app bundle
     uses Contents/; a framework uses Versions/. Both at once is the
     Homebrew layout, not a valid bundle, and --verify --deep fails the
     whole .app on the first such subcomponent.
@@ -427,7 +425,7 @@ def strip_ambiguous_contents(fw: Path) -> None:
 
 
 def restore_framework_symlinks(fw: Path) -> None:
-    """macdeployqt/copy flattens a framework into real files.
+    """A plain copy flattens a framework into real files.
 
     A valid framework is symlinks at the root and at Versions/Current. A
     copy leaves a real binary at Foo.framework/Foo and a real Versions/Current
@@ -496,10 +494,10 @@ def resign(bundle: Path) -> None:
 
     Sign the real Mach-O at Versions/<ver>/, then the .framework, then
     everything else. Skip symlinks: Versions/Current -> A, and the
-    top-level Foo.framework/Foo link. Signing through Current is what
-    produced `bundle format is ambiguous` on QtQmlMeta.framework; signing
-    only the .framework directory and not Versions/A/Foo left QtGui
-    `code object is not signed at all` under --verify --deep.
+    top-level Foo.framework/Foo link. Signing through Current produces
+    `bundle format is ambiguous`; signing only the .framework directory and
+    not Versions/A/Foo leaves `code object is not signed at all` under
+    --verify --deep.
     """
     frameworks = sorted(
         (p for p in bundle.rglob("*.framework") if p.is_dir()),
@@ -528,6 +526,15 @@ def resign(bundle: Path) -> None:
     codesign_adhoc(bundle)
 
 
+def missing_gui_resources(bundle: Path) -> str | None:
+    """retdec-gui finds its resources at <bin>/../share/retdec/gui, which in a
+    bundle is Contents/share/retdec/gui. None when present or not a GUI bundle."""
+    if not (bundle / "Contents" / "MacOS" / "retdec-gui").exists():
+        return None
+    res = Path("Contents") / "share" / "retdec" / "gui"
+    return None if (bundle / res).is_dir() else str(res)
+
+
 def verify(bundle: Path) -> tuple[bool, str]:
     p = subprocess.run(["codesign", "--verify", "--deep", "--strict",
                         "--verbose=2", str(bundle)],
@@ -538,12 +545,12 @@ def verify(bundle: Path) -> tuple[bool, str]:
 def self_test() -> None:
     """The parsers, against tool output recorded from a real bundle."""
     otool_L = """retdec-gui.app/Contents/MacOS/retdec-gui:
-\t@rpath/QtWidgets.framework/Versions/A/QtWidgets (compatibility version 6.0.0, current version 6.7.3)
+\t@rpath/Foo.framework/Versions/A/Foo (compatibility version 6.0.0, current version 6.7.3)
 \t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 1800.101.0)
 \t/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit (compatibility version 45.0.0, current version 2487.0.0)
 """
     assert parse_otool_L(otool_L) == [
-        "@rpath/QtWidgets.framework/Versions/A/QtWidgets",
+        "@rpath/Foo.framework/Versions/A/Foo",
         "/usr/lib/libc++.1.dylib",
         "/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit",
     ], parse_otool_L(otool_L)
@@ -560,16 +567,16 @@ Load command 21
     assert parse_otool_rpaths(otool_l) == [
         "@executable_path/../Frameworks", "/opt/homebrew/lib"], parse_otool_rpaths(otool_l)
 
-    otool_D_dylib = """/opt/homebrew/lib/QtDBus.framework/Versions/A/QtDBus:
-/opt/homebrew/opt/qtbase/lib/QtDBus.framework/Versions/A/QtDBus
+    otool_D_dylib = """/opt/homebrew/lib/Bar.framework/Versions/A/Bar:
+/opt/homebrew/opt/bar/lib/Bar.framework/Versions/A/Bar
 """
     assert parse_otool_D(otool_D_dylib) == \
-        "/opt/homebrew/opt/qtbase/lib/QtDBus.framework/Versions/A/QtDBus"
+        "/opt/homebrew/opt/bar/lib/Bar.framework/Versions/A/Bar"
     # A program has no LC_ID_DYLIB, so otool -D prints only the header.
     assert parse_otool_D("retdec-gui.app/Contents/MacOS/retdec-gui:\n") is None
 
     bundle = Path("/tmp/x/retdec-gui.app")
-    holder = bundle / "Contents" / "PlugIns" / "imageformats" / "libqwebp.dylib"
+    holder = bundle / "Contents" / "PlugIns" / "imageformats" / "libwebpplugin.dylib"
     # An @rpath dep is looked for under each LC_RPATH of the file that names it.
     got = expand("@rpath/libwebp.7.dylib", holder, bundle,
                  ["@loader_path/../../Frameworks", "/opt/homebrew/opt/webp/lib"])
@@ -578,19 +585,19 @@ Load command 21
         Path("/opt/homebrew/opt/webp/lib/libwebp.7.dylib"),
     ], got
     # @executable_path is the bundle's MacOS directory, wherever the holder is.
-    assert expand("@executable_path/../Frameworks/QtCore.framework/Versions/A/QtCore",
+    assert expand("@executable_path/../Frameworks/Foo.framework/Versions/A/Foo",
                   holder, bundle, []) == [
         bundle / "Contents" / "Frameworks" /
-        "QtCore.framework" / "Versions" / "A" / "QtCore"]
+        "Foo.framework" / "Versions" / "A" / "Foo"]
     # An absolute path means itself.
     assert expand("/usr/lib/libz.1.dylib", holder, bundle, []) == \
         [Path("/usr/lib/libz.1.dylib")]
 
     # An id rewritten for a framework keeps the version layout; a plain dylib
     # gets its basename.
-    assert rpath_id_for(bundle / "Contents" / "Frameworks" / "QtDBus.framework" /
-                        "Versions" / "A" / "QtDBus", bundle) == \
-        "@rpath/QtDBus.framework/Versions/A/QtDBus"
+    assert rpath_id_for(bundle / "Contents" / "Frameworks" / "Bar.framework" /
+                        "Versions" / "A" / "Bar", bundle) == \
+        "@rpath/Bar.framework/Versions/A/Bar"
     assert rpath_id_for(bundle / "Contents" / "Frameworks" / "libbrotlicommon.1.dylib",
                         bundle) == "@rpath/libbrotlicommon.1.dylib"
 
@@ -598,15 +605,15 @@ Load command 21
     assert rpath_to_frameworks(holder, bundle) == "@loader_path/../../Frameworks"
     assert rpath_to_frameworks(bundle / "Contents" / "MacOS" / "retdec-gui",
                                bundle) == "@loader_path/../Frameworks"
-    fw_bin = (bundle / "Contents" / "Frameworks" / "QtDBus.framework" /
-              "Versions" / "A" / "QtDBus")
+    fw_bin = (bundle / "Contents" / "Frameworks" / "Bar.framework" /
+              "Versions" / "A" / "Bar")
     assert rpath_to_frameworks(fw_bin, bundle) == "@loader_path/../../.."
 
     fw = bundle / "Contents" / "Frameworks"
     cands = bundled_dep_candidates(
-        "@rpath/QtCore.framework/Versions/A/QtCore", fw, fw / "QtCore")
-    assert cands[0] == (fw / "QtCore.framework" / "Versions" / "A" / "QtCore"), cands
-    assert (fw / "QtCore") in cands
+        "@rpath/Foo.framework/Versions/A/Foo", fw, fw / "Foo")
+    assert cands[0] == (fw / "Foo.framework" / "Versions" / "A" / "Foo"), cands
+    assert (fw / "Foo") in cands
     # The verify-only pass must not call an unreachable dependency clean.
     # Driven through the real walk() would need otool; this pins the branch
     # logic instead, which is where the hole was.
@@ -616,7 +623,7 @@ Load command 21
         .split("# Resolved, but outside", 1)[0], \
         "the not-fix branch no longer records an unreachable dependency"
     assert "strip_ambiguous_contents" in inspect.getsource(resign), \
-        "resign no longer strips Homebrew's Contents+Versions Qt layout"
+        "resign no longer strips Homebrew's Contents+Versions framework layout"
     assert "restore_framework_symlinks" in inspect.getsource(resign), \
         "resign no longer restores flattened framework symlinks"
 
@@ -694,14 +701,17 @@ def main() -> int:
         for who, dep in rep.frameworks:
             print(f"  {who}  ->  {dep}", file=sys.stderr)
         print("", file=sys.stderr)
-        print("  Relocating a framework is macdeployqt's job and this does not "
-              "do it by hand.", file=sys.stderr)
-        print("  A framework here means the Qt that built this is not "
-              "relocatable: Homebrew's", file=sys.stderr)
-        print("  qt@6 carries absolute install names into /opt/homebrew. Build "
-              "against the", file=sys.stderr)
-        print("  official Qt archives instead (jurplel/install-qt-action).",
-              file=sys.stderr)
+        print("  This does not relocate frameworks by hand. retdec-gui (FuseUI) "
+              "links only", file=sys.stderr)
+        print("  system frameworks, so find what pulled this one in and link it "
+              "statically", file=sys.stderr)
+        print("  or drop it.", file=sys.stderr)
+
+    missing = missing_gui_resources(bundle)
+    if missing:
+        ok = False
+        print(f"MAC-01: FAIL retdec-gui bundle has no {missing} (FuseUI themes, "
+              f"fonts, presets)", file=sys.stderr)
 
     signed, detail = verify(bundle)
     if not signed:

@@ -62,10 +62,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             file \
-            qt6-base-dev \
-            libqt6svg6 \
-            libgl1-mesa-dev \
-            libxkbcommon-dev \
             imagemagick
           mkdir -p /tmp/rel
           gh release download "${TAG}" --pattern 'retdec-*-linux-x64.tar.gz' --dir /tmp/rel
