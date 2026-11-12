@@ -47,6 +47,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <fstream>
