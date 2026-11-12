@@ -109,13 +109,6 @@ fi
 # Translation units that do not compile in this container.  A reason each, and
 # none of them reachable from tests/bin2llvmir.
 EXPECTED_UNCOMPILABLE="
-src/cli_parser/cil_lifter.cpp|C++20 (std::span); this harness compiles the tree as C++17
-src/cli_parser/cli_heaps.cpp|C++20 (std::span)
-src/cli_parser/cli_reader.cpp|C++20 (std::span)
-src/cli_parser/cli_sig.cpp|C++20 (std::span)
-src/cli_parser/cli_tables.cpp|C++20 (std::span)
-src/cli_parser/pe_reader.cpp|C++20 (std::span)
-src/opencl/ocl_buffer_pool.cpp|C++23 (std::countr_zero)
 src/debugformat/dwarf.cpp|LLVM 21 DataExtractor and DWARF/LowLevel/ layout; stubbed, see the header
 src/patterngen/pattern_extractor/pattern_extractor.cpp|needs yaramod built from deps/
 src/patterngen/pattern_extractor/types/symbol_pattern.cpp|needs yaramod built from deps/
