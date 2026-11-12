@@ -178,6 +178,12 @@ void FunctionListPanel::build(NodeHandle parent)
 	buildFilterBar(bar);
 	for (NodeHandle c = ui_.firstChild(bar); ui_.alive(c); c = ui_.nextSibling(c))
 		ui_.setCss(c, "flex-shrink", "0");
+	// In a narrow dock the text fields give way first.
+	for (NodeHandle e: {nameEdit_, addrLowEdit_, addrHighEdit_})
+	{
+		ui_.setCss(e, "flex-shrink", "1");
+		ui_.setCss(e, "min-width", "48px");
+	}
 
 	// Table area: empty-state message or the table.
 	const NodeHandle area = w::panel(ui_, root_);

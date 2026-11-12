@@ -374,6 +374,18 @@ TEST(DiffViewTest, SideBySidePairsChangedLines)
 	EXPECT_TRUE(qtRows[1].right.kind == DiffCellKind::Placeholder || qtRows[1].left.kind == DiffCellKind::Placeholder);
 }
 
+TEST(DiffViewTest, MostlyDifferentPairsGetNoSpans)
+{
+	const auto r = MyersDiff::diffText("a\nputs(\"hi\");\nz\n", "a\nreturn count;\nz\n");
+	const auto rows = buildSideBySide(r);
+	ASSERT_EQ(rows.size(), 3u);
+	EXPECT_EQ(rows[1].left.kind, DiffCellKind::Removed);
+	EXPECT_EQ(rows[1].right.kind, DiffCellKind::Added);
+	EXPECT_TRUE(rows[1].left.spans.empty());
+	EXPECT_TRUE(rows[1].right.spans.empty());
+	EXPECT_TRUE(buildUnified(r)[1].spans.empty());
+}
+
 TEST(DiffViewTest, UnifiedRowsAndStats)
 {
 	const auto r = MyersDiff::diffText("a\nint x;\nz\n", "a\nint y;\nz\n");

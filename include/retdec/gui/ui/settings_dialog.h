@@ -202,6 +202,13 @@ private:
 	std::string passError_;
 	std::vector<std::string> searchPaths_;
 	std::vector<std::string> pluginIds_;
+	struct PathRow
+	{
+		fuse::ui::NodeHandle edit;
+		FilePrompt::Mode mode;
+		std::string title, filter;
+	};
+	std::vector<PathRow> pathRows_;
 	bool populating_ = false;
 };
 

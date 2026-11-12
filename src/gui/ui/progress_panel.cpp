@@ -29,6 +29,7 @@ using model::StageState;
 namespace {
 
 constexpr std::string_view kWaterfallClass = "rd-waterfall";
+constexpr std::string_view kStageIconClass = "rd-stageicon";
 constexpr float kWaterfallRowH = 14.f;
 constexpr float kWaterfallLabelW = 120.f;
 
@@ -43,6 +44,41 @@ const char* stateColor(StageState s)
 	}
 	return "#cdd6f4";
 }
+
+// Stage state icon drawn with the draw list (the bundled font has no
+// ○ ◉ ✓ ✗ glyphs); the node text keeps the character for accessibility.
+// The colour comes from the node's `color`.
+struct StageIcon
+{
+	static constexpr std::string_view kName = kStageIconClass;
+	static constexpr fuse::ui::A11yRole kRole = fuse::ui::A11yRole::Image;
+	static fuse::ui::Size measure(UiContext&, NodeHandle, fuse::ui::Size) { return {16.f, 16.f}; }
+	static void paint(const fuse::ui::PaintContext& pc, fuse::ui::DrawList& dl)
+	{
+		const std::string_view t = pc.ui.text(pc.node);
+		const Color col = pc.tint(pc.style.color);
+		const float cx = pc.content.x + pc.content.w * 0.5f, cy = pc.content.y + pc.content.h * 0.5f;
+		const float r = 5.f;
+		const Rect circle{cx - r, cy - r, 2.f * r, 2.f * r};
+		if (t == model::stageStateIcon(StageState::Pending))
+			dl.roundedRect(circle, {}, {r, r, r, r}, col, 1.2f);
+		else if (t == model::stageStateIcon(StageState::Running))
+		{
+			dl.roundedRect(circle, {}, {r, r, r, r}, col, 1.2f);
+			dl.rect({cx - 2.5f, cy - 2.5f, 5.f, 5.f}, col, 2.5f);
+		}
+		else if (t == model::stageStateIcon(StageState::Done))
+		{
+			dl.line({cx - 4.5f, cy}, {cx - 1.5f, cy + 3.5f}, col, 1.8f);
+			dl.line({cx - 1.5f, cy + 3.5f}, {cx + 4.5f, cy - 4.f}, col, 1.8f);
+		}
+		else
+		{
+			dl.line({cx - 4.f, cy - 4.f}, {cx + 4.f, cy + 4.f}, col, 1.8f);
+			dl.line({cx - 4.f, cy + 4.f}, {cx + 4.f, cy - 4.f}, col, 1.8f);
+		}
+	}
+};
 
 void setEditText(UiContext& ui, NodeHandle edit, std::string_view text)
 {
@@ -177,6 +213,7 @@ void ProgressPanel::build(NodeHandle parent)
 		cls.paint = &ProgressPanel::paintWaterfall;
 		ui_.registry().add(std::move(cls));
 	}
+	if (ui_.registry().find(kStageIconClass) == 0xFFFFFFFFu) ui_.registry().registerWidget<StageIcon>();
 
 	root_ = w::panel(ui_, parent);
 	ui_.addClass(root_, "rd-progress");
@@ -218,7 +255,7 @@ void ProgressPanel::build(NodeHandle parent)
 	};
 	fnCountLabel_ = stat("\xC6\x92", "0 fn", "Functions recovered");
 	instrLabel_ = stat("#", "0 instr", "Instructions analysed");
-	elapsedLabel_ = stat("t", "0.0s", "Elapsed wall time");
+	elapsedLabel_ = stat("\xCE\x94t", "0.0s", "Elapsed wall time");
 	ui_.setCss(elapsedLabel_, "width", "56px");
 
 	// ── stages + timeline (stacked splitter) ────────────────────────────────
@@ -286,9 +323,9 @@ void ProgressPanel::addRowNodes(const std::string& name)
 	ui_.setCss(n.row, "gap", "6px");
 	ui_.setCss(n.row, "padding", "1px 2px");
 	ui_.setCss(n.row, "flex-shrink", "0");
-	n.icon = w::label(ui_, n.row, model::stageStateIcon(StageState::Pending));
-	ui_.setCss(n.icon, "width", "16px");
-	ui_.setCss(n.icon, "text-align", "center");
+	n.icon = ui_.create(ui_.registry().find(kStageIconClass), n.row);
+	ui_.setText(n.icon, model::stageStateIcon(StageState::Pending));
+	ui_.setA11y(n.icon, fuse::ui::A11yRole::Image, model::stageStateName(StageState::Pending));
 	n.name = w::label(ui_, n.row, name);
 	ui_.setCss(n.name, "width", "172px");
 	n.bar = w::progressBar(ui_, n.row, 0.f);
@@ -326,6 +363,7 @@ void ProgressPanel::syncRow(std::size_t i)
 	const auto& s = tracker_.stages()[i];
 	const StageRowNodes& n = rows_[i].nodes;
 	ui_.setText(n.icon, model::stageStateIcon(s.state));
+	ui_.setA11y(n.icon, fuse::ui::A11yRole::Image, model::stageStateName(s.state));
 	ui_.setCss(n.icon, "color", stateColor(s.state));
 	ui_.setCss(n.name, "color", s.state == StageState::Pending ? "#9a9cab" : s.state == StageState::Error ? "#f38ba8" : "#e6e6eb");
 	ui_.setCss(n.bar, "background-end", s.state == StageState::Error ? "#f38ba8" : s.state == StageState::Done ? "#a6e3a1" : "#89b4fa");
@@ -390,7 +428,7 @@ void ProgressPanel::syncSummary()
 void ProgressPanel::syncElapsed()
 {
 	const int64_t ms = tracker_.elapsedMs();
-	ui_.setText(elapsedLabel_, tracker_.started() ? model::formatStageMs(ms) : "0.0s");
+	ui_.setText(elapsedLabel_, tracker_.started() && ms > 0 ? model::formatStageMs(ms) : "0.0s");
 	budget_ = tracker_.running() ? model::budgetLevel(ms, budgetSecs_) : model::BudgetLevel::Normal;
 	elapsedTip_ = model::budgetToolTip(budget_, budgetSecs_);
 	switch (budget_)

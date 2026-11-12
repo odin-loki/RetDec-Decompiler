@@ -216,7 +216,7 @@ TEST_F(ProgressPanelTest, ExportJsonStagesArrayHasDefaultStages)
 TEST_F(ProgressPanelTest, ExportJsonStageHasStateField)
 {
 	const auto root = parseJson(panel->exportJson());
-	const auto& first = root["stages"][0];
+	const auto& first = root["stages"][std::size_t{0}];
 	EXPECT_NE(first.find("name"), nullptr);
 	EXPECT_NE(first.find("state"), nullptr);
 	EXPECT_EQ(first["state"].str(), "pending");
@@ -225,7 +225,7 @@ TEST_F(ProgressPanelTest, ExportJsonStageHasStateField)
 TEST_F(ProgressPanelTest, ExportJsonReflectsDoneState)
 {
 	panel->setStageState("Binary loading", StageState::Done);
-	EXPECT_EQ(parseJson(panel->exportJson())["stages"][0]["state"].str(), "done");
+	EXPECT_EQ(parseJson(panel->exportJson())["stages"][std::size_t{0}]["state"].str(), "done");
 }
 
 TEST_F(ProgressPanelTest, ExportJsonFunctionCountMatchesSet)
