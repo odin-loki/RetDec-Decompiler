@@ -29,12 +29,12 @@ Rgba inheritColor(InheritanceLink::Kind kind)
 {
 	switch (kind)
 	{
-	case InheritanceLink::Kind::Public: return palette::green;
-	case InheritanceLink::Kind::Protected: return palette::yellow;
-	case InheritanceLink::Kind::Private: return palette::red;
-	case InheritanceLink::Kind::Virtual: return palette::mauve;
+	case InheritanceLink::Kind::Public: return catppuccin::green;
+	case InheritanceLink::Kind::Protected: return catppuccin::yellow;
+	case InheritanceLink::Kind::Private: return catppuccin::red;
+	case InheritanceLink::Kind::Virtual: return catppuccin::mauve;
 	}
-	return palette::subtext0;
+	return catppuccin::subtext0;
 }
 
 std::vector<ClassInfo> classesFromLegacy(const std::vector<LegacyClassEntry>& entries)
@@ -203,15 +203,15 @@ std::string ClassHierarchyModel::data(int node, int column) const
 Rgba ClassHierarchyModel::foreground(int node, int column) const
 {
 	const ClassInfo* c = classAt(node);
-	if (!c) return palette::text;
+	if (!c) return catppuccin::text;
 	switch (column)
 	{
-	case ColName: return c->isAbstract ? palette::mauve : palette::text;
-	case ColInherits: return c->bases.empty() ? palette::overlay0 : inheritColor(c->bases.front().kind);
-	case ColVtable: return palette::blue;
-	case ColMethods: return palette::teal;
-	case ColCompiler: return palette::subtext0;
-	default: return palette::text;
+	case ColName: return c->isAbstract ? catppuccin::mauve : catppuccin::text;
+	case ColInherits: return c->bases.empty() ? catppuccin::overlay0 : inheritColor(c->bases.front().kind);
+	case ColVtable: return catppuccin::blue;
+	case ColMethods: return catppuccin::teal;
+	case ColCompiler: return catppuccin::subtext0;
+	default: return catppuccin::text;
 	}
 }
 
@@ -249,7 +249,7 @@ std::string ClassHierarchyModel::headerData(int column)
 
 bool ClassHierarchyModel::matches(int node, std::string_view filter) const
 {
-	return filter.empty() || containsNoCase(data(node, ColName), filter);
+	return filter.empty() || graphContainsNoCase(data(node, ColName), filter);
 }
 
 bool ClassHierarchyModel::subtreeMatches(int node, std::string_view filter, std::vector<int8_t>& memo) const
@@ -324,11 +324,11 @@ Rgba VtableModel::foreground(int row, int column) const
 	const VtableSlot* s = slotAt(row);
 	switch (column)
 	{
-	case 0: return palette::overlay0;
-	case 1: return s && s->isPure ? palette::mauve : palette::text;
-	case 2: return palette::blue;
-	case 3: return palette::subtext0;
-	default: return palette::text;
+	case 0: return catppuccin::overlay0;
+	case 1: return s && s->isPure ? catppuccin::mauve : catppuccin::text;
+	case 2: return catppuccin::blue;
+	case 3: return catppuccin::subtext0;
+	default: return catppuccin::text;
 	}
 }
 

@@ -20,10 +20,10 @@ namespace retdec::gui::model {
 Rgba callGraphModuleColor(int moduleId)
 {
 	static constexpr Rgba kPalette[] = {
-		palette::blue, palette::green, palette::mauve, palette::yellow, palette::peach,
-		palette::teal, palette::pink, palette::flamingo, palette::rosewater, palette::overlay0,
+		catppuccin::blue, catppuccin::green, catppuccin::mauve, catppuccin::yellow, catppuccin::peach,
+		catppuccin::teal, catppuccin::pink, catppuccin::flamingo, catppuccin::rosewater, catppuccin::overlay0,
 	};
-	if (moduleId < 0) return palette::surface2;
+	if (moduleId < 0) return catppuccin::surface2;
 	return kPalette[size_t(moduleId) % std::size(kPalette)];
 }
 
@@ -226,17 +226,17 @@ void CallGraphModel::relayout()
 			const auto& members = sit->second;
 			sn.kind = callgraph::Scc;
 			sn.radius = 6.f;
-			sn.fill = withAlpha(palette::peach, 40);
-			sn.hoverFill = withAlpha(palette::peach, 70);
-			sn.border = palette::peach;
+			sn.fill = rgbaWithAlpha(catppuccin::peach, 40);
+			sn.hoverFill = rgbaWithAlpha(catppuccin::peach, 70);
+			sn.border = catppuccin::peach;
 			sn.borderWidth = 1.8f;
 			sn.dashedBorder = true;
 			sn.shadow = false;
 			const std::string& first = m_nodes[m_byAddr[members.front()]].name;
 			sn.texts.push_back(SceneText{std::format("SCC [{}]", members.size()), {sn.rect.x, sn.rect.y + 3.f, sn.rect.w, 18.f},
-				11.f, palette::peach, SceneAlign::Center, true, true});
+				11.f, catppuccin::peach, SceneAlign::Center, true, true});
 			sn.texts.push_back(SceneText{first, {sn.rect.x + 4.f, sn.rect.y + 20.f, sn.rect.w - 8.f, 16.f}, 9.5f,
-				palette::subtext0, SceneAlign::Center, false, true});
+				catppuccin::subtext0, SceneAlign::Center, false, true});
 			std::string tip = std::format("SCC: {} mutually recursive functions", members.size());
 			for (size_t k = 0; k < std::min<size_t>(members.size(), 10); ++k)
 				tip += "\n  " + m_nodes[m_byAddr[members[k]]].name;
@@ -255,23 +255,23 @@ void CallGraphModel::relayout()
 			const Rgba mod = callGraphModuleColor(n.moduleId);
 			sn.kind = callgraph::Function;
 			sn.radius = 5.f;
-			sn.fill = n.isLibrary ? palette::surface0 : palette::surface1;
-			sn.border = n.isLibrary ? palette::surface2 : mod;
-			sn.hoverBorder = palette::blue;
+			sn.fill = n.isLibrary ? catppuccin::surface0 : catppuccin::surface1;
+			sn.border = n.isLibrary ? catppuccin::surface2 : mod;
+			sn.hoverBorder = catppuccin::blue;
 			sn.borderWidth = 1.5f;
 			sn.shadow = false;
 			if (!n.isLibrary)
 			{
-				sn.stripeFill = fadeAlpha(mod, 0.8f);
+				sn.stripeFill = rgbaFade(mod, 0.8f);
 				sn.stripeWidth = 4.f;
 			}
 			std::string count = n.instrCount > 0 ? std::to_string(n.instrCount) : std::string();
 			const float countW = count.empty() ? 0.f : 6.f * float(count.size()) + 6.f;
 			sn.texts.push_back(SceneText{n.name, {sn.rect.x + 8.f, sn.rect.y, sn.rect.w - 14.f - countW, sn.rect.h}, 11.f,
-				n.isLibrary ? palette::subtext0 : palette::text, SceneAlign::Left, false, true});
+				n.isLibrary ? catppuccin::subtext0 : catppuccin::text, SceneAlign::Left, false, true});
 			if (!count.empty())
 				sn.texts.push_back(SceneText{count, {sn.rect.x + 4.f, sn.rect.y, sn.rect.w - 10.f, sn.rect.h}, 9.5f,
-					palette::overlay0, SceneAlign::Right, false, true});
+					catppuccin::overlay0, SceneAlign::Right, false, true});
 			sn.tooltip = std::format("{}\n{}\n{} instrs{}\n{} caller{}, {} callee{}", n.name, hexAddress(n.address),
 				n.instrCount, n.isLibrary ? "\n[library]" : "", callerCount(n.address),
 				callerCount(n.address) == 1 ? "" : "s", calleeCount(n.address), calleeCount(n.address) == 1 ? "" : "s");
@@ -308,7 +308,7 @@ void CallGraphModel::relayout()
 		se.to = v;
 		const int count = calls[{u, v}];
 		se.width = callGraphEdgeWidth(count);
-		se.color = e.isDirect ? withAlpha(palette::blue, 160) : withAlpha(palette::subtext0, 120);
+		se.color = e.isDirect ? rgbaWithAlpha(catppuccin::blue, 160) : rgbaWithAlpha(catppuccin::subtext0, 120);
 		se.dashed = !e.isDirect;
 		se.dash = 5.f;
 		se.gap = 3.f;
@@ -337,11 +337,11 @@ void CallGraphModel::relayout()
 	{
 		const Rgba c = callGraphModuleColor(mid);
 		SceneRegion r;
-		r.fill = withAlpha(c, 18);
-		r.border = withAlpha(c, 100);
+		r.fill = rgbaWithAlpha(c, 18);
+		r.border = rgbaWithAlpha(c, 100);
 		r.borderWidth = 1.5f;
 		r.label = std::format("Module {}", mid);
-		r.labelColor = withAlpha(c, 180);
+		r.labelColor = rgbaWithAlpha(c, 180);
 		r.group = mid;
 		m_scene.regions.push_back(r);
 	}
@@ -367,7 +367,7 @@ bool CallGraphModel::isNodeVisible(uint64_t addr) const
 	const CallGraphNode& n = m_nodes[it->second];
 	if (m_hideLibrary && n.isLibrary) return false;
 	if (m_moduleFilter >= 0 && n.moduleId != m_moduleFilter) return false;
-	if (!m_nameFilter.empty() && !nameFilterMatches(m_nameFilter, n.name)) return false;
+	if (!m_nameFilter.empty() && !graphNameFilterMatches(m_nameFilter, n.name)) return false;
 	if (m_maxDepth >= 0)
 		if (const auto d = m_depth.find(addr); d != m_depth.end() && d->second > m_maxDepth) return false;
 	return true;

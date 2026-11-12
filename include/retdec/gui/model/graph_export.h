@@ -31,12 +31,12 @@ struct SvgOptions
 std::string sceneToSvg(const GraphScene& scene, const SvgOptions& options = {});
 
 /// XML text escaping (&, <, >, ", ').
-std::string xmlEscape(std::string_view s);
+std::string graphXmlEscape(std::string_view s);
 /// DOT double-quoted string escaping (backslash, quote, newline -> \n).
-std::string dotEscape(std::string_view s);
+std::string graphDotEscape(std::string_view s);
 
 /// Writes `text` to `path` (UTF-8, binary). Error text on failure.
-std::expected<void, std::string> writeTextFile(const std::filesystem::path& path, std::string_view text);
+std::expected<void, std::string> writeGraphExportFile(const std::filesystem::path& path, std::string_view text);
 
 } // namespace retdec::gui::model
 

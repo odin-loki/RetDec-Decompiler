@@ -408,7 +408,7 @@ void CallGraphPanel::resetZoom()
 
 int CallGraphPanel::search(const std::string& query)
 {
-	const auto hits = model::searchScene(m_view->scene(), query);
+	const auto hits = model::graphSearchScene(m_view->scene(), query);
 	m_view->setHighlighted(hits);
 	if (!hits.empty())
 	{
@@ -473,8 +473,8 @@ std::expected<void, std::string> CallGraphPanel::exportTo(GraphExportFormat f, c
 {
 	switch (f)
 	{
-	case GraphExportFormat::Svg: return model::writeTextFile(path, exportSvg());
-	case GraphExportFormat::Dot: return model::writeTextFile(path, exportDot());
+	case GraphExportFormat::Svg: return model::writeGraphExportFile(path, exportSvg());
+	case GraphExportFormat::Dot: return model::writeGraphExportFile(path, exportDot());
 	case GraphExportFormat::Png: return exportPng(path);
 	}
 	return std::unexpected("unknown format");
@@ -500,11 +500,11 @@ void CallGraphPanel::requestExport(GraphExportFormat f)
 	}
 	if (!m_prompt) m_prompt = std::make_unique<SavePrompt>(m_ui);
 	m_pendingExport = f;
-	const std::string filter = f == GraphExportFormat::Dot ? "*.dot;*.gv" : std::format("*.{}", exportExtension(f));
+	const std::string filter = f == GraphExportFormat::Dot ? "*.dot;*.gv" : std::format("*.{}", graphExportExtension(f));
 	m_prompt->open(f == GraphExportFormat::Dot ? "Export Call Graph (DOT)" : "Export Call Graph", filter,
 		[this](const std::string& path) {
 			std::filesystem::path p(path);
-			if (!p.has_extension()) p.replace_extension(exportExtension(m_pendingExport));
+			if (!p.has_extension()) p.replace_extension(graphExportExtension(m_pendingExport));
 			(void)exportTo(m_pendingExport, p);
 		});
 }

@@ -114,20 +114,20 @@ struct PanelFixture
 
 TEST(CFGEdgeColorTest, FallThroughDistinct)
 {
-	EXPECT_NE(alphaOf(cfgEdgeColor(EdgeKind::FallThrough)), 0);
+	EXPECT_NE(rgbaA(cfgEdgeColor(EdgeKind::FallThrough)), 0);
 }
 
 TEST(CFGEdgeColorTest, TrueBranchIsGreen)
 {
 	const Rgba c = cfgEdgeColor(EdgeKind::TrueBranch);
-	EXPECT_GT(greenOf(c), redOf(c));
-	EXPECT_GT(greenOf(c), blueOf(c));
+	EXPECT_GT(rgbaG(c), rgbaR(c));
+	EXPECT_GT(rgbaG(c), rgbaB(c));
 }
 
 TEST(CFGEdgeColorTest, FalseBranchIsReddish)
 {
 	const Rgba c = cfgEdgeColor(EdgeKind::FalseBranch);
-	EXPECT_GT(redOf(c), blueOf(c));
+	EXPECT_GT(rgbaR(c), rgbaB(c));
 }
 
 TEST(CFGEdgeColorTest, AllKindsValid)
@@ -135,7 +135,7 @@ TEST(CFGEdgeColorTest, AllKindsValid)
 	for (auto kind: {EdgeKind::FallThrough, EdgeKind::TrueBranch, EdgeKind::FalseBranch, EdgeKind::BackEdge,
 			 EdgeKind::ExceptionEdge, EdgeKind::UnresolvedIndirect})
 	{
-		EXPECT_EQ(alphaOf(cfgEdgeColor(kind)), 255);
+		EXPECT_EQ(rgbaA(cfgEdgeColor(kind)), 255);
 		EXPECT_STRNE(edgeKindName(kind), "");
 	}
 }
@@ -148,8 +148,8 @@ TEST(CFGEdgeColorTest, BackEdgeAndFalseBranchDiffer)
 TEST(CFGEdgeColorTest, ExceptionEdgeIsPurplish)
 {
 	const Rgba c = cfgEdgeColor(EdgeKind::ExceptionEdge);
-	EXPECT_GT(blueOf(c), greenOf(c));
-	EXPECT_GT(redOf(c), greenOf(c));
+	EXPECT_GT(rgbaB(c), rgbaG(c));
+	EXPECT_GT(rgbaR(c), rgbaG(c));
 }
 
 TEST(CFGEdgeColorTest, BackEdgeAndUnresolvedAreDashed)
@@ -235,11 +235,11 @@ TEST(CFGBlockItemTest, NodeColouringByKind)
 	const auto lay = load({makeBlock(1, true), makeBlock(2, false, true), makeBlock(3, false, false, true, 0),
 							  makeBlock(4)},
 		{makeEdge(1, 3), makeEdge(3, 4), makeEdge(4, 3), makeEdge(3, 2)});
-	EXPECT_EQ(lay.scene.node(1)->border, palette::green);
-	EXPECT_EQ(lay.scene.node(2)->border, palette::red);
-	EXPECT_EQ(lay.scene.node(3)->border, palette::blue);
-	EXPECT_EQ(lay.scene.node(4)->border, palette::surface1);
-	EXPECT_EQ(lay.scene.node(4)->headerFill, palette::mantle);
+	EXPECT_EQ(lay.scene.node(1)->border, catppuccin::green);
+	EXPECT_EQ(lay.scene.node(2)->border, catppuccin::red);
+	EXPECT_EQ(lay.scene.node(3)->border, catppuccin::blue);
+	EXPECT_EQ(lay.scene.node(4)->border, catppuccin::surface1);
+	EXPECT_EQ(lay.scene.node(4)->headerFill, catppuccin::mantle);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -290,9 +290,9 @@ TEST(CFGSceneTest, DiamondBranchFourNodes)
 	ASSERT_EQ(lay.scene.edges.size(), 4u);
 	for (const auto& e: lay.scene.edges)
 		if (e.from == 1 && e.to == 2)
-			EXPECT_EQ(e.color, palette::green);
+			EXPECT_EQ(e.color, catppuccin::green);
 		else if (e.from == 1 && e.to == 3)
-			EXPECT_EQ(e.color, palette::red);
+			EXPECT_EQ(e.color, catppuccin::red);
 }
 
 TEST(CFGSceneTest, BackEdgeGraphDoesNotCrash)
@@ -306,7 +306,7 @@ TEST(CFGSceneTest, BackEdgeGraphDoesNotCrash)
 		if (e.from == 3 && e.to == 2) back = &e;
 	ASSERT_NE(back, nullptr);
 	EXPECT_TRUE(back->dashed);
-	EXPECT_EQ(back->color, palette::peach);
+	EXPECT_EQ(back->color, catppuccin::peach);
 	// arcs to the left of both blocks
 	float minX = 1e9f;
 	for (const auto& p: back->polyline)
@@ -403,8 +403,8 @@ TEST(CFGSceneTest, LoopRegionBlocksHaveLoopId)
 	const GRect r0 = lay.scene.regions[0].rect;
 	EXPECT_LE(r0.x, lay.scene.node(2)->rect.x);
 	EXPECT_GE(r0.bottom(), lay.scene.node(3)->rect.bottom());
-	EXPECT_EQ(lay.scene.regions[0].border, withAlpha(palette::blue, 140));
-	EXPECT_EQ(lay.scene.regions[1].border, withAlpha(palette::mauve, 140));
+	EXPECT_EQ(lay.scene.regions[0].border, rgbaWithAlpha(catppuccin::blue, 140));
+	EXPECT_EQ(lay.scene.regions[1].border, rgbaWithAlpha(catppuccin::mauve, 140));
 }
 
 TEST(CFGSceneTest, LoopsDetectedWhenDataHasNone)
@@ -415,7 +415,7 @@ TEST(CFGSceneTest, LoopsDetectedWhenDataHasNone)
 	EXPECT_EQ(lay.loops[0].header, 2u);
 	EXPECT_EQ(lay.loops[0].body, (std::vector<uint64_t>{2, 3}));
 	EXPECT_EQ(lay.scene.regions.size(), 1u);
-	EXPECT_EQ(lay.scene.node(2)->border, palette::blue); // detected loop header
+	EXPECT_EQ(lay.scene.node(2)->border, catppuccin::blue); // detected loop header
 }
 
 TEST(CFGSceneTest, PortsSpreadForBranches)
@@ -462,7 +462,7 @@ TEST(CFGPanelTest, LoadCFGPopulatesScene)
 	EXPECT_EQ(f.panel.nodeCount(), 2);
 	EXPECT_FALSE(f.panel.emptyStateVisible());
 	EXPECT_EQ(f.panel.infoLabel(), "2 blocks");
-	EXPECT_TRUE(retdec::gui::ui::nodeShown(f.h.ui, f.panel.view().node()));
+	EXPECT_TRUE(retdec::gui::ui::graphShown(f.h.ui, f.panel.view().node()));
 }
 
 TEST(CFGPanelTest, ClearResetsToEmpty)
@@ -474,7 +474,7 @@ TEST(CFGPanelTest, ClearResetsToEmpty)
 	EXPECT_TRUE(f.panel.emptyStateVisible());
 	EXPECT_EQ(f.panel.functionLabel(), "No function selected");
 	EXPECT_EQ(f.panel.infoLabel(), "");
-	EXPECT_FALSE(retdec::gui::ui::nodeShown(f.h.ui, f.panel.view().node()));
+	EXPECT_FALSE(retdec::gui::ui::graphShown(f.h.ui, f.panel.view().node()));
 	EXPECT_TRUE(f.h.findText("No control-flow graph").valid());
 }
 

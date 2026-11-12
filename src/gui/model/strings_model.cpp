@@ -38,7 +38,7 @@ int ciCompare(std::string_view a, std::string_view b)
 	const std::size_t n = std::min(a.size(), b.size());
 	for (std::size_t i = 0; i < n; ++i)
 	{
-		const char x = lower(a[i]), y = lower(b[i]);
+		const auto x = static_cast<unsigned char>(lower(a[i])), y = static_cast<unsigned char>(lower(b[i]));
 		if (x != y) return x < y ? -1 : 1;
 	}
 	if (a.size() != b.size()) return a.size() < b.size() ? -1 : 1;

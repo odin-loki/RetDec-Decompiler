@@ -57,44 +57,44 @@ struct GRect
 /// 0xRRGGBBAA, straight alpha.
 using Rgba = uint32_t;
 
-constexpr Rgba rgba(uint32_t rgb, uint8_t alpha = 0xFF)
+constexpr Rgba rgbaHex(uint32_t rgb, uint8_t alpha = 0xFF)
 {
 	return (rgb << 8) | alpha;
 }
-constexpr uint8_t redOf(Rgba c) { return uint8_t(c >> 24); }
-constexpr uint8_t greenOf(Rgba c) { return uint8_t(c >> 16); }
-constexpr uint8_t blueOf(Rgba c) { return uint8_t(c >> 8); }
-constexpr uint8_t alphaOf(Rgba c) { return uint8_t(c); }
-constexpr Rgba withAlpha(Rgba c, uint8_t a) { return (c & 0xFFFFFF00u) | a; }
+constexpr uint8_t rgbaR(Rgba c) { return uint8_t(c >> 24); }
+constexpr uint8_t rgbaG(Rgba c) { return uint8_t(c >> 16); }
+constexpr uint8_t rgbaB(Rgba c) { return uint8_t(c >> 8); }
+constexpr uint8_t rgbaA(Rgba c) { return uint8_t(c); }
+constexpr Rgba rgbaWithAlpha(Rgba c, uint8_t a) { return (c & 0xFFFFFF00u) | a; }
 /// Multiplies the alpha channel by f (0..1).
-Rgba fadeAlpha(Rgba c, float f);
+Rgba rgbaFade(Rgba c, float f);
 /// "#rrggbb" (alpha dropped).
-std::string cssHex(Rgba c);
+std::string rgbaCss(Rgba c);
 
 /// Catppuccin Mocha, the palette the Qt graph panels painted with.
-namespace palette {
-inline constexpr Rgba base = rgba(0x1e1e2e);
-inline constexpr Rgba mantle = rgba(0x181825);
-inline constexpr Rgba crust = rgba(0x11111b);
-inline constexpr Rgba surface0 = rgba(0x313244);
-inline constexpr Rgba surface1 = rgba(0x45475a);
-inline constexpr Rgba surface2 = rgba(0x585b70);
-inline constexpr Rgba overlay0 = rgba(0x6c7086);
-inline constexpr Rgba overlay2 = rgba(0x9a9ebc);
-inline constexpr Rgba text = rgba(0xcdd6f4);
-inline constexpr Rgba subtext0 = rgba(0xa6adc8);
-inline constexpr Rgba subtext1 = rgba(0xbac2de);
-inline constexpr Rgba red = rgba(0xf38ba8);
-inline constexpr Rgba green = rgba(0xa6e3a1);
-inline constexpr Rgba yellow = rgba(0xf9e2af);
-inline constexpr Rgba blue = rgba(0x89b4fa);
-inline constexpr Rgba mauve = rgba(0xcba6f7);
-inline constexpr Rgba peach = rgba(0xfab387);
-inline constexpr Rgba teal = rgba(0x94e2d5);
-inline constexpr Rgba pink = rgba(0xf5c2e7);
-inline constexpr Rgba flamingo = rgba(0xf2cdcd);
-inline constexpr Rgba rosewater = rgba(0xf5e0dc);
-} // namespace palette
+namespace catppuccin {
+inline constexpr Rgba base = rgbaHex(0x1e1e2e);
+inline constexpr Rgba mantle = rgbaHex(0x181825);
+inline constexpr Rgba crust = rgbaHex(0x11111b);
+inline constexpr Rgba surface0 = rgbaHex(0x313244);
+inline constexpr Rgba surface1 = rgbaHex(0x45475a);
+inline constexpr Rgba surface2 = rgbaHex(0x585b70);
+inline constexpr Rgba overlay0 = rgbaHex(0x6c7086);
+inline constexpr Rgba overlay2 = rgbaHex(0x9a9ebc);
+inline constexpr Rgba text = rgbaHex(0xcdd6f4);
+inline constexpr Rgba subtext0 = rgbaHex(0xa6adc8);
+inline constexpr Rgba subtext1 = rgbaHex(0xbac2de);
+inline constexpr Rgba red = rgbaHex(0xf38ba8);
+inline constexpr Rgba green = rgbaHex(0xa6e3a1);
+inline constexpr Rgba yellow = rgbaHex(0xf9e2af);
+inline constexpr Rgba blue = rgbaHex(0x89b4fa);
+inline constexpr Rgba mauve = rgbaHex(0xcba6f7);
+inline constexpr Rgba peach = rgbaHex(0xfab387);
+inline constexpr Rgba teal = rgbaHex(0x94e2d5);
+inline constexpr Rgba pink = rgbaHex(0xf5c2e7);
+inline constexpr Rgba flamingo = rgbaHex(0xf2cdcd);
+inline constexpr Rgba rosewater = rgbaHex(0xf5e0dc);
+} // namespace catppuccin
 
 // ── Scene items ──────────────────────────────────────────────────────────────
 
@@ -111,7 +111,7 @@ struct SceneText
 	std::string text;
 	GRect box;
 	float size = 11.f; ///< pixel size at zoom 1
-	Rgba color = palette::text;
+	Rgba color = catppuccin::text;
 	SceneAlign align = SceneAlign::Left;
 	bool bold = false;
 	bool mono = false; ///< preferred monospace (SVG font-family; the view uses the UI font)
@@ -123,8 +123,8 @@ struct SceneNode
 	int kind = 0; ///< owner-defined (block, chain, function, SCC, ...)
 	GRect rect;
 	float radius = 6.f;
-	Rgba fill = palette::surface0;
-	Rgba border = palette::surface1;
+	Rgba fill = catppuccin::surface0;
+	Rgba border = catppuccin::surface1;
 	float borderWidth = 1.5f;
 	bool dashedBorder = false;
 	Rgba hoverFill = 0;   ///< 0 = keep `fill` while hovered
@@ -148,7 +148,7 @@ struct SceneEdge
 	int kind = 0;
 	/// Cubic path: points[0] is the start, then (control1, control2, end) triples.
 	std::vector<GPoint> points;
-	Rgba color = palette::subtext0;
+	Rgba color = catppuccin::subtext0;
 	float width = 1.6f;
 	bool dashed = false;
 	float dash = 4.f; ///< dash / gap lengths in pen widths (Qt dash pattern units)
@@ -184,7 +184,7 @@ struct GraphScene
 	std::vector<SceneRegion> regions;
 	std::vector<SceneEdge> edges;
 	std::vector<SceneNode> nodes;
-	Rgba background = palette::base;
+	Rgba background = catppuccin::base;
 	GRect bounds; ///< everything, plus the margin passed to finalize()
 
 	bool empty() const { return nodes.empty(); }

@@ -175,11 +175,11 @@ enum class GraphExportFormat : uint8_t
 	Dot,
 };
 /// "svg" / "png" / "dot".
-const char* exportExtension(GraphExportFormat f);
+const char* graphExportExtension(GraphExportFormat f);
 
 /// Shows / hides a node (display): the panels' stacked-widget switch.
-void setNodeShown(fuse::ui::UiContext& ui, fuse::ui::NodeHandle n, bool shown);
-bool nodeShown(const fuse::ui::UiContext& ui, fuse::ui::NodeHandle n);
+void graphSetShown(fuse::ui::UiContext& ui, fuse::ui::NodeHandle n, bool shown);
+bool graphShown(const fuse::ui::UiContext& ui, fuse::ui::NodeHandle n);
 
 /// Save-file prompt on FuseUI's modal file dialog (one per panel; the dialog is created on first use).
 class SavePrompt
@@ -206,7 +206,7 @@ fuse::ui::NodeHandle graphToolButton(fuse::ui::UiContext& ui, fuse::ui::NodeHand
 fuse::ui::NodeHandle graphMutedLabel(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent, std::string_view text);
 
 /// Colour conversion model::Rgba -> FuseUI.
-fuse::ui::Color toColor(model::Rgba c, float opacity = 1.f);
+fuse::ui::Color graphColor(model::Rgba c, float opacity = 1.f);
 
 } // namespace retdec::gui::ui
 

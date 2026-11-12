@@ -119,7 +119,9 @@ std::vector<fs::path> installPrefixCandidates()
 {
 	const fs::path appDir = applicationDirPath();
 	std::vector<fs::path> out;
-	out.push_back((appDir / "..").lexically_normal()); // <bin>/.. ; for a bundle this is Contents/
+	fs::path up = (appDir / "..").lexically_normal(); // <bin>/.. ; for a bundle this is Contents/
+	if (up.has_relative_path() && up.filename().empty()) up = up.parent_path(); // "x/" -> "x"
+	out.push_back(up);
 	if (isMacBundleExecutableDir(appDir))
 	{
 		// X.app/Contents/MacOS -> install prefix holding X.app, bin/ and share/.

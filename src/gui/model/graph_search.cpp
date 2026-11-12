@@ -50,7 +50,7 @@ size_t matchClass(std::string_view pat, size_t p, char c, bool& matched)
 
 } // namespace
 
-bool globMatch(std::string_view pat, std::string_view s)
+bool graphGlobMatch(std::string_view pat, std::string_view s)
 {
 	size_t p = 0, i = 0, star = std::string_view::npos, mark = 0;
 	while (i < s.size())
@@ -96,7 +96,7 @@ bool globMatch(std::string_view pat, std::string_view s)
 	return p == pat.size();
 }
 
-bool containsNoCase(std::string_view hay, std::string_view needle)
+bool graphContainsNoCase(std::string_view hay, std::string_view needle)
 {
 	if (needle.empty()) return true;
 	if (needle.size() > hay.size()) return false;
@@ -105,14 +105,14 @@ bool containsNoCase(std::string_view hay, std::string_view needle)
 		!= hay.end();
 }
 
-bool nameFilterMatches(std::string_view filter, std::string_view name)
+bool graphNameFilterMatches(std::string_view filter, std::string_view name)
 {
 	if (filter.empty()) return true;
-	if (filter.find_first_of("*?[") != std::string_view::npos) return globMatch(filter, name);
-	return containsNoCase(name, filter);
+	if (filter.find_first_of("*?[") != std::string_view::npos) return graphGlobMatch(filter, name);
+	return graphContainsNoCase(name, filter);
 }
 
-std::vector<uint64_t> searchScene(const GraphScene& scene, std::string_view query)
+std::vector<uint64_t> graphSearchScene(const GraphScene& scene, std::string_view query)
 {
 	std::vector<uint64_t> out;
 	if (query.empty()) return out;
@@ -122,7 +122,7 @@ std::vector<uint64_t> searchScene(const GraphScene& scene, std::string_view quer
 		if (!n.visible) continue;
 		std::string_view text = n.searchText;
 		if (text.empty() && !n.texts.empty()) text = n.texts.front().text;
-		bool hit = nameFilterMatches(query, text);
+		bool hit = graphNameFilterMatches(query, text);
 		if (!hit && hex)
 		{
 			const std::string idHex = std::format("0x{:x}", n.id);

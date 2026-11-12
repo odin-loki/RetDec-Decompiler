@@ -13,7 +13,7 @@
 
 namespace retdec::gui::model {
 
-std::string xmlEscape(std::string_view s)
+std::string graphXmlEscape(std::string_view s)
 {
 	std::string out;
 	out.reserve(s.size());
@@ -32,7 +32,7 @@ std::string xmlEscape(std::string_view s)
 	return out;
 }
 
-std::string dotEscape(std::string_view s)
+std::string graphDotEscape(std::string_view s)
 {
 	std::string out;
 	out.reserve(s.size());
@@ -65,9 +65,9 @@ std::string num(float v)
 
 std::string fillAttr(const char* name, Rgba c)
 {
-	if (alphaOf(c) == 0) return std::format(" {}=\"none\"", name);
-	std::string s = std::format(" {}=\"{}\"", name, cssHex(c));
-	if (alphaOf(c) != 255) s += std::format(" {}-opacity=\"{}\"", name, num(float(alphaOf(c)) / 255.f));
+	if (rgbaA(c) == 0) return std::format(" {}=\"none\"", name);
+	std::string s = std::format(" {}=\"{}\"", name, rgbaCss(c));
+	if (rgbaA(c) != 255) s += std::format(" {}-opacity=\"{}\"", name, num(float(rgbaA(c)) / 255.f));
 	return s;
 }
 
@@ -99,7 +99,7 @@ void writeText(std::string& out, const SceneText& t, float opacity)
 		"<text x=\"{}\" y=\"{}\" font-size=\"{}\" text-anchor=\"{}\" dominant-baseline=\"central\" font-family=\"{}\"{}{}>{}</text>\n",
 		num(x), num(y), num(t.size), anchor,
 		t.mono ? "Cascadia Code, Consolas, DejaVu Sans Mono, monospace" : "Open Sans, sans-serif",
-		t.bold ? " font-weight=\"bold\"" : "", fillAttr("fill", fadeAlpha(t.color, opacity)), xmlEscape(t.text));
+		t.bold ? " font-weight=\"bold\"" : "", fillAttr("fill", rgbaFade(t.color, opacity)), graphXmlEscape(t.text));
 }
 
 } // namespace
@@ -113,7 +113,7 @@ std::string sceneToSvg(const GraphScene& scene, const SvgOptions& opt)
 	out += std::format(
 		"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" viewBox=\"{} {} {} {}\">\n",
 		num(std::ceil(b.w)), num(std::ceil(b.h)), num(b.x), num(b.y), num(b.w), num(b.h));
-	out += std::format("<title>{}</title>\n", xmlEscape(opt.title));
+	out += std::format("<title>{}</title>\n", graphXmlEscape(opt.title));
 	if (opt.background)
 		out += std::format("<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"{}/>\n", num(b.x), num(b.y), num(b.w),
 			num(b.h), fillAttr("fill", scene.background));
@@ -139,7 +139,7 @@ std::string sceneToSvg(const GraphScene& scene, const SvgOptions& opt)
 		for (size_t i = 1; i + 2 < e.points.size(); i += 3)
 			d += std::format(" C{},{} {},{} {},{}", num(e.points[i].x), num(e.points[i].y), num(e.points[i + 1].x),
 				num(e.points[i + 1].y), num(e.points[i + 2].x), num(e.points[i + 2].y));
-		const Rgba col = fadeAlpha(e.color, e.opacity);
+		const Rgba col = rgbaFade(e.color, e.opacity);
 		std::string dash;
 		if (e.dashed) dash = std::format(" stroke-dasharray=\"{} {}\"", num(e.dash * e.width), num(e.gap * e.width));
 		out += std::format("<path d=\"{}\"{} stroke-width=\"{}\"{}/>\n", d, fillAttr("stroke", col), num(e.width), dash);
@@ -159,7 +159,7 @@ std::string sceneToSvg(const GraphScene& scene, const SvgOptions& opt)
 		if (!n.visible && !opt.includeHidden) continue;
 		out += std::format("<g data-id=\"0x{:x}\"{}>\n", n.id,
 			n.opacity < 1.f ? std::format(" opacity=\"{}\"", num(n.opacity)) : std::string());
-		if (!n.tooltip.empty()) out += std::format("<title>{}</title>\n", xmlEscape(n.tooltip));
+		if (!n.tooltip.empty()) out += std::format("<title>{}</title>\n", graphXmlEscape(n.tooltip));
 		const GRect& r = n.rect;
 		if (n.shadow)
 			out += std::format("<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{}\" fill=\"#000000\" fill-opacity=\"0.2\"/>\n",
@@ -181,7 +181,7 @@ std::string sceneToSvg(const GraphScene& scene, const SvgOptions& opt)
 	return out;
 }
 
-std::expected<void, std::string> writeTextFile(const std::filesystem::path& path, std::string_view text)
+std::expected<void, std::string> writeGraphExportFile(const std::filesystem::path& path, std::string_view text)
 {
 	const auto st = forge::os::fs::write_file_atomic(forge::os::fs::u8str(path), text);
 	if (!st) return std::unexpected(st.err.what);

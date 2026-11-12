@@ -194,7 +194,8 @@ for root in ROOTS:
                     tok = tok.replace(var, dirpath)
                 if "$" in tok:
                     continue
-                pattern = tok if os.path.isabs(tok) else os.path.join(dirpath, tok)
+                pattern = tok if (os.path.isabs(tok) or tok.startswith(dirpath)) \
+                    else os.path.join(dirpath, tok)
                 for hit in glob.glob(pattern, recursive=recurse):
                     named.add(os.path.relpath(hit, ".").replace(os.sep, "/"))
         for call in CALL.finditer(text):

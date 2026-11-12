@@ -176,8 +176,8 @@ std::string CfgPanel::expandChainsLabel() const
 void CfgPanel::updateEmptyState()
 {
 	const bool empty = m_layout.scene.empty();
-	setNodeShown(m_ui, m_empty, empty);
-	setNodeShown(m_ui, m_view->node(), !empty);
+	graphSetShown(m_ui, m_empty, empty);
+	graphSetShown(m_ui, m_view->node(), !empty);
 }
 
 bool CfgPanel::emptyStateVisible() const
@@ -218,7 +218,7 @@ void CfgPanel::setMinimapVisible(bool on)
 
 int CfgPanel::search(const std::string& query)
 {
-	m_matches = model::searchScene(m_layout.scene, query);
+	m_matches = model::graphSearchScene(m_layout.scene, query);
 	m_matchIndex = 0;
 	m_view->setHighlighted(m_matches);
 	if (!m_matches.empty())
@@ -305,8 +305,8 @@ std::expected<void, std::string> CfgPanel::exportTo(GraphExportFormat f, const s
 {
 	switch (f)
 	{
-	case GraphExportFormat::Svg: return model::writeTextFile(path, exportSvg());
-	case GraphExportFormat::Dot: return model::writeTextFile(path, exportDot());
+	case GraphExportFormat::Svg: return model::writeGraphExportFile(path, exportSvg());
+	case GraphExportFormat::Dot: return model::writeGraphExportFile(path, exportDot());
 	case GraphExportFormat::Png: return exportPng(path);
 	}
 	return std::unexpected("unknown format");
@@ -333,10 +333,10 @@ void CfgPanel::requestExport(GraphExportFormat f)
 	if (m_layout.scene.empty()) return;
 	if (!m_prompt) m_prompt = std::make_unique<SavePrompt>(m_ui);
 	m_pendingExport = f;
-	const std::string filter = std::format("*.{}", exportExtension(f));
+	const std::string filter = std::format("*.{}", graphExportExtension(f));
 	m_prompt->open("Export CFG", filter, [this](const std::string& path) {
 		std::filesystem::path p(path);
-		if (!p.has_extension()) p.replace_extension(exportExtension(m_pendingExport));
+		if (!p.has_extension()) p.replace_extension(graphExportExtension(m_pendingExport));
 		(void)exportTo(m_pendingExport, p);
 	});
 }

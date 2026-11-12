@@ -20,14 +20,14 @@ Rgba cfgEdgeColor(EdgeKind kind)
 {
 	switch (kind)
 	{
-	case EdgeKind::FallThrough: return palette::subtext0;
-	case EdgeKind::TrueBranch: return palette::green;
-	case EdgeKind::FalseBranch: return palette::red;
-	case EdgeKind::BackEdge: return palette::peach;
-	case EdgeKind::ExceptionEdge: return palette::mauve;
-	case EdgeKind::UnresolvedIndirect: return palette::red;
+	case EdgeKind::FallThrough: return catppuccin::subtext0;
+	case EdgeKind::TrueBranch: return catppuccin::green;
+	case EdgeKind::FalseBranch: return catppuccin::red;
+	case EdgeKind::BackEdge: return catppuccin::peach;
+	case EdgeKind::ExceptionEdge: return catppuccin::mauve;
+	case EdgeKind::UnresolvedIndirect: return catppuccin::red;
 	}
-	return palette::subtext0;
+	return catppuccin::subtext0;
 }
 
 bool cfgEdgeDashed(EdgeKind kind)
@@ -267,19 +267,19 @@ SceneNode makeBlockNode(const BasicBlockData& b, int maxPreview)
 	n.kind = chain ? cfg::Chain : cfg::Block;
 	n.rect = {0.f, 0.f, cfg::kBlockWidth, cfgBlockHeight(b, maxPreview)};
 	n.radius = cfg::kRadius;
-	n.fill = palette::surface0;
-	n.hoverFill = palette::surface1;
-	n.border = b.isLoopHeader ? palette::blue
-		: b.isEntry           ? palette::green
-		: b.isExit            ? palette::red
-							  : palette::surface1;
-	n.hoverBorder = (b.isLoopHeader || b.isEntry || b.isExit) ? 0 : palette::overlay2;
+	n.fill = catppuccin::surface0;
+	n.hoverFill = catppuccin::surface1;
+	n.border = b.isLoopHeader ? catppuccin::blue
+		: b.isEntry           ? catppuccin::green
+		: b.isExit            ? catppuccin::red
+							  : catppuccin::surface1;
+	n.hoverBorder = (b.isLoopHeader || b.isEntry || b.isExit) ? 0 : catppuccin::overlay2;
 	n.borderWidth = 1.5f;
 	n.dashedBorder = chain;
-	n.headerFill = b.isLoopHeader ? withAlpha(palette::blue, 80)
-		: b.isEntry               ? withAlpha(palette::green, 60)
-		: b.isExit                ? withAlpha(palette::red, 60)
-								  : palette::mantle;
+	n.headerFill = b.isLoopHeader ? rgbaWithAlpha(catppuccin::blue, 80)
+		: b.isEntry               ? rgbaWithAlpha(catppuccin::green, 60)
+		: b.isExit                ? rgbaWithAlpha(catppuccin::red, 60)
+								  : catppuccin::mantle;
 	n.headerHeight = cfg::kHeaderH;
 	n.tooltip = cfgBlockTooltip(b);
 	n.searchText = hexAddress(b.address);
@@ -296,16 +296,16 @@ void addBlockTexts(SceneNode& n, const BasicBlockData& b, int maxPreview)
 	const GRect& r = n.rect;
 	const float w = r.w - cfg::kPadX * 2.f;
 	n.texts.push_back(SceneText{cfgBlockHeaderText(b), {r.x + cfg::kPadX, r.y, w, cfg::kHeaderH}, cfg::kTextSize,
-		palette::subtext1, SceneAlign::Left, true, true});
+		catppuccin::subtext1, SceneAlign::Left, true, true});
 	const int shown = std::min<int>(int(b.instrs.size()), maxPreview);
 	for (int i = 0; i < shown; ++i)
 		n.texts.push_back(SceneText{b.instrs[size_t(i)].text,
 			{r.x + cfg::kPadX, r.y + cfg::kHeaderH + float(i) * cfg::kInstrH, w, cfg::kInstrH}, cfg::kTextSize,
-			isChainSummary(b) ? palette::overlay2 : palette::text, SceneAlign::Left, false, true});
+			isChainSummary(b) ? catppuccin::overlay2 : catppuccin::text, SceneAlign::Left, false, true});
 	if (int(b.instrs.size()) > maxPreview)
 		n.texts.push_back(SceneText{std::format("  … {} more", int(b.instrs.size()) - maxPreview),
 			{r.x + cfg::kPadX, r.y + cfg::kHeaderH + float(shown) * cfg::kInstrH, w, cfg::kInstrH}, cfg::kTextSize,
-			palette::overlay0, SceneAlign::Left, false, true});
+			catppuccin::overlay0, SceneAlign::Left, false, true});
 }
 
 } // namespace
@@ -357,7 +357,7 @@ CfgLayout layoutCfg(const std::vector<BasicBlockData>& blocksIn, const std::vect
 
 	// 3. Nodes.
 	GraphScene& sc = out.scene;
-	sc.background = palette::base;
+	sc.background = catppuccin::base;
 	sc.nodes.reserve(ids.size());
 	for (uint64_t id: ids)
 	{
@@ -460,7 +460,7 @@ CfgLayout layoutCfg(const std::vector<BasicBlockData>& blocksIn, const std::vect
 	if (opt.showLoopRegions)
 	{
 		static constexpr Rgba kLoopColors[] = {
-			palette::blue, palette::mauve, palette::teal, palette::yellow, palette::peach, palette::green};
+			catppuccin::blue, catppuccin::mauve, catppuccin::teal, catppuccin::yellow, catppuccin::peach, catppuccin::green};
 		std::map<int, GRect> loopRects;
 		for (const auto& b: blocks)
 		{
@@ -475,8 +475,8 @@ CfgLayout layoutCfg(const std::vector<BasicBlockData>& blocksIn, const std::vect
 			const Rgba c = kLoopColors[size_t(ci++) % std::size(kLoopColors)];
 			SceneRegion reg;
 			reg.rect = r.adjusted(-12.f, -12.f, 12.f, 12.f);
-			reg.fill = withAlpha(c, 25);
-			reg.border = withAlpha(c, 140);
+			reg.fill = rgbaWithAlpha(c, 25);
+			reg.border = rgbaWithAlpha(c, 140);
 			reg.borderWidth = 2.f;
 			reg.radius = 4.f;
 			reg.group = lid;
@@ -492,7 +492,7 @@ CfgLayout layoutCfg(const std::vector<BasicBlockData>& blocksIn, const std::vect
 
 std::string cfgToDot(const std::vector<BasicBlockData>& blocks, const std::vector<CFGEdgeData>& edges, const std::string& title)
 {
-	std::string dot = std::format("digraph \"{}\" {{\n", dotEscape(title));
+	std::string dot = std::format("digraph \"{}\" {{\n", graphDotEscape(title));
 	dot += "  graph [bgcolor=\"#1e1e2e\" fontcolor=\"#cdd6f4\" fontname=\"Consolas\" splines=true];\n"
 		   "  node [shape=box style=\"rounded,filled\" fillcolor=\"#313244\" color=\"#45475a\" fontcolor=\"#cdd6f4\""
 		   " fontname=\"Consolas\" fontsize=10];\n"
@@ -502,7 +502,7 @@ std::string cfgToDot(const std::vector<BasicBlockData>& blocks, const std::vecto
 		std::string label = cfgBlockHeaderText(b) + "\n";
 		for (const auto& ins: b.instrs)
 			label += ins.text + "\n";
-		std::string escaped = dotEscape(label);
+		std::string escaped = graphDotEscape(label);
 		// left-justified lines: DOT "\l"
 		std::string lj;
 		for (size_t i = 0; i < escaped.size(); ++i)
@@ -526,7 +526,7 @@ std::string cfgToDot(const std::vector<BasicBlockData>& blocks, const std::vecto
 	dot += "\n";
 	for (const auto& e: edges)
 	{
-		dot += std::format("  \"0x{:x}\" -> \"0x{:x}\" [color=\"{}\"{}];\n", e.from, e.to, cssHex(cfgEdgeColor(e.kind)),
+		dot += std::format("  \"0x{:x}\" -> \"0x{:x}\" [color=\"{}\"{}];\n", e.from, e.to, rgbaCss(cfgEdgeColor(e.kind)),
 			cfgEdgeDashed(e.kind) ? " style=dashed" : "");
 	}
 	dot += "}\n";

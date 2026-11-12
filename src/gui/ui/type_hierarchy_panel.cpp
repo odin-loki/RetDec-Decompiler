@@ -73,14 +73,14 @@ struct TypeHierarchyPanel::Glue
 		const auto& p = self(u);
 		if (row >= p.m_rows.size()) return;
 		const auto& r = p.m_rows[row];
-		const fuse::ui::Color color = pc.tint(toColor(p.m_hierarchy.foreground(r.node, int(col))));
+		const fuse::ui::Color color = pc.tint(graphColor(p.m_hierarchy.foreground(r.node, int(col))));
 		if (col == 0)
 		{
 			const float x = cell.x + float(r.depth) * kIndent;
 			if (r.hasChildren)
 			{
 				const float cx = x + kToggleW * 0.5f, cy = cell.y + cell.h * 0.5f;
-				const fuse::ui::Color tc = pc.tint(toColor(model::palette::overlay2));
+				const fuse::ui::Color tc = pc.tint(graphColor(model::catppuccin::overlay2));
 				if (r.expanded)
 				{ // ▾
 					dl.line({cx - 4.f, cy - 2.f}, {cx + 4.f, cy - 2.f}, tc, 1.5f);
@@ -105,7 +105,7 @@ struct TypeHierarchyPanel::Glue
 		uint32_t row, uint32_t col, std::string_view text, bool)
 	{
 		const auto& p = self(u);
-		pc.ui.paintString(dl, text, cell, pc.tint(toColor(p.m_vtable.foreground(int(row), int(col)))), pc.style.fontSize,
+		pc.ui.paintString(dl, text, cell, pc.tint(graphColor(p.m_vtable.foreground(int(row), int(col)))), pc.style.fontSize,
 			fuse::ui::TextAlignment::Start, pc.node.index);
 	}
 };
@@ -239,8 +239,8 @@ void TypeHierarchyPanel::rebuildRows(int keepNode)
 	m_ui.setValue(m_tree, float(sel));
 	w::tableModelChanged(m_ui, m_tree);
 	const bool empty = m_hierarchy.classes().empty();
-	setNodeShown(m_ui, m_emptyLabel, empty);
-	setNodeShown(m_ui, m_tree, !empty);
+	graphSetShown(m_ui, m_emptyLabel, empty);
+	graphSetShown(m_ui, m_tree, !empty);
 	m_ui.invalidate(m_tree);
 }
 

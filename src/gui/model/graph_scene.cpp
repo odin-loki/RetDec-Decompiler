@@ -21,15 +21,15 @@ GRect GRect::united(const GRect& o) const
 	return {x0, y0, std::max(right(), o.right()) - x0, std::max(bottom(), o.bottom()) - y0};
 }
 
-Rgba fadeAlpha(Rgba c, float f)
+Rgba rgbaFade(Rgba c, float f)
 {
-	const float a = std::clamp(float(alphaOf(c)) * f, 0.f, 255.f);
-	return withAlpha(c, uint8_t(std::lround(a)));
+	const float a = std::clamp(float(rgbaA(c)) * f, 0.f, 255.f);
+	return rgbaWithAlpha(c, uint8_t(std::lround(a)));
 }
 
-std::string cssHex(Rgba c)
+std::string rgbaCss(Rgba c)
 {
-	return std::format("#{:02x}{:02x}{:02x}", redOf(c), greenOf(c), blueOf(c));
+	return std::format("#{:02x}{:02x}{:02x}", rgbaR(c), rgbaG(c), rgbaB(c));
 }
 
 // ── Scene ────────────────────────────────────────────────────────────────────
