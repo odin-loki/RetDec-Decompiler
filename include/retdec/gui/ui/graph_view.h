@@ -200,6 +200,11 @@ private:
 	std::function<void(const std::string&)> m_onChosen;
 };
 
+/// Toolbar pieces shared by the graph panels (Catppuccin styling of the Qt panels, set inline).
+fuse::ui::NodeHandle graphToolbarRow(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent);
+fuse::ui::NodeHandle graphToolButton(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent, std::string_view text);
+fuse::ui::NodeHandle graphMutedLabel(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent, std::string_view text);
+
 /// Colour conversion model::Rgba -> FuseUI.
 fuse::ui::Color toColor(model::Rgba c, float opacity = 1.f);
 

@@ -183,6 +183,7 @@ private:
 	void build(fuse::ui::NodeHandle parent);
 	void buildFilterBar(fuse::ui::NodeHandle bar);
 	void buildPrompt();
+	void tooltip(fuse::ui::NodeHandle n, std::string_view text);
 	void onFilterChanged();
 	void refresh(bool keepSelection);
 	void updateStatus();
@@ -224,6 +225,7 @@ private:
 	fuse::ui::NodeHandle csvBtn_, jsonBtn_, copyBtn_;
 	fuse::ui::NodeHandle promptDlg_, promptTitle_, promptLabel_, promptEdit_;
 	fuse::ui::NodeHandle menu_, fileDlg_;
+	std::vector<fuse::ui::NodeHandle> tooltips_; ///< live in the overlay layer
 	bool fileDlgJson_ = false;
 
 	// selection (addresses; the table's value is the current row)

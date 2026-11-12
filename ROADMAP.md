@@ -30,7 +30,8 @@ bump. Never edit `deps/llvm/`.
   there is no dedicated C++ writer. Managed inputs ignore `--output-lang`
   and use format-specific emitters. `--buildable` sidecars are **on by
   default**.
-- Qt 6 GUI (`retdec-gui`) runs the same `retdec-decompiler` child as the
+- The GUI (`retdec-gui`, now on FuseUI + Forge from `third_party/`; the
+  port from Qt is in progress) runs the same `retdec-decompiler` child as the
   CLI. macOS ships `RetDec.app` in the arm64 tarball (ad-hoc signed, not
   notarised).
 - Optional neural refine is `RETDEC_ENABLE_LLAMACPP` at build and

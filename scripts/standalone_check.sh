@@ -48,6 +48,12 @@ EXTRA_CXXFLAGS="${EXTRA_CXXFLAGS:-}"
 # deps/elfio is header-only and pulls in nothing else, so the ELF reader's
 # bounds can be driven here even though src/fileformat as a whole needs LLVM.
 INCLUDES="-Iinclude -Ideps/rapidjson/include -Ideps/whereami -Ideps/elfio/include"
+# Forge's header-only layers (third_party/forge, vendored): core, the OS layer
+# and the support libraries. -isystem, as cmake/first_party.cmake marks them:
+# their warnings are Forge's, not this tree's. The OS layer needs -pthread and
+# libdl at link time (FORGE_LINK_LIBS).
+INCLUDES="$INCLUDES -isystem third_party/forge/core/include -isystem third_party/forge/os/include -isystem third_party/forge/support/include"
+FORGE_LINK_LIBS="-pthread -ldl"
 
 # RAPIDJSON_HAS_STDSTRING mirrors deps/rapidjson/CMakeLists.txt; retdec/serdes
 # passes std::string straight to rapidjson and does not compile without it.
@@ -119,6 +125,7 @@ readonly EXCLUDED_SUITES=(
 readonly EXCLUDED_TEST_SOURCES=(
 	"utils/byte_value_storage_tests.cpp:includes <gmock/gmock.h>, which the shim does not provide"
 	"utils/version_tests.cpp:includes <gmock/gmock.h>, which the shim does not provide"
+	"neural/forge_inference_test.cpp:runs src/neural/forge_inference.cpp, which this gate does not build (see EXCLUDED_SOURCES); CMake's retdec-neural-forge-tests runs it"
 )
 
 # Modules compiled here that have no tests/ directory at all, with the reason.
@@ -262,7 +269,7 @@ readonly PARTIAL_SUITES=(
 # Sources inside an included module that must NOT be compiled here, mirroring a
 # conditional in that module's CMakeLists.  "module/file.cpp:reason".
 readonly EXCLUDED_SOURCES=(
-	"neural/llama_inference.cpp:only built with retdec::deps::llamacpp; mock_inference.cpp provides createLlamaInference() otherwise"
+	"neural/forge_inference.cpp:needs Forge's inference stack (generated op tables, the forge_simd_mv kernels), which only CMake builds; mock_inference.cpp provides a null createForgeInference() otherwise"
 )
 
 # Modules that happen to compile standalone but are deliberately not part of the
@@ -1091,9 +1098,9 @@ for s in "${run_suites[@]}"; do
 
 	# The archive readers (JAR, APK) call into zlib, which is a system library
 	# rather than anything vendored; link it when it is present.
-	extraLibs=""
+	extraLibs="$FORGE_LINK_LIBS"
 	if [ -n "${ZLIB_LIB:-}" ] || printf 'int main(void){return 0;}' | $CXX -x c++ - -lz -o /dev/null >/dev/null 2>&1; then
-		extraLibs="${ZLIB_LIB:--lz}"
+		extraLibs="$extraLibs ${ZLIB_LIB:--lz}"
 	fi
 	# shellcheck disable=SC2086
 	if ! $CXX $suiteFlags "${srcs[@]}" \

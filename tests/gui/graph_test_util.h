@@ -50,7 +50,7 @@ struct Headless
 		ui.pointerUp(p, b);
 		frame();
 	}
-	void click(fuse::ui::NodeHandle n) { click(center(n)); }
+	void clickNode(fuse::ui::NodeHandle n) { click(center(n)); }
 	void key(fuse::ui::Key k, fuse::ui::u8 mods = 0)
 	{
 		ui.keyDown(k, mods);

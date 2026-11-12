@@ -7,7 +7,8 @@
  *  - Blocks are 230 px wide rounded boxes: address header + up to 3 instruction previews + "… N more".
  *  - Graphs with more than 200 blocks are compressed: non-branching chains (in = out = 1, not entry / exit / loop
  *    header) collapse into one "[chain: N instructions]" node; forceUncompressed expands them.
- *  - Back edges (DFS) and EdgeKind::BackEdge are drawn as dashed orange arcs to the left.
+ *  - Back edges (DFS) and EdgeKind::BackEdge are drawn as dashed orange arcs to the left (from the source's left side
+ *    into the target's header, so they never run under a block).
  *  - Blocks sharing a loopId get a translucent coloured loop region; when the data has no loop ids, natural loops
  *    are detected from the back edges (optional).
  *

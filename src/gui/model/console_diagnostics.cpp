@@ -56,36 +56,41 @@ void DiagnosticsStore::setMaxEntries(std::size_t n)
 		entries_.pop_front();
 }
 
+namespace {
+std::string lowerCopy(std::string_view s)
+{
+	std::string r(s);
+	for (char& c: r)
+		c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+	return r;
+}
+
+bool passes(const Diagnostic& d, SeverityFilter filter, const std::string& lowerNeedle)
+{
+	if (!lowerNeedle.empty()) return lowerCopy(d.message).find(lowerNeedle) != std::string::npos;
+	switch (filter)
+	{
+	case SeverityFilter::Info: return d.severity == Severity::Info;
+	case SeverityFilter::Warnings: return d.severity == Severity::Warning;
+	case SeverityFilter::Errors: return d.severity == Severity::Error;
+	default: return true;
+	}
+}
+} // namespace
+
 std::vector<std::size_t> DiagnosticsStore::visibleRows(SeverityFilter filter, std::string_view text) const
 {
 	std::vector<std::size_t> out;
 	out.reserve(entries_.size());
-	auto lower = [](std::string_view s) {
-		std::string r(s);
-		for (char& c: r)
-			c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-		return r;
-	};
-	const std::string needle = lower(text);
+	const std::string needle = lowerCopy(text);
 	for (std::size_t i = 0; i < entries_.size(); ++i)
-	{
-		const Diagnostic& d = entries_[i];
-		bool show;
-		if (!needle.empty())
-			show = lower(d.message).find(needle) != std::string::npos;
-		else
-		{
-			switch (filter)
-			{
-			case SeverityFilter::Info: show = d.severity == Severity::Info; break;
-			case SeverityFilter::Warnings: show = d.severity == Severity::Warning; break;
-			case SeverityFilter::Errors: show = d.severity == Severity::Error; break;
-			default: show = true; break;
-			}
-		}
-		if (show) out.push_back(i);
-	}
+		if (passes(entries_[i], filter, needle)) out.push_back(i);
 	return out;
+}
+
+bool DiagnosticsStore::matches(std::size_t i, SeverityFilter filter, std::string_view text) const
+{
+	return i < entries_.size() && passes(entries_[i], filter, lowerCopy(text));
 }
 
 std::string DiagnosticsStore::tsv(const std::vector<std::size_t>& rows) const

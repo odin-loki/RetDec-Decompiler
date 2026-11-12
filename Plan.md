@@ -9,6 +9,10 @@
 > default**, optional llama.cpp. Do not treat later parts as current claims;
 > see `README.md`, `CHANGELOG.md` `[2.0.22]`, and `docs/CLAIMS.md`. The body
 > below is left as the August 2026 snapshot.
+>
+> **Later:** the GUI has since moved off Qt onto FuseUI + Forge, vendored in
+> `third_party/` (`CHANGELOG.md` Unreleased; `docs/gui/FUSEUI_PORT.md`). Qt
+> prerequisites below, and `LEG-12` (Qt LGPL evidence), no longer apply.
 
 **Subject:** `github.com/odin-loki/RetDec-Decompiler` @ `ebf3627` · v2.0.20 (CHANGELOG says 2.0.21) — snapshot; current tag is **v2.0.22**
 **Scope:** full tree — 504,305 LOC `src`+`include`, 185,893 LOC tests, 8,815 test cases, 97 modules, 215 scripts, 10 CI workflows

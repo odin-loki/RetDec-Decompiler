@@ -1,8 +1,14 @@
 # RetDec GUI Roadmap
 
 **Status as of v2.0.22:** GUI v3 shipped (Qt 6). Phases A–E below are
-complete. Optional leftovers (i18n) are not release blockers. macOS GUI
-tests use `QT_QPA_PLATFORM=cocoa`; MAC-01 checks the relocatable bundle.
+complete. Optional leftovers (i18n) are not release blockers.
+
+**Now:** the GUI has left Qt. It is being ported to FuseUI + Forge
+(`third_party/`), with the Qt implementation kept read-only in
+`.qt-gui-reference/` as the specification — every phase below is an
+acceptance criterion for the port. See [../gui/FUSEUI_PORT.md](../gui/FUSEUI_PORT.md).
+Headless runs set only `RETDEC_GUI_HEADLESS=1` on every platform; MAC-01 checks
+the relocatable bundle and its `Contents/share/retdec/gui` resources.
 
 Phased plan for GUI/product work. Update checkboxes as items ship.
 
@@ -63,7 +69,6 @@ Phased plan for GUI/product work. Update checkboxes as items ship.
 ```powershell
 # Unit tests (headless)
 $env:RETDEC_GUI_HEADLESS="1"
-$env:QT_QPA_PLATFORM="offscreen"
 build\windows\tests\gui\retdec-gui-tests.exe
 
 # CLI vs GUI subprocess parity (~2 min on 1 MB binary)

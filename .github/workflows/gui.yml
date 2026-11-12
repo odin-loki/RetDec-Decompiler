@@ -4,7 +4,7 @@
 # presenter), Win32 and macOS (Cocoa). Minutes rather than the hours the full
 # ctest-* workflows take, so a GUI change gets a signal on every push.
 #
-# There is no GUI toolkit to install anywhere: no Qt, no platform plugins, no
+# There is no third-party GUI toolkit to install anywhere: no platform plugins, no
 # deploy tool. What each runner needs is a C++23 compiler, CMake + Ninja and
 # GoogleTest -- apt libgtest-dev on Linux, brew googletest on macOS, and on
 # Windows the googletest release pinned in cmake/deps.cmake, which

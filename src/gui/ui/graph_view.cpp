@@ -793,3 +793,39 @@ void SavePrompt::open(std::string_view title, std::string_view filter, std::func
 }
 
 } // namespace retdec::gui::ui
+
+namespace retdec::gui::ui {
+
+fuse::ui::NodeHandle graphToolbarRow(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent)
+{
+	const fuse::ui::NodeHandle t = fuse::ui::widgets::panel(ui, parent);
+	ui.setCss(t, "flex-direction", "row");
+	ui.setCss(t, "align-items", "center");
+	ui.setCss(t, "gap", "6px");
+	ui.setCss(t, "padding", "3px 6px");
+	ui.setCss(t, "background", "#181825");
+	return t;
+}
+
+fuse::ui::NodeHandle graphToolButton(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent, std::string_view text)
+{
+	const fuse::ui::NodeHandle b = fuse::ui::widgets::button(ui, parent, text);
+	ui.setCss(b, "padding", "2px 8px");
+	ui.setCss(b, "font-size", "12px");
+	ui.setCss(b, "background", "#313244");
+	ui.setCss(b, "color", "#cdd6f4");
+	ui.setCss(b, "border-color", "#45475a");
+	ui.setCss(b, "border-width", "1px");
+	return b;
+}
+
+fuse::ui::NodeHandle graphMutedLabel(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent, std::string_view text)
+{
+	const fuse::ui::NodeHandle l = fuse::ui::widgets::label(ui, parent, text);
+	ui.setCss(l, "color", "#a6adc8");
+	ui.setCss(l, "font-size", "12px");
+	return l;
+}
+
+
+} // namespace retdec::gui::ui

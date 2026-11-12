@@ -21,40 +21,6 @@ using fuse::ui::SignalArgs;
 using fuse::ui::SignalKind;
 using fuse::ui::UiContext;
 
-namespace {
-
-NodeHandle toolbarRow(UiContext& ui, NodeHandle parent)
-{
-	const NodeHandle t = w::panel(ui, parent);
-	ui.setCss(t, "flex-direction", "row");
-	ui.setCss(t, "align-items", "center");
-	ui.setCss(t, "gap", "6px");
-	ui.setCss(t, "padding", "3px 6px");
-	ui.setCss(t, "background", "#181825");
-	return t;
-}
-
-NodeHandle toolButton(UiContext& ui, NodeHandle parent, std::string_view text)
-{
-	const NodeHandle b = w::button(ui, parent, text);
-	ui.setCss(b, "padding", "2px 8px");
-	ui.setCss(b, "font-size", "12px");
-	ui.setCss(b, "background", "#313244");
-	ui.setCss(b, "color", "#cdd6f4");
-	ui.setCss(b, "border-color", "#45475a");
-	ui.setCss(b, "border-width", "1px");
-	return b;
-}
-
-NodeHandle mutedLabel(UiContext& ui, NodeHandle parent, std::string_view text)
-{
-	const NodeHandle l = w::label(ui, parent, text);
-	ui.setCss(l, "color", "#a6adc8");
-	ui.setCss(l, "font-size", "12px");
-	return l;
-}
-
-} // namespace
 
 CfgPanel::CfgPanel(UiContext& ui, NodeHandle parent): m_ui(ui)
 {
@@ -66,25 +32,25 @@ CfgPanel::CfgPanel(UiContext& ui, NodeHandle parent): m_ui(ui)
 	ui.setA11y(m_root, fuse::ui::A11yRole::Group, kTitle);
 
 	// ── Toolbar ──────────────────────────────────────────────────────────────
-	m_toolbar = toolbarRow(ui, m_root);
-	m_funcLabel = mutedLabel(ui, m_toolbar, "No function selected");
+	m_toolbar = graphToolbarRow(ui, m_root);
+	m_funcLabel = graphMutedLabel(ui, m_toolbar, "No function selected");
 	ui.setCss(m_funcLabel, "flex-grow", "1");
-	m_infoLabel = mutedLabel(ui, m_toolbar, "");
+	m_infoLabel = graphMutedLabel(ui, m_toolbar, "");
 	m_search = w::lineEdit(ui, m_toolbar, "");
 	ui.setCss(m_search, "width", "150px");
 	ui.setCss(m_search, "font-size", "12px");
 	ui.setCss(m_search, "padding", "2px 6px");
 	ui.setA11y(m_search, fuse::ui::A11yRole::TextField, "Search blocks");
-	m_matchLabel = mutedLabel(ui, m_toolbar, "");
-	m_fitBtn = toolButton(ui, m_toolbar, "Fit");
-	m_resetBtn = toolButton(ui, m_toolbar, "100%");
-	m_chainsBtn = toolButton(ui, m_toolbar, "Expand chains");
+	m_matchLabel = graphMutedLabel(ui, m_toolbar, "");
+	m_fitBtn = graphToolButton(ui, m_toolbar, "Fit");
+	m_resetBtn = graphToolButton(ui, m_toolbar, "100%");
+	m_chainsBtn = graphToolButton(ui, m_toolbar, "Expand chains");
 	w::setTooltip(ui, m_chainsBtn, "Show the full control-flow graph with compressed instruction chains expanded");
 	m_minimapCheck = w::checkBox(ui, m_toolbar, "Minimap", true);
 	ui.setCss(m_minimapCheck, "font-size", "12px");
-	m_svgBtn = toolButton(ui, m_toolbar, "Export SVG");
-	m_pngBtn = toolButton(ui, m_toolbar, "Export PNG");
-	m_dotBtn = toolButton(ui, m_toolbar, "Export DOT");
+	m_svgBtn = graphToolButton(ui, m_toolbar, "Export SVG");
+	m_pngBtn = graphToolButton(ui, m_toolbar, "Export PNG");
+	m_dotBtn = graphToolButton(ui, m_toolbar, "Export DOT");
 
 	// ── Body: empty state | graph ────────────────────────────────────────────
 	m_body = w::panel(ui, m_root);
@@ -98,7 +64,7 @@ CfgPanel::CfgPanel(UiContext& ui, NodeHandle parent): m_ui(ui)
 	const NodeHandle title = w::label(ui, m_empty, "No control-flow graph");
 	ui.setCss(title, "font-size", "16px");
 	ui.setCss(title, "color", "#cdd6f4");
-	mutedLabel(ui, m_empty, "Select a function to visualize its basic blocks and edges.");
+	graphMutedLabel(ui, m_empty, "Select a function to visualize its basic blocks and edges.");
 	m_view = std::make_unique<GraphView>(ui, m_body);
 
 	// ── Wiring ───────────────────────────────────────────────────────────────

@@ -24,8 +24,9 @@ Linux runner cannot block the Windows zip).
   (schedule / `workflow_dispatch`), `ci-smoke`, `standalone-check`, `fuzz-pr`,
   `codeql`, `doc-integrity`, `verify-esbmc`, `release-installers`
   (linux + windows + macos)
-- MAC-01 (`scripts/ci/check_macos_bundle.py`) for a relocatable Qt bundle; GUI
-  tests use `QT_QPA_PLATFORM=cocoa` on macOS
+- MAC-01 (`scripts/ci/check_macos_bundle.py`) for a relocatable GUI bundle
+  (resolves inside itself, signature verifies, `Contents/share/retdec/gui`
+  present); GUI tests run with `RETDEC_GUI_HEADLESS=1` everywhere
 - MSVC: `/STACK:67108864` on `retdec-decompiler`; u128 operators in
   `idiom_reconstruct/division_recovery.cpp`; corpus fixtures
   `/ENTRY:main /NODEFAULTLIB` + `msvc_fixture_printf.c`; longer CLI-diagnostics
@@ -35,7 +36,9 @@ Linux runner cannot block the Windows zip).
 - LLVM pin **unchanged** at llvm-project **23.1.0** (`cmake/deps.cmake`). No
   bump unless an explicitly scoped task says so
   ([LLVM_MIGRATION_SCOPE.md](LLVM_MIGRATION_SCOPE.md))
-- GUI v3 shipped (Qt 6). Product positioning is specification extraction
+- GUI v3 shipped (Qt 6); the GUI has since moved to FuseUI + Forge
+  (`third_party/`, port in progress, `docs/gui/FUSEUI_PORT.md`; `gui.yml`
+  builds it on Linux / Windows / macOS). Product positioning is specification extraction
   ([D7_DECISION.md](D7_DECISION.md))
 
 The stand-in corpus is sufficient for regression gates. It is not the

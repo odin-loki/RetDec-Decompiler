@@ -22,7 +22,7 @@ inputs, not as a free-choice native list.
 
 This edition extends Avast RetDec 5.0 with semantic library recovery,
 algorithm-recovery **name-blind** measurements, optional verified offline
-neural refinement (llama.cpp), a Qt 6 desktop environment, and packaged
+neural refinement (llama.cpp), a native desktop GUI (FuseUI, no third-party GUI toolkit), and packaged
 Linux / macOS / Windows installs.
 
 ---
@@ -82,7 +82,7 @@ See [docs/internal/D7_DECISION.md](internal/D7_DECISION.md).
 | **Semantic recovery** | Post-pipeline detectors label containers, algorithms, crypto, concurrency, and serialisation in comments/JSON. They do not emit idiomatic C++. Name-blind F1 is 0.056. |
 | **GPU backends (experimental)** | CUDA (`cuda_accel`) and OpenCL exist in-tree, default-OFF, **unintegrated**, not a product feature. |
 | **On-device AI (default on)** | llama.cpp + shipped Unsloth Qwen 3.5 9B Q4_K_M GGUF. `RETDEC_NEURAL_REFINE=0` disables. No `--model` flag. No `retdec-qwen3-runner`. |
-| **Qt 6 GUI** | Document tabs, docks, Call Graph, Type Hierarchy, Signature Studio, Diff, Binary browser, AI Assistant Tools window. macOS ships `RetDec.app`. |
+| **Desktop GUI (FuseUI)** | Document tabs, docks, Call Graph, Type Hierarchy, Signature Studio, Diff, Binary browser, AI Assistant Tools window. macOS ships `RetDec.app`. |
 | **Plugins** | Example LLVM pass in `examples/decompiler_plugin/`. The decompiler CLI has no flag that loads a pass plugin. |
 | **Packages** | Linux x86_64 tarball; macOS arm64 tarball + `RetDec.app`; Windows NSIS + portable zip (intended names; a given CI run may still be building). Keyless Sigstore. AppImage opt-in only. |
 
@@ -173,9 +173,13 @@ This is **optional**: core decompilation remains usable without any model on dis
 
 ---
 
-## Qt 6 graphical application
+## Graphical application
 
-The GUI targets a professional analyst workflow:
+The GUI is built on FuseUI and Forge, first-party libraries vendored in the
+source tree (same owner and licence terms as RetDec), with native X11, Win32
+and macOS Cocoa windows drawn by a CPU rasteriser — nothing to install, and no
+LGPL toolkit to relink. The port from the earlier Qt GUI is in progress and
+keeps its feature set. It targets a professional analyst workflow:
 
 - **Tri-pane code view** — Synchronized assembly, SSA IR, and decompiled text.
 - **CFG visualizer** — Basic blocks, Fit/zoom, Export SVG/PNG.
@@ -219,12 +223,12 @@ Plugins are discovered and ordered with **dependency-aware loading**. Authoring 
 
 | Scenario | Highlights |
 |----------|------------|
-| **Linux / WSL (full)** | CMakeLists 3.13+; presets 3.26+. Qt 6 for GUI presets. CUDA accel opt-in and unintegrated. |
+| **Linux / WSL (full)** | CMakeLists 3.13+; presets 3.26+. C++23 compiler; the GUI needs no extra packages. CUDA accel opt-in and unintegrated. |
 | **macOS** | Same `full-linux-*` presets (`build/linux/`). `ctest-macos` on arm64. Release tarball + `RetDec.app`. |
-| **Windows (native full)** | MSVC, Qt 6; CUDA toolkit optional; staged `dist/windows/`. NSIS + zip intended Release names. |
-| **Windows PE from Linux** | MinGW-w64 cross-build: CLI-focused bundle, no Qt in that path. |
+| **Windows (native full)** | MSVC 2022 (C++23); CUDA toolkit optional; staged `dist/windows/`. NSIS + zip intended Release names. |
+| **Windows PE from Linux** | MinGW-w64 cross-build: CLI-focused bundle (GUI off in that path). |
 | **Docker** | `docker-from-release.yml` packs the Linux tarball into GHCR (package may still be private). Hub `imortek/retdec` unpublished. In-tree `Dockerfile` is dispatch-only. |
-| **Reduced footprint** | `core-*` presets for CLI-only trees without mandating Qt. |
+| **Reduced footprint** | `core-*` presets or `-DRETDEC_GUI=OFF` for CLI-only trees. |
 
 Prerequisites and canonical commands are centralized in **`docs/BUILD_REFERENCE.md`** and the root **`README.md`**. Ten-minute install: **`QUICKSTART.md`**.
 
@@ -284,7 +288,7 @@ documentation**; it does not modify licence terms. Procurement questions:
 | [QUICKSTART.md](../QUICKSTART.md) | Ten-minute decompile from Release assets. |
 | [BUILD_REFERENCE.md](BUILD_REFERENCE.md) | Build engineers and packagers. |
 | [architecture.md](architecture.md) | Deep pipeline and module reference. |
-| [user_manual.md](user_manual.md) | End users of the Qt GUI. |
+| [user_manual.md](user_manual.md) | End users of the GUI. |
 | [CLAIMS.md](CLAIMS.md) | What may be advertised. |
 | [developer_guide.md](developer_guide.md) | Contributors and plugin authors. |
 

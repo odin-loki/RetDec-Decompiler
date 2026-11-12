@@ -167,8 +167,8 @@ std::expected<void, std::string> ZipWriter::addFile(const std::filesystem::path&
 
 std::expected<void, std::string> ZipWriter::close()
 {
-	if (!open_) return fail(error_.empty() ? std::string("ZIP archive is not open") : error_);
 	if (closed_) return {};
+	if (!open_) return fail(error_.empty() ? std::string("ZIP archive is not open") : error_);
 	closed_ = true;
 
 	const uint32_t centralDirOffset = static_cast<uint32_t>(offset_);

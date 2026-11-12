@@ -119,19 +119,8 @@ function Install-RetDecCopy {
     Get-ChildItem -LiteralPath $layout.Bin -File |
         Copy-Item -Destination (Join-Path $DestRoot "bin") -Force
 
-    if ($layout.HasNestedBin) {
-        foreach ($subdir in @("platforms", "imageformats", "styles", "iconengines", "tls", "translations")) {
-            $src = Join-Path $layout.Bin $subdir
-            if (Test-Path -LiteralPath $src) {
-                Copy-Item -LiteralPath $src -Destination (Join-Path $DestRoot "bin\$subdir") -Recurse -Force
-            }
-        }
-    } else {
-        $topPlatforms = Join-Path (Split-Path $layout.Bin -Parent) "platforms"
-        if (Test-Path -LiteralPath $topPlatforms) {
-            Copy-Item -LiteralPath $topPlatforms -Destination (Join-Path $DestRoot "bin\platforms") -Recurse -Force
-        }
-    }
+    # retdec-gui is FuseUI on Win32: no toolkit plugin directories next to the
+    # binaries. Its resources are share\retdec\gui, copied with share\ below.
 
     $shareSrc = Join-Path $layout.Root "share"
     if (-not (Test-Path -LiteralPath $shareSrc)) {

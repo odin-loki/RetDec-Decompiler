@@ -8,7 +8,7 @@ Shipped product claims live in [README.md](../README.md) and
 
 | Kind | Meaning at v2.0.24 |
 |------|---------------------|
-| **Shipped** | Linux + macOS installers, Windows installer via GitHub Actions (`release-installers.yml`), Qt 6 GUI (`RetDec.app` on macOS), specification-extraction positioning, **buildable C default**, input-keyed outputs, optional llama.cpp (`RETDEC_ENABLE_LLAMACPP` / `RETDEC_NEURAL_REFINE`). |
+| **Shipped** | Linux + macOS installers, Windows installer via GitHub Actions (`release-installers.yml`), GUI (`RetDec.app` on macOS; moved from Qt to FuseUI + Forge, port in progress), specification-extraction positioning, **buildable C default**, input-keyed outputs, optional llama.cpp (`RETDEC_ENABLE_LLAMACPP` / `RETDEC_NEURAL_REFINE`). |
 | **Measured, not product-quality** | Structural detectors exist (`src/container_detect`, `src/algo_recover`, `src/sort_detect`, …). Name-blind algorithm-recovery F1 on the 216-binary stand-in is **0.056**. Do not advertise 1.0. |
 | **Open research** | Anything not wired into `src/retdec`, rejected at the CLI, or parked. CUDA/OpenCL pipeline acceleration (`C-CUDA-PIPE`) is **withdrawn**. `--output-lang cpp` is **rejected**. |
 

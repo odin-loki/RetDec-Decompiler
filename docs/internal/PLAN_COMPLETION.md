@@ -16,7 +16,7 @@ Last updated: **v2.0.24**. Historical plan text stays in
 | Fuzz / sanitizers | Done | `sanitizers.yml`, `tests/crash_corpus/` |
 | Part 16 automation | Done | doctor, nightly report, benchmark gate, demo |
 | Release | Done | `release-installers.yml`: linux-installer, **windows-installer** (no `needs: release`), macos-installer. Linux x64 tarball; macOS arm64 tarball + `RetDec.app`; Windows NSIS/zip |
-| macOS bundle | Done | MAC-01 `check_macos_bundle.py`; GUI tests `QT_QPA_PLATFORM=cocoa` |
+| macOS bundle | Done | MAC-01 `check_macos_bundle.py`; GUI tests headless (`RETDEC_GUI_HEADLESS=1`; the Qt-era `QT_QPA_PLATFORM=cocoa` is gone with Qt) |
 | MSVC / Windows | Done | `/STACK:67108864`; u128 ops; `/ENTRY:main /NODEFAULTLIB` fixtures; i128 `isPowerOf2`/`logBase2` |
 | LLVM pin | Unchanged | llvm-project **23.1.0**. No bump unless tasked |
 

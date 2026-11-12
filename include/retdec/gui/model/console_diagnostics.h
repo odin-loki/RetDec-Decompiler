@@ -53,6 +53,8 @@ public:
 	 * rows matching @p filter.
 	 */
 	std::vector<std::size_t> visibleRows(SeverityFilter filter, std::string_view text) const;
+	/// Whether entry @p i passes the same filter as visibleRows.
+	bool matches(std::size_t i, SeverityFilter filter, std::string_view text) const;
 
 	/// "Severity\tSource\tMessage" lines for @p rows, '\n'-joined.
 	std::string tsv(const std::vector<std::size_t>& rows) const;

@@ -441,10 +441,11 @@ CfgLayout layoutCfg(const std::vector<BasicBlockData>& blocksIn, const std::vect
 		se.arrowHalfWidth = 5.f;
 		if (routed[i].back)
 		{
-			// Arc along the left of both blocks so it does not cross the forward edges.
-			const GPoint from{fr.center().x, fr.bottom()}, to{tr.center().x, tr.y};
+			// Arc along the left of both blocks so it does not cross the forward edges: leaves the source's left side
+			// and enters the target's left side at its header.
+			const GPoint from{fr.x, fr.y + fr.h * 0.6f}, to{tr.x, tr.y + cfg::kHeaderH * 0.5f};
 			const float leftX = std::min(fr.x, tr.x) - cfg::kBackEdgeArc;
-			se.points = {from, {leftX, from.y + 30.f}, {leftX, to.y - 30.f}, to};
+			se.points = {from, {leftX, from.y}, {leftX, to.y}, to};
 		}
 		else
 		{

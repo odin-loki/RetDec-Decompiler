@@ -5,7 +5,7 @@ sprints. Not shipped at v2.0.22.**
 
 For shippable work see [ENGINEERING_ROADMAP.md](internal/ENGINEERING_ROADMAP.md)
 (Tiers 1–5). For what the product actually is — specification extraction,
-buildable C, input-keyed outputs, Qt 6 GUI, optional llama.cpp, Linux / macOS /
+buildable C, input-keyed outputs, GUI (FuseUI), optional llama.cpp, Linux / macOS /
 Windows installers — see [README.md](../README.md) and [CLAIMS.md](CLAIMS.md).
 
 Roadmap overlap (STL detectors vs reconstruction quality, architecture gaps):

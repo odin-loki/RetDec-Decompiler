@@ -143,8 +143,15 @@ FunctionListPanel::~FunctionListPanel()
 	hookMap().erase({&ui_, host_.index, host_.generation});
 	for (NodeHandle dlg: {promptDlg_, fileDlg_})
 		if (ui_.alive(dlg)) ui_.destroy(ui_.parent(dlg));
-	if (ui_.alive(menu_)) w::closePopup(ui_, menu_);
+	if (ui_.alive(menu_)) ui_.destroy(menu_);
+	for (NodeHandle t: tooltips_)
+		if (ui_.alive(t)) ui_.destroy(t);
 	if (ui_.alive(root_)) ui_.destroy(root_);
+}
+
+void FunctionListPanel::tooltip(NodeHandle n, std::string_view text)
+{
+	tooltips_.push_back(w::setTooltip(ui_, n, text));
 }
 
 void FunctionListPanel::build(NodeHandle parent)
@@ -167,7 +174,10 @@ void FunctionListPanel::build(NodeHandle parent)
 	ui_.setCss(bar, "align-items", "center");
 	ui_.setCss(bar, "gap", "4px");
 	ui_.setCss(bar, "padding", "3px 4px");
+	ui_.setCss(bar, "flex-wrap", "wrap");
 	buildFilterBar(bar);
+	for (NodeHandle c = ui_.firstChild(bar); ui_.alive(c); c = ui_.nextSibling(c))
+		ui_.setCss(c, "flex-shrink", "0");
 
 	// Table area: empty-state message or the table.
 	const NodeHandle area = w::panel(ui_, root_);
@@ -251,20 +261,20 @@ void FunctionListPanel::buildFilterBar(NodeHandle bar)
 	ui_.setCss(nameEdit_, "width", "140px");
 	small(nameEdit_);
 	ui_.setA11y(nameEdit_, fuse::ui::A11yRole::TextField, "Search");
-	w::setTooltip(ui_, nameEdit_, std::string("Search") + std::string(kEllipsis) + " (wildcards * ? [])");
+	tooltip(nameEdit_, std::string("Search") + std::string(kEllipsis) + " (wildcards * ? [])");
 
 	const NodeHandle addrLabel = w::label(ui_, bar, "Addr:");
 	ui_.addClass(addrLabel, "dim");
 	addrLowEdit_ = w::lineEdit(ui_, bar);
 	ui_.setCss(addrLowEdit_, "width", "80px");
 	small(addrLowEdit_);
-	w::setTooltip(ui_, addrLowEdit_, "Lowest address (hex), e.g. 0x0");
+	tooltip(addrLowEdit_, "Lowest address (hex), e.g. 0x0");
 	const NodeHandle dash = w::label(ui_, bar, "\xE2\x80\x93");
 	ui_.addClass(dash, "dim");
 	addrHighEdit_ = w::lineEdit(ui_, bar);
 	ui_.setCss(addrHighEdit_, "width", "80px");
 	small(addrHighEdit_);
-	w::setTooltip(ui_, addrHighEdit_, "Highest address (hex), e.g. 0xFFFF");
+	tooltip(addrHighEdit_, "Highest address (hex), e.g. 0xFFFF");
 
 	const NodeHandle confLabel = w::label(ui_, bar, "Conf\xE2\x89\xA5");
 	ui_.addClass(confLabel, "dim");
@@ -277,7 +287,7 @@ void FunctionListPanel::buildFilterBar(NodeHandle bar)
 	{
 		patternChecks_[i] = w::checkBox(ui_, bar, kPatternNames[i]);
 		ui_.setCss(patternChecks_[i], "font-size", "13px");
-		w::setTooltip(ui_, patternChecks_[i], model::patternBadges()[i].tip);
+		tooltip(patternChecks_[i], model::patternBadges()[i].tip);
 	}
 
 	const NodeHandle spacer = w::panel(ui_, bar);
@@ -288,9 +298,9 @@ void FunctionListPanel::buildFilterBar(NodeHandle bar)
 	copyBtn_ = w::button(ui_, bar, "Copy");
 	for (NodeHandle b: {csvBtn_, jsonBtn_, copyBtn_})
 		small(b);
-	w::setTooltip(ui_, csvBtn_, "Export the visible functions as CSV");
-	w::setTooltip(ui_, jsonBtn_, "Export the visible functions as JSON");
-	w::setTooltip(ui_, copyBtn_, "Copy the visible functions as CSV");
+	tooltip(csvBtn_, "Export the visible functions as CSV");
+	tooltip(jsonBtn_, "Export the visible functions as JSON");
+	tooltip(copyBtn_, "Copy the visible functions as CSV");
 
 	auto onFilter = [this](UiContext&, NodeHandle, const SignalArgs&) { onFilterChanged(); };
 	for (NodeHandle e: {nameEdit_, addrLowEdit_, addrHighEdit_})
@@ -609,7 +619,7 @@ bool FunctionListPanel::onTableEvent(const Event& e)
 	}
 	else
 	{
-		lastClickRow_ = row;
+		lastClickRow_ = plain ? row : -1;
 		lastClickTime_ = now;
 	}
 	return true;
@@ -637,6 +647,7 @@ void FunctionListPanel::activateRow(int row, int col)
 void FunctionListPanel::openContextMenu(Vec2 at, int row)
 {
 	if (ui_.alive(menu_)) w::closePopup(ui_, menu_);
+	lastClickRow_ = -1;
 	menuActions_.clear();
 	menuLabels_.clear();
 	menuAddress_.reset();
@@ -790,6 +801,7 @@ void FunctionListPanel::openPrompt(Prompt p, uint64_t address)
 	const model::FunctionEntry* e = list_.find(address);
 	if (p != Prompt::Tag && !e) return;
 	buildPrompt();
+	lastClickRow_ = -1;
 	prompt_ = p;
 	promptAddress_ = address;
 	promptTargets_.clear();
@@ -1009,7 +1021,9 @@ void FunctionListPanel::paintCell(
 		dl.rect(track, pc.tint(Color::rgb(kSurface0)), 3.f);
 		const Rect fill{track.x, track.y, std::round(track.w * conf), track.h};
 		if (fill.w > 0.f) dl.rect(fill, pc.tint(Color::rgb(tierColor(model::confidenceTier(conf)), 200.f / 255.f)), 3.f);
-		ui.paintString(dl, text, track, pc.tint(Color::rgb(kBase)), fs - 2.f, fuse::ui::TextAlignment::Center, pc.node.index);
+		// Dark text where the bar fills the middle, light text over the track.
+		const uint32_t textColor = conf >= 0.5f ? kBase : kText;
+		ui.paintString(dl, text, track, pc.tint(Color::rgb(textColor)), fs - 2.f, fuse::ui::TextAlignment::Center, pc.node.index);
 		break;
 	}
 	case model::FnColPatterns: {
