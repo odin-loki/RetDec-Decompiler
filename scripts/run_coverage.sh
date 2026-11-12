@@ -54,7 +54,7 @@ fi
 # the 2.x-only categories, so pick the list by version.
 LCOV_MAJOR="$(lcov --version 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -n1 | cut -d. -f1)"
 if [[ "${LCOV_MAJOR:-1}" -ge 2 ]]; then
-    LCOV_IGNORE=(--ignore-errors mismatch,mismatch,inconsistent,inconsistent,unused,unused,empty,negative,source,gcov)
+    LCOV_IGNORE=(--ignore-errors mismatch,mismatch,inconsistent,inconsistent,unused,unused,empty,negative,source,gcov,version,version)
     GENHTML_IGNORE=(--ignore-errors inconsistent,inconsistent,source,unmapped,empty)
 else
     LCOV_IGNORE=(--ignore-errors mismatch)
