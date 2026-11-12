@@ -1,13 +1,14 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-  Run retdec-gui with Qt offscreen (no visible windows) for CI / automated debugging.
+  Run retdec-gui headless (RETDEC_GUI_HEADLESS=1: no OS window) for CI / automated debugging.
 
 .DESCRIPTION
   Sets RETDEC_GUI_HEADLESS=1 (unless already set) and optional RETDEC_QWEN3_TRACE*.
   Loads Visual Studio Dev Shell when available so a build-tree or install-tree exe runs reliably.
 
-  Requires platforms/qoffscreen.dll next to retdec-gui.exe on Windows (CMake POST_BUILD / install).
+  Needs nothing next to retdec-gui.exe but share\retdec\gui (resources) at <bin>\..\share\retdec\gui;
+  headless FuseUI renders to no window, so no display or plugin is involved.
 
 .EXAMPLE
   .\scripts\run-gui-headless-debug.ps1 -BuildPreset full-windows-release -ExitMs 8000

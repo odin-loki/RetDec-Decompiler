@@ -8,8 +8,8 @@
   then runs cmake --preset, cmake --build, cmake --install, and optionally runs:
     - Decompiler:  install\...\bin\retdec-decompiler.exe (default)
     - Gui:         install\...\bin\retdec-gui.exe (visible window)
-    - GuiHeadless: same binary with --headless and optional --headless-exit-ms (Qt offscreen)
-    - GuiTests:    build\...\tests\gui\retdec-gui-tests.exe (QTest + gtest, headless env)
+    - GuiHeadless: same binary with --headless and optional --headless-exit-ms (FuseUI, no OS window)
+    - GuiTests:    build\...\tests\gui\retdec-gui-tests.exe (gtest; headless FuseUI UiContext)
     - Runner/Tests: leftover Qwen3 paths; they do not ship (DOC-06). Neural path is RETDEC_NEURAL_REFINE.
 
 .EXAMPLE
@@ -133,7 +133,7 @@ try {
         "Gui" {
             $exe = Join-Path $installBin "retdec-gui.exe"
             if (-not (Test-Path -LiteralPath $exe)) {
-                throw "retdec-gui not found: $exe (Qt6 / GUI not built?)."
+                throw "retdec-gui not found: $exe (RETDEC_GUI=OFF / GUI not built?)."
             }
             Write-Host "==> & `"$exe`""
             & $exe
@@ -142,7 +142,7 @@ try {
         "GuiHeadless" {
             $exe = Join-Path $installBin "retdec-gui.exe"
             if (-not (Test-Path -LiteralPath $exe)) {
-                throw "retdec-gui not found: $exe (Qt6 / GUI not built?)."
+                throw "retdec-gui not found: $exe (RETDEC_GUI=OFF / GUI not built?)."
             }
             $hArgs = @("--headless")
             if ($HeadlessExitMs -gt 0) {

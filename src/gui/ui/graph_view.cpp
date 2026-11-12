@@ -743,3 +743,28 @@ std::expected<void, std::string> GraphView::exportPng(const std::filesystem::pat
 }
 
 } // namespace retdec::gui::ui
+
+namespace retdec::gui::ui {
+
+const char* exportExtension(GraphExportFormat f)
+{
+	switch (f)
+	{
+	case GraphExportFormat::Svg: return "svg";
+	case GraphExportFormat::Png: return "png";
+	case GraphExportFormat::Dot: return "dot";
+	}
+	return "";
+}
+
+void setNodeShown(fuse::ui::UiContext& ui, fuse::ui::NodeHandle n, bool shown)
+{
+	if (ui.alive(n)) ui.set(n, fuse::ui::Prop::Display, fuse::ui::PropValue::ofBool(shown));
+}
+
+bool nodeShown(const fuse::ui::UiContext& ui, fuse::ui::NodeHandle n)
+{
+	return ui.alive(n) && ui.computed(n).visible;
+}
+
+} // namespace retdec::gui::ui

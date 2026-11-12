@@ -10,7 +10,7 @@
 #
 # Requires:
 #   cmake 3.26+, Ninja or Make generator from the preset
-#   Qt6 for full-linux-debug (e.g. sudo apt install qt6-base-dev qt6-base-dev-tools)
+#   a C++23 compiler (GCC 13+ / Clang 17+); retdec-gui needs no toolkit (FuseUI is vendored)
 #
 # Help:
 #   bash scripts/wsl_configure_nosudo.sh --help

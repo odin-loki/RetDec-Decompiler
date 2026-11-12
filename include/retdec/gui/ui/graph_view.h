@@ -168,6 +168,19 @@ private:
 	uint32_t m_slot = 0;
 };
 
+enum class GraphExportFormat : uint8_t
+{
+	Svg,
+	Png,
+	Dot,
+};
+/// "svg" / "png" / "dot".
+const char* exportExtension(GraphExportFormat f);
+
+/// Shows / hides a node (display): the panels' stacked-widget switch.
+void setNodeShown(fuse::ui::UiContext& ui, fuse::ui::NodeHandle n, bool shown);
+bool nodeShown(const fuse::ui::UiContext& ui, fuse::ui::NodeHandle n);
+
 /// Colour conversion model::Rgba -> FuseUI.
 fuse::ui::Color toColor(model::Rgba c, float opacity = 1.f);
 
