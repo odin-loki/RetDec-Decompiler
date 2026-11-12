@@ -767,6 +767,11 @@ u32 StyleEngine::intern(const ComputedStyle& cs) {
 
 u32 StyleEngine::compute(const StyleSubject& s, u32 node, const ComputedStyle* parent, const ComputedStyle* defaults,
                          const std::vector<std::pair<Prop, PropValue>>& inl) {
+    return intern(computeValue(s, node, parent, defaults, inl));
+}
+
+ComputedStyle StyleEngine::computeValue(const StyleSubject& s, u32 node, const ComputedStyle* parent, const ComputedStyle* defaults,
+                                        const std::vector<std::pair<Prop, PropValue>>& inl) {
     ComputedStyle cs = defaults ? *defaults : ComputedStyle{};
     if (parent) inheritFrom(cs, *parent);
     m_scratch.clear();
@@ -787,7 +792,7 @@ u32 StyleEngine::compute(const StyleSubject& s, u32 node, const ComputedStyle* p
             }
         }
     for (const auto& [p, v] : inl) applyProp(cs, p, v);
-    return intern(cs);
+    return cs;
 }
 
 } // namespace fuse::ui

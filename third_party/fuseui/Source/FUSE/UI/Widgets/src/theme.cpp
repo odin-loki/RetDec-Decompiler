@@ -91,6 +91,33 @@ datetimeedit:focus { border-color: var(--accent); }
 .fontlist { height: 110px; }
 .fontpreview { padding: 6px 4px; }
 .filelist { height: 220px; width: 420px; }
+/* Widget-drawn sub-parts (UiContext::partStyle: matched like a child element of the widget, e.g.
+   `tableview > tableheader`, `.light tab:selected`) and the colours widgets draw themselves. */
+docktitle { background: #2a2a33; border-radius: 3px; }
+dockclose { color: #9a9aa6; }
+dockclose:hover { color: #ff6b6b; }
+splithandle { background-end: #5a5a66; }
+splithandle:hover, splithandle:pressed, splithandle:focus { background-end: var(--accent); }
+tab:selected { background: var(--surface-hi); }
+tabline { background: var(--border); }
+tableheader { background: #2a2a33; border-color: #55555f; }
+tablestripe { background: rgba(255, 255, 255, 0.035); }
+scrolltrack { background: rgba(0, 0, 0, 0.15); }
+scrollthumb { background: rgba(138, 138, 150, 0.85); }
+scrollthumb:pressed { background: rgba(180, 180, 192, 0.85); }
+scrollbar > scrolltrack { background: rgba(0, 0, 0, 0.2); }
+scrollbar > scrollthumb { background: #8a8a96; }
+codearea { background: #1a1a20; }
+codegutter { background: #212128; color: #6a6a76; }
+codegutter:selected { color: #c8c8d0; }
+codeselection { background: #264f78; }
+codecurrentline { background: rgba(255, 255, 255, 0.04); }
+codecaret { background: #ffffff; }
+codeplain { color: #d4d4d4; }
+codekeyword { color: #569cd6; }
+codestring { color: #ce9178; }
+codenumber { color: #b5cea8; }
+codecomment { color: #6a9955; }
 .grow { flex-grow: 1; }
 .buttons { justify-content: end; }
 )css";

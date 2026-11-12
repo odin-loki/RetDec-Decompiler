@@ -19,7 +19,7 @@ if(FUSE_UI_VK_LINK)
     endif()
 endif()
 if(WIN32 OR MINGW)
-    target_link_libraries(fuse_app_native PRIVATE user32 gdi32)
+    target_link_libraries(fuse_app_native PRIVATE user32 gdi32 shell32)
 elseif(APPLE)
     # macOS window backend (RetDec addition): NSWindow + a view blitting the CPU raster. Objective-C++ without ARC.
     enable_language(OBJCXX)

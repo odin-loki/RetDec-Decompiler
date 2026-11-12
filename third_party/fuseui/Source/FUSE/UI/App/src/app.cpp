@@ -234,6 +234,65 @@ void AppWindow::setPresenter(const Presenter& p) {
     m_presenter = p.present ? p : Presenter{this, &AppWindow::presentHeadless, nullptr};
     m_forceRedraw = true;
 }
+bool AppWindow::userCloseRequest() {
+    if (m_closing) return true;
+    if (m_onCloseRequested && !m_onCloseRequested(*this)) {
+        m_forceRedraw = true; // the hook may have opened a dialog; make sure it shows
+        return false;
+    }
+    requestClose();
+    return true;
+}
+bool AppWindow::dropFiles(std::vector<std::string> paths, Vec2 pos) {
+    if (!m_onFileDrop || paths.empty()) return false;
+    FileDrop d{std::move(paths), pos, m_ui.hitTest(pos)};
+    m_onFileDrop(*this, d);
+    m_forceRedraw = true;
+    return true;
+}
+
+std::vector<std::string> parseUriList(std::string_view list) {
+    std::vector<std::string> out;
+    auto hex = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    std::size_t at = 0;
+    while (at < list.size()) {
+        std::size_t nl = list.find('\n', at);
+        if (nl == std::string_view::npos) nl = list.size();
+        std::string_view line = list.substr(at, nl - at);
+        at = nl + 1;
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ' || line.back() == '\0')) line.remove_suffix(1);
+        while (!line.empty() && line.front() == ' ') line.remove_prefix(1);
+        if (line.empty() || line.front() == '#') continue;
+        if (line.size() < 7 || !(line.substr(0, 5) == "file:" || line.substr(0, 5) == "FILE:")) continue;
+        line.remove_prefix(5);
+        if (line.substr(0, 2) == "//") { // file://host/path: only the local host
+            line.remove_prefix(2);
+            const std::size_t slash = line.find('/');
+            if (slash == std::string_view::npos) continue;
+            const std::string_view host = line.substr(0, slash);
+            if (!host.empty() && host != "localhost") continue;
+            line.remove_prefix(slash);
+        }
+        std::string p;
+        p.reserve(line.size());
+        for (std::size_t i = 0; i < line.size(); ++i) {
+            if (line[i] == '%' && i + 2 < line.size() && hex(line[i + 1]) >= 0 && hex(line[i + 2]) >= 0) {
+                p += char(hex(line[i + 1]) * 16 + hex(line[i + 2]));
+                i += 2;
+            } else {
+                p += line[i];
+            }
+        }
+        if (!p.empty()) out.push_back(std::move(p));
+    }
+    return out;
+}
+
 void AppWindow::resize(u32 width, u32 height) {
     m_ui.setViewport({f32(width), f32(height)});
     m_ui.markAllDirty();

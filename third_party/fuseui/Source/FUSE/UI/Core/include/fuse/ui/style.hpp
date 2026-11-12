@@ -243,6 +243,10 @@ public:
     /// Returns an index into the table (allocates only for a never-seen combination).
     u32 compute(const StyleSubject& subject, u32 node, const ComputedStyle* parentStyle,
                 const ComputedStyle* defaults, const std::vector<std::pair<Prop, PropValue>>& inlineValues);
+    /// compute() without interning: returns the style by value and never grows the table, so references into it
+    /// (style(i), a PaintContext's style) stay valid. Used for widget sub-parts during paint (UiContext::partStyle).
+    ComputedStyle computeValue(const StyleSubject& subject, u32 node, const ComputedStyle* parentStyle,
+                               const ComputedStyle* defaults, const std::vector<std::pair<Prop, PropValue>>& inlineValues);
     const ComputedStyle& style(u32 index) const { return m_table[index]; }
     u32 tableSize() const { return u32(m_table.size()); }
     bool matches(const StyleSubject& subject, u32 node, const StyleRule& rule) const;

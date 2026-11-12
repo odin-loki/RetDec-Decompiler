@@ -105,6 +105,83 @@ void registerCoreClasses(WidgetRegistry& r) {
     r.add(layer);
 }
 
+// ---- Key names -----------------------------------------------------------------------------------------------------
+namespace {
+struct KeyNameEntry { Key key; std::string_view name; };
+constexpr KeyNameEntry kKeyNames[] = {
+    {Key::Tab, "Tab"}, {Key::Enter, "Enter"}, {Key::Escape, "Escape"}, {Key::Space, "Space"}, {Key::Backspace, "Backspace"},
+    {Key::Delete, "Delete"}, {Key::Left, "Left"}, {Key::Right, "Right"}, {Key::Up, "Up"}, {Key::Down, "Down"},
+    {Key::Home, "Home"}, {Key::End, "End"}, {Key::PageUp, "PageUp"}, {Key::PageDown, "PageDown"},
+    {Key::A, "A"}, {Key::B, "B"}, {Key::C, "C"}, {Key::D, "D"}, {Key::E, "E"}, {Key::F, "F"}, {Key::G, "G"}, {Key::H, "H"},
+    {Key::I, "I"}, {Key::J, "J"}, {Key::K, "K"}, {Key::L, "L"}, {Key::M, "M"}, {Key::N, "N"}, {Key::O, "O"}, {Key::P, "P"},
+    {Key::Q, "Q"}, {Key::R, "R"}, {Key::S, "S"}, {Key::T, "T"}, {Key::U, "U"}, {Key::V, "V"}, {Key::W, "W"}, {Key::X, "X"},
+    {Key::Y, "Y"}, {Key::Z, "Z"},
+    {Key::Num0, "0"}, {Key::Num1, "1"}, {Key::Num2, "2"}, {Key::Num3, "3"}, {Key::Num4, "4"}, {Key::Num5, "5"},
+    {Key::Num6, "6"}, {Key::Num7, "7"}, {Key::Num8, "8"}, {Key::Num9, "9"},
+    {Key::F1, "F1"}, {Key::F2, "F2"}, {Key::F3, "F3"}, {Key::F4, "F4"}, {Key::F5, "F5"}, {Key::F6, "F6"}, {Key::F7, "F7"},
+    {Key::F8, "F8"}, {Key::F9, "F9"}, {Key::F10, "F10"}, {Key::F11, "F11"}, {Key::F12, "F12"},
+    {Key::BracketLeft, "["}, {Key::BracketRight, "]"}, {Key::Minus, "-"}, {Key::Equal, "="}, {Key::Comma, ","},
+    {Key::Period, "."}, {Key::Slash, "/"}, {Key::Semicolon, ";"}, {Key::Quote, "'"}, {Key::Backslash, "\\"}, {Key::Grave, "`"},
+};
+constexpr KeyNameEntry kKeyAliases[] = {
+    {Key::Escape, "Esc"}, {Key::Enter, "Return"}, {Key::Delete, "Del"}, {Key::PageUp, "PgUp"}, {Key::PageDown, "PgDown"},
+    {Key::PageDown, "PgDn"}, {Key::Backspace, "Back"}, {Key::Left, "ArrowLeft"}, {Key::Right, "ArrowRight"},
+    {Key::Up, "ArrowUp"}, {Key::Down, "ArrowDown"}, {Key::Num0, "Num0"}, {Key::Num1, "Num1"}, {Key::Num2, "Num2"},
+    {Key::Num3, "Num3"}, {Key::Num4, "Num4"}, {Key::Num5, "Num5"}, {Key::Num6, "Num6"}, {Key::Num7, "Num7"},
+    {Key::Num8, "Num8"}, {Key::Num9, "Num9"}, {Key::BracketLeft, "BracketLeft"}, {Key::BracketRight, "BracketRight"},
+    {Key::Minus, "Minus"}, {Key::Equal, "Equal"}, {Key::Equal, "Plus"}, {Key::Equal, "+"}, {Key::Comma, "Comma"},
+    {Key::Period, "Period"}, {Key::Period, "Dot"}, {Key::Slash, "Slash"}, {Key::Semicolon, "Semicolon"},
+    {Key::Quote, "Quote"}, {Key::Quote, "Apostrophe"}, {Key::Backslash, "Backslash"}, {Key::Grave, "Grave"},
+    {Key::Grave, "Backtick"}, {Key::Grave, "Backquote"}, {Key::Grave, "~"},
+};
+bool iequals(std::string_view a, std::string_view b) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        char x = a[i], y = b[i];
+        if (x >= 'A' && x <= 'Z') x = char(x - 'A' + 'a');
+        if (y >= 'A' && y <= 'Z') y = char(y - 'A' + 'a');
+        if (x != y) return false;
+    }
+    return true;
+}
+} // namespace
+
+std::string_view keyName(Key k) {
+    for (const KeyNameEntry& e : kKeyNames)
+        if (e.key == k) return e.name;
+    return {};
+}
+Key keyFromName(std::string_view name) {
+    while (!name.empty() && name.front() == ' ') name.remove_prefix(1);
+    while (!name.empty() && name.back() == ' ') name.remove_suffix(1);
+    if (name.empty()) return Key::None;
+    for (const KeyNameEntry& e : kKeyNames)
+        if (iequals(e.name, name)) return e.key;
+    for (const KeyNameEntry& e : kKeyAliases)
+        if (iequals(e.name, name)) return e.key;
+    return Key::None;
+}
+bool parseShortcut(std::string_view text, Key& key, u8& mods) {
+    u8 m = 0;
+    for (;;) {
+        // the last '+' separates the key, unless the key itself is '+' ("Ctrl++")
+        std::size_t plus = text.find('+');
+        if (plus == std::string_view::npos || plus + 1 >= text.size()) break;
+        const std::string_view mod = text.substr(0, plus);
+        if (iequals(mod, "ctrl") || iequals(mod, "control") || iequals(mod, "cmd") || iequals(mod, "command")) m |= kModCtrl;
+        else if (iequals(mod, "shift")) m |= kModShift;
+        else if (iequals(mod, "alt") || iequals(mod, "option") || iequals(mod, "opt")) m |= kModAlt;
+        else if (iequals(mod, "super") || iequals(mod, "meta") || iequals(mod, "win")) m |= kModSuper;
+        else break; // not a modifier: the rest is the key name
+        text.remove_prefix(plus + 1);
+    }
+    const Key k = keyFromName(text);
+    if (k == Key::None) return false;
+    key = k;
+    mods = m;
+    return true;
+}
+
 // ---- Style subject -------------------------------------------------------------------------------------------------
 struct ContextSubject final : StyleSubject {
     const UiContext& ui;
@@ -119,6 +196,18 @@ struct ContextSubject final : StyleSubject {
     }
     u32 states(u32 n) const override { return nodes[n].state; }
     u32 parent(u32 n) const override { return nodes[n].parent; }
+};
+/// A node's subject plus one virtual child (a widget sub-part, UiContext::partStyle).
+struct PartSubject final : StyleSubject {
+    static constexpr u32 kPart = 0xFFFFFFFEu;
+    const StyleSubject& base;
+    u32 owner, type, state;
+    PartSubject(const StyleSubject& b, u32 o, u32 t, u32 s) : base(b), owner(o), type(t), state(s) {}
+    u32 typeHash(u32 n) const override { return n == kPart ? type : base.typeHash(n); }
+    u32 idHash(u32 n) const override { return n == kPart ? 0u : base.idHash(n); }
+    bool hasClass(u32 n, u32 h) const override { return n != kPart && base.hasClass(n, h); }
+    u32 states(u32 n) const override { return n == kPart ? state : base.states(n); }
+    u32 parent(u32 n) const override { return n == kPart ? owner : base.parent(n); }
 };
 
 // ---- Lifetime ------------------------------------------------------------------------------------------------------
@@ -517,6 +606,13 @@ Rect UiContext::contentRect(NodeHandle h) const {
     return {n->rect.x + p.l, n->rect.y + p.t, std::max(0.f, n->rect.w - p.h()), std::max(0.f, n->rect.h - p.v())};
 }
 Vec2 UiContext::scroll(NodeHandle h) const { return node(h) ? node(h)->scroll : Vec2{}; }
+ComputedStyle UiContext::partStyle(NodeHandle owner, std::string_view part, u32 states, const ComputedStyle* defaults) {
+    static const std::vector<std::pair<Prop, PropValue>> kNoInline;
+    if (!node(owner)) return defaults ? *defaults : ComputedStyle{};
+    const ContextSubject subj(*this, m_nodes);
+    const PartSubject ps(subj, owner.index, hashId(part), states);
+    return m_styles.computeValue(ps, PartSubject::kPart, nullptr, defaults, kNoInline);
+}
 Size UiContext::scrollExtent(NodeHandle h) const { return node(h) ? node(h)->extent : Size{}; }
 void UiContext::scrollTo(NodeHandle h, Vec2 o) {
     Node* n = node(h);
@@ -1209,8 +1305,14 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
             Rect tr, th;
             if (!scrollBarGeom(i, ax, tr, th)) continue;
             const bool hot = m_scrollDrag.node.index == i && m_scrollDrag.axis == ax;
-            dl.rect(tr, tint(Color::rgb(0x000000, 0.12f)), kScrollBarSize * 0.5f);
-            dl.rect(th, tint(Color::rgb(hot ? 0xB4B4C0 : 0x8A8A96, 0.85f)), kScrollBarSize * 0.5f);
+            // sub-parts `scrolltrack` / `scrollthumb` (:pressed while dragged); the defaults are the built-in look
+            ComputedStyle d;
+            d.background = Color::rgb(0x000000, 0.12f);
+            const Color track = partStyle(h, "scrolltrack", 0, &d).background;
+            d.background = Color::rgb(hot ? 0xB4B4C0 : 0x8A8A96, 0.85f);
+            const Color thumb = partStyle(h, "scrollthumb", hot ? kStatePressed : 0u, &d).background;
+            dl.rect(tr, tint(track), kScrollBarSize * 0.5f);
+            dl.rect(th, tint(thumb), kScrollBarSize * 0.5f);
         }
 }
 

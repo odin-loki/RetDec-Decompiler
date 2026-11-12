@@ -193,9 +193,11 @@ struct ScrollBar {
         const bool v = vertical(c);
         const f32 len = v ? c.h : c.w, pg = page(pc.ui, pc.node), th = std::max(16.f, len * pg);
         const f32 at = (len - th) * frac(pc.ui, pc.node);
-        dl.rect(c, pc.tint(Color::rgb(0x000000, 0.2f)), 4.f);
+        // sub-parts `scrolltrack` / `scrollthumb` (background; the hovered / pressed thumb is the accent, background-end)
+        dl.rect(c, pc.tint(detail::partOf(pc, "scrolltrack", 0, Color::rgb(0x000000, 0.2f)).background), 4.f);
         const Rect t = v ? Rect{c.x + 2.f, c.y + at, c.w - 4.f, th} : Rect{c.x + at, c.y + 2.f, th, c.h - 4.f};
-        dl.rect(t, pc.states & (kStateHover | kStatePressed) ? accent(pc) : pc.tint(Color::rgb(0x8A8A96)), 3.f);
+        dl.rect(t, pc.states & (kStateHover | kStatePressed) ? accent(pc)
+                                                              : pc.tint(detail::partOf(pc, "scrollthumb", 0, Color::rgb(0x8A8A96)).background), 3.f);
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;

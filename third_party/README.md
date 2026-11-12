@@ -12,7 +12,8 @@ works offline and needs no submodule checkout.
 ### FuseUI: RetDec additions (not upstream yet)
 
 All additive and source compatible (new enum values are appended, new struct fields come last with defaults); each
-has gate tests in `Source/FUSE/UI/tests` (`fuse_ui_extra_*`, `test_ui_extras.cpp`).
+has gate tests in `Source/FUSE/UI/tests` (`fuse_ui_extra_*`, `test_ui_extras.cpp`; `fuse_app_extra_*`,
+`test_app_extras.cpp`; `fuse_app_native_extras`, an X11 window under Xvfb).
 
 - **Window backends**: the macOS (Cocoa) backend (`App/src/native_cocoa.mm`, `cocoa_bridge.hpp`, wired in
   `App/CMakeLists.txt` and `native.cpp`) and a software presenter for X11 in `native.cpp` (upstream draws an X11
@@ -46,6 +47,32 @@ has gate tests in `Source/FUSE/UI/tests` (`fuse_ui_extra_*`, `test_ui_extras.cpp
 - **Spin box / progress bar**: `setSpecialValueText` (shown at the minimum), `setProgressIndeterminate` (busy bar).
 - **Cooked styles**: `font-family` values are cooked; custom properties are now tagged `0xFFFFFFFF` (blobs cooked
   before, which tagged them 56, still load).
+- **Punctuation keys**: `Key::Minus, Equal, Comma, Period, Slash, Semicolon, Quote, Backslash, Grave` (appended after
+  `Key::Other`; earlier values keep their numbers), mapped by key position in all three backends (X11 keysyms, with
+  shifted symbols reported by their unshifted key plus Shift; Win32 `VK_OEM_*`; macOS `kVK_ANSI_*`, digits by position
+  too). `keyName`, `keyFromName` (aliases such as `Esc`, `Backtick`, `Plus`) and `parseShortcut("Ctrl+Shift+`")`.
+  Win32 no longer maps numpad virtual keys onto letters.
+- **Cancellable close**: `AppWindow::setCloseRequestHandler(std::function<bool(AppWindow&)>)`; the OS close button
+  (Win32 `WM_CLOSE`, X11 `WM_DELETE_WINDOW`, Cocoa `windowShouldClose`) calls `AppWindow::userCloseRequest()`, which
+  asks the hook (false keeps the window, e.g. for an "unsaved changes?" prompt). `requestClose()` still closes
+  unconditionally; without a hook nothing changes.
+- **File drops**: `AppWindow::setFileDropHandler(std::function<void(AppWindow&, const FileDrop&)>)` with
+  `FileDrop{paths (UTF-8), pos, target}`; `dropFiles(paths, pos)` for backends and tests; `parseUriList`. Win32
+  `DragAcceptFiles` / `WM_DROPFILES`, an X11 XDND v5 drop target (Enter / Position / Status / Drop / Finished, the
+  `XdndSelection` converted to `text/uri-list` through the runtime-loaded libX11), Cocoa
+  `registerForDraggedTypes:NSPasteboardTypeFileURL` + `draggingEntered:` / `performDragOperation:` on the content view.
+  Drags are refused while no hook is set. No drag-hover events yet.
+- **Themeable widget parts**: `UiContext::partStyle(owner, part, states, defaults)` styles pieces a widget draws
+  itself as if they were child elements (`StyleEngine::computeValue` computes them without interning, so it is safe
+  during paint). Parts: `tableheader` (background, color, border-color = column separators, background-end = sort
+  arrow), `tablestripe`, `tab` / `tab:selected` (background, color, border-radius, background-end = indicator),
+  `tabline`, `dockclose` / `dockclose:hover` (color), `scrolltrack`, `scrollthumb` / `scrollthumb:pressed` (scroll
+  containers, table / grid views and the `scrollbar` widget), and the code editor's `codearea`, `codegutter`
+  (`:selected` = caret line), `codeselection`, `codecurrentline`, `codecaret`, `codeplain`, `codekeyword`,
+  `codestring`, `codenumber`, `codecomment`. `docktitle` paints its own CSS background (class default `#2a2a33`) and
+  `splithandle` its grip in `background-end` (themed per `:hover` / `:pressed` / `:focus`). The default theme lists
+  every former built-in colour, so the dark look is unchanged (scroll tracks of plain scroll containers now use the
+  table's `rgba(0,0,0,0.15)`); menus were already CSS-driven.
 - **Build**: the UI1 key / IME tests that need the engine's `Source/FUSE/Core` are skipped when it is absent, and
   `fuse_text_fallback` skips (exit 77) without the Noto / Twemoji faces, so the vendored tree builds and tests on its
   own.

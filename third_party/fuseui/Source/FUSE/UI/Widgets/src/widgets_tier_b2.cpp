@@ -42,7 +42,8 @@ struct SplitHandle { // between two panes; value() = 1 when the splitter is stac
     static void paint(const PaintContext& pc, DrawList& dl) {
         const Rect r = pc.rect;
         const bool hot = pc.states & (kStateHover | kStatePressed | kStateFocus);
-        const Color c = pc.tint(hot ? Color::rgb(0x3D8BFD) : Color::rgb(0x5A5A66));
+        // grip: `background-end` (the theme sets it per state); built-in look without a sheet
+        const Color c = pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : hot ? Color::rgb(0x3D8BFD) : Color::rgb(0x5A5A66));
         if (stacked(pc.ui, pc.node)) dl.rect({r.x + r.w * 0.5f - 12.f, r.y + r.h * 0.5f - 1.f, 24.f, 2.f}, c, 1.f);
         else dl.rect({r.x + r.w * 0.5f - 1.f, r.y + r.h * 0.5f - 12.f, 2.f, 24.f}, c, 1.f);
     }
@@ -111,14 +112,22 @@ struct DockTitle { // the title strip of a dock widget; text = title. Close box 
     static constexpr A11yRole kRole = A11yRole::Text;
     static constexpr bool kInteractive = true;
     static Size measure(UiContext& ui, NodeHandle n, Size) { return {std::ceil(ui.measureString(ui.text(n), ui.computed(n).fontSize, n)) + 24.f, rowHeight(ui, n) - 2.f}; }
+    static ComputedStyle defaults() { // the strip itself is the node's background (CSS `docktitle`)
+        ComputedStyle s;
+        s.background = Color::rgb(0x2A2A33);
+        s.radius = {3.f, 3.f, 3.f, 3.f};
+        return s;
+    }
     static Rect closeBox(const Rect& r) { return {r.right() - r.h, r.y, r.h, r.h}; }
     static void paint(const PaintContext& pc, DrawList& dl) {
         const Rect r = pc.rect;
-        dl.rect(r, pc.tint(Color::rgb(0x2A2A33)), 3.f);
         pc.ui.paintString(dl, pc.ui.text(pc.node), {pc.content.x, r.y, pc.content.w - r.h, r.h}, pc.tint(pc.style.color), pc.style.fontSize,
                           TextAlignment::Start, pc.node.index);
         const Rect x = closeBox(r);
-        const Color c = pc.tint(pc.ui.hovered() == pc.node && x.contains(pc.ui.pointer()) ? Color::rgb(0xFF6B6B) : Color::rgb(0x9A9AA6));
+        const bool hot = pc.ui.hovered() == pc.node && x.contains(pc.ui.pointer());
+        // close glyph: sub-part `dockclose` (`color`, :hover)
+        const Color c = pc.tint(detail::partOf(pc, "dockclose", hot ? kStateHover : 0u, {}, {},
+                                               hot ? Color::rgb(0xFF6B6B) : Color::rgb(0x9A9AA6)).color);
         const f32 m = x.h * 0.32f;
         dl.line({x.x + m, x.y + m}, {x.right() - m, x.bottom() - m}, c, 1.5f);
         dl.line({x.right() - m, x.y + m}, {x.x + m, x.bottom() - m}, c, 1.5f);
@@ -328,32 +337,37 @@ struct TableView {
         const Color acc = pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD));
         dl.pushClip(c);
         if (s->header) {
-            dl.rect({c.x, c.y, c.w, hh}, pc.tint(Color::rgb(0x2A2A33)));
+            // sub-part `tableheader`: background, color (titles), border-color (column separators), background-end (sort arrow)
+            const ComputedStyle hs = detail::partOf(pc, "tableheader", 0, Color::rgb(0x2A2A33), Color::rgb(0x55555F));
+            const Color htext = pc.tint(hs.color), hsep = pc.tint(hs.borderColor);
+            const Color hacc = hs.background2.a > 0.f ? pc.tint(hs.background2) : acc;
+            dl.rect({c.x, c.y, c.w, hh}, pc.tint(hs.background));
             f32 x = c.x;
             for (u32 k = 0; k < nc; ++k) {
                 const Rect cell{x + 6.f, c.y, s->colW[k] - 12.f, hh};
                 const std::string_view h = s->model->header ? s->model->header(s->model->user, k) : std::string_view{};
                 dl.pushClip({x, c.y, s->colW[k], hh});
-                ui.paintString(dl, h, cell, text, fs, TextAlignment::Start, pc.node.index);
+                ui.paintString(dl, h, cell, htext, fs, TextAlignment::Start, pc.node.index);
                 if (i32(k) == s->sortCol) { // sort arrow
                     const f32 ax = x + s->colW[k] - 12.f, ay = c.y + hh * 0.5f, d = s->asc ? -3.f : 3.f;
-                    dl.line({ax - 4.f, ay - d}, {ax, ay + d}, acc, 1.5f);
-                    dl.line({ax, ay + d}, {ax + 4.f, ay - d}, acc, 1.5f);
+                    dl.line({ax - 4.f, ay - d}, {ax, ay + d}, hacc, 1.5f);
+                    dl.line({ax, ay + d}, {ax + 4.f, ay - d}, hacc, 1.5f);
                 }
                 dl.popClip();
                 x += s->colW[k];
-                dl.rect({x - 1.f, c.y + 4.f, 1.f, hh - 8.f}, pc.tint(Color::rgb(0x55555F)));
+                dl.rect({x - 1.f, c.y + 4.f, 1.f, hh - 8.f}, hsep);
             }
         }
         const i32 cur = i32(ui.value(pc.node));
         const bool extended = s->mode == SelectionMode::Extended;
+        const Color stripe = pc.tint(detail::partOf(pc, "tablestripe", 0, Color::rgb(0xFFFFFF, 0.035f)).background); // odd rows
         for (u32 i = 0; i < vis + 1 && s->first + i < nr; ++i) {
             const u32 row = s->first + i;
             const f32 y = c.y + hh + f32(i) * rh;
             if (y >= c.bottom()) break;
             const bool rowSel = TableView::isSelected(ui, pc.node, *s, row);
             if (rowSel) dl.rect({c.x, y, c.w, rh}, acc.withAlpha(acc.a * 0.55f));
-            else if (row & 1u) dl.rect({c.x, y, c.w, rh}, pc.tint(Color::rgb(0xFFFFFF, 0.035f)));
+            else if ((row & 1u) && stripe.a > 0.f) dl.rect({c.x, y, c.w, rh}, stripe);
             if (extended && i32(row) == cur && (pc.states & kStateFocus))
                 dl.roundedRect({c.x + 1.f, y, c.w - 2.f, rh}, {}, {}, acc.withAlpha(acc.a * 0.9f), 1.f);
             f32 x = c.x;
@@ -372,8 +386,9 @@ struct TableView {
         }
         Rect tr, th;
         if (barGeom(ui, pc.node, *s, tr, th)) {
-            dl.rect(tr, pc.tint(Color::rgb(0x000000, 0.15f)), kBar * 0.5f);
-            dl.rect(th, pc.tint(Color::rgb(s->dragScroll ? 0xB4B4C0 : 0x8A8A96, 0.85f)), kBar * 0.5f);
+            dl.rect(tr, pc.tint(detail::partOf(pc, "scrolltrack", 0, Color::rgb(0x000000, 0.15f)).background), kBar * 0.5f);
+            dl.rect(th, pc.tint(detail::partOf(pc, "scrollthumb", s->dragScroll ? kStatePressed : 0u,
+                                               Color::rgb(s->dragScroll ? 0xB4B4C0 : 0x8A8A96, 0.85f)).background), kBar * 0.5f);
         }
         if (pc.states & kStateFocus) dl.roundedRect(pc.rect, {}, {}, acc.withAlpha(acc.a * 0.6f), 1.f);
         dl.popClip();

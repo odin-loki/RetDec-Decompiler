@@ -130,8 +130,9 @@ struct GridView {
         if (rt > vis) {
             const Rect tr{c.right() - kBar, c.y, kBar, c.h};
             const f32 tl = std::max(16.f, tr.h * f32(vis) / f32(rt));
-            dl.rect(tr, pc.tint(Color::rgb(0x000000, 0.15f)), kBar * 0.5f);
-            dl.rect({tr.x, tr.y + (tr.h - tl) * f32(s->first) / f32(rt - vis), kBar, tl}, pc.tint(Color::rgb(0x8A8A96, 0.85f)), kBar * 0.5f);
+            dl.rect(tr, pc.tint(detail::partOf(pc, "scrolltrack", 0, Color::rgb(0x000000, 0.15f)).background), kBar * 0.5f);
+            dl.rect({tr.x, tr.y + (tr.h - tl) * f32(s->first) / f32(rt - vis), kBar, tl},
+                    pc.tint(detail::partOf(pc, "scrollthumb", 0, Color::rgb(0x8A8A96, 0.85f)).background), kBar * 0.5f);
         }
         dl.popClip();
     }

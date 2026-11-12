@@ -38,8 +38,19 @@ enum class Key : u16 {
     B, F, G, H, I, J, K, L, M, P, R, T, U, Num0, Num5, Num6, Num7, Num8, Num9, ///< rebindable editor shortcuts
     F1, F3, F4, F6, F7, F8, F9, F11, F12,
     BracketLeft, BracketRight, ///< timeline previous / next key
-    Other
+    Other,
+    /// US-layout punctuation keys (appended after Other so earlier values keep their numbers). Backends report the
+    /// key by position on the unshifted layer: Shift+, is Comma with kModShift, Shift+` is Grave.
+    Minus, Equal, Comma, Period, Slash, Semicolon, Quote, Backslash, Grave
 };
+/// Stable name of a key ("A", "Num1" -> "1", "F5", "Comma" -> ","; Other / None -> ""), for shortcut text.
+std::string_view keyName(Key k);
+/// Inverse of keyName, case-insensitive; also accepts common aliases ("Esc", "Return", "Del", "PgUp", "Backtick",
+/// "Plus" -> Equal, "Up" ...). Key::None when unknown.
+Key keyFromName(std::string_view name);
+/// Parses shortcut text such as "Ctrl+Shift+S", "Alt+F4", "Ctrl+`", "Ctrl++" (modifiers Ctrl / Control / Cmd /
+/// Command / Shift / Alt / Option / Super / Meta / Win, any order, case-insensitive). False when the key is unknown.
+bool parseShortcut(std::string_view text, Key& key, u8& mods);
 enum Mods : u8 { kModShift = 1, kModCtrl = 2, kModAlt = 4, kModSuper = 8 };
 enum class MouseButton : u8 { Left, Right, Middle };
 enum class NavDir : u8 { Left, Right, Up, Down };
@@ -268,6 +279,13 @@ public:
 
     // style / geometry results (valid after update)
     const ComputedStyle& computed(NodeHandle n) const;
+    /// Style of a widget sub-part that has no node of its own (a table header, a scroll bar thumb, a tab): matched
+    /// as if it were a child element of type `part` of `owner` in state `states` (kStateHover / kStateSelected ...),
+    /// so style sheets restyle it with ordinary selectors (`tableheader { background: ... }`,
+    /// `tableview > scrollthumb:pressed`, `.light tab:selected`). Starts from `defaults` (the widget's built-in look,
+    /// usually seeded with the owner's text colour and font) and is not inherited from `owner`; custom properties
+    /// (var()) resolve as for nodes. Computed on demand and not interned, so it is safe to call from paint.
+    ComputedStyle partStyle(NodeHandle owner, std::string_view part, u32 states = 0, const ComputedStyle* defaults = nullptr);
     Rect rect(NodeHandle n) const;
     Rect contentRect(NodeHandle n) const;
     Vec2 scroll(NodeHandle n) const;

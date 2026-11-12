@@ -776,10 +776,21 @@ struct CodeEditW {
         if (!s) return;
         const Rect c = pc.content;
         const f32 lh = lineH(pc), fs = pc.style.fontSize, gw = gutter(ui, pc.node, *s);
-        static const Color kTok[] = {Color::rgb(0xD4D4D4), Color::rgb(0x569CD6), Color::rgb(0xCE9178), Color::rgb(0xB5CEA8), Color::rgb(0x6A9955)};
+        // Colours are sub-parts (UiContext::partStyle), so a sheet restyles them: codearea / codegutter / codeselection /
+        // codecaret / codecurrentline (background), codegutter and codegutter:selected (the caret line) / codeplain /
+        // codekeyword / codestring / codenumber / codecomment (color).
+        static constexpr std::string_view kTokPart[] = {"codeplain", "codekeyword", "codestring", "codenumber", "codecomment"};
+        static const Color kTokDef[] = {Color::rgb(0xD4D4D4), Color::rgb(0x569CD6), Color::rgb(0xCE9178), Color::rgb(0xB5CEA8), Color::rgb(0x6A9955)};
+        Color kTok[5];
+        for (int i = 0; i < 5; ++i) kTok[i] = detail::partOf(pc, kTokPart[i], 0, {}, {}, kTokDef[i]).color;
+        const ComputedStyle gut = detail::partOf(pc, "codegutter", 0, Color::rgb(0x212128), {}, Color::rgb(0x6A6A76));
+        const Color gutCur = detail::partOf(pc, "codegutter", kStateSelected, Color::rgb(0x212128), {}, Color::rgb(0xC8C8D0)).color;
+        const Color selBg = detail::partOf(pc, "codeselection", 0, Color::rgb(0x264F78)).background;
+        const Color curLine = detail::partOf(pc, "codecurrentline", 0, Color::rgb(0xFFFFFF, 0.04f)).background;
+        const Color caretCol = detail::partOf(pc, "codecaret", 0, Color::rgb(0xFFFFFF)).background;
         dl.pushClip(c);
-        dl.rect(c, pc.tint(Color::rgb(0x1A1A20)));
-        dl.rect({c.x, c.y, gw - 6.f, c.h}, pc.tint(Color::rgb(0x212128)));
+        dl.rect(c, pc.tint(detail::partOf(pc, "codearea", 0, Color::rgb(0x1A1A20)).background));
+        dl.rect({c.x, c.y, gw - 6.f, c.h}, pc.tint(gut.background));
         const Pos a = std::min(s->caret, s->anchor), b = std::max(s->caret, s->anchor);
         const bool focused = ui.focused() == pc.node;
         std::vector<u8> tok;
@@ -788,16 +799,16 @@ struct CodeEditW {
             const u32 li = s->first + r;
             const std::string& L = s->lines[li];
             const f32 y = c.y + f32(r) * lh, x0 = c.x + gw;
-            if (li == s->caret.line && focused) dl.rect({x0 - 4.f, y, c.w - gw + 4.f, lh}, pc.tint(Color::rgb(0xFFFFFF, 0.04f)));
+            if (li == s->caret.line && focused) dl.rect({x0 - 4.f, y, c.w - gw + 4.f, lh}, pc.tint(curLine));
             char num[16];
             std::snprintf(num, sizeof num, "%u", li + 1);
-            ui.paintString(dl, num, {c.x, y, gw - 12.f, lh}, pc.tint(li == s->caret.line ? Color::rgb(0xC8C8D0) : Color::rgb(0x6A6A76)),
+            ui.paintString(dl, num, {c.x, y, gw - 12.f, lh}, pc.tint(li == s->caret.line ? gutCur : gut.color),
                            fs * 0.9f, TextAlignment::End, pc.node.index);
             if (!(a == b) && li >= a.line && li <= b.line) { // selection
                 const u32 sc = li == a.line ? a.col : 0, ecl = li == b.line ? b.col : u32(L.size());
                 const f32 sx = x0 + ui.measureString(std::string_view(L).substr(0, sc), fs, pc.node);
                 const f32 ex = x0 + ui.measureString(std::string_view(L).substr(0, ecl), fs, pc.node) + (li != b.line ? 6.f : 0.f);
-                dl.rect({sx, y, std::max(0.f, ex - sx), lh}, pc.tint(Color::rgb(0x264F78)));
+                dl.rect({sx, y, std::max(0.f, ex - sx), lh}, pc.tint(selBg));
             }
             tokenize(s->lang, L, tok);
             for (std::size_t i = 0; i < L.size();) {
@@ -816,7 +827,7 @@ struct CodeEditW {
             }
             if (focused && li == s->caret.line) {
                 const f32 cx = x0 + ui.measureString(std::string_view(L).substr(0, s->caret.col), fs, pc.node);
-                dl.rect({cx, y + 2.f, 2.f, lh - 4.f}, pc.tint(Color::rgb(0xFFFFFF)));
+                dl.rect({cx, y + 2.f, 2.f, lh - 4.f}, pc.tint(caretCol));
                 ui.setTextCaret(pc.node, {cx, y + 2.f, 2.f, lh - 4.f});
             }
         }

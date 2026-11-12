@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <string>
 #include <vector>
 
 namespace {
@@ -59,8 +60,22 @@ FKey mapKeyCode(unsigned short code) {
     case 109: return FKey::F10;
     case 103: return FKey::F11;
     case 111: return FKey::F12;
-    case 33: return FKey::BracketLeft;
-    case 30: return FKey::BracketRight;
+    case 33: return FKey::BracketLeft;  // kVK_ANSI_LeftBracket
+    case 30: return FKey::BracketRight; // kVK_ANSI_RightBracket
+    // punctuation by position (kVK_ANSI_*): Shift+, stays Comma with the Shift modifier, as on X11 / Win32
+    case 27: return FKey::Minus;     // kVK_ANSI_Minus
+    case 24: return FKey::Equal;     // kVK_ANSI_Equal
+    case 43: return FKey::Comma;     // kVK_ANSI_Comma
+    case 47: return FKey::Period;    // kVK_ANSI_Period
+    case 44: return FKey::Slash;     // kVK_ANSI_Slash
+    case 41: return FKey::Semicolon; // kVK_ANSI_Semicolon
+    case 39: return FKey::Quote;     // kVK_ANSI_Quote
+    case 42: return FKey::Backslash; // kVK_ANSI_Backslash
+    case 50: return FKey::Grave;     // kVK_ANSI_Grave
+    // digits by position too (charactersIgnoringModifiers turns Shift+1 into '!')
+    case 29: return FKey::Num0; case 18: return FKey::Num1; case 19: return FKey::Num2; case 20: return FKey::Num3;
+    case 21: return FKey::Num4; case 23: return FKey::Num5; case 22: return FKey::Num6; case 26: return FKey::Num7;
+    case 28: return FKey::Num8; case 25: return FKey::Num9;
     default: return FKey::Other;
     }
 }
@@ -78,6 +93,9 @@ FKey mapAscii(unichar c) {
     case '0': return FKey::Num0; case '1': return FKey::Num1; case '2': return FKey::Num2; case '3': return FKey::Num3;
     case '4': return FKey::Num4; case '5': return FKey::Num5; case '6': return FKey::Num6; case '7': return FKey::Num7;
     case '8': return FKey::Num8; case '9': return FKey::Num9;
+    case '-': return FKey::Minus; case '=': return FKey::Equal; case ',': return FKey::Comma; case '.': return FKey::Period;
+    case '/': return FKey::Slash; case ';': return FKey::Semicolon; case '\'': return FKey::Quote;
+    case '\\': return FKey::Backslash; case '`': return FKey::Grave;
     default: return FKey::Other;
     }
 }
@@ -198,6 +216,38 @@ FKey mapAscii(unichar c) {
     }
     return [super performKeyEquivalent:e];
 }
+// ---- file drops (NSDraggingDestination; registered for NSPasteboardTypeFileURL in createWindow) ----
+- (BOOL)hasFileURLs:(id<NSDraggingInfo>)info {
+    NSDictionary* opts = [NSDictionary dictionaryWithObject:[NSNumber numberWithBool:YES]
+                                                     forKey:NSPasteboardURLReadingFileURLsOnlyKey];
+    return [[info draggingPasteboard] canReadObjectForClasses:[NSArray arrayWithObject:[NSURL class]] options:opts];
+}
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)info {
+    if (!cb.acceptsDrop || !cb.drop || !cb.acceptsDrop(cb.user) || ![self hasFileURLs:info]) return NSDragOperationNone;
+    return NSDragOperationCopy;
+}
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)info { return [self draggingEntered:info]; }
+- (BOOL)prepareForDragOperation:(id<NSDraggingInfo>)info { return [self draggingEntered:info] != NSDragOperationNone; }
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)info {
+    if (!cb.drop) return NO;
+    NSDictionary* opts = [NSDictionary dictionaryWithObject:[NSNumber numberWithBool:YES]
+                                                     forKey:NSPasteboardURLReadingFileURLsOnlyKey];
+    NSArray* urls = [[info draggingPasteboard] readObjectsForClasses:[NSArray arrayWithObject:[NSURL class]] options:opts];
+    std::vector<std::string> paths;
+    for (NSURL* u in urls) {
+        if (![u isFileURL]) continue;
+        const char* p = [[u path] UTF8String]; // file system representation as UTF-8
+        if (p && *p) paths.emplace_back(p);
+    }
+    if (paths.empty()) return NO;
+    std::vector<const char*> ptrs;
+    ptrs.reserve(paths.size());
+    for (const std::string& p : paths) ptrs.push_back(p.c_str());
+    const NSPoint at = [self convertPoint:[info draggingLocation] fromView:nil]; // flipped view: top-left origin
+    cb.drop(cb.user, ptrs.data(), int(ptrs.size()), float(at.x), float(at.y));
+    return YES;
+}
+
 - (void)dealloc {
     if (tracking) [tracking release];
     [super dealloc];
@@ -214,7 +264,9 @@ FKey mapAscii(unichar c) {
 @implementation FuseWindowDelegate
 - (BOOL)windowShouldClose:(NSWindow*)w {
     (void)w;
-    if (view->cb.close) view->cb.close(view->cb.user); // the app decides; AppWindow::requestClose
+    // The app decides (AppWindow::userCloseRequest: its close-request hook may veto); when it closes, the window is
+    // destroyed through destroyWindow, so Cocoa never closes it here.
+    if (view->cb.close) view->cb.close(view->cb.user);
     return NO;
 }
 - (void)windowDidResize:(NSNotification*)n {
@@ -283,6 +335,7 @@ void* createWindow(const std::string& title, unsigned width, unsigned height, co
         view->ph = 0;
         view->tracking = nil;
         [win setContentView:view];
+        [view registerForDraggedTypes:[NSArray arrayWithObject:NSPasteboardTypeFileURL]]; // file drops (10.13+)
         [win makeFirstResponder:view];
         [win setAcceptsMouseMovedEvents:YES];
         FuseWindowDelegate* del = [[FuseWindowDelegate alloc] init];

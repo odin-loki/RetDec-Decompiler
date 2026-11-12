@@ -12,6 +12,7 @@
 #include "fuse/ui/widgets/widgets.hpp"
 
 #include <expected>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -89,6 +90,13 @@ enum class RedrawPolicy : fuse::ui::u8 {
 class Application;
 class AppWindow;
 
+/// Files dropped onto a window from the OS (Explorer / Finder / a file manager): AppWindow::setFileDropHandler.
+struct FileDrop {
+    std::vector<std::string> paths; ///< UTF-8 local paths, in the order the OS gave them
+    fuse::ui::Vec2 pos;             ///< drop point, window coordinates (logical px)
+    fuse::ui::NodeHandle target;    ///< the node under `pos` (UiContext::hitTest), invalid over nothing
+};
+
 /// Shows a window's frame. `damage` is the union of changed rects (whole window on the first frame / resize).
 struct Presenter {
     void* user = nullptr;
@@ -122,6 +130,20 @@ public:
     u64 framesPresented() const { return m_frames; }
     void requestClose() { m_closing = true; }
     bool closing() const { return m_closing; }
+    /// Close-request hook for the user closing the window (title bar close button, Alt+F4, Cmd+W / the window menu:
+    /// WM_CLOSE, WM_DELETE_WINDOW, windowShouldClose). Return false to keep the window open, e.g. to ask about unsaved
+    /// changes, then call requestClose() once the user confirms. Unset (default): the window closes.
+    void setCloseRequestHandler(std::function<bool(AppWindow&)> fn) { m_onCloseRequested = std::move(fn); }
+    /// Backends call this when the user asks to close the window: asks the hook, then requestClose(). True when the
+    /// window is now closing, false when the hook vetoed it.
+    bool userCloseRequest();
+    /// File drop hook: files dragged from the OS and dropped on the window, with the drop point (Win32 WM_DROPFILES,
+    /// X11 XDND text/uri-list, Cocoa NSPasteboardTypeFileURL). While none is set, native windows refuse file drags.
+    void setFileDropHandler(std::function<void(AppWindow&, const FileDrop&)> fn) { m_onFileDrop = std::move(fn); }
+    bool acceptsFileDrops() const { return bool(m_onFileDrop); }
+    /// Backends (and tests) deliver a drop: fills FileDrop::target, calls the hook and wakes the loop. False when no
+    /// hook is set or `paths` is empty.
+    bool dropFiles(std::vector<std::string> paths, fuse::ui::Vec2 pos);
     void requestRedraw() { m_forceRedraw = true; }
     /// Headless presenter target: the last CPU-rasterised frame.
     const fuse::ui::Image& image() const { return m_image; }
@@ -161,7 +183,13 @@ private:
     u64 m_frames = 0;
     u32 m_id;
     bool m_closing = false, m_forceRedraw = true;
+    std::function<bool(AppWindow&)> m_onCloseRequested;
+    std::function<void(AppWindow&, const FileDrop&)> m_onFileDrop;
 };
+
+/// Decodes a text/uri-list (RFC 2483: CRLF-separated URIs, '#' comment lines) into local paths: file:// URIs with
+/// an empty or "localhost" host, percent-decoded (UTF-8). Other schemes are skipped. Used by the X11 XDND backend.
+std::vector<std::string> parseUriList(std::string_view uriList);
 
 // ---- application ---------------------------------------------------------------------------------------------------
 struct AppDesc {

@@ -15,7 +15,7 @@ namespace fuse::app::cocoa {
 
 struct Callbacks {
     void* user = nullptr;
-    void (*close)(void* user) = nullptr;
+    void (*close)(void* user) = nullptr; ///< close button / Cmd+W: the app decides (AppWindow::userCloseRequest)
     void (*resize)(void* user, unsigned width, unsigned height) = nullptr;
     void (*expose)(void* user) = nullptr;
     void (*modifiers)(void* user, std::uint8_t mods) = nullptr;
@@ -26,6 +26,10 @@ struct Callbacks {
     void (*key)(void* user, int key, std::uint8_t mods, bool down) = nullptr; ///< key: a fuse::ui::Key value
     void (*text)(void* user, const char* utf8) = nullptr;
     void (*focus)(void* user, bool gained) = nullptr;
+    /// File drops: whether the app takes them now (AppWindow::acceptsFileDrops), and the drop itself (UTF-8 paths,
+    /// window-local top-left point).
+    bool (*acceptsDrop)(void* user) = nullptr;
+    void (*drop)(void* user, const char* const* paths, int count, float x, float y) = nullptr;
 };
 
 /// Sets up NSApplication (regular activation policy, an application menu with Quit). False without a window server.

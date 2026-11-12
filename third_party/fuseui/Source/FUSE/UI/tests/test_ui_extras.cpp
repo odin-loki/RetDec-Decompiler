@@ -13,6 +13,11 @@
 //   spinbox_special        special-value text at the minimum
 //   progress_indeterminate the busy bar animates on the context clock and stops when switched off
 //   cooked_font_props      (with fuse_ui_doc) font-family / font-weight survive the style cooker; custom properties too
+//   key_names              punctuation keys appended to Key (earlier values unchanged); keyName / keyFromName /
+//                          parseShortcut round trips ("Ctrl+Shift+`", "Ctrl++", aliases)
+//   part_styles            UiContext::partStyle: widget sub-parts (tableheader, tab:selected, scrollthumb ...) match
+//                          type / child / id / class / state selectors, start from the widget defaults, the default
+//                          theme reproduces the built-in colours and a later sheet restyles what the widgets draw
 #include "test_util.hpp"
 
 #if defined(FUSE_UI_EXTRAS_HAVE_DOC)
@@ -600,6 +605,177 @@ void gateCookedFontProps() {
 #endif
 }
 
+// ---- key_names ------------------------------------------------------------------------------------------------------
+// Earlier Key values keep their numbers (cooked bindings, saved shortcuts); the punctuation keys follow Other.
+static_assert(u16(Key::BracketRight) == 64 && u16(Key::Other) == 65);
+static_assert(u16(Key::Minus) == 66 && u16(Key::Grave) == 74);
+
+void gateKeyNames() {
+    struct P { Key k; const char* name; };
+    const P names[] = {{Key::Minus, "-"}, {Key::Equal, "="}, {Key::Comma, ","}, {Key::Period, "."}, {Key::Slash, "/"},
+                       {Key::Semicolon, ";"}, {Key::Quote, "'"}, {Key::Backslash, "\\"}, {Key::Grave, "`"},
+                       {Key::BracketLeft, "["}, {Key::A, "A"}, {Key::Z, "Z"}, {Key::Num0, "0"}, {Key::Num9, "9"},
+                       {Key::F12, "F12"}, {Key::PageDown, "PageDown"}, {Key::Escape, "Escape"}};
+    for (const P& p : names) {
+        UI_CHECK(keyName(p.k) == p.name);
+        UI_CHECK(keyFromName(p.name) == p.k);
+    }
+    // every named key round-trips; Other / None have no name
+    for (u16 v = 1; v <= u16(Key::Grave); ++v) {
+        const Key k = Key(v);
+        if (k == Key::Other) continue;
+        UI_CHECK(!keyName(k).empty());
+        UI_CHECK(keyFromName(keyName(k)) == k);
+    }
+    UI_CHECK(keyName(Key::Other).empty() && keyName(Key::None).empty());
+    UI_CHECK(keyFromName("esc") == Key::Escape && keyFromName("Backtick") == Key::Grave && keyFromName("plus") == Key::Equal);
+    UI_CHECK(keyFromName("comma") == Key::Comma && keyFromName("f5") == Key::F5 && keyFromName("nope") == Key::None);
+    Key k = Key::None;
+    u8 m = 0;
+    UI_CHECK(parseShortcut("Ctrl+Shift+`", k, m) && k == Key::Grave && m == (kModCtrl | kModShift));
+    UI_CHECK(parseShortcut("Ctrl++", k, m) && k == Key::Equal && m == kModCtrl);
+    UI_CHECK(parseShortcut("ctrl+,", k, m) && k == Key::Comma && m == kModCtrl);
+    UI_CHECK(parseShortcut("Alt+F4", k, m) && k == Key::F4 && m == kModAlt);
+    UI_CHECK(parseShortcut("Cmd+Option+/", k, m) && k == Key::Slash && m == (kModCtrl | kModAlt));
+    UI_CHECK(parseShortcut("G", k, m) && k == Key::G && m == 0);
+    UI_CHECK(!parseShortcut("Ctrl+Hyper", k, m) && !parseShortcut("", k, m));
+    // the new keys reach widgets like any other (a KeyDown with the key)
+    UiContext ui{{.viewport = {200, 100}, .font = &fuse::ui::test::font()}};
+    w::install(ui);
+    const NodeHandle b = w::button(ui, ui.root(), "x", "b");
+    Key seen = Key::None;
+    ui.connect(b, SignalKind::Event, [&seen](UiContext&, NodeHandle, const SignalArgs& a) {
+        if (a.event && a.event->type == EventType::KeyDown) seen = a.event->key;
+    });
+    settle(ui);
+    ui.setFocus(b, FocusReason::Keyboard);
+    ui.keyDown(Key::Period, kModCtrl);
+    UI_CHECK(seen == Key::Period);
+}
+
+// ---- part_styles ----------------------------------------------------------------------------------------------------
+struct TwoRows {
+    std::vector<std::string> rows{"alpha", "beta", "gamma", "delta"};
+    w::ItemModel model() const {
+        w::ItemModel m;
+        m.user = this;
+        m.columns = 2;
+        m.rows = [](const void* u) { return u32(static_cast<const TwoRows*>(u)->rows.size()); };
+        m.data = [](const void* u, u32 r, u32, std::string&) { return std::string_view(static_cast<const TwoRows*>(u)->rows[r]); };
+        m.header = [](const void*, u32 c) { return std::string_view(c == 0 ? "Name" : "Value"); };
+        return m;
+    }
+};
+/// Fill colours of the Rect commands painted inside node `n`'s rect (widget paint does not tag its commands).
+std::vector<u32> fillsOf(const UiContext& ui, NodeHandle n) {
+    std::vector<u32> out;
+    const Rect r = ui.rect(n);
+    for (const DrawCmd& c : ui.drawList().cmds())
+        if (c.op == DrawOp::Rect && c.fill.a > 0.f && c.rect.x >= r.x - 0.5f && c.rect.y >= r.y - 0.5f &&
+            c.rect.right() <= r.right() + 0.5f && c.rect.bottom() <= r.bottom() + 0.5f)
+            out.push_back(packPremultiplied(c.fill));
+    return out;
+}
+bool hasFill(const UiContext& ui, NodeHandle n, Color c) {
+    const u32 want = packPremultiplied(c);
+    for (u32 f : fillsOf(ui, n))
+        if (f == want) return true;
+    return false;
+}
+
+void gatePartStyles() {
+    UiContext ui{{.viewport = {640, 480}, .font = &fuse::ui::test::font()}};
+    w::install(ui);
+    TwoRows rows;
+    const w::ItemModel model = rows.model();
+    const NodeHandle table = w::tableView(ui, ui.root(), &model, "t");
+    ui.setCss(table, "height", "120px");
+    const NodeHandle tabs = w::tabBar(ui, ui.root(), "One\nTwo\nThree", 1, "tabs");
+    const NodeHandle split = w::splitter(ui, ui.root(), false, "split");
+    ui.setCss(split, "height", "60px");
+    w::splitterPane(ui, split, 100.f);
+    w::splitterPane(ui, split);
+    const NodeHandle area = w::dockArea(ui, ui.root(), "area");
+    ui.setCss(area, "height", "120px");
+    const NodeHandle dock = w::dockWidget(ui, area, "Dock", w::DockSide::Left, "dock");
+    settle(ui);
+
+    // no rule names the part: the widget's defaults come back unchanged (and nothing is inherited from the owner)
+    ComputedStyle d;
+    d.background = Color::rgb(0x123456);
+    d.color = Color::rgb(0x654321);
+    const ComputedStyle none = ui.partStyle(table, "nosuchpart", 0, &d);
+    UI_CHECK(none.background == d.background && none.color == d.color);
+    // the default theme reproduces the built-in colours
+    UI_CHECK(ui.partStyle(table, "tableheader", 0, &d).background == Color::rgb(0x2A2A33));
+    UI_CHECK(ui.partStyle(table, "tableheader", 0, &d).borderColor == Color::rgb(0x55555F));
+    UI_CHECK(ui.partStyle(tabs, "tab", kStateSelected, &d).background == Color::rgb(0x34353E));
+    UI_CHECK(ui.partStyle(tabs, "tab", 0, &d).background == d.background); // only :selected is themed
+    UI_CHECK(ui.partStyle(table, "scrollthumb", kStatePressed, &d).background == Color::rgb(0xB4B4C0, 0.85f));
+    UI_CHECK(ui.computed(w::dockBody(ui, dock)).visible);
+    const NodeHandle title = ui.firstChild(dock);
+    UI_CHECK(ui.computed(title).background == Color::rgb(0x2A2A33)); // docktitle strip = its own background
+
+    // what the widgets paint follows: header strip, selected tab, docktitle, splitter grip (default theme)
+    UI_CHECK(hasFill(ui, table, Color::rgb(0x2A2A33)));
+    UI_CHECK(hasFill(ui, tabs, Color::rgb(0x34353E)));
+    UI_CHECK(hasFill(ui, tabs, Color::rgb(0x474955))); // tabline
+    UI_CHECK(hasFill(ui, title, Color::rgb(0x2A2A33)));
+    const NodeHandle handle = ui.nextSibling(ui.firstChild(split));
+    UI_CHECK(hasFill(ui, handle, Color::rgb(0x5A5A66)));
+
+    // selectors: type, child combinator, id, class and state all reach the parts
+    UI_CHECK(ui.addStyleSheet(R"css(
+        tableheader { background: #ffffff; color: #101010; border-color: #c0c0c0; }
+        #t > tableheader { background: #eeeeee; }
+        tab:selected { background: #dde4ff; color: #202020; }
+        tabline { background: #b0b0b0; }
+        .light scrollthumb:pressed { background: #808080; }
+        docktitle { background: #e8e8ec; color: #202020; }
+        dockclose { color: #606060; }
+        splithandle { background-end: #a0a0a0; }
+        tablestripe { background: rgba(0, 0, 0, 0.04); }
+    )css").has_value());
+    settle(ui);
+    UI_CHECK(ui.partStyle(table, "tableheader", 0, &d).background == Color::rgb(0xEEEEEE)); // id + child beats type
+    UI_CHECK(ui.partStyle(table, "tableheader", 0, &d).color == Color::rgb(0x101010));
+    UI_CHECK(ui.partStyle(tabs, "tableheader", 0, &d).background == Color::rgb(0xFFFFFF)); // type rule only
+    UI_CHECK(ui.partStyle(tabs, "tab", kStateSelected, &d).background == Color::rgb(0xDDE4FF));
+    UI_CHECK(ui.partStyle(table, "scrollthumb", kStatePressed, &d).background == Color::rgb(0xB4B4C0, 0.85f)); // no .light yet
+    ui.addClass(ui.root(), "light");
+    settle(ui);
+    UI_CHECK(ui.partStyle(table, "scrollthumb", kStatePressed, &d).background == Color::rgb(0x808080)); // ancestor class
+    UI_CHECK(ui.partStyle(table, "scrollthumb", 0, &d).background == Color::rgb(0x8A8A96, 0.85f));     // state needed
+
+    // ... and the painted colours follow without touching the widgets
+    ui.invalidate(table);
+    ui.invalidate(tabs);
+    ui.invalidate(handle);
+    settle(ui);
+    UI_CHECK(hasFill(ui, table, Color::rgb(0xEEEEEE)) && !hasFill(ui, table, Color::rgb(0x2A2A33)));
+    UI_CHECK(hasFill(ui, table, Color::rgb(0xC0C0C0)));                // column separator = header border-color
+    UI_CHECK(hasFill(ui, tabs, Color::rgb(0xDDE4FF)) && hasFill(ui, tabs, Color::rgb(0xB0B0B0)));
+    UI_CHECK(!hasFill(ui, tabs, Color::rgb(0x34353E)));
+    UI_CHECK(hasFill(ui, title, Color::rgb(0xE8E8EC)));
+    UI_CHECK(hasFill(ui, handle, Color::rgb(0xA0A0A0)));
+    // header titles take the header colour
+    bool darkTitle = false;
+    for (const DrawCmd& c : ui.drawList().cmds())
+        if (c.op == DrawOp::Glyph && c.node == table.index && packPremultiplied(c.fill) == packPremultiplied(Color::rgb(0x101010))) darkTitle = true;
+    UI_CHECK(darkTitle);
+
+    // without the theme (installClasses(..., false)) the widgets keep their built-in look
+    UiContext bare{{.viewport = {320, 200}, .font = &fuse::ui::test::font()}};
+    const std::string_view cls[] = {"tableview", "tabbar"};
+    UI_CHECK(w::installClasses(bare, cls, false) == 0);
+    const NodeHandle bt = w::tableView(bare, bare.root(), &model, "t");
+    bare.setCss(bt, "height", "100px");
+    const NodeHandle bb = w::tabBar(bare, bare.root(), "A\nB", 0, "tabs");
+    settle(bare);
+    UI_CHECK(hasFill(bare, bt, Color::rgb(0x2A2A33)));
+    UI_CHECK(hasFill(bare, bb, Color::rgb(0x34353E)));
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -614,7 +790,9 @@ int main(int argc, char** argv) {
                                {"table_multiselect", gateTableMultiSelect},
                                {"spinbox_special", gateSpinBoxSpecial},
                                {"progress_indeterminate", gateProgressIndeterminate},
-                               {"cooked_font_props", gateCookedFontProps}};
+                               {"cooked_font_props", gateCookedFontProps},
+                               {"key_names", gateKeyNames},
+                               {"part_styles", gatePartStyles}};
     bool ran = false;
     for (const G& g : kGates)
         if (gate.empty() || gate == g.name) {

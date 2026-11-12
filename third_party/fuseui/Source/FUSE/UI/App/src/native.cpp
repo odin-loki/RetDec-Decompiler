@@ -3,7 +3,9 @@
 // raster -> headless). See native.hpp.
 //
 // RetDec changes (not upstream FUSE yet): the macOS backend, and a software presenter for X11 (XPutImage of the CPU
-// raster) so a window draws without a Vulkan loader; upstream left an X11 window without Vulkan blank.
+// raster) so a window draws without a Vulkan loader; upstream left an X11 window without Vulkan blank. The OS close
+// button goes through AppWindow::userCloseRequest (the app may veto it), file drops reach AppWindow::dropFiles (Win32
+// WM_DROPFILES, an XDND v5 drop target, Cocoa dragging destination) and the US punctuation keys are mapped.
 #include "native_internal.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
 
@@ -25,6 +27,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <shellapi.h> // DragAcceptFiles / WM_DROPFILES
 #elif defined(__APPLE__)
 #include "cocoa_bridge.hpp"
 #else
@@ -96,6 +99,15 @@ u8 asciiKey(Key& k, u32 c) {
     case '9': k = Key::Num9; return 1;
     case '[': k = Key::BracketLeft; return 1;
     case ']': k = Key::BracketRight; return 1;
+    case '-': k = Key::Minus; return 1;
+    case '=': k = Key::Equal; return 1;
+    case ',': k = Key::Comma; return 1;
+    case '.': k = Key::Period; return 1;
+    case '/': k = Key::Slash; return 1;
+    case ';': k = Key::Semicolon; return 1;
+    case '\'': k = Key::Quote; return 1;
+    case '\\': k = Key::Backslash; return 1;
+    case '`': k = Key::Grave; return 1;
     default: return 0;
     }
 }
@@ -124,7 +136,8 @@ struct InputEv {
 };
 struct ConfigureEv { int type; unsigned long serial; int send_event; Display* display; Window event, window; int x, y, width, height; };
 struct ClientEv { int type; unsigned long serial; int send_event; Display* display; Window window; Atom message_type; int format; long l[5]; };
-union Event { int type; AnyEv any; InputEv input; ConfigureEv configure; ClientEv client; long pad[24]; };
+struct SelectionEv { int type; unsigned long serial; int send_event; Display* display; Window requestor; Atom selection, target, property; unsigned long time; };
+union Event { int type; AnyEv any; InputEv input; ConfigureEv configure; ClientEv client; SelectionEv selection; long pad[24]; };
 struct Image;
 struct ImageFuncs { Image* (*create)(); int (*destroy)(Image*); };
 struct Image {
@@ -132,7 +145,7 @@ struct Image {
         bytes_per_line, bits_per_pixel; unsigned long red_mask, green_mask, blue_mask; char* obdata; ImageFuncs f;
 };
 enum { KeyPress = 2, KeyRelease = 3, ButtonPress = 4, ButtonRelease = 5, MotionNotify = 6, FocusOut = 10, Expose = 12,
-       MapNotify = 19, ConfigureNotify = 22, ClientMessage = 33 };
+       MapNotify = 19, ConfigureNotify = 22, SelectionNotify = 31, ClientMessage = 33 };
 constexpr long kMask = 1 | 2 | 4 | 8 | (1 << 6) | (1 << 15) | (1 << 17) | (1 << 21);
 
 struct Lib {
@@ -174,6 +187,8 @@ struct Lib {
     int (*SendEvent)(Display*, Window, int, long, Event*) = nullptr;
     int (*GrabPointer)(Display*, Window, int, unsigned, int, int, Window, XID, unsigned long) = nullptr;
     int (*UngrabPointer)(Display*, unsigned long) = nullptr;
+    KeySym (*LookupKeysym)(InputEv*, int) = nullptr;
+    int (*ConvertSelection)(Display*, Atom, Atom, Atom, Window, unsigned long) = nullptr;
 
     bool load() {
         so = dlopen("libX11.so.6", RTLD_NOW | RTLD_LOCAL);
@@ -196,6 +211,7 @@ struct Lib {
         get(TranslateCoordinates, "XTranslateCoordinates"); get(ChangeWindowAttributes, "XChangeWindowAttributes");
         get(DisplayWidth, "XDisplayWidth"); get(DisplayHeight, "XDisplayHeight"); get(SendEvent, "XSendEvent");
         get(GrabPointer, "XGrabPointer"); get(UngrabPointer, "XUngrabPointer");
+        get(LookupKeysym, "XLookupKeysym"); get(ConvertSelection, "XConvertSelection");
         return all;
     }
 };
@@ -276,8 +292,14 @@ struct NativePlatform::Impl {
 #if defined(_WIN32)
         std::vector<u32> bgra; ///< GDI fallback staging
         wchar_t highSurrogate = 0;
+        bool dropAccept = false; ///< Win32: DragAcceptFiles state (follows AppWindow::acceptsFileDrops)
 #else
         std::vector<u32> staged; ///< software presenter: pixels in the OS order (X11 TrueColor)
+        // XDND drop target state (the drag in progress over this window)
+        unsigned long xdndSource = 0; ///< source window, 0 = no drag
+        int xdndVersion = 0;
+        bool xdndUris = false;        ///< the source offers text/uri-list
+        Vec2 xdndPos;                 ///< last XdndPosition, window coordinates
 #endif
     };
 
@@ -296,6 +318,13 @@ struct NativePlatform::Impl {
     x11::Lib x;
     x11::Display* dpy = nullptr;
     x11::Atom wmProtocols = 0, wmDelete = 0;
+    struct XdndAtoms {
+        x11::Atom aware = 0, enter = 0, position = 0, status = 0, leave = 0, drop = 0, finished = 0, selection = 0,
+                  actionCopy = 0, typeList = 0, uriList = 0, property = 0;
+    } xdnd;
+    void xdndClientMessage(Rec& r, const x11::ClientEv& c);
+    void xdndSelection(Rec& r, const x11::SelectionEv& e);
+    void xdndSend(unsigned long to, x11::Atom type, long l1, long l2, long l3, long l4, unsigned long self);
 #endif
 
     Impl(Application& a, const NativeOptions& o) : app(a), opts(o) {}
@@ -418,6 +447,12 @@ void NativePlatform::Impl::syncPopups(Rec& r) {
 
 bool NativePlatform::Impl::present(void* user, AppWindow& w, Rect damage) {
     Rec& r = *static_cast<Rec*>(user);
+#if defined(_WIN32)
+    if (r.handle && r.dropAccept != w.acceptsFileDrops()) { // file drops follow AppWindow::setFileDropHandler
+        r.dropAccept = w.acceptsFileDrops();
+        DragAcceptFiles(reinterpret_cast<HWND>(r.handle), r.dropAccept ? TRUE : FALSE);
+    }
+#endif
     switch (r.kind) {
     case PresenterKind::Vulkan: {
         const bool ok = detail::vkWinPresent(r.vk, w, damage);
@@ -513,10 +548,20 @@ Key mapVk(WPARAM vk, bool& ascii) {
     case VK_F12: return Key::F12;
     case VK_OEM_4: return Key::BracketLeft;
     case VK_OEM_6: return Key::BracketRight;
+    case VK_OEM_MINUS: return Key::Minus;
+    case VK_OEM_PLUS: return Key::Equal; // the =/+ key
+    case VK_OEM_COMMA: return Key::Comma;
+    case VK_OEM_PERIOD: return Key::Period;
+    case VK_OEM_2: return Key::Slash;
+    case VK_OEM_1: return Key::Semicolon;
+    case VK_OEM_7: return Key::Quote;
+    case VK_OEM_5: return Key::Backslash;
+    case VK_OEM_3: return Key::Grave;
     default: break;
     }
     Key k = Key::Other;
-    ascii = vk < 0x80 && vk != 0x5B && vk != 0x5D && asciiKey(k, u32(vk)); // 0x5B / 0x5D are VK_LWIN / VK_APPS, not [ ]
+    // only 0-9 / A-Z are ASCII as virtual keys (other codes below 0x80 are VK_LWIN, VK_NUMPAD0, VK_INSERT ...)
+    ascii = ((vk >= '0' && vk <= '9') || (vk >= 'A' && vk <= 'Z')) && asciiKey(k, u32(vk));
     return k;
 }
 u8 winMods() {
@@ -532,7 +577,27 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     AppWindow& w = *r->win;
     UiContext& ui = w.ui();
     switch (msg) {
-    case WM_CLOSE: w.requestClose(); return 0;
+    case WM_CLOSE: w.userCloseRequest(); return 0; // the app may veto (AppWindow::setCloseRequestHandler)
+    case WM_DROPFILES: {
+        HDROP drop = reinterpret_cast<HDROP>(wp);
+        POINT pt{0, 0};
+        DragQueryPoint(drop, &pt); // client coordinates
+        std::vector<std::string> paths;
+        const UINT n = DragQueryFileW(drop, 0xFFFFFFFFu, nullptr, 0);
+        for (UINT i = 0; i < n; ++i) {
+            const UINT len = DragQueryFileW(drop, i, nullptr, 0);
+            std::wstring ws(std::size_t(len) + 1, L'\0');
+            const UINT got = DragQueryFileW(drop, i, ws.data(), len + 1);
+            ws.resize(got);
+            const int bytes = WideCharToMultiByte(CP_UTF8, 0, ws.data(), int(ws.size()), nullptr, 0, nullptr, nullptr);
+            std::string u8(std::size_t(std::max(0, bytes)), '\0');
+            if (bytes > 0) WideCharToMultiByte(CP_UTF8, 0, ws.data(), int(ws.size()), u8.data(), bytes, nullptr, nullptr);
+            if (!u8.empty()) paths.push_back(std::move(u8));
+        }
+        DragFinish(drop);
+        w.dropFiles(std::move(paths), {f32(pt.x), f32(pt.y)});
+        return 0;
+    }
     case WM_ACTIVATEAPP: // another application took the pointer / focus: popups close (Qt::Popup)
         if (!wp && !r->popups.empty()) NativePlatform::Impl::closeAllPopups(*r);
         break;
@@ -708,6 +773,8 @@ bool NativePlatform::Impl::createOsWindow(Rec& r) {
     }
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&r));
     r.handle = reinterpret_cast<unsigned long long>(hwnd);
+    r.dropAccept = r.win->acceptsFileDrops();
+    DragAcceptFiles(hwnd, r.dropAccept ? TRUE : FALSE); // re-synced on each present (setFileDropHandler after show)
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
     return true;
@@ -804,7 +871,7 @@ AppWindow* winOf(void* u) { auto* r = static_cast<RecT*>(u); return r ? r->win :
 cocoa::Callbacks cocoaCallbacks(RecT& r) {
     cocoa::Callbacks cb;
     cb.user = &r;
-    cb.close = [](void* u) { if (AppWindow* w = winOf(u)) w->requestClose(); };
+    cb.close = [](void* u) { if (AppWindow* w = winOf(u)) w->userCloseRequest(); }; // the app may veto
     cb.resize = [](void* u, unsigned ww, unsigned hh) { if (AppWindow* w = winOf(u)) w->resize(ww, hh); };
     cb.expose = [](void* u) { if (AppWindow* w = winOf(u)) { static_cast<RecT*>(u)->mapped = true; w->requestRedraw(); } };
     cb.modifiers = [](void* u, std::uint8_t md) { if (AppWindow* w = winOf(u)) w->ui().setModifiers(md); };
@@ -823,6 +890,16 @@ cocoa::Callbacks cocoaCallbacks(RecT& r) {
     };
     cb.text = [](void* u, const char* t) { if (AppWindow* w = winOf(u)) w->ui().textInput(t); };
     cb.focus = [](void* u, bool gained) { if (auto* r = static_cast<RecT*>(u)) r->focused = gained; };
+    cb.acceptsDrop = [](void* u) { AppWindow* w = winOf(u); return w != nullptr && w->acceptsFileDrops(); };
+    cb.drop = [](void* u, const char* const* paths, int count, float x, float y) {
+        AppWindow* w = winOf(u);
+        if (!w || count <= 0) return;
+        std::vector<std::string> v;
+        v.reserve(std::size_t(count));
+        for (int i = 0; i < count; ++i)
+            if (paths[i] && *paths[i]) v.emplace_back(paths[i]);
+        w->dropFiles(std::move(v), {x, y});
+    };
     return cb;
 }
 } // namespace
@@ -888,6 +965,9 @@ bool NativePlatform::Impl::createOsWindow(Rec& r) {
     x.StoreName(dpy, w, r.win->title().c_str());
     x.SelectInput(dpy, w, x11::kMask);
     x.SetWMProtocols(dpy, w, &wmDelete, 1);
+    // XDND drop target (version 5); XdndStatus answers per drag whether the app takes files (setFileDropHandler)
+    const x11::Atom xdndVersion = 5;
+    x.ChangeProperty(dpy, w, xdnd.aware, 4 /*XA_ATOM*/, 32, 0, reinterpret_cast<const unsigned char*>(&xdndVersion), 1);
     x.MapWindow(dpy, w);
     x.Flush(dpy);
     r.handle = w;
@@ -940,8 +1020,10 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
         const Vec2 pos{f32(in.x), f32(in.y)};
         switch (ev.type) {
         case x11::ClientMessage:
-            if (ev.client.message_type == m.wmProtocols && x11::Atom(ev.client.l[0]) == m.wmDelete) w.requestClose();
+            if (ev.client.message_type == m.wmProtocols && x11::Atom(ev.client.l[0]) == m.wmDelete) w.userCloseRequest();
+            else m.xdndClientMessage(*r, ev.client);
             break;
+        case x11::SelectionNotify: m.xdndSelection(*r, ev.selection); break;
         case x11::MapNotify: r->mapped = true; w.requestRedraw(); break;
         case x11::Expose: r->mapped = true; w.requestRedraw(); break;
         case x11::ConfigureNotify: {
@@ -969,7 +1051,12 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
             x11::InputEv copy = in;
             const int n = x.LookupString(&copy, buf, int(sizeof buf), &sym, nullptr);
             bool ascii = false;
-            const Key k = x11::mapKey(sym, ascii);
+            Key k = x11::mapKey(sym, ascii);
+            if (k == Key::Other) { // shifted symbol ('<', '!', '~'): report the key by its unshifted keysym (',', '1', '`')
+                x11::InputEv base = in;
+                const x11::KeySym s0 = x.LookupKeysym(&base, 0);
+                if (s0 && s0 != sym) k = x11::mapKey(s0, ascii);
+            }
             const u8 md = x11::mods(in.state);
             if (k != Key::Other) { // printable keys too: viewport WASD / 1-4; text arrives separately
                 if (ev.type == x11::KeyPress) ui.keyDown(k, md);
@@ -988,6 +1075,90 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
     }
     return true;
 }
+// ---- XDND (drop target side; freedesktop.org XDND protocol version 5) ----
+void NativePlatform::Impl::xdndSend(unsigned long to, x11::Atom type, long l1, long l2, long l3, long l4, unsigned long self) {
+    x11::Event e{};
+    e.client.type = x11::ClientMessage;
+    e.client.display = dpy;
+    e.client.window = to;
+    e.client.message_type = type;
+    e.client.format = 32;
+    e.client.l[0] = long(self);
+    e.client.l[1] = l1;
+    e.client.l[2] = l2;
+    e.client.l[3] = l3;
+    e.client.l[4] = l4;
+    x.SendEvent(dpy, to, 0, 0, &e);
+    x.Flush(dpy);
+}
+void NativePlatform::Impl::xdndClientMessage(Rec& r, const x11::ClientEv& c) {
+    const x11::Atom t = c.message_type;
+    const unsigned long self = static_cast<unsigned long>(r.handle);
+    if (t == xdnd.enter) {
+        r.xdndSource = static_cast<unsigned long>(c.l[0]);
+        r.xdndVersion = int((static_cast<unsigned long>(c.l[1]) >> 24) & 0xFF);
+        r.xdndUris = false;
+        if (c.l[1] & 1) { // more than three types: XdndTypeList on the source window
+            x11::Atom type = 0;
+            int format = 0;
+            unsigned long n = 0, after = 0;
+            unsigned char* prop = nullptr;
+            if (x.GetWindowProperty(dpy, r.xdndSource, xdnd.typeList, 0, 1024, 0, 4 /*XA_ATOM*/, &type, &format, &n, &after, &prop) == 0 &&
+                prop) {
+                const auto* atoms = reinterpret_cast<const unsigned long*>(prop); // format 32 = long in Xlib
+                for (unsigned long i = 0; i < n; ++i) r.xdndUris = r.xdndUris || atoms[i] == xdnd.uriList;
+                x.Free(prop);
+            }
+        } else {
+            for (int i = 2; i < 5; ++i) r.xdndUris = r.xdndUris || x11::Atom(c.l[i]) == xdnd.uriList;
+        }
+    } else if (t == xdnd.position) {
+        if (static_cast<unsigned long>(c.l[0]) != r.xdndSource) r.xdndSource = static_cast<unsigned long>(c.l[0]); // no Enter seen
+        const int rx = int((static_cast<unsigned long>(c.l[2]) >> 16) & 0xFFFF), ry = int(static_cast<unsigned long>(c.l[2]) & 0xFFFF);
+        int wx = 0, wy = 0;
+        x11::Window child = 0;
+        if (x.TranslateCoordinates(dpy, x.RootWindow(dpy, x.DefaultScreen(dpy)), self, rx, ry, &wx, &wy, &child))
+            r.xdndPos = {f32(wx), f32(wy)};
+        const bool ok = r.xdndUris && r.win->acceptsFileDrops();
+        // accept (bit 0); empty "no more positions" rectangle; the action we will perform
+        xdndSend(r.xdndSource, xdnd.status, ok ? 1 : 0, 0, 0, ok ? long(xdnd.actionCopy) : 0, self);
+    } else if (t == xdnd.leave) {
+        r.xdndSource = 0;
+        r.xdndUris = false;
+    } else if (t == xdnd.drop) {
+        const unsigned long src = static_cast<unsigned long>(c.l[0]);
+        if (r.xdndUris && r.win->acceptsFileDrops()) {
+            r.xdndSource = src;
+            const unsigned long time = r.xdndVersion >= 1 ? static_cast<unsigned long>(c.l[2]) : 0 /*CurrentTime*/;
+            x.ConvertSelection(dpy, xdnd.selection, xdnd.uriList, xdnd.property, self, time); // -> SelectionNotify
+            x.Flush(dpy);
+        } else {
+            xdndSend(src, xdnd.finished, 0, 0, 0, 0, self);
+            r.xdndSource = 0;
+        }
+    }
+}
+void NativePlatform::Impl::xdndSelection(Rec& r, const x11::SelectionEv& e) {
+    if (e.selection != xdnd.selection || !r.xdndSource) return;
+    std::vector<std::string> paths;
+    if (e.property != 0) {
+        x11::Atom type = 0;
+        int format = 0;
+        unsigned long n = 0, after = 0;
+        unsigned char* prop = nullptr;
+        if (x.GetWindowProperty(dpy, static_cast<unsigned long>(r.handle), e.property, 0, 1L << 22, 1 /*delete*/, 0 /*AnyPropertyType*/,
+                                &type, &format, &n, &after, &prop) == 0 && prop) {
+            if (format == 8) paths = parseUriList(std::string_view(reinterpret_cast<const char*>(prop), n));
+            x.Free(prop);
+        }
+    }
+    const bool ok = !paths.empty();
+    xdndSend(r.xdndSource, xdnd.finished, ok ? 1 : 0, ok ? long(xdnd.actionCopy) : 0, 0, 0, static_cast<unsigned long>(r.handle));
+    r.xdndSource = 0;
+    r.xdndUris = false;
+    if (ok) r.win->dropFiles(std::move(paths), r.xdndPos);
+}
+
 bool NativePlatform::Impl::screenInfo(const Rec& r, int& ox, int& oy, Rect& work) const {
     const int scr = x.DefaultScreen(dpy);
     x11::Window child = 0;
@@ -1125,6 +1296,10 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
             m->x.SetErrorHandler(&x11::ignoreErrors);
             m->wmProtocols = m->x.InternAtom(m->dpy, "WM_PROTOCOLS", 0);
             m->wmDelete = m->x.InternAtom(m->dpy, "WM_DELETE_WINDOW", 0);
+            auto atom = [&](const char* n) { return m->x.InternAtom(m->dpy, n, 0); };
+            m->xdnd = {atom("XdndAware"), atom("XdndEnter"), atom("XdndPosition"), atom("XdndStatus"), atom("XdndLeave"),
+                       atom("XdndDrop"), atom("XdndFinished"), atom("XdndSelection"), atom("XdndActionCopy"),
+                       atom("XdndTypeList"), atom("text/uri-list"), atom("FUSE_XDND_DATA")};
         } else {
             m->error = "cannot open X display";
         }

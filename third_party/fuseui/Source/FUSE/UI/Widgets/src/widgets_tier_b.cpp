@@ -477,15 +477,22 @@ struct TabBar {
         f32 x = c.x;
         eachLine(ui.text(pc.node), [&](u32 i, std::string_view t) {
             const f32 w = tabW(ui, pc.node, t);
-            if (i == sel) {
-                dl.rect({x, c.y, w, c.h}, pc.tint(Color::rgb(0x34353E)), 4.f);
-                dl.rect({x + 4.f, c.bottom() - 2.f, w - 8.f, 2.f}, accent(pc));
-            }
-            labelAt(pc, dl, t, {x, c.y, w, c.h}, TextAlignment::Center);
+            // sub-part `tab` (:selected): background, color, border-radius, background-end (selection indicator)
+            ComputedStyle d;
+            d.background = i == sel ? Color::rgb(0x34353E) : Color{};
+            d.radius = {4.f, 4.f, 4.f, 4.f};
+            d.color = pc.style.color;
+            d.background2 = pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD);
+            d.fontSize = pc.style.fontSize;
+            const ComputedStyle ts = ui.partStyle(pc.node, "tab", i == sel ? kStateSelected : 0u, &d);
+            if (ts.background.a > 0.f) dl.roundedRect({x, c.y, w, c.h}, pc.tint(ts.background), ts.radius);
+            if (i == sel) dl.rect({x + 4.f, c.bottom() - 2.f, w - 8.f, 2.f}, pc.tint(ts.background2));
+            ui.paintString(dl, t, {x, c.y, w, c.h}, pc.tint(ts.color), pc.style.fontSize, TextAlignment::Center, pc.node.index);
             x += w;
             return true;
         });
-        dl.rect({c.x, c.bottom() - 1.f, c.w, 1.f}, pc.tint(Color::rgb(0x474955)));
+        // sub-part `tabline`: the baseline under the tabs (background)
+        dl.rect({c.x, c.bottom() - 1.f, c.w, 1.f}, pc.tint(detail::partOf(pc, "tabline", 0, Color::rgb(0x474955)).background));
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
