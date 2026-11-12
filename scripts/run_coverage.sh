@@ -46,6 +46,21 @@ if ! command -v lcov &>/dev/null; then
     exit 1
 fi
 
+# lcov 2.x turns several conditions lcov 1.x tolerated into hard errors:
+# "inconsistent" fires on gtest's TEST() bodies (the macro moves a function's
+# end line), "unused" on a --remove pattern that matched nothing, and the
+# rest on GCC 15's exception-branch tags. None of them says the data is
+# wrong, and the scheduled coverage job died on the first. lcov 1.x rejects
+# the 2.x-only categories, so pick the list by version.
+LCOV_MAJOR="$(lcov --version 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -n1 | cut -d. -f1)"
+if [[ "${LCOV_MAJOR:-1}" -ge 2 ]]; then
+    LCOV_IGNORE=(--ignore-errors mismatch,mismatch,inconsistent,inconsistent,unused,unused,empty,negative,source,gcov)
+    GENHTML_IGNORE=(--ignore-errors inconsistent,inconsistent,source,unmapped,empty)
+else
+    LCOV_IGNORE=(--ignore-errors mismatch)
+    GENHTML_IGNORE=()
+fi
+
 # ---------------------------------------------------------------------------
 # 1. Configure
 # ---------------------------------------------------------------------------
@@ -67,7 +82,7 @@ lcov \
     --directory "$BUILD_DIR" \
     --output-file "$BUILD_DIR/coverage_baseline.info" \
     --rc lcov_branch_coverage=1 \
-    --ignore-errors mismatch \
+    "${LCOV_IGNORE[@]}" \
     --quiet
 
 # ---------------------------------------------------------------------------
@@ -106,7 +121,7 @@ lcov \
     --directory "$BUILD_DIR" \
     --output-file "$BUILD_DIR/coverage_test.info" \
     --rc lcov_branch_coverage=1 \
-    --ignore-errors mismatch \
+    "${LCOV_IGNORE[@]}" \
     --quiet
 
 lcov \
@@ -114,6 +129,7 @@ lcov \
     --add-tracefile "$BUILD_DIR/coverage_test.info" \
     --output-file   "$BUILD_DIR/coverage_total.info" \
     --rc lcov_branch_coverage=1 \
+    "${LCOV_IGNORE[@]}" \
     --quiet
 
 # Remove third-party and system paths from the report
@@ -125,6 +141,7 @@ lcov \
         '*/build/*' \
     --output-file "$BUILD_DIR/coverage_filtered.info" \
     --rc lcov_branch_coverage=1 \
+    "${LCOV_IGNORE[@]}" \
     --quiet
 
 mkdir -p "$REPORT_DIR"
@@ -133,12 +150,14 @@ genhtml \
     --output-directory "$REPORT_DIR" \
     --branch-coverage \
     --title "RetDec Coverage ($(date +%Y-%m-%d))" \
+    "${GENHTML_IGNORE[@]}" \
     --quiet
 
 # Summary
 lcov \
     --summary "$BUILD_DIR/coverage_filtered.info" \
     --rc lcov_branch_coverage=1 \
+    "${LCOV_IGNORE[@]}" \
     2>&1 | grep -E "lines|branches|functions"
 
 echo ""

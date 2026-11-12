@@ -88,10 +88,13 @@ set(_FIB_BIN "${CMAKE_CURRENT_BINARY_DIR}/fib_smoke${CMAKE_EXECUTABLE_SUFFIX}")
 # materializes UCRT's header-inline printf into the .obj (LNK2005 vs the
 # stub, LNK2019 on __acrt_iob_func / __stdio_common_vfprintf).
 # _NO_CRT_STDIO_INLINE makes <stdio.h> declare printf only.
+# /EXPORT:printf names the stub the same way /EXPORT:main names main: the PEs
+# carry no symbol table, so without it the stub decompiled as an anonymous
+# function_1400010a0 and corpus_regression found no `printf` in the output.
 if(MSVC)
     set(_MSVC_FIXTURE_C /nologo /Od /Ob0 /Oi- /GS- /Oy- /guard:cf- /D_NO_CRT_STDIO_INLINE)
     set(_MSVC_PRINTF_STUB "${CMAKE_CURRENT_SOURCE_DIR}/msvc_fixture_printf.c")
-    set(_MSVC_FIXTURE_LINK /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO /ENTRY:main /NODEFAULTLIB /SUBSYSTEM:CONSOLE /EXPORT:main)
+    set(_MSVC_FIXTURE_LINK /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO /ENTRY:main /NODEFAULTLIB /SUBSYSTEM:CONSOLE /EXPORT:main /EXPORT:printf)
     set(_FIB_MAIN_OBJ "${CMAKE_CURRENT_BINARY_DIR}/fib_smoke_main.obj")
     set(_FIB_PRINTF_OBJ "${CMAKE_CURRENT_BINARY_DIR}/fib_smoke_printf.obj")
     add_custom_command(

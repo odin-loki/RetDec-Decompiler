@@ -199,3 +199,4 @@ scripts/run-linux-release-build.cmd
 # Managed-integration .NET build outputs (fixture sources stay tracked).
 /tests/managed_integration/fixtures/*/bin/
 /tests/managed_integration/fixtures/*/obj/
+/.capstone-ci/

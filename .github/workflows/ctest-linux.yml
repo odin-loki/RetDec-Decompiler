@@ -124,6 +124,7 @@ jobs:
           retdec-decompiler-runtime-share
           retdec-decompiler-corpus-fixtures
           retdec-gui-decompiler-staging
+          parallel_decompile_check
 
       - name: QUAL-08 ELF hardening (readelf)
         run: python3 scripts/ci/check_elf_hardening.py build/linux

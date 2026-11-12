@@ -8,6 +8,8 @@
 #ifndef RETDEC_BIN2LLVMIR_OPTIMIZATIONS_IDIOMS_IDIOMS_ANALYSIS_H
 #define RETDEC_BIN2LLVMIR_OPTIMIZATIONS_IDIOMS_IDIOMS_ANALYSIS_H
 
+#include <functional>
+
 #include <cstdio>
 
 #include <llvm/ADT/Statistic.h>
@@ -50,7 +52,26 @@ public:
 
 private:
 	bool analyse(llvm::Function & f, llvm::Pass * p, int (IdiomsAnalysis::*exchanger)(llvm::Function &, llvm::Pass *) const, const char * fname);
-	bool analyse(llvm::BasicBlock & bb, llvm::Instruction * (IdiomsAnalysis::*exchanger)(llvm::BasicBlock::iterator) const, const char * fname);
+	/**
+	 * Calls @p exchanger through a pointer to the class that declares it.
+	 *
+	 * This used to take `Instruction* (IdiomsAnalysis::*)(iterator) const`
+	 * and call `(this->*exchanger)(insn)`. Converting `&IdiomsMagicDivMod::f`
+	 * to that type is legal, but the call is then made on an IdiomsAnalysis
+	 * whose `this` the member pointer has already adjusted to a base
+	 * subobject -- with the virtual IdiomsAbstract base in the hierarchy,
+	 * UBSan's vptr check reports it ("member call on address ... which does
+	 * not point to an object of type 'IdiomsAnalysis'"), and the sanitizers
+	 * job died on it in the first decompile. Calling through a `const C*`
+	 * makes the object expression the subobject the function belongs to.
+	 */
+	template <typename C>
+	bool analyse(llvm::BasicBlock & bb, llvm::Instruction * (C::*exchanger)(llvm::BasicBlock::iterator) const, const char * fname)
+	{
+		const C * self = this;
+		return analyseWith(bb, [self, exchanger](llvm::BasicBlock::iterator it) { return (self->*exchanger)(it); }, fname);
+	}
+	bool analyseWith(llvm::BasicBlock & bb, const std::function<llvm::Instruction * (llvm::BasicBlock::iterator)> & exchanger, const char * fname);
 };
 
 } // namespace bin2llvmir

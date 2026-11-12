@@ -120,7 +120,8 @@ jobs:
             fileinfo format_router_probe retdec-decompiler-fixture-fib `
             retdec-decompiler-runtime-share `
             retdec-decompiler-corpus-fixtures `
-            retdec-gui-decompiler-staging
+            retdec-gui-decompiler-staging `
+            parallel_decompile_check
 
       - name: Install (for install_smoke)
         shell: pwsh
