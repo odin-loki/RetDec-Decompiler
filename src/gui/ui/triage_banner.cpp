@@ -56,11 +56,11 @@ TriageBanner::TriageBanner(UiContext& ui, NodeHandle parent): ui_(ui)
 	ui.setCss(spacer, "flex-grow", "1");
 	unpackBtn_ = w::button(ui, root_, "Unpack first");
 	decompileBtn_ = w::button(ui, root_, "Decompile anyway");
-	moreBtn_ = w::button(ui, root_, "More \xE2\x96\xBC");
+	moreBtn_ = w::button(ui, root_, "More\xE2\x80\xA6");
 	w::setTooltip(ui, unpackBtn_, "Run retdec-unpacker on the current binary and reopen the result.");
 	w::setTooltip(ui, decompileBtn_, "Run retdec-decompiler on the current binary as-is (Ctrl+R / F5).");
 	w::setTooltip(ui, moreBtn_, "Show secondary triage tools (re-run fileinfo, copy hash, view raw output\xE2\x80\xA6).");
-	closeBtn_ = w::toolButton(ui, root_, "\xE2\x9C\x95"); // ✕
+	closeBtn_ = w::toolButton(ui, root_, "\xC3\x97"); // ×
 	w::setTooltip(ui, closeBtn_, "Hide this banner for the current binary.");
 
 	auto* self = this;
@@ -124,7 +124,7 @@ void TriageBanner::setMetadata(std::string_view format, std::string_view arch, s
 	ui_.setText(osBadge_, os.empty() ? kDash : os);
 	if (sizeBytes > 0) ui_.setText(sizeBadge_, model::humanSize(sizeBytes));
 	packerShown_ = !packerName.empty();
-	if (packerShown_) ui_.setText(packerBadge_, std::format("\xE2\x9A\xA0 {}-packed", packerName));
+	if (packerShown_) ui_.setText(packerBadge_, std::format("{}-packed", packerName));
 	setShown(ui_, packerBadge_, packerShown_);
 }
 

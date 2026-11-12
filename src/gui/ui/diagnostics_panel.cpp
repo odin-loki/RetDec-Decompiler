@@ -141,7 +141,7 @@ std::string DiagnosticsPanel::cellText(int row, int col) const
 	const model::Diagnostic& d = store_.at(rows_[std::size_t(row)]);
 	switch (col)
 	{
-	case 0: return std::format("{} {}", model::severityIcon(d.severity), model::severityLabel(d.severity));
+	case 0: return std::string(model::severityLabel(d.severity)); // the UI font has no ℹ ⚠ ✖ glyphs
 	case 1: return d.source;
 	case 2: return d.message;
 	case 3: return d.address ? model::hexAddress(d.address) : std::string();

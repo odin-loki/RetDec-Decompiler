@@ -806,7 +806,10 @@ TEST(FunctionListPanelUiTest, HoverShowsCellToolTip)
 	f.h.ui.update(0.6f);
 	f.h.frame();
 	EXPECT_EQ(f.h.ui.text(f.panel.cellToolTipNode()), "beta\n_Zbeta\nint beta(char*)");
-	f.h.key(fuse::ui::Key::Down);
+	// Leaving the table hides it.
+	const auto st = f.h.ui.rect(f.panel.statusNode());
+	f.h.ui.pointerMove({st.x + 4.f, st.y + st.h * 0.5f});
+	f.h.frame();
 	EXPECT_FALSE(f.h.ui.computed(f.panel.cellToolTipNode()).visible);
 }
 
@@ -830,6 +833,8 @@ TEST(FunctionListPanelUiTest, RendersToPng)
 	h.frame();
 	h.click(panel.cellCenter(2, FnColAddress));
 	h.click(panel.cellCenter(4, FnColAddress), fuse::ui::MouseButton::Left, fuse::ui::kModCtrl);
+	h.ui.pointerMove(panel.cellCenter(7, FnColConfidence));
+	h.ui.update(0.6f);
 	EXPECT_GT(h.render("function_list_panel.png"), 1000u);
 
 	Headless e({700.f, 240.f});

@@ -52,7 +52,7 @@ DecompiledCPanel::DecompiledCPanel(UiContext& ui, NodeHandle parent): ui_(ui), m
 	ui.setCss(body_, "gap", "0px");
 	empty_ = std::make_unique<EmptyState>(ui, body_);
 	empty_->setTitle("No decompiled output yet");
-	empty_->setHint("Run Analysis \xE2\x86\x92 Run Full Analysis (F5) to decompile the binary.");
+	empty_->setHint("Run Analysis > Run Full Analysis (F5) to decompile the binary.");
 	view_ = std::make_unique<CodeView>(ui, body_, model::CodeLang::C);
 
 	const NodeHandle fb = w::panel(ui, root_);
