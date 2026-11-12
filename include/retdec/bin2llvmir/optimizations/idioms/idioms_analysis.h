@@ -66,12 +66,17 @@ private:
 	 * makes the object expression the subobject the function belongs to.
 	 */
 	template <typename C>
-	bool analyse(llvm::BasicBlock & bb, llvm::Instruction * (C::*exchanger)(llvm::BasicBlock::iterator) const, const char * fname)
+	bool analyse(
+		llvm::BasicBlock& bb, llvm::Instruction* (C::*exchanger)(llvm::BasicBlock::iterator) const, const char* fname)
 	{
-		const C * self = this;
-		return analyseWith(bb, [self, exchanger](llvm::BasicBlock::iterator it) { return (self->*exchanger)(it); }, fname);
+		const C* self = this;
+		return analyseWith(
+			bb, [self, exchanger](llvm::BasicBlock::iterator it) { return (self->*exchanger)(it); }, fname);
 	}
-	bool analyseWith(llvm::BasicBlock & bb, const std::function<llvm::Instruction * (llvm::BasicBlock::iterator)> & exchanger, const char * fname);
+	bool analyseWith(
+		llvm::BasicBlock& bb,
+		const std::function<llvm::Instruction*(llvm::BasicBlock::iterator)>& exchanger,
+		const char* fname);
 };
 
 } // namespace bin2llvmir

@@ -119,20 +119,20 @@ static std::vector<ElfSection> findElfSections(const std::vector<uint8_t>& data)
     uint16_t shnum    = read16le(data.data() + 60);
     uint16_t shstrndx = read16le(data.data() + 62);
 
-    // Every offset and size below comes out of the file as a 64-bit field, so
-    // the bounds are tested as `x > size - off` with off already known to be
-    // in range: `off + x > size` wraps for a large x and lets it through.
-    const uint64_t fileSize = data.size();
-    if (shoff == 0 || shentsize < 64 || shnum == 0) return result;
-    if (shoff > fileSize || uint64_t(shnum) * shentsize > fileSize - shoff) return result;
-    if (shstrndx >= shnum) return result;
+	// Every offset and size below comes out of the file as a 64-bit field, so
+	// the bounds are tested as `x > size - off` with off already known to be
+	// in range: `off + x > size` wraps for a large x and lets it through.
+	const uint64_t fileSize = data.size();
+	if (shoff == 0 || shentsize < 64 || shnum == 0) return result;
+	if (shoff > fileSize || uint64_t(shnum) * shentsize > fileSize - shoff) return result;
+	if (shstrndx >= shnum) return result;
 
-    // Get section string table.
+	// Get section string table.
     uint64_t strshOff = shoff + uint64_t(shstrndx) * shentsize;
     uint64_t strOff  = read64le(data.data() + strshOff + 24);
     uint64_t strSize = read64le(data.data() + strshOff + 32);
-    if (strOff > fileSize || strSize > fileSize - strOff) return result;
-    const char* strTab = reinterpret_cast<const char*>(data.data() + strOff);
+	if (strOff > fileSize || strSize > fileSize - strOff) return result;
+	const char* strTab = reinterpret_cast<const char*>(data.data() + strOff);
 
     for (uint16_t i = 0; i < shnum; ++i) {
         uint64_t shentOff = shoff + uint64_t(i) * shentsize;
@@ -142,10 +142,10 @@ static std::vector<ElfSection> findElfSections(const std::vector<uint8_t>& data)
 
         if (nameOff < strSize) {
             ElfSection sec;
-            // Bounded by the table: the last name need not be terminated.
-            const char* n = strTab + nameOff;
-            sec.name   = std::string(n, strnlen(n, size_t(strSize - nameOff)));
-            sec.offset = offset;
+			// Bounded by the table: the last name need not be terminated.
+			const char* n = strTab + nameOff;
+			sec.name = std::string(n, strnlen(n, size_t(strSize - nameOff)));
+			sec.offset = offset;
             sec.size   = size;
             result.push_back(std::move(sec));
         }

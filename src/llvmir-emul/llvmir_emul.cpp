@@ -2243,8 +2243,22 @@ llvm::GenericValue GlobalExecutionContext::getGlobal(
 	}
 
 	auto fIt = globals.find(g);
-	assert(fIt != globals.end());
-	return fIt != globals.end() ? fIt->second : GenericValue();
+	if (fIt != globals.end())
+	{
+		return fIt->second;
+	}
+
+	// A global created after the emulator was -- a translator makes some
+	// lazily, the MIPS cop2_* registers on first use -- was never seeded by
+	// the constructor. Its value is still its initializer. This asserted, and
+	// one such instruction aborted the whole capstone2llvmir suite.
+	GenericValue val;
+	if (g->hasInitializer())
+	{
+		val = getConstantValue(g->getInitializer(), _module);
+	}
+	globals[g] = val;
+	return val;
 }
 
 void GlobalExecutionContext::setGlobal(

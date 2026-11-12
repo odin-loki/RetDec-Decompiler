@@ -2473,7 +2473,7 @@ void ElfFormat::loadNoteSecSeg(ElfNoteSecSeg& notes) const
 
 		// Not `currOff + nameSize > maxOff`: nameSize is a 64-bit field from
 		// the file and the sum wraps.
-		if(currOff > maxOff || nameSize > maxOff - currOff)
+		if (currOff > maxOff || nameSize > maxOff - currOff)
 		{
 			notes.setMalformed("note owner size too big");
 			break;
@@ -2490,7 +2490,7 @@ void ElfFormat::loadNoteSecSeg(ElfNoteSecSeg& notes) const
 		auto mod = nameSize % entrySize;
 		currOff += nameSize + (mod ? entrySize - mod : 0);
 
-		if(currOff > maxOff || descSize > maxOff - currOff)
+		if (currOff > maxOff || descSize > maxOff - currOff)
 		{
 			notes.setMalformed("note data size too big");
 			break;

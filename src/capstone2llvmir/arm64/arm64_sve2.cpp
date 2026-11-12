@@ -69,16 +69,23 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateSve2(cs_insn* i, cs_arm64* ai
 	// Shift a W-bit value by a signed amount; negative shifts right, with
 	// optional rounding.
 	auto shiftBy = [&](llvm::Value* x, llvm::Value* sh, bool s, bool round) -> llvm::Value* {
+		// Both shifts are built and one is selected, so the amount the other
+		// one sees must be in range too: a left shift by -4 is poison in IR,
+		// and the interpreter the tests run reads an i256 amount with
+		// getZExtValue() and asserts (SHRNT, C2L-01). Each side gets 0 when
+		// the select will not take it.
 		auto* lim = cW(200);
-		auto* pos = irb.CreateICmpSGE(sh, cW(0));
-		auto* l = irb.CreateSelect(irb.CreateICmpSGT(sh, lim), lim, sh);
+		auto* zero = cW(0);
+		auto* pos = irb.CreateICmpSGE(sh, zero);
+		auto* l = irb.CreateSelect(pos, irb.CreateSelect(irb.CreateICmpSGT(sh, lim), lim, sh), zero);
 		auto* nsh = irb.CreateNeg(sh);
-		auto* n = irb.CreateSelect(irb.CreateICmpSGT(nsh, lim), lim, nsh);
+		auto* n = irb.CreateSelect(pos, zero, irb.CreateSelect(irb.CreateICmpSGT(nsh, lim), lim, nsh));
 		llvm::Value* xr = x;
 		if (round)
 		{
-			auto* add = irb.CreateSelect(irb.CreateICmpEQ(n, cW(0)), cW(0),
-					irb.CreateShl(cW(1), irb.CreateSub(n, cW(1))));
+			auto* nz = irb.CreateICmpEQ(n, zero);
+			auto* n1 = irb.CreateSelect(nz, zero, irb.CreateSub(n, cW(1)));
+			auto* add = irb.CreateSelect(nz, zero, irb.CreateShl(cW(1), n1));
 			xr = irb.CreateAdd(x, add);
 		}
 		auto* right = s ? irb.CreateAShr(xr, n) : irb.CreateLShr(xr, n);
