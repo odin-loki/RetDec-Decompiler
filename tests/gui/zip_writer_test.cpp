@@ -42,7 +42,8 @@ std::string python()
 	return {};
 }
 
-/// Run Python's zipfile on @p zip: CRC check, then one "name<TAB>content" line per entry.
+/// Run Python's zipfile on @p zip: CRC check, then one "name<TAB>content\n" line
+/// per entry, as UTF-8 bytes.
 std::optional<std::string> pythonListZip(const fs::path& zip)
 {
 	const std::string py = python();
@@ -57,7 +58,10 @@ std::optional<std::string> pythonListZip(const fs::path& zip)
 		"bad = z.testzip()\n"
 		"if bad is not None: sys.exit('bad crc: ' + bad)\n"
 		"for i in z.infolist():\n"
-		"    sys.stdout.write(i.filename + '\\t' + z.read(i).decode('utf-8') + '\\n')\n",
+		"    out = i.filename + '\\t' + z.read(i).decode('utf-8') + '\\n'\n"
+		// Raw UTF-8 bytes: text-mode stdout would turn '\n' into CRLF and
+		// re-encode names in the console code page on Windows.
+		"    sys.stdout.buffer.write(out.encode('utf-8'))\n",
 		zip.string()};
 	sp.timeout_ms = 60000;
 	auto r = forge::os::spawn_wait(sp);
