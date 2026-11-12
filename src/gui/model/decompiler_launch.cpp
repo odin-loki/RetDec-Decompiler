@@ -571,9 +571,10 @@ fs::path resolveGuiDecompiledCPath(const fs::path& binaryPath, std::string_view 
 	const std::string fileName = binaryPath.stem().string() + ".gui-decompiled.c";
 	const std::string dir = trimmed(outputDir);
 	const fs::path base = dir.empty() ? binaryPath.parent_path() : fs::path(dir);
-	const fs::path joined = base.empty() ? fs::path(fileName) : base / fileName;
-	std::string s = joined.generic_string();
-	return fs::path(s);
+	fs::path joined = base.empty() ? fs::path(fileName) : base / fileName;
+	// Native separators: on Windows "C:/out" / name would otherwise mix '/' and
+	// '\\' in the -o argument the command log shows. A no-op on POSIX.
+	return joined.make_preferred();
 }
 
 fs::path locateGuiDecompiledCPath(const fs::path& binaryPath, std::string_view outputDir)

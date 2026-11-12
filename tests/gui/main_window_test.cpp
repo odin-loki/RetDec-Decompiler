@@ -4,7 +4,7 @@
  *        the main-window parts of comprehensive_smoke_test and
  *        polish_integration_test, and the whole open -> analyse -> artefacts
  *        -> panels flow against a fake retdec-decompiler
- *        (data/main_window_fake_decompiler.sh + data/main_window/fixture.*).
+ *        (helpers/fake_decompiler.cpp + data/main_window/fixture.*).
  *
  * Set RETDEC_GUI_SCREENSHOT_DIR to keep the rendered main-window PNGs.
  *
@@ -133,14 +133,18 @@ protected:
 		h.frame(2);
 	}
 
-	/// Installs the fake decompiler as `<dir>/bin/retdec-decompiler` and makes
-	/// the GUI look for its tools there.
+	/// Installs the fake decompiler as `<dir>/bin/retdec-decompiler[.exe]` and
+	/// makes the GUI look for its tools there.
 	void useFakeDecompiler()
 	{
 		const fs::path bin = dir / "bin";
 		fs::create_directories(bin);
+#if defined(_WIN32)
+		const fs::path exe = bin / "retdec-decompiler.exe";
+#else
 		const fs::path exe = bin / "retdec-decompiler";
-		fs::copy_file(kDataDir / "main_window_fake_decompiler.sh", exe, fs::copy_options::overwrite_existing);
+#endif
+		fs::copy_file(fs::path(RETDEC_GUI_FAKE_DECOMPILER), exe, fs::copy_options::overwrite_existing);
 		fs::permissions(exe, fs::perms::owner_all, fs::perm_options::add);
 		setEnv("FAKE_DECOMPILER_FIXTURE", (kDataDir / "main_window").string());
 		model::setApplicationDirPathOverride(bin);
@@ -772,7 +776,10 @@ TEST_F(MainWindowTest, OpenAnalyseLoadsArtefactsAndPopulatesPanels)
 	const fs::path cPath = dir / "fib.gui-decompiled.c";
 	EXPECT_TRUE(fs::exists(cPath));
 	const std::string args = readFile(dir / "args.txt");
-	EXPECT_TRUE(contains(args, "-o\n" + fs::absolute(cPath).string())) << args;
+	const auto o = args.find("-o\n");
+	ASSERT_NE(o, std::string::npos) << args;
+	const std::string outArg = args.substr(o + 3, args.find('\n', o + 3) - (o + 3));
+	EXPECT_EQ(fs::path(outArg).lexically_normal(), fs::absolute(cPath).lexically_normal()) << args;
 	EXPECT_TRUE(contains(args, "-f\nplain"));
 
 	// Status bar and actions.
