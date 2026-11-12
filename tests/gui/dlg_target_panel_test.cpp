@@ -154,11 +154,12 @@ TEST_F(DlgTargetPanel, UseBundledFindsShareConfig)
 	const auto bin = dir / "bin";
 	std::filesystem::create_directories(bin);
 	std::filesystem::create_directories(dir / "share" / "retdec");
+	const auto exe = bin / test::toolFileName("retdec-decompiler");
 	{
-		std::ofstream(bin / "retdec-decompiler") << "#!/bin/sh\n";
+		std::ofstream(exe) << "#!/bin/sh\n";
 		std::ofstream(dir / "share" / "retdec" / "decompiler-config.json") << "{}";
 	}
-	std::filesystem::permissions(bin / "retdec-decompiler", std::filesystem::perms::owner_all);
+	std::filesystem::permissions(exe, std::filesystem::perms::owner_all);
 	model::setApplicationDirPathOverride(bin);
 	ui::TargetPanel p(t.ui, t.ui.root(), settings);
 	t.step();

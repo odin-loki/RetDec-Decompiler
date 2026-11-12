@@ -51,11 +51,11 @@ TEST_F(DlgSignatureStudio, ActiveBinaryFillsDefaults)
 	p.setActiveBinary("/work/lib/libfoo.a");
 	t.step();
 	EXPECT_EQ(ui::dlg::editText(t.ui, p.expressLibEdit()), "/work/lib/libfoo.a");
-	EXPECT_EQ(ui::dlg::editText(t.ui, p.expressOutEdit()), "/work/lib/libfoo-libsig.yar");
+	EXPECT_EQ(ui::dlg::editText(t.ui, p.expressOutEdit()), test::absPath("/work/lib/libfoo-libsig.yar"));
 	EXPECT_EQ(ui::dlg::editText(t.ui, p.arArchiveEdit()), "/work/lib/libfoo.a");
 	EXPECT_EQ(ui::dlg::editText(t.ui, p.machoFileEdit()), "/work/lib/libfoo.a");
-	EXPECT_EQ(ui::dlg::editText(t.ui, p.arOutDirEdit()), "/work/lib/retdec-sig-work");
-	EXPECT_EQ(ui::dlg::editText(t.ui, p.machoOutDirEdit()), "/work/lib/retdec-sig-work");
+	EXPECT_EQ(ui::dlg::editText(t.ui, p.arOutDirEdit()), test::absPath("/work/lib/retdec-sig-work"));
+	EXPECT_EQ(ui::dlg::editText(t.ui, p.machoOutDirEdit()), test::absPath("/work/lib/retdec-sig-work"));
 	t.png("dlg_signature_studio");
 	// Express fields reset on a new binary; others keep the user's text.
 	p.setActiveBinary("/other/x.o");
@@ -86,7 +86,7 @@ TEST_F(DlgSignatureStudio, MissingFieldsAndToolsAreLogged)
 	EXPECT_FALSE(p.runBin2pat());
 	EXPECT_NE(p.log().find("Tool not found: retdec-bin2pat"), std::string::npos);
 	// The defaulted output was filled in even though the tool was missing.
-	EXPECT_EQ(ui::dlg::editText(t.ui, p.bin2patOutEdit()), "/x/obj.o.pat");
+	EXPECT_EQ(ui::dlg::editText(t.ui, p.bin2patOutEdit()), test::absPath("/x/obj.o.pat"));
 	p.clear();
 	EXPECT_TRUE(p.log().empty());
 }

@@ -177,7 +177,7 @@ TEST(DlgSignatureStudioModel, CommandLines)
 	auto ar = buildArExtractorCommand("/opt/retdec/bin/retdec-ar-extractor", " /x/lib.a ", "/x/out");
 	ASSERT_TRUE(ar);
 	EXPECT_EQ(ar->arguments, (std::vector<std::string>{"-e", "-o", "/x/out", "/x/lib.a"}));
-	EXPECT_EQ(ar->workingDirectory, fs::path("/opt/retdec/bin"));
+	EXPECT_EQ(ar->workingDirectory, fs::path(retdec::gui::test::absPath("/opt/retdec/bin")));
 	EXPECT_EQ(ar->toolLabel, "retdec-ar-extractor");
 
 	auto mo = buildMachoExtractorCommand("/b/retdec-macho-extractor", "/x/fat", "/x/o");
@@ -187,8 +187,8 @@ TEST(DlgSignatureStudioModel, CommandLines)
 
 	auto b2p = buildBin2patCommand("/b/retdec-bin2pat", "/x/obj.o", "");
 	ASSERT_TRUE(b2p);
-	EXPECT_EQ(b2p->defaultedOutput, "/x/obj.o.pat");
-	EXPECT_EQ(b2p->arguments, (std::vector<std::string>{"-o", "/x/obj.o.pat", "/x/obj.o"}));
+	EXPECT_EQ(b2p->defaultedOutput, retdec::gui::test::absPath("/x/obj.o.pat"));
+	EXPECT_EQ(b2p->arguments, (std::vector<std::string>{"-o", retdec::gui::test::absPath("/x/obj.o.pat"), "/x/obj.o"}));
 	auto p2y = buildPat2yaraCommand("/b/retdec-pat2yara", "/x/obj.pat", "/x/r.yar");
 	ASSERT_TRUE(p2y);
 	EXPECT_TRUE(p2y->defaultedOutput.empty());
@@ -199,7 +199,7 @@ TEST(DlgSignatureStudioModel, CommandLines)
 	ASSERT_TRUE(ex);
 	EXPECT_EQ(ex->executable, fs::path("/usr/bin/python3"));
 	EXPECT_EQ(ex->arguments, (std::vector<std::string>{"/s/scripts/creator.py", "-o", "/x/lib.yar", "/x/lib.a"}));
-	EXPECT_EQ(ex->workingDirectory, fs::path("/s/scripts"));
+	EXPECT_EQ(ex->workingDirectory, fs::path(retdec::gui::test::absPath("/s/scripts")));
 	EXPECT_EQ(buildExpressCommand("", "/o", "/p", "/s").error(), "Express: set library input and YARA output path.");
 	EXPECT_NE(buildExpressCommand("/l", "/o", "", "/s").error().find("Python 3"), std::string::npos);
 }
@@ -207,8 +207,8 @@ TEST(DlgSignatureStudioModel, CommandLines)
 TEST(DlgSignatureStudioModel, DefaultsTailAndStaticPick)
 {
 	const SigStudioDefaults d = sigStudioDefaultsForBinary("/w/archive.tar.a");
-	EXPECT_EQ(d.expressOut, "/w/archive.tar-libsig.yar"); // completeBaseName
-	EXPECT_EQ(d.workDir, "/w/retdec-sig-work");
+	EXPECT_EQ(d.expressOut, retdec::gui::test::absPath("/w/archive.tar-libsig.yar")); // completeBaseName
+	EXPECT_EQ(d.workDir, retdec::gui::test::absPath("/w/retdec-sig-work"));
 	EXPECT_TRUE(sigStudioDefaultsForBinary("").expressLib.empty());
 
 	EXPECT_EQ(sigToolOutputTail("abcdef", 3), "def");
@@ -378,7 +378,7 @@ TEST(DlgTargetModel, ConfigHelpersAndJson)
 	EXPECT_TRUE(s.decompiler.extraConfigPath.empty());
 
 	EXPECT_EQ(targetConfigBrowseStart("/c/x.json", "/b/bin.exe"), "/c/x.json");
-	EXPECT_EQ(targetConfigBrowseStart("", "/b/bin.exe"), "/b");
+	EXPECT_EQ(targetConfigBrowseStart("", "/b/bin.exe"), retdec::gui::test::absPath("/b"));
 	EXPECT_EQ(targetConfigBrowseStart("", "—"), "");
 
 	EXPECT_TRUE(validateJsonText(R"({"a": [1, 2]})"));
@@ -399,7 +399,7 @@ TEST(DlgTargetModel, BatchPathList)
 	EXPECT_EQ(batchAddPaths(list, {"/a/../a/x.exe"}), 0); // same absolute path
 	ASSERT_EQ(list.size(), 2u);
 	batchRemoveIndices(list, {5, 0, 0});
-	EXPECT_EQ(list, std::vector<std::string>{"/a/y.exe"});
+	EXPECT_EQ(list, std::vector<std::string>{retdec::gui::test::absPath("/a/y.exe")});
 	// The queue helpers the main window runs the list with.
 	EXPECT_EQ(batchDecompileStatusLabel(1, 1, list[0]), "Batch 1/1: y.exe");
 }

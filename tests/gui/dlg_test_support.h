@@ -147,6 +147,28 @@ inline std::filesystem::path makeTempDir(std::string_view tag)
 	return base;
 }
 
+/// The on-disk file name of the CLI tool @p base: "retdec-decompiler.exe" on
+/// Windows (what model::resolveCliTool looks for), the bare name elsewhere.
+inline std::string toolFileName(std::string_view base)
+{
+#if defined(_WIN32)
+	return std::string(base) + ".exe";
+#else
+	return std::string(base);
+#endif
+}
+
+/// @p posix ("/x/obj.o") made absolute the way the GUI models do it: a no-op
+/// on POSIX, drive-qualified ("D:/x/obj.o") on Windows, where a leading '/' is
+/// only root-relative. Generic ('/') separators, like the models' output.
+inline std::string absPath(std::string_view posix)
+{
+	std::error_code ec;
+	const std::filesystem::path p{std::string(posix)};
+	const std::filesystem::path a = std::filesystem::absolute(p, ec);
+	return (ec ? p : a).lexically_normal().generic_string();
+}
+
 } // namespace retdec::gui::test
 
 #endif // RETDEC_GUI_TESTS_DLG_TEST_SUPPORT_H
