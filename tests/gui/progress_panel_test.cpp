@@ -65,6 +65,10 @@ TEST_F(ProgressPanelTest, SetStageRunningIndeterminate)
 	EXPECT_NO_THROW(panel->setStageState("Binary loading", StageState::Running, -1));
 	EXPECT_EQ(panel->tracker().stages()[0].percent, -1);
 	EXPECT_EQ(h.ui.text(panel->stageRow("Binary loading").icon), "\xE2\x97\x89");
+	EXPECT_TRUE(fuse::ui::widgets::progressIndeterminate(h.ui, panel->stageRow("Binary loading").bar));
+	panel->setStageState("Binary loading", StageState::Running, 30);
+	EXPECT_FALSE(fuse::ui::widgets::progressIndeterminate(h.ui, panel->stageRow("Binary loading").bar));
+	EXPECT_FLOAT_EQ(h.ui.value(panel->stageRow("Binary loading").bar), 0.3f);
 }
 
 TEST_F(ProgressPanelTest, SetStageRunningWithPercent)
@@ -550,12 +554,11 @@ TEST(ProgressPanelUiTest, ElapsedTickBudgetAndExport)
 	EXPECT_EQ(h.ui.text(panel.elapsedLabel()), "12.3s");
 	EXPECT_EQ(panel.budgetState(), BudgetLevel::Normal);
 
-	// Indeterminate bars move while their stage runs.
+	// A running stage without a percentage shows FuseUI's busy (indeterminate) bar.
 	panel.stageStarted("SSA construction");
-	const float v0 = h.ui.value(panel.stageRow("SSA construction").bar);
-	h.ui.update(0.06f);
-	h.ui.update(0.06f);
-	EXPECT_NE(h.ui.value(panel.stageRow("SSA construction").bar), v0);
+	EXPECT_TRUE(fuse::ui::widgets::progressIndeterminate(h.ui, panel.stageRow("SSA construction").bar));
+	EXPECT_TRUE(h.ui.hasClass(panel.stageRow("SSA construction").bar, "indeterminate"));
+	EXPECT_FALSE(fuse::ui::widgets::progressIndeterminate(h.ui, panel.stageRow("Binary loading").bar));
 
 	int exports = 0;
 	panel.onExportRequested = [&] { ++exports; };

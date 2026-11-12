@@ -20,7 +20,7 @@ NodeHandle field(UiContext& ui, NodeHandle body, std::string_view label, std::st
 {
 	w::label(ui, body, label);
 	const NodeHandle e = w::lineEdit(ui, body, "", id);
-	dlg::noteLabel(ui, body, hint);
+	w::setPlaceholderText(ui, e, hint); // Qt: placeholderText
 	return e;
 }
 

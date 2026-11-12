@@ -191,6 +191,10 @@ private:
 	void updateStatus();
 	void selectRow(int row, uint8_t mods);
 	void setCurrentRow(int row, bool scroll);
+	/// Marks the rows of selected_ in the table (after the rows moved) and sets its current row.
+	void applySelectionToTable();
+	/// selected_ / current_ from the table's selection (user input).
+	void syncSelectionFromTable();
 	void selectionChangedInternal();
 	bool onTableEvent(const fuse::ui::Event& e);
 	int rowAt(fuse::ui::Vec2 p) const;
@@ -242,10 +246,6 @@ private:
 	std::optional<uint64_t> current_;
 	int anchorRow_ = -1;
 	bool applyingSelection_ = false;
-	bool extendOnKey_ = false;
-	// double-click detection
-	int lastClickRow_ = -1;
-	double lastClickTime_ = -1.0;
 
 	Prompt prompt_ = Prompt::None;
 	uint64_t promptAddress_ = 0;

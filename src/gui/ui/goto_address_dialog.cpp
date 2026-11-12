@@ -16,13 +16,13 @@ using namespace fuse::ui;
 
 namespace {
 
-/// Field + "e.g." note + OK / Cancel, wired to the owner's accept / reject.
+/// Field (with an example as its placeholder) + OK / Cancel, wired to the owner's accept / reject.
 template <class D>
 void buildSingleField(UiContext& ui, ModalDialog& dlg, std::string_view example, NodeHandle& edit, NodeHandle& ok,
                       NodeHandle& cancel, D* owner)
 {
 	edit = w::lineEdit(ui, dlg.body(), "");
-	dlg::noteLabel(ui, dlg.body(), example);
+	w::setPlaceholderText(ui, edit, example);
 	const NodeHandle buttons = dlg::buttonRow(ui, dlg.body());
 	ok = w::button(ui, buttons, "OK");
 	ui.addClass(ok, "primary");
@@ -38,7 +38,7 @@ void buildSingleField(UiContext& ui, ModalDialog& dlg, std::string_view example,
 
 GotoAddressDialog::GotoAddressDialog(UiContext& ui): dlg_(ui, "Go to address", 360.f, 0.f, "gotoAddressDialog")
 {
-	buildSingleField(ui, dlg_, "e.g. 0x401000", edit_, ok_, cancel_, this);
+	buildSingleField(ui, dlg_, "0x401000", edit_, ok_, cancel_, this);
 }
 
 void GotoAddressDialog::show(std::function<void(uint64_t)> onAccepted)
@@ -79,7 +79,7 @@ void GotoAddressDialog::setText(std::string_view text)
 
 GotoLineDialog::GotoLineDialog(UiContext& ui): dlg_(ui, "Go to line", 360.f, 0.f, "gotoLineDialog")
 {
-	buildSingleField(ui, dlg_, "e.g. 1", edit_, ok_, cancel_, this);
+	buildSingleField(ui, dlg_, "1", edit_, ok_, cancel_, this);
 }
 
 void GotoLineDialog::show(std::function<void(int)> onAccepted)

@@ -27,7 +27,6 @@
 
 #include <fuse/ui/ui.hpp>
 
-#include <chrono>
 #include <cstdint>
 #include <expected>
 #include <filesystem>

@@ -29,7 +29,6 @@ using model::StageState;
 namespace {
 
 constexpr std::string_view kWaterfallClass = "rd-waterfall";
-constexpr std::string_view kStageIconClass = "rd-stageicon";
 constexpr float kWaterfallRowH = 14.f;
 constexpr float kWaterfallLabelW = 120.f;
 
@@ -44,41 +43,6 @@ const char* stateColor(StageState s)
 	}
 	return "#cdd6f4";
 }
-
-// Stage state icon drawn with the draw list (the bundled font has no
-// ○ ◉ ✓ ✗ glyphs); the node text keeps the character for accessibility.
-// The colour comes from the node's `color`.
-struct StageIcon
-{
-	static constexpr std::string_view kName = kStageIconClass;
-	static constexpr fuse::ui::A11yRole kRole = fuse::ui::A11yRole::Image;
-	static fuse::ui::Size measure(UiContext&, NodeHandle, fuse::ui::Size) { return {16.f, 16.f}; }
-	static void paint(const fuse::ui::PaintContext& pc, fuse::ui::DrawList& dl)
-	{
-		const std::string_view t = pc.ui.text(pc.node);
-		const Color col = pc.tint(pc.style.color);
-		const float cx = pc.content.x + pc.content.w * 0.5f, cy = pc.content.y + pc.content.h * 0.5f;
-		const float r = 5.f;
-		const Rect circle{cx - r, cy - r, 2.f * r, 2.f * r};
-		if (t == model::stageStateIcon(StageState::Pending))
-			dl.roundedRect(circle, {}, {r, r, r, r}, col, 1.2f);
-		else if (t == model::stageStateIcon(StageState::Running))
-		{
-			dl.roundedRect(circle, {}, {r, r, r, r}, col, 1.2f);
-			dl.rect({cx - 2.5f, cy - 2.5f, 5.f, 5.f}, col, 2.5f);
-		}
-		else if (t == model::stageStateIcon(StageState::Done))
-		{
-			dl.line({cx - 4.5f, cy}, {cx - 1.5f, cy + 3.5f}, col, 1.8f);
-			dl.line({cx - 1.5f, cy + 3.5f}, {cx + 4.5f, cy - 4.f}, col, 1.8f);
-		}
-		else
-		{
-			dl.line({cx - 4.f, cy - 4.f}, {cx + 4.f, cy + 4.f}, col, 1.8f);
-			dl.line({cx - 4.f, cy + 4.f}, {cx + 4.f, cy - 4.f}, col, 1.8f);
-		}
-	}
-};
 
 void setEditText(UiContext& ui, NodeHandle edit, std::string_view text)
 {
@@ -185,7 +149,6 @@ ProgressPanel::~ProgressPanel()
 {
 	subscription_.reset(); // no report reaches the queue after this
 	if (tickRunning_) ui_.cancelTimer(tickTimer_);
-	if (busyRunning_) ui_.cancelTimer(busyTimer_);
 	if (ui_.alive(waterfall_)) ui_.setUserData(waterfall_, 0);
 	if (ui_.alive(fileDlg_)) ui_.destroy(ui_.parent(fileDlg_));
 	for (NodeHandle t: tooltips_)
@@ -213,7 +176,6 @@ void ProgressPanel::build(NodeHandle parent)
 		cls.paint = &ProgressPanel::paintWaterfall;
 		ui_.registry().add(std::move(cls));
 	}
-	if (ui_.registry().find(kStageIconClass) == 0xFFFFFFFFu) ui_.registry().registerWidget<StageIcon>();
 
 	root_ = w::panel(ui_, parent);
 	ui_.addClass(root_, "rd-progress");
@@ -254,8 +216,8 @@ void ProgressPanel::build(NodeHandle parent)
 		return l;
 	};
 	fnCountLabel_ = stat("\xC6\x92", "0 fn", "Functions recovered");
-	instrLabel_ = stat("#", "0 instr", "Instructions analysed");
-	elapsedLabel_ = stat("\xCE\x94t", "0.0s", "Elapsed wall time");
+	instrLabel_ = stat("\xE2\xAC\xA1", "0 instr", "Instructions analysed"); // ⬡ (Qt)
+	elapsedLabel_ = stat("\xCE\x94t", "0.0s", "Elapsed wall time"); // Qt: ⏱ (U+23F1), in none of the bundled faces
 	elapsedTipNode_ = tooltips_.back();
 	ui_.setCss(elapsedLabel_, "width", "56px");
 
@@ -324,8 +286,12 @@ void ProgressPanel::addRowNodes(const std::string& name)
 	ui_.setCss(n.row, "gap", "6px");
 	ui_.setCss(n.row, "padding", "1px 2px");
 	ui_.setCss(n.row, "flex-shrink", "0");
-	n.icon = ui_.create(ui_.registry().find(kStageIconClass), n.row);
-	ui_.setText(n.icon, model::stageStateIcon(StageState::Pending));
+	// ○ ◉ ✓ ✗ (bundled DejaVu Sans fallback), coloured by state.
+	n.icon = w::label(ui_, n.row, model::stageStateIcon(StageState::Pending));
+	ui_.setCss(n.icon, "width", "16px");
+	ui_.setCss(n.icon, "text-align", "center");
+	ui_.setCss(n.icon, "flex-shrink", "0");
+	ui_.setCss(n.icon, "color", stateColor(StageState::Pending));
 	ui_.setA11y(n.icon, fuse::ui::A11yRole::Image, model::stageStateName(StageState::Pending));
 	n.name = w::label(ui_, n.row, name);
 	ui_.setCss(n.name, "width", "172px");
@@ -356,7 +322,6 @@ void ProgressPanel::syncRows()
 		addRowNodes(stages[i].name);
 	for (std::size_t i = 0; i < stages.size(); ++i)
 		syncRow(i);
-	updateBusyTimer();
 }
 
 void ProgressPanel::syncRow(std::size_t i)
@@ -369,6 +334,8 @@ void ProgressPanel::syncRow(std::size_t i)
 	ui_.setCss(n.name, "color", s.state == StageState::Pending ? "#9a9cab" : s.state == StageState::Error ? "#f38ba8" : "#e6e6eb");
 	ui_.setCss(n.bar, "background-end", s.state == StageState::Error ? "#f38ba8" : s.state == StageState::Done ? "#a6e3a1" : "#89b4fa");
 	if (s.percent >= 0) ui_.setValue(n.bar, static_cast<float>(s.percent) / 100.f);
+	// Running without a percentage: a busy bar (Qt: range 0..0).
+	w::setProgressIndeterminate(ui_, n.bar, s.state == StageState::Running && s.percent < 0);
 	ui_.setText(n.time, model::formatStageMs(s.elapsedMs));
 	Row& row = rows_[i];
 	if (s.state == StageState::Error && !s.message.empty())
@@ -382,30 +349,6 @@ void ProgressPanel::syncRow(std::size_t i)
 	{
 		ui_.destroy(row.errorTip); // its hover handler checks alive()
 		row.errorTip = {};
-	}
-}
-
-void ProgressPanel::updateBusyTimer()
-{
-	bool busy = false;
-	for (const auto& s: tracker_.stages())
-		busy |= s.state == StageState::Running && s.percent < 0;
-	if (busy && !busyRunning_)
-	{
-		busyRunning_ = true;
-		busyTimer_ = ui_.startTimer(0.05f, true, [this](UiContext&) {
-			busyPhase_ = std::fmod(busyPhase_ + 0.04f, 1.f);
-			for (std::size_t i = 0; i < rows_.size(); ++i)
-			{
-				const auto& s = tracker_.stages()[i];
-				if (s.state == StageState::Running && s.percent < 0) ui_.setValue(rows_[i].nodes.bar, busyPhase_);
-			}
-		});
-	}
-	else if (!busy && busyRunning_)
-	{
-		busyRunning_ = false;
-		ui_.cancelTimer(busyTimer_);
 	}
 }
 

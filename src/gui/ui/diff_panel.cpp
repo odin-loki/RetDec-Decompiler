@@ -6,6 +6,8 @@
 
 #include "retdec/gui/ui/diff_panel.h"
 
+#include "retdec/gui/ui/empty_state.h"
+
 #include "retdec/gui/model/funclist_export.h"
 
 #include <algorithm>
@@ -184,7 +186,7 @@ void DiffPanel::paintPane(const fuse::ui::PaintContext& pc, fuse::ui::DrawList& 
 	const Rect c = pc.content;
 	const float lh = p.lineHeight();
 	const float px = kFontPx;
-	const float charW = std::max(6.f, ui.measureString("9", px));
+	const float charW = std::max(6.f, ui.measureString("9", px, pc.node));
 	const bool unified = ref->kind == PaneKind::Unified;
 	const int numDigits = unified ? std::max(p.leftDigits_, p.rightDigits_)
 								  : (ref->kind == PaneKind::Left ? p.leftDigits_ : p.rightDigits_);
@@ -260,8 +262,8 @@ void DiffPanel::paintPane(const fuse::ui::PaintContext& pc, fuse::ui::DrawList& 
 		dl.pushClip({c.x + gutterW, y, c.w - gutterW, lh});
 		for (const auto& sp: spans)
 		{
-			const float x0 = ui.measureString(std::string_view(shown).substr(0, sp.begin), px);
-			const float x1 = ui.measureString(std::string_view(shown).substr(0, sp.end), px);
+			const float x0 = ui.measureString(std::string_view(shown).substr(0, sp.begin), px, pc.node);
+			const float x1 = ui.measureString(std::string_view(shown).substr(0, sp.end), px, pc.node);
 			dl.rect({textX + x0, y + 1.f, std::max(2.f, x1 - x0), lh - 2.f}, pc.tint(Color::rgb(spanColor)), 2.f);
 		}
 		ui.paintString(dl, shown, {textX, y, 100000.f, lh}, textCol, px, fuse::ui::TextAlignment::Start, pc.node.index);
@@ -318,6 +320,8 @@ NodeHandle DiffPanel::makePane(NodeHandle parent, PaneRef* ref)
 		cls.measure = &DiffPanel::measurePane;
 		cls.paint = &DiffPanel::paintPane;
 		cls.onEvent = &DiffPanel::paneEvent;
+		// Qt: "Cascadia Code, JetBrains Mono, Consolas, monospace" — the panes are monospace.
+		cls.defaults.fontFamilyCount = fuse::ui::u8(fuse::ui::parseFontFamilies(kMonoFamily, cls.defaults.fontFamily));
 		ui_.registry().add(std::move(cls));
 	}
 	const NodeHandle pane = ui_.create(ui_.registry().find(kPaneClass), parent);
@@ -359,8 +363,8 @@ void DiffPanel::build(NodeHandle parent)
 	modeCombo_ = w::comboBox(ui_, bar, "Side by side\nUnified");
 	compact(modeCombo_);
 	tooltip(modeCombo_, "Two panes, or one unified listing");
-	prevBtn_ = w::button(ui_, bar, "Prev");
-	nextBtn_ = w::button(ui_, bar, "Next");
+	prevBtn_ = w::button(ui_, bar, "\xE2\x96\xB2 Prev"); // ▲
+	nextBtn_ = w::button(ui_, bar, "\xE2\x96\xBC Next"); // ▼
 	exportUBtn_ = w::button(ui_, bar, "Unified");
 	exportHBtn_ = w::button(ui_, bar, "HTML");
 	copyBtn_ = w::button(ui_, bar, "Copy");
@@ -556,7 +560,7 @@ std::size_t DiffPanel::rowCount() const
 
 float DiffPanel::lineHeight() const
 {
-	return std::ceil(ui_.font() ? ui_.font()->metrics(kFontPx).lineHeight() : kFontPx * 1.25f) + 2.f;
+	return (ui_.alive(leftPane_) ? ui_.lineHeight(kFontPx, leftPane_) : ui_.lineHeight(kFontPx)) + 2.f;
 }
 
 int DiffPanel::visibleRows() const

@@ -6,10 +6,11 @@
 
 #include "retdec/gui/ui/strings_browser_panel.h"
 
+#include "retdec/gui/ui/empty_state.h"
+
 #include "retdec/gui/model/funclist_export.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <format>
@@ -31,8 +32,9 @@ using fuse::ui::Vec2;
 
 namespace {
 
-// Capture-phase hook on the node hosting each table (double-click, context
-// menu, Ctrl+C); see function_list_panel.cpp.
+// Capture-phase hook on the node hosting each table (context menu, cell
+// tooltips, Ctrl+C, Shift+F10); see function_list_panel.cpp. Double click /
+// Enter: the table's Activated signal.
 using Hook = std::function<bool(UiContext&, const Event&)>;
 struct HookKey
 {
@@ -70,11 +72,6 @@ float rowHeight(UiContext& ui, NodeHandle n)
 {
 	const float px = ui.computed(n).fontSize;
 	return std::ceil(ui.font() ? ui.font()->metrics(px).lineHeight() : px * 1.25f) + 6.f;
-}
-
-double nowSeconds()
-{
-	return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
 void setEditText(UiContext& ui, NodeHandle edit, std::string_view text)
@@ -171,7 +168,7 @@ void StringsBrowserPanel::buildTable(Table t, NodeHandle page)
 	ui_.setCss(k.search, "width", isStr ? "240px" : "220px");
 	compact(k.search);
 	ui_.setA11y(k.search, fuse::ui::A11yRole::TextField, isStr ? "Filter strings" : "Filter constants");
-	tooltip(k.search, isStr ? "Filter strings\xE2\x80\xA6  (text or /regex/)" : "Filter constants\xE2\x80\xA6");
+	w::setPlaceholderText(ui_, k.search, isStr ? "Filter strings\xE2\x80\xA6  (text or /regex/)" : "Filter constants\xE2\x80\xA6");
 	ui_.connect(k.search, SignalKind::TextChanged, [this, isStr](UiContext&, NodeHandle, const SignalArgs&) {
 		if (isStr)
 			applyStringFilter();
@@ -270,12 +267,13 @@ void StringsBrowserPanel::buildTable(Table t, NodeHandle page)
 	}
 	for (fuse::ui::u32 c = 0; c < k.model.columns; ++c)
 		w::setTableDelegate(ui_, k.table, c, &k.delegate);
+	w::setTableActivation(ui_, k.table, true);
 
 	ui_.connect(k.table, SignalKind::Toggled, [this, t](UiContext&, NodeHandle, const SignalArgs& a) {
 		sortBy(t, static_cast<int>(a.value), a.flag);
 	});
-	ui_.connect(k.table, SignalKind::Submitted, [this, t](UiContext&, NodeHandle, const SignalArgs& a) {
-		activate(t, static_cast<int>(a.value));
+	ui_.connect(k.table, SignalKind::Activated, [this, t](UiContext&, NodeHandle, const SignalArgs& a) {
+		activate(t, static_cast<int>(a.value)); // double click / Enter
 	});
 	ui_.connect(k.host, SignalKind::Submitted, [this](UiContext&, NodeHandle, const SignalArgs& a) {
 		// Context menu: 0 = Copy Address, 1 = Copy Value.
@@ -509,18 +507,7 @@ bool StringsBrowserPanel::onTableEvent(Table t, const Event& e)
 		openContextMenu(t, e.pos, row);
 		return true;
 	}
-	if (e.button != fuse::ui::MouseButton::Left || row < 0) return false;
-	const double now = nowSeconds();
-	if (row == k.lastClickRow && now - k.lastClickTime < 0.45)
-	{
-		k.lastClickRow = -1;
-		ui_.setValue(k.table, static_cast<float>(row), true);
-		activate(t, row);
-		return true;
-	}
-	k.lastClickRow = row;
-	k.lastClickTime = now;
-	return false; // the table selects the row
+	return false; // the table selects the row (and activates on a double click)
 }
 
 int StringsBrowserPanel::columnAt(Table t, float x) const
@@ -589,7 +576,6 @@ void StringsBrowserPanel::activate(Table t, int row)
 void StringsBrowserPanel::openContextMenu(Table t, Vec2 at, int row)
 {
 	if (ui_.alive(menu_)) w::closePopup(ui_, menu_);
-	tables_[idx(t)].lastClickRow = -1;
 	menuTable_ = t;
 	menuRow_ = row;
 	menuLabels_.clear();
@@ -723,6 +709,8 @@ void StringsBrowserPanel::paintCell(
 	}
 	const bool right = (t == Table::Strings && col == model::StrColRefs)
 					|| (t == Table::Constants && (col == model::ConstColRefs || col == model::ConstColSize));
+	// Addresses and the constants' hex / decimal values: monospace.
+	const bool mono = col == 0 || (t == Table::Constants && (col == model::ConstColHex || col == model::ConstColDec));
 	pc.ui.paintString(
 		dl,
 		text,
@@ -730,7 +718,8 @@ void StringsBrowserPanel::paintCell(
 		pc.tint(Color::rgb(color)),
 		pc.style.fontSize,
 		right ? fuse::ui::TextAlignment::End : fuse::ui::TextAlignment::Start,
-		pc.node.index);
+		pc.node.index,
+		mono ? styledFont(pc.ui, pc.node, true, false) : nullptr);
 }
 
 } // namespace retdec::gui::ui

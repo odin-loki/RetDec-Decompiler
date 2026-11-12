@@ -131,11 +131,12 @@ NodeHandle SettingsDialog::check(NodeHandle parent, std::string_view name, std::
 }
 
 NodeHandle SettingsDialog::spin(NodeHandle parent, std::string_view name, std::string_view label, float lo, float hi,
-                                float step, std::string_view hint, std::string_view suffix)
+                                float step, std::string_view hint, std::string_view suffix, std::string_view specialValue)
 {
 	const NodeHandle row = dlg::formRow(ui_, parent, label, hint);
 	const NodeHandle s = w::spinBox(ui_, row, lo, hi, lo, step);
 	ui_.setCss(s, "width", "140px");
+	if (!specialValue.empty()) w::setSpecialValueText(ui_, s, specialValue); // shown at the minimum (Qt specialValueText)
 	if (!hint.empty()) w::setTooltip(ui_, s, hint);
 	if (!suffix.empty()) dlg::noteLabel(ui_, row, suffix);
 	return reg(name, s);
@@ -270,7 +271,7 @@ void SettingsDialog::buildGeneral(NodeHandle p)
 
 	dlg::sectionHeader(ui_, p, "Session");
 	check(p, "restoreCheck", "Restore last session on startup",
-	      "Re-open the last binary from File -> Open Binary when RetDec starts.");
+	      "Re-open the last binary from File \xE2\x86\x92 Open Binary when RetDec starts.");
 }
 
 void SettingsDialog::buildAnalysis(NodeHandle p)
@@ -291,8 +292,8 @@ void SettingsDialog::buildAnalysis(NodeHandle p)
 	spin(p, "recovConfSpin", "Recovery minimum", 0.f, 1.f, 0.05f);
 
 	dlg::sectionHeader(ui_, p, "Resources");
-	spin(p, "maxTimeSpin", "Max analysis time", 0.f, 3600.f, 1.f, {}, "s (0 = Unlimited)");
-	spin(p, "threadCountSpin", "Thread count", 0.f, 256.f, 1.f, "0 = hardware_concurrency", "0 = Auto");
+	spin(p, "maxTimeSpin", "Max analysis time", 0.f, 3600.f, 1.f, {}, "s", "Unlimited");
+	spin(p, "threadCountSpin", "Thread count", 0.f, 256.f, 1.f, "0 = hardware_concurrency", {}, "Auto");
 }
 
 void SettingsDialog::buildCuda(NodeHandle p)
@@ -329,8 +330,8 @@ void SettingsDialog::buildMl(NodeHandle p)
 	check(p, "streamCheck", "Stream output tokens");
 
 	const NodeHandle shaRow = dlg::formRow(ui_, p, "Model SHA-256");
-	reg("mlModelSha256", dlg::growEdit(ui_, shaRow));
-	dlg::noteLabel(ui_, shaRow, "optional");
+	const NodeHandle sha = reg("mlModelSha256", dlg::growEdit(ui_, shaRow));
+	w::setPlaceholderText(ui_, sha, "optional SHA-256 of the GGUF");
 	check(p, "mlBatchRefine", "Batch refine (unused)",
 	      "Reserved. Does not set RETDEC_NEURAL_BATCH (removed until real batching exists).");
 }
@@ -370,7 +371,7 @@ void SettingsDialog::buildAdvanced(NodeHandle p)
 	        {});
 
 	dlg::sectionHeader(ui_, p, "Output");
-	spin(p, "maxFuncSpin", "Max functions", 0.f, 100000.f, 1.f, "0 = decompile all functions", "0 = All");
+	spin(p, "maxFuncSpin", "Max functions", 0.f, 100000.f, 1.f, "0 = decompile all functions", {}, "All");
 	check(p, "demangleCheck", "Demangle symbol names");
 }
 
@@ -380,7 +381,7 @@ void SettingsDialog::buildDecompiler(NodeHandle p)
 	std::vector<std::string> profiles;
 	for (const auto& e: model::settingsProfileItems()) profiles.push_back(e.label);
 	combo(p, "decompileProfileCombo", "Decompile profile", profiles,
-	      "Passed as --profile to retdec-decompiler. Analysis -> Fast decompile overrides to fast for the next run.");
+	      "Passed as --profile to retdec-decompiler. Analysis \xE2\x86\x92 Fast decompile overrides to fast for the next run.");
 	check(p, "useCustomLlvmPassesCheck",
 	      "Use custom LLVM pass list when running \"Run Full Analysis\" (adds --llvm-passes-json to retdec-decompiler)");
 	const NodeHandle btnRow = dlg::hrow(ui_, p);

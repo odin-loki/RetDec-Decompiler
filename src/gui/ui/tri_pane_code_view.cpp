@@ -9,7 +9,6 @@
 #include <fuse/ui/widgets/widgets.hpp>
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <format>
@@ -803,16 +802,16 @@ TriPaneCodeView::TriPaneCodeView(UiContext& ui, NodeHandle parent): ui_(ui)
 
 	// Toolbar.
 	const NodeHandle tb = toolbarRow(ui, root_);
-	backBtn_ = w::toolButton(ui, tb, "\u25C0"); // ◀
-	fwdBtn_ = w::toolButton(ui, tb, "\u25B6");  // ▶
-	w::setTooltip(ui, backBtn_, "Navigate back (Alt+\u2190)");
-	w::setTooltip(ui, fwdBtn_, "Navigate forward (Alt+\u2192)");
+	backBtn_ = w::toolButton(ui, tb, "\xE2\x97\x80"); // ◀
+	fwdBtn_ = w::toolButton(ui, tb, "\xE2\x96\xB6");  // ▶
+	w::setTooltip(ui, backBtn_, "Navigate back (Alt+\xE2\x86\x90)");
+	w::setTooltip(ui, fwdBtn_, "Navigate forward (Alt+\xE2\x86\x92)");
 	funcLabel_ = w::label(ui, tb, "No function loaded");
 	ui.setCss(funcLabel_, "flex-grow", "1");
 	w::label(ui, tb, "Lang:");
 	langCombo_ = w::comboBox(ui, tb, "C\nC++\nC#\nJava\nPython\nLua", 0);
 	w::setTooltip(ui, langCombo_,
-	              "View-only syntax highlighting. To change decompiled output: Settings \u2192 Decompiler \u2192 Output "
+	              "View-only syntax highlighting. To change decompiled output: Settings \xE2\x86\x92 Decompiler \xE2\x86\x92 Output "
 	              "language, then re-decompile (F5).");
 	findBtn_ = w::toolButton(ui, tb, "Find"); // Qt: ⌕ (U+2315), in none of the bundled faces
 	w::setTooltip(ui, findBtn_, "Find in panes (Ctrl+F)");
@@ -835,10 +834,10 @@ TriPaneCodeView::TriPaneCodeView(UiContext& ui, NodeHandle parent): ui_(ui)
 	ui.addClass(fl, "retdec-muted");
 	findEdit_ = w::lineEdit(ui, findBar_, "");
 	ui.setCss(findEdit_, "flex-grow", "1");
-	w::setPlaceholderText(ui, findEdit_, "Search all panes\u2026");
-	findNext_ = w::toolButton(ui, findBar_, "\u25BC");  // ▼
-	findPrev_ = w::toolButton(ui, findBar_, "\u25B2");  // ▲
-	findClose_ = w::toolButton(ui, findBar_, "\u2715"); // ✕
+	w::setPlaceholderText(ui, findEdit_, "Search all panes\xE2\x80\xA6");
+	findNext_ = w::toolButton(ui, findBar_, "\xE2\x96\xBC");  // ▼
+	findPrev_ = w::toolButton(ui, findBar_, "\xE2\x96\xB2");  // ▲
+	findClose_ = w::toolButton(ui, findBar_, "\xE2\x9C\x95"); // ✕
 	w::setTooltip(ui, findNext_, "Next match (Enter)");
 	w::setTooltip(ui, findPrev_, "Previous match");
 	w::setTooltip(ui, findClose_, "Close (Escape)");
@@ -856,7 +855,7 @@ TriPaneCodeView::TriPaneCodeView(UiContext& ui, NodeHandle parent): ui_(ui)
 	ui.connect(langCombo_, SignalKind::ValueChanged, [self](UiContext&, NodeHandle, const SignalArgs& a) {
 		self->setOutputLanguage(static_cast<OutputLang>(std::clamp(int(a.value), 0, 5)));
 		if (self->onStatusMessage)
-			self->onStatusMessage("Change in Settings \u2192 Decompiler \u2192 Output language, then re-decompile.", 4000);
+			self->onStatusMessage("Change in Settings \xE2\x86\x92 Decompiler \xE2\x86\x92 Output language, then re-decompile.", 4000);
 	});
 
 	asm_->onLineActivated = [self](int l) { self->onLineActivated(model::TriPane::Asm, l); };

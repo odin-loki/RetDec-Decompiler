@@ -52,7 +52,7 @@ DecompiledCPanel::DecompiledCPanel(UiContext& ui, NodeHandle parent): ui_(ui), m
 	ui.setCss(body_, "gap", "0px");
 	empty_ = std::make_unique<EmptyState>(ui, body_);
 	empty_->setTitle("No decompiled output yet");
-	empty_->setHint("Run Analysis \u2192 Run Full Analysis (F5) to decompile the binary.");
+	empty_->setHint("Run Analysis \xE2\x86\x92 Run Full Analysis (F5) to decompile the binary.");
 	view_ = std::make_unique<CodeView>(ui, body_, model::CodeLang::C);
 
 	const NodeHandle fb = w::panel(ui, root_);
@@ -61,7 +61,7 @@ DecompiledCPanel::DecompiledCPanel(UiContext& ui, NodeHandle parent): ui_(ui), m
 	ui.setCss(fb, "flex-shrink", "0");
 	findEdit_ = w::lineEdit(ui, fb, "");
 	ui.setCss(findEdit_, "flex-grow", "1");
-	w::setPlaceholderText(ui, findEdit_, "Find in decompiled C\u2026");
+	w::setPlaceholderText(ui, findEdit_, "Find in decompiled C\xE2\x80\xA6");
 	setShown(ui, fb, false);
 
 	auto* self = this;

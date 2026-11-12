@@ -8,7 +8,6 @@
 #include "retdec/gui/model/code_text.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <format>
 
@@ -44,7 +43,7 @@ DiagnosticsPanel::DiagnosticsPanel(UiContext& ui, NodeHandle parent): ui_(ui)
 	combo_ = w::comboBox(ui, top, "All\nInfo\nWarnings\nErrors", 0);
 	search_ = w::lineEdit(ui, top, "");
 	ui.setCss(search_, "width", "200px");
-	w::setPlaceholderText(ui, search_, "Filter text\u2026");
+	w::setPlaceholderText(ui, search_, "Filter text\xE2\x80\xA6");
 	w::setTooltip(ui, search_, "Filters by text; replaces the severity filter while non-empty");
 	copyBtn_ = w::button(ui, top, "Copy");
 	w::setTooltip(ui, copyBtn_, "Copy visible rows as TSV");

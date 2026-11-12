@@ -69,6 +69,18 @@ ninja -C build/gui && ./build/gui/gui-tests/retdec-gui-tests
 
   The main window owns panels (`std::unique_ptr`), places their roots in docks
   and tabs, and wires their callbacks. Panels never reach into each other.
+- **Fonts and glyphs.** Contexts carry FuseUI's bundled faces
+  (`UiContext::registerBundledFonts`: Open Sans 400/700, JetBrains Mono 400/700
+  as `monospace`, DejaVu Sans glyph fallback); `ensureRetdecUiClasses` registers
+  them when a context has none. Code, assembly, hex, console, diff panes and
+  address columns are monospace (`kMonoFamily`, the `retdec-mono` class,
+  `setTableColumnFont`, or `styledFont()` in cell delegates, which do not get
+  the column font). Qt's italics (abstract classes, pure-virtual slots) are
+  bold. Use the Qt glyphs (◀ ▶ ▲ ▼ ✕ ⚠ ℹ ✖ ✓ ✗ ○ ◉ ← → ⚙ …) as UTF-8 `\x`
+  escapes; ⌕ and ⏱ are in no bundled face. Hints go in placeholders
+  (`setPlaceholderText`, `setSpecialValueText`), double clicks come from
+  FuseUI (`Event::clicks`, `setTableActivation` + `SignalKind::Activated`),
+  multi-selection from `SelectionMode::Extended`.
 - **Tests** cover the model directly and drive views through a headless
   `fuse::ui::UiContext` (bundled font: `fuse::text::Font::bundled()`), using
   the same input calls a user's events produce (`pointerDown`, `keyDown`,

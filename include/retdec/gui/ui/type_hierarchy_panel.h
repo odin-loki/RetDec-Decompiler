@@ -23,7 +23,6 @@
 #include <fuse/ui/ui.hpp>
 #include <fuse/ui/widgets/widgets.hpp>
 
-#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <optional>

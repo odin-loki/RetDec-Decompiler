@@ -8,7 +8,6 @@
 #include "retdec/gui/model/code_address.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <format>

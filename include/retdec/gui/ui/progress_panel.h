@@ -141,7 +141,6 @@ private:
 	void syncRow(std::size_t index);
 	void syncSummary();
 	void syncElapsed();
-	void updateBusyTimer();
 	void tooltip(fuse::ui::NodeHandle n, std::string_view text);
 	void drainQueue();
 	static void drainCommand(fuse::ui::UiContext& ui, fuse::ui::NodeHandle n, fuse::ui::u64 a, fuse::ui::u64 b);
@@ -154,12 +153,11 @@ private:
 	int budgetSecs_ = 0;
 	model::BudgetLevel budget_ = model::BudgetLevel::Normal;
 	std::string elapsedTip_;
-	float busyPhase_ = 0.f;
 
 	fuse::ui::NodeHandle root_, overallBar_, pctLabel_, fnCountLabel_, instrLabel_, elapsedLabel_;
 	fuse::ui::NodeHandle stagesBox_, waterfall_, fnRateLabel_, instrRateLabel_, exportBtn_, fileDlg_;
-	fuse::ui::TimerHandle tickTimer_, busyTimer_;
-	bool tickRunning_ = false, busyRunning_ = false;
+	fuse::ui::TimerHandle tickTimer_;
+	bool tickRunning_ = false;
 	std::vector<fuse::ui::NodeHandle> tooltips_;
 	fuse::ui::NodeHandle elapsedTipNode_;
 

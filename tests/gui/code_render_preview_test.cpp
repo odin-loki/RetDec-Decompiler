@@ -64,6 +64,16 @@ TEST(CodeRenderPreview, Assembly)
 	                  "0x401003:   e8 f8 00 00 00    call 0x401100 ; helper\n0x401008:   c3                ret\n");
 	p.navigateTo(0x401003);
 	finish(h, "assembly");
+	// Code views are monospace, so the asm columns line up: equal advances for narrow and wide text.
+	const fuse::ui::NodeHandle v = p.view().node();
+	ASSERT_NE(h.ui.resolveFont("monospace"), h.ui.font());
+	EXPECT_EQ(h.ui.fontFor(v), h.ui.resolveFont("monospace"));
+	EXPECT_FLOAT_EQ(h.ui.measureString("iiii", 13.f, v), h.ui.measureString("MMMM", 13.f, v));
+	// The search bar hint is the edit's placeholder (per mode).
+	p.goToAddress();
+	EXPECT_EQ(fuse::ui::widgets::placeholderText(h.ui, p.searchEdit()), "Go to address (hex)\xE2\x80\xA6");
+	p.find();
+	EXPECT_EQ(fuse::ui::widgets::placeholderText(h.ui, p.searchEdit()), "Find in disassembly\xE2\x80\xA6");
 }
 
 TEST(CodeRenderPreview, IR)

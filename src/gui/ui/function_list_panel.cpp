@@ -7,9 +7,9 @@
 #include "retdec/gui/ui/function_list_panel.h"
 
 #include "retdec/gui/model/funclist_export.h"
+#include "retdec/gui/ui/empty_state.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <format>
@@ -32,9 +32,10 @@ using fuse::ui::Vec2;
 namespace {
 
 // ─── Capture-phase event hook on the node that hosts the table ───────────────
-// The table widget handles clicks and keys itself (single selection); the host
-// sees every event first and adds multi-selection, double-click, the context
-// menu and the shortcuts.
+// The table widget handles selection (Extended mode: Ctrl / Shift clicks and
+// keys, Ctrl+A) and activation (double click / Enter) itself; the host sees
+// every event first and adds the context menu, the cell tooltips and the
+// F2 / Ctrl+C / Shift+F10 shortcuts.
 using Hook = std::function<bool(UiContext&, const Event&)>;
 struct HookKey
 {
@@ -73,7 +74,6 @@ constexpr uint32_t kYellow = 0xf9e2af;
 constexpr uint32_t kRed = 0xf38ba8;
 constexpr uint32_t kMauve = 0xcba6f7;
 constexpr uint32_t kTeal = 0x94e2d5;
-constexpr uint32_t kAccent = 0x3d8bfd;
 
 constexpr std::string_view kEllipsis = "\xE2\x80\xA6";
 
@@ -81,11 +81,6 @@ float rowHeight(UiContext& ui, NodeHandle n)
 {
 	const float px = ui.computed(n).fontSize;
 	return std::ceil(ui.font() ? ui.font()->metrics(px).lineHeight() : px * 1.25f) + 6.f;
-}
-
-double nowSeconds()
-{
-	return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
 void setEditText(UiContext& ui, NodeHandle edit, std::string_view text)
@@ -103,25 +98,6 @@ uint32_t tierColor(model::ConfidenceTier t)
 	case model::ConfidenceTier::Medium: return kYellow;
 	default: return kRed;
 	}
-}
-
-// Moves the table's current row to @p row the way a key press does (scrolling
-// it into view and emitting ValueChanged); the widget offers no other way.
-void tableSelectAndScroll(UiContext& ui, NodeHandle table, int row)
-{
-	const auto& cls = ui.registry().get(ui.classOf(table));
-	if (!cls.onEvent || row < 0) return;
-	Event e;
-	e.type = EventType::KeyDown;
-	if (row == 0)
-		e.key = Key::Home;
-	else
-	{
-		ui.setValue(table, static_cast<float>(row - 1), false);
-		e.key = Key::Down;
-	}
-	fuse::ui::EventContext ec{ui, table, table, fuse::ui::Phase::Target};
-	cls.onEvent(ec, e);
 }
 
 } // namespace
@@ -234,18 +210,26 @@ void FunctionListPanel::build(NodeHandle parent)
 		delegates_[static_cast<std::size_t>(c)] = {&painters_[static_cast<std::size_t>(c)], &FunctionListPanel::paintCell};
 		w::setTableDelegate(ui_, table_, static_cast<fuse::ui::u32>(c), &delegates_[static_cast<std::size_t>(c)]);
 	}
+	// Qt ExtendedSelection; double click / Enter activate.
+	w::setTableSelectionMode(ui_, table_, w::SelectionMode::Extended);
+	w::setTableActivation(ui_, table_, true);
 
 	ui_.connect(table_, SignalKind::Toggled, [this](UiContext&, NodeHandle, const SignalArgs& a) {
 		sortBy(static_cast<int>(a.value), a.flag);
 	});
+	// The current row (value) moves first, then the selection changes.
 	ui_.connect(table_, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) {
 		if (applyingSelection_) return;
 		const int row = static_cast<int>(a.value);
-		if (row < 0 || static_cast<std::size_t>(row) >= proxy_.rowCount()) return;
-		selectRow(row, extendOnKey_ ? fuse::ui::kModShift : 0);
+		if (row >= 0 && static_cast<std::size_t>(row) < proxy_.rowCount()) current_ = proxy_.entry(static_cast<std::size_t>(row)).address;
 	});
-	ui_.connect(table_, SignalKind::Submitted, [this](UiContext&, NodeHandle, const SignalArgs& a) {
-		activateRow(static_cast<int>(a.value), -1);
+	ui_.connect(table_, SignalKind::SelectionChanged, [this](UiContext&, NodeHandle, const SignalArgs&) {
+		if (applyingSelection_) return;
+		syncSelectionFromTable();
+		selectionChangedInternal();
+	});
+	ui_.connect(table_, SignalKind::Activated, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+		activateRow(static_cast<int>(a.value), a.index); // index: column (-1 = Enter)
 	});
 	// Context menu picks arrive on the host (the menu's owner).
 	ui_.connect(host_, SignalKind::Submitted, [this](UiContext&, NodeHandle, const SignalArgs& a) {
@@ -269,20 +253,23 @@ void FunctionListPanel::buildFilterBar(NodeHandle bar)
 	ui_.setCss(nameEdit_, "width", "140px");
 	small(nameEdit_);
 	ui_.setA11y(nameEdit_, fuse::ui::A11yRole::TextField, "Search");
-	tooltip(nameEdit_, std::string("Search") + std::string(kEllipsis) + " (wildcards * ? [])");
+	w::setPlaceholderText(ui_, nameEdit_, std::string("Search") + std::string(kEllipsis));
+	tooltip(nameEdit_, "Filter by name (wildcards * ? [])");
 
 	const NodeHandle addrLabel = w::label(ui_, bar, "Addr:");
 	ui_.addClass(addrLabel, "dim");
 	addrLowEdit_ = w::lineEdit(ui_, bar);
 	ui_.setCss(addrLowEdit_, "width", "80px");
 	small(addrLowEdit_);
-	tooltip(addrLowEdit_, "Lowest address (hex), e.g. 0x0");
+	w::setPlaceholderText(ui_, addrLowEdit_, "0x0");
+	tooltip(addrLowEdit_, "Lowest address (hex)");
 	const NodeHandle dash = w::label(ui_, bar, "\xE2\x80\x93");
 	ui_.addClass(dash, "dim");
 	addrHighEdit_ = w::lineEdit(ui_, bar);
 	ui_.setCss(addrHighEdit_, "width", "80px");
 	small(addrHighEdit_);
-	tooltip(addrHighEdit_, "Highest address (hex), e.g. 0xFFFF");
+	w::setPlaceholderText(ui_, addrHighEdit_, std::string("0xFFFF") + std::string(kEllipsis));
+	tooltip(addrHighEdit_, "Highest address (hex)");
 
 	const NodeHandle confLabel = w::label(ui_, bar, "Conf\xE2\x89\xA5");
 	ui_.addClass(confLabel, "dim");
@@ -436,10 +423,8 @@ void FunctionListPanel::refresh(bool keepSelection)
 		if (current_ && proxy_.rowForAddress(*current_) < 0) current_.reset();
 		anchorRow_ = current_ ? proxy_.rowForAddress(*current_) : -1;
 	}
-	applyingSelection_ = true;
 	w::tableModelChanged(ui_, table_);
-	ui_.setValue(table_, current_ ? static_cast<float>(proxy_.rowForAddress(*current_)) : -1.f, false);
-	applyingSelection_ = false;
+	applySelectionToTable(); // rows moved: re-mark the selected addresses
 	ui_.invalidate(table_);
 	updateStatus();
 	if (before != selected_.size() && onSelectionChanged) onSelectionChanged();
@@ -484,18 +469,39 @@ void FunctionListPanel::selectRow(int row, uint8_t mods)
 		anchorRow_ = row;
 	}
 	current_ = addr;
-	setCurrentRow(row, false);
+	applySelectionToTable();
 	selectionChangedInternal();
 }
 
 void FunctionListPanel::setCurrentRow(int row, bool scroll)
 {
 	applyingSelection_ = true;
-	if (scroll)
-		tableSelectAndScroll(ui_, table_, row);
-	else
-		ui_.setValue(table_, static_cast<float>(row), false);
+	ui_.setValue(table_, static_cast<float>(row), false);
+	if (scroll && row >= 0) w::scrollToRow(ui_, table_, static_cast<fuse::ui::u32>(row));
 	applyingSelection_ = false;
+}
+
+void FunctionListPanel::applySelectionToTable()
+{
+	applyingSelection_ = true;
+	w::tableClearSelection(ui_, table_);
+	for (std::size_t r = 0; r < proxy_.rowCount(); ++r)
+		if (selected_.count(proxy_.entry(r).address)) w::setTableRowSelected(ui_, table_, static_cast<fuse::ui::u32>(r), true);
+	ui_.setValue(table_, current_ ? static_cast<float>(proxy_.rowForAddress(*current_)) : -1.f, false);
+	applyingSelection_ = false;
+}
+
+void FunctionListPanel::syncSelectionFromTable()
+{
+	selected_.clear();
+	for (const fuse::ui::u32 r: w::tableSelectedRows(ui_, table_))
+		if (r < proxy_.rowCount()) selected_.insert(proxy_.entry(r).address);
+	const int cur = static_cast<int>(ui_.value(table_));
+	if (cur >= 0 && static_cast<std::size_t>(cur) < proxy_.rowCount())
+	{
+		current_ = proxy_.entry(static_cast<std::size_t>(cur)).address;
+		anchorRow_ = cur;
+	}
 }
 
 void FunctionListPanel::selectionChangedInternal()
@@ -511,6 +517,7 @@ void FunctionListPanel::selectFunction(uint64_t address)
 	selected_ = {address};
 	current_ = address;
 	anchorRow_ = row;
+	applySelectionToTable();
 	setCurrentRow(row, true);
 	selectionChangedInternal();
 	const auto& e = proxy_.entry(static_cast<std::size_t>(row));
@@ -564,16 +571,7 @@ bool FunctionListPanel::onTableEvent(const Event& e)
 	if (e.type == EventType::KeyDown)
 	{
 		hideCellTip();
-		extendOnKey_ = false;
 		const bool ctrl = e.mods & kModCtrl, shift = e.mods & kModShift;
-		if (ctrl && e.key == Key::A)
-		{
-			selected_.clear();
-			for (std::size_t r = 0; r < proxy_.rowCount(); ++r)
-				selected_.insert(proxy_.entry(r).address);
-			selectionChangedInternal();
-			return true;
-		}
 		if (ctrl && e.key == Key::C)
 		{
 			triggerAction(Action::CopyAddress);
@@ -593,10 +591,6 @@ bool FunctionListPanel::onTableEvent(const Event& e)
 			openContextMenu(at, row);
 			return true;
 		}
-		if (shift
-			&& (e.key == Key::Up || e.key == Key::Down || e.key == Key::PageUp || e.key == Key::PageDown
-				|| e.key == Key::Home || e.key == Key::End))
-			extendOnKey_ = true;
 		return false;
 	}
 	if (e.type == EventType::PointerMove)
@@ -612,6 +606,8 @@ bool FunctionListPanel::onTableEvent(const Event& e)
 	}
 	if (e.type != EventType::PointerDown) return false;
 	hideCellTip();
+	// Left clicks: the table selects (Extended) and activates on a double click.
+	if (e.button != fuse::ui::MouseButton::Right) return false;
 
 	const Rect c = ui_.contentRect(table_);
 	if (!c.contains(e.pos)) return false;
@@ -621,28 +617,8 @@ bool FunctionListPanel::onTableEvent(const Event& e)
 	if (proxy_.rowCount() > visibleRows && e.pos.x >= c.right() - 8.f) return false; // scroll bar
 
 	const int row = rowAt(e.pos);
-	if (e.button == fuse::ui::MouseButton::Right)
-	{
-		if (row >= 0 && !selected_.count(proxy_.entry(static_cast<std::size_t>(row)).address)) selectRow(row, 0);
-		openContextMenu(e.pos, row);
-		return true;
-	}
-	if (e.button != fuse::ui::MouseButton::Left) return false;
-	if (row < 0) return true;
-	const double now = nowSeconds();
-	const bool plain = !(e.mods & (kModCtrl | kModShift));
-	const bool dbl = plain && row == lastClickRow_ && now - lastClickTime_ < 0.45;
-	selectRow(row, e.mods);
-	if (dbl)
-	{
-		lastClickRow_ = -1;
-		activateRow(row, columnAt(e.pos.x));
-	}
-	else
-	{
-		lastClickRow_ = plain ? row : -1;
-		lastClickTime_ = now;
-	}
+	if (row >= 0 && !selected_.count(proxy_.entry(static_cast<std::size_t>(row)).address)) selectRow(row, 0);
+	openContextMenu(e.pos, row);
 	return true;
 }
 
@@ -708,7 +684,6 @@ void FunctionListPanel::activateRow(int row, int col)
 void FunctionListPanel::openContextMenu(Vec2 at, int row)
 {
 	if (ui_.alive(menu_)) w::closePopup(ui_, menu_);
-	lastClickRow_ = -1;
 	menuActions_.clear();
 	menuLabels_.clear();
 	menuAddress_.reset();
@@ -862,7 +837,6 @@ void FunctionListPanel::openPrompt(Prompt p, uint64_t address)
 	const model::FunctionEntry* e = list_.find(address);
 	if (p != Prompt::Tag && !e) return;
 	buildPrompt();
-	lastClickRow_ = -1;
 	prompt_ = p;
 	promptAddress_ = address;
 	promptTargets_.clear();
@@ -1071,9 +1045,6 @@ void FunctionListPanel::paintCell(
 	UiContext& ui = pc.ui;
 	const float fs = pc.style.fontSize;
 
-	if (!selected && p.selected_.count(e.address))
-		dl.rect({cell.x - 6.f, cell.y, cell.w + 12.f, cell.h}, pc.tint(Color::rgb(kAccent, 0.30f)));
-
 	switch (static_cast<int>(col))
 	{
 	case model::FnColConfidence: {
@@ -1118,7 +1089,10 @@ void FunctionListPanel::paintCell(
 		case model::FnColCC: color = kMauve; break;
 		default: break;
 		}
-		ui.paintString(dl, text, cell, pc.tint(Color::rgb(color)), fs, fuse::ui::TextAlignment::Start, pc.node.index);
+		// Qt: Address and Name in the monospace face.
+		const bool mono = col == model::FnColAddress || col == model::FnColName;
+		ui.paintString(dl, text, cell, pc.tint(Color::rgb(color)), fs, fuse::ui::TextAlignment::Start, pc.node.index,
+			mono ? styledFont(ui, pc.node, true, false) : nullptr);
 		break;
 	}
 	}

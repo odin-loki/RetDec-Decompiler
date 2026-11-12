@@ -64,7 +64,7 @@ TEST_F(TriageBannerTest, MetadataAndPackerBadge)
 	EXPECT_EQ(banner->osText(), "Windows");
 	EXPECT_EQ(banner->sizeText(), "3.0 MiB");
 	EXPECT_TRUE(banner->packerShown());
-	EXPECT_EQ(banner->packerText(), "\u26A0 UPX-packed"); // ⚠, as the Qt badge
+	EXPECT_EQ(banner->packerText(), "\xE2\x9A\xA0 UPX-packed"); // ⚠, as the Qt badge
 	banner->setMetadata("PE", "x86", "Windows", 0);
 	EXPECT_FALSE(banner->packerShown());
 	EXPECT_EQ(banner->sizeText(), "3.0 MiB"); // kept

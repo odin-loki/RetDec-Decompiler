@@ -236,7 +236,7 @@ MessageDialog::MessageDialog(UiContext& ui): dlg_(ui, "", 440.f, 0.f)
 {
 	const NodeHandle row = dlg::hrow(ui, dlg_.body());
 	ui.setCss(row, "align-items", "start");
-	icon_ = w::label(ui, row, "i");
+	icon_ = w::label(ui, row, "\xE2\x84\xB9"); // ℹ
 	text_ = w::label(ui, row, "");
 	ui.setCss(text_, "flex-grow", "1");
 	ui.setCss(text_, "flex-shrink", "1");
@@ -256,7 +256,7 @@ void MessageDialog::show(std::string_view title, std::string_view text, Kind kin
 	onClosed_ = std::move(onClosed);
 	dlg_.setTitle(title);
 	ui.setText(text_, text);
-	ui.setText(icon_, kind == Kind::Warning ? "!" : "i");
+	ui.setText(icon_, kind == Kind::Warning ? "\xE2\x9A\xA0" : "\xE2\x84\xB9"); // ⚠ ℹ
 	ui.removeClass(icon_, "retdec-warning-icon");
 	ui.removeClass(icon_, "retdec-info-icon");
 	ui.addClass(icon_, kind == Kind::Warning ? "retdec-warning-icon" : "retdec-info-icon");

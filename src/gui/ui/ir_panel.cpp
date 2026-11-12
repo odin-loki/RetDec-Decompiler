@@ -44,7 +44,7 @@ IRPanel::IRPanel(UiContext& ui, NodeHandle parent): ui_(ui), menu_(ui)
 	ui.setCss(findBar_, "flex-shrink", "0");
 	findEdit_ = w::lineEdit(ui, findBar_, "");
 	ui.setCss(findEdit_, "flex-grow", "1");
-	w::setPlaceholderText(ui, findEdit_, "Find in IR\u2026");
+	w::setPlaceholderText(ui, findEdit_, "Find in IR\xE2\x80\xA6");
 	setShown(ui, findBar_, false);
 
 	auto* self = this;

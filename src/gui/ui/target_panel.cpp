@@ -105,7 +105,7 @@ TargetPanel::TargetPanel(UiContext& ui, NodeHandle parent, model::AppSettings& s
 	hint_ = dlg::noteLabel(
 		ui, body,
 		"Overrides live in the .retdec project. Non-empty Architecture is passed as -a to retdec-decompiler. Optional "
-		"Decompiler JSON sets --config (same as Analysis -> Configure…). Enter in a target field or Alt+A applies.");
+		"Decompiler JSON sets --config (same as Analysis \xE2\x86\x92 Configure\xE2\x80\xA6). Enter in a target field or Alt+A applies.");
 
 	w::label(ui, body, "Binary");
 	binary_ = w::label(ui, body, "—");
@@ -114,8 +114,7 @@ TargetPanel::TargetPanel(UiContext& ui, NodeHandle parent, model::AppSettings& s
 	auto field = [&](std::string_view label, std::string_view placeholder) {
 		w::label(ui, body, label);
 		const NodeHandle e = w::lineEdit(ui, body, "");
-		w::setTooltip(ui, e, placeholder);
-		dlg::noteLabel(ui, body, placeholder);
+		w::setPlaceholderText(ui, e, placeholder);
 		ui.connect(e, SignalKind::Submitted, [this](UiContext& u, NodeHandle, const SignalArgs&) {
 			if (!u.disabled(apply_)) apply();
 		});
@@ -132,7 +131,7 @@ TargetPanel::TargetPanel(UiContext& ui, NodeHandle parent, model::AppSettings& s
 	w::label(ui, body, "Decompiler config (--config)");
 	config_ = w::lineEdit(ui, body, "");
 	ui.setFocusable(config_, false); // read-only display
-	dlg::noteLabel(ui, body, "None — decompiler loads built-in default next to binary");
+	w::setPlaceholderText(ui, config_, "None \xE2\x80\x94 decompiler loads built-in default next to binary");
 	const NodeHandle cfgRow = dlg::hrow(ui, body);
 	browse_ = w::button(ui, cfgRow, "Browse…");
 	w::setTooltip(ui, browse_, "Pick decompiler JSON. Alt+B.");

@@ -175,8 +175,6 @@ private:
 		fuse::ui::widgets::ItemModel model{};
 		Painter painter{};
 		fuse::ui::widgets::CellDelegate delegate{};
-		int lastClickRow = -1;
-		double lastClickTime = -1.0;
 		std::shared_ptr<std::function<bool(fuse::ui::UiContext&, const fuse::ui::Event&)>> hook;
 	};
 	std::array<TableKit, 2> tables_{};

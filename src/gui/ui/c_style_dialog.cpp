@@ -31,10 +31,10 @@ CStyleDialog::CStyleDialog(UiContext& ui): dlg_(ui, "C output style", 400.f, 0.f
 	callInfo_ = w::comboBox(ui, b, dlg::joinLines(model::cStyleCallInfoItems()), 0, "cStyleCallInfo");
 	w::label(ui, b, "Disabled backend opts");
 	disabled_ = w::lineEdit(ui, b, "", "cStyleDisabledOpts");
-	dlg::noteLabel(ui, b, "comma-separated --backend-disabled-opts");
+	w::setPlaceholderText(ui, disabled_, "comma-separated --backend-disabled-opts");
 	w::label(ui, b, "Enabled backend opts");
 	enabled_ = w::lineEdit(ui, b, "", "cStyleEnabledOpts");
-	dlg::noteLabel(ui, b, "comma-separated --backend-enabled-opts");
+	w::setPlaceholderText(ui, enabled_, "comma-separated --backend-enabled-opts");
 	const NodeHandle buttons = dlg::buttonRow(ui, b);
 	ok_ = w::button(ui, buttons, "OK");
 	ui.addClass(ok_, "primary");

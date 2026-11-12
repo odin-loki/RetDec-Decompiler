@@ -60,6 +60,7 @@ retdec-panel { background: transparent; }
 .retdec-status { color: var(--text-dim, #9a9cab); flex-grow: 1; }
 .retdec-mono { font-family: "JetBrains Mono", monospace; }
 .retdec-bold { font-weight: bold; }
+.md-code { font-family: "JetBrains Mono", monospace; }
 )css";
 
 } // namespace

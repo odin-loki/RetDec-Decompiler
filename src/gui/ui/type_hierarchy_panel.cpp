@@ -81,7 +81,7 @@ struct TypeHierarchyPanel::Glue
 		{
 			const float x = cell.x + float(r.depth) * kIndent;
 			if (r.hasChildren)
-				pc.ui.paintString(dl, r.expanded ? "\u25BE" : "\u25B8", {x, cell.y, kToggleW, cell.h}, // ▾ ▸
+				pc.ui.paintString(dl, r.expanded ? "\xE2\x96\xBE" : "\xE2\x96\xB8", {x, cell.y, kToggleW, cell.h}, // ▾ ▸
 					pc.tint(graphColor(model::catppuccin::overlay2)), pc.style.fontSize, fuse::ui::TextAlignment::Center,
 					pc.node.index);
 			const float tx = x + kToggleW + 2.f;
@@ -121,7 +121,7 @@ TypeHierarchyPanel::TypeHierarchyPanel(UiContext& ui, NodeHandle parent): m_ui(u
 	ui.setCss(m_search, "border-color", "#45475a");
 	ui.setCss(m_search, "padding", "2px 6px");
 	ui.setA11y(m_search, fuse::ui::A11yRole::TextField, "Filter classes…");
-	w::setPlaceholderText(ui, m_search, "Filter classes\u2026");
+	w::setPlaceholderText(ui, m_search, "Filter classes\xE2\x80\xA6");
 
 	m_split = w::splitter(ui, m_root, /*stacked=*/true);
 	ui.setCss(m_split, "flex-grow", "1");

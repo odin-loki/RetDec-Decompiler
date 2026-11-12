@@ -169,7 +169,8 @@ private:
 	fuse::ui::NodeHandle check(fuse::ui::NodeHandle parent, std::string_view name, std::string_view text,
 	                           std::string_view tooltip = {});
 	fuse::ui::NodeHandle spin(fuse::ui::NodeHandle parent, std::string_view name, std::string_view label, float lo,
-	                          float hi, float step, std::string_view hint = {}, std::string_view suffix = {});
+	                          float hi, float step, std::string_view hint = {}, std::string_view suffix = {},
+	                          std::string_view specialValue = {});
 	fuse::ui::NodeHandle combo(fuse::ui::NodeHandle parent, std::string_view name, std::string_view label,
 	                           const std::vector<std::string>& items, std::string_view hint = {});
 	/// Label + line edit + "…" browse button that opens the file prompt.

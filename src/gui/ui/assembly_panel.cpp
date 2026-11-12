@@ -48,7 +48,7 @@ AssemblyPanel::AssemblyPanel(UiContext& ui, NodeHandle parent): ui_(ui), menu_(u
 	ui.addClass(searchLabel_, "retdec-muted");
 	searchEdit_ = w::lineEdit(ui, searchBar_, "");
 	ui.setCss(searchEdit_, "flex-grow", "1");
-	w::setPlaceholderText(ui, searchEdit_, "Find in disassembly\u2026");
+	w::setPlaceholderText(ui, searchEdit_, "Find in disassembly\xE2\x80\xA6");
 	setShown(ui, searchBar_, false);
 
 	auto* self = this;
@@ -149,7 +149,7 @@ void AssemblyPanel::showSearch(SearchMode mode)
 {
 	mode_ = mode;
 	ui_.setText(searchLabel_, mode == SearchMode::GoTo ? "Go to:" : "Find:");
-	w::setPlaceholderText(ui_, searchEdit_, mode == SearchMode::GoTo ? "Go to address (hex)\u2026" : "Find in disassembly\u2026");
+	w::setPlaceholderText(ui_, searchEdit_, mode == SearchMode::GoTo ? "Go to address (hex)\xE2\x80\xA6" : "Find in disassembly\xE2\x80\xA6");
 	searchShown_ = true;
 	setShown(ui_, searchBar_, true);
 	setLineEditText(ui_, searchEdit_, "");

@@ -35,7 +35,7 @@ std::string aboutMarkdown()
 		   "**Ctrl+S** saves decompiled C; **Ctrl+Shift+S** saves the project. **F5** runs full analysis; "
 		   "**Ctrl+,** opens Settings.\n"
 		   "\n"
-		   "File -> Batch Decompile queues multiple binaries. Tools -> Call Graph / Type Hierarchy / AI Assistant "
+		   "File \xE2\x86\x92 Batch Decompile queues multiple binaries. Tools \xE2\x86\x92 Call Graph / Type Hierarchy / AI Assistant "
 		   "open in separate windows.\n"
 		   "\n"
 		   "Theme: Catppuccin Latte (light), Mocha (dark), or System Default | FuseUI\n";
@@ -63,7 +63,7 @@ const std::vector<ShortcutGroup>& keyboardShortcutGroups()
 		  {"F", "Assembly panel: find in disassembly (when focused)"},
 		  {"Ctrl+F", "Decompiled C / Synced tab: find in source"},
 		  {"F3 / Shift+F3", "Decompiled C: find next / previous"},
-		  {"Alt+Left / Alt+Right", "Synced tab: navigation history"}}},
+		  {"Alt+\xE2\x86\x90 / Alt+\xE2\x86\x92", "Synced tab: navigation history"}}},
 	};
 	return k;
 }
