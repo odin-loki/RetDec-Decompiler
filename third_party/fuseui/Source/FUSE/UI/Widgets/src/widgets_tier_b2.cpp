@@ -174,6 +174,13 @@ struct TableState {
     f32 grab = 0.f;
     std::string scratch;
     const CellDelegate* delegate[kMaxCols]{};
+    SelectionMode mode = SelectionMode::Single;
+    std::vector<bool> sel; ///< Extended: selected flags (grown on demand)
+    u32 selCount = 0;
+    i64 anchor = -1;       ///< Extended: Shift range anchor
+    bool activation = false;
+    std::string colFamily[kMaxCols];
+    u16 colWeight[kMaxCols]{};
 };
 // Process-wide pool (the UI is single-threaded); a slot is reused once its node is gone.
 std::vector<std::unique_ptr<TableState>>& pool() { static std::vector<std::unique_ptr<TableState>> p; return p; }
@@ -222,14 +229,83 @@ struct TableView {
         const u32 nf = u32(std::clamp<i64>(f, 0, r > vis ? i64(r - vis) : 0));
         if (nf != s.first) { s.first = nf; ui.invalidate(n); }
     }
+    static void ensureVisible(UiContext& ui, NodeHandle n, TableState& s, i64 row) {
+        const u32 vis = visible(ui, n, s);
+        if (row < i64(s.first)) setFirst(ui, n, s, row);
+        else if (row >= i64(s.first + vis)) setFirst(ui, n, s, row - vis + 1);
+    }
     static void select(UiContext& ui, NodeHandle n, TableState& s, i64 row) {
         const u32 r = rows(s);
         if (!r) return;
         row = std::clamp<i64>(row, 0, i64(r) - 1);
-        const u32 vis = visible(ui, n, s);
-        if (row < i64(s.first)) setFirst(ui, n, s, row);
-        else if (row >= i64(s.first + vis)) setFirst(ui, n, s, row - vis + 1);
+        ensureVisible(ui, n, s, row);
         ui.setValue(n, f32(row), true);
+    }
+    // ---- Extended selection ----
+    static bool isSelected(const UiContext& ui, NodeHandle n, const TableState& s, u32 row) {
+        if (s.mode == SelectionMode::Single) return i32(ui.value(n)) == i32(row);
+        return row < s.sel.size() && s.sel[row];
+    }
+    static void mark(TableState& s, u32 row, bool on) {
+        if (row >= s.sel.size()) {
+            if (!on) return;
+            s.sel.resize(std::max<std::size_t>(row + 1, s.sel.size() * 2), false);
+        }
+        if (s.sel[row] == on) return;
+        s.sel[row] = on;
+        s.selCount += on ? 1u : u32(-1);
+    }
+    static void clearMarks(TableState& s) { s.sel.clear(); s.selCount = 0; }
+    static void markRange(TableState& s, i64 a, i64 b) {
+        if (a > b) std::swap(a, b);
+        for (i64 r = std::max<i64>(a, 0); r <= b; ++r) mark(s, u32(r), true);
+    }
+    static void selectionChanged(UiContext& ui, NodeHandle n, const TableState& s) {
+        ui.invalidate(n);
+        ui.emit(n, SignalKind::SelectionChanged, {.value = f32(s.selCount)});
+    }
+    /// Extended-mode click / key: `row` becomes current; selection per modifiers.
+    static void extendedPick(UiContext& ui, NodeHandle n, TableState& s, i64 row, u8 mods, bool keyboard) {
+        const u32 r = rows(s);
+        if (!r) return;
+        row = std::clamp<i64>(row, 0, i64(r) - 1);
+        const bool shift = mods & kModShift, ctrl = mods & kModCtrl;
+        if (keyboard && ctrl && !shift) { select(ui, n, s, row); return; } // move the current row only
+        if (shift) {
+            if (s.anchor < 0) s.anchor = ui.value(n) >= 0.f ? i64(ui.value(n)) : row;
+            if (!ctrl) clearMarks(s);
+            markRange(s, s.anchor, row);
+        } else if (ctrl) {
+            mark(s, u32(row), !(u32(row) < s.sel.size() && s.sel[u32(row)]));
+            s.anchor = row;
+        } else {
+            clearMarks(s);
+            mark(s, u32(row), true);
+            s.anchor = row;
+        }
+        select(ui, n, s, row);
+        selectionChanged(ui, n, s);
+    }
+    static i32 columnAt(const TableState& s, const Rect& c, f32 x) {
+        f32 cx = c.x;
+        for (u32 k = 0; k < cols(s); ++k) {
+            cx += s.colW[k];
+            if (x < cx) return i32(k);
+        }
+        return -1;
+    }
+    /// Font of a cell: ItemModel::font, else the column font, else the view's (null).
+    static const fuse::text::Font* cellFont(UiContext& ui, const PaintContext& pc, const TableState& s, u32 row, u32 col) {
+        std::string_view fam = s.colFamily[col];
+        u16 w = s.colWeight[col];
+        if (s.model->font) {
+            const CellFont cf = s.model->font(s.model->user, row, col);
+            if (!cf.family.empty()) fam = cf.family;
+            if (cf.weight) w = cf.weight;
+        }
+        if (fam.empty() && !w) return nullptr;
+        if (fam.empty()) return ui.resolveFont(std::span<const u32>(pc.style.fontFamily.data(), pc.style.fontFamilyCount), w);
+        return ui.resolveFont(fam, w ? w : pc.style.fontWeight);
     }
     static bool barGeom(const UiContext& ui, NodeHandle n, const TableState& s, Rect& track, Rect& thumb) {
         const u32 r = rows(s), vis = visible(ui, n, s);
@@ -269,22 +345,27 @@ struct TableView {
                 dl.rect({x - 1.f, c.y + 4.f, 1.f, hh - 8.f}, pc.tint(Color::rgb(0x55555F)));
             }
         }
-        const i32 sel = i32(ui.value(pc.node));
+        const i32 cur = i32(ui.value(pc.node));
+        const bool extended = s->mode == SelectionMode::Extended;
         for (u32 i = 0; i < vis + 1 && s->first + i < nr; ++i) {
             const u32 row = s->first + i;
             const f32 y = c.y + hh + f32(i) * rh;
             if (y >= c.bottom()) break;
-            if (i32(row) == sel) dl.rect({c.x, y, c.w, rh}, acc.withAlpha(acc.a * 0.55f));
+            const bool rowSel = TableView::isSelected(ui, pc.node, *s, row);
+            if (rowSel) dl.rect({c.x, y, c.w, rh}, acc.withAlpha(acc.a * 0.55f));
             else if (row & 1u) dl.rect({c.x, y, c.w, rh}, pc.tint(Color::rgb(0xFFFFFF, 0.035f)));
+            if (extended && i32(row) == cur && (pc.states & kStateFocus))
+                dl.roundedRect({c.x + 1.f, y, c.w - 2.f, rh}, {}, {}, acc.withAlpha(acc.a * 0.9f), 1.f);
             f32 x = c.x;
             for (u32 k = 0; k < nc; ++k) {
                 if (s->colW[k] <= 0.f) continue;
                 const std::string_view d = s->model->data(s->model->user, row, k, s->scratch);
                 dl.pushClip({x, y, s->colW[k] - 2.f, rh});
                 if (const CellDelegate* dg = s->delegate[k]; dg && dg->paint)
-                    dg->paint(dg->user, pc, dl, {x + 6.f, y, s->colW[k] - 12.f, rh}, row, k, d, i32(row) == sel);
+                    dg->paint(dg->user, pc, dl, {x + 6.f, y, s->colW[k] - 12.f, rh}, row, k, d, rowSel);
                 else
-                    ui.paintString(dl, d, {x + 6.f, y, s->colW[k] - 12.f, rh}, k ? dim : text, fs, TextAlignment::Start, pc.node.index);
+                    ui.paintString(dl, d, {x + 6.f, y, s->colW[k] - 12.f, rh}, k ? dim : text, fs, TextAlignment::Start, pc.node.index,
+                                   cellFont(ui, pc, *s, row, k));
                 dl.popClip();
                 x += s->colW[k];
             }
@@ -332,7 +413,19 @@ struct TableView {
                 return true;
             }
             const i64 row = i64(s->first) + i64((e.pos.y - c.y - hh) / rh);
-            if (row < i64(rows(*s))) select(ui, ec.node, *s, row);
+            if (row < i64(rows(*s))) {
+                if (s->mode == SelectionMode::Extended) extendedPick(ui, ec.node, *s, row, e.mods, false);
+                else select(ui, ec.node, *s, row);
+            }
+            return true;
+        }
+        case EventType::DoubleClick: {
+            if (!s->activation || e.button != MouseButton::Left || e.pos.y < c.y + hh) return false;
+            Rect tr, th;
+            if (barGeom(ui, ec.node, *s, tr, th) && tr.contains(e.pos)) return false;
+            const i64 row = i64(s->first) + i64((e.pos.y - c.y - hh) / rh);
+            if (row >= i64(rows(*s))) return false;
+            ui.emit(ec.node, SignalKind::Activated, {.value = f32(row), .event = &e, .index = columnAt(*s, c, e.pos.x)});
             return true;
         }
         case EventType::PointerMove:
@@ -359,15 +452,34 @@ struct TableView {
             return true;
         case EventType::KeyDown: {
             const i64 cur = i64(ui.value(ec.node)), vis = visible(ui, ec.node, *s);
+            const bool ext = s->mode == SelectionMode::Extended;
+            auto go = [&](i64 row) {
+                if (ext) extendedPick(ui, ec.node, *s, row, e.mods, true);
+                else select(ui, ec.node, *s, row);
+                return true;
+            };
             switch (e.key) {
-            case Key::Down: select(ui, ec.node, *s, cur + 1); return true;
-            case Key::Up: select(ui, ec.node, *s, cur < 0 ? 0 : cur - 1); return true;
-            case Key::PageDown: select(ui, ec.node, *s, cur + vis); return true;
-            case Key::PageUp: select(ui, ec.node, *s, cur - vis); return true;
-            case Key::Home: select(ui, ec.node, *s, 0); return true;
-            case Key::End: select(ui, ec.node, *s, i64(rows(*s)) - 1); return true;
+            case Key::Down: return go(cur + 1);
+            case Key::Up: return go(cur < 0 ? 0 : cur - 1);
+            case Key::PageDown: return go(cur + vis);
+            case Key::PageUp: return go(cur - vis);
+            case Key::Home: return go(0);
+            case Key::End: return go(i64(rows(*s)) - 1);
+            case Key::A:
+                if (!ext || !(e.mods & kModCtrl)) return false;
+                if (rows(*s)) { markRange(*s, 0, i64(rows(*s)) - 1); selectionChanged(ui, ec.node, *s); }
+                return true;
+            case Key::Space:
+                if (!ext || !(e.mods & kModCtrl) || cur < 0) return false;
+                mark(*s, u32(cur), !isSelected(ui, ec.node, *s, u32(cur)));
+                s->anchor = cur;
+                selectionChanged(ui, ec.node, *s);
+                return true;
             case Key::Enter:
-                if (cur >= 0) ui.emit(ec.node, SignalKind::Submitted, {.value = f32(cur)});
+                if (cur >= 0) {
+                    ui.emit(ec.node, SignalKind::Submitted, {.value = f32(cur)});
+                    if (s->activation && ui.alive(ec.node)) ui.emit(ec.node, SignalKind::Activated, {.value = f32(cur), .index = -1});
+                }
                 return true;
             default: return false;
             }
@@ -542,6 +654,98 @@ void tableModelChanged(UiContext& ui, NodeHandle table) {
     if (!s) return;
     TableView::setFirst(ui, table, *s, s->first);
     if (ui.value(table) >= f32(TableView::rows(*s))) ui.setValue(table, -1.f, true);
+    const u32 nr = TableView::rows(*s);
+    if (s->sel.size() > nr) { // drop selection flags past the new end
+        s->sel.resize(nr);
+        s->selCount = u32(std::count(s->sel.begin(), s->sel.end(), true));
+    }
+    if (s->anchor >= i64(nr)) s->anchor = -1;
+    ui.invalidate(table);
+}
+void setTableSelectionMode(UiContext& ui, NodeHandle table, SelectionMode mode) {
+    TableState* s = stateOf(ui, table);
+    if (!s || s->mode == mode) return;
+    s->mode = mode;
+    TableView::clearMarks(*s);
+    s->anchor = -1;
+    if (mode == SelectionMode::Extended && ui.value(table) >= 0.f) TableView::mark(*s, u32(ui.value(table)), true);
+    ui.invalidate(table);
+}
+SelectionMode tableSelectionMode(const UiContext& ui, NodeHandle table) {
+    const TableState* s = stateOf(ui, table);
+    return s ? s->mode : SelectionMode::Single;
+}
+bool tableRowSelected(const UiContext& ui, NodeHandle table, u32 row) {
+    const TableState* s = stateOf(ui, table);
+    return s && TableView::isSelected(ui, table, *s, row);
+}
+std::vector<u32> tableSelectedRows(const UiContext& ui, NodeHandle table) {
+    std::vector<u32> out;
+    const TableState* s = stateOf(ui, table);
+    if (!s) return out;
+    if (s->mode == SelectionMode::Single) {
+        if (ui.value(table) >= 0.f) out.push_back(u32(ui.value(table)));
+        return out;
+    }
+    out.reserve(s->selCount);
+    for (u32 r = 0; r < s->sel.size(); ++r)
+        if (s->sel[r]) out.push_back(r);
+    return out;
+}
+u32 tableSelectedCount(const UiContext& ui, NodeHandle table) {
+    const TableState* s = stateOf(ui, table);
+    if (!s) return 0;
+    return s->mode == SelectionMode::Single ? (ui.value(table) >= 0.f ? 1u : 0u) : s->selCount;
+}
+void setTableRowSelected(UiContext& ui, NodeHandle table, u32 row, bool selected) {
+    TableState* s = stateOf(ui, table);
+    if (!s || row >= TableView::rows(*s)) return;
+    if (s->mode == SelectionMode::Single) {
+        if (selected) ui.setValue(table, f32(row), true);
+        else if (i32(ui.value(table)) == i32(row)) ui.setValue(table, -1.f, true);
+        ui.invalidate(table);
+        return;
+    }
+    if (TableView::isSelected(ui, table, *s, row) == selected) return;
+    TableView::mark(*s, row, selected);
+    TableView::selectionChanged(ui, table, *s);
+}
+void tableSelectAll(UiContext& ui, NodeHandle table) {
+    TableState* s = stateOf(ui, table);
+    if (!s || s->mode != SelectionMode::Extended || !TableView::rows(*s)) return;
+    TableView::markRange(*s, 0, i64(TableView::rows(*s)) - 1);
+    TableView::selectionChanged(ui, table, *s);
+}
+void tableClearSelection(UiContext& ui, NodeHandle table) {
+    TableState* s = stateOf(ui, table);
+    if (!s) return;
+    if (s->mode == SelectionMode::Single) { ui.setValue(table, -1.f, true); ui.invalidate(table); return; }
+    if (!s->selCount) return;
+    TableView::clearMarks(*s);
+    s->anchor = -1;
+    TableView::selectionChanged(ui, table, *s);
+}
+void scrollToRow(UiContext& ui, NodeHandle table, u32 row, ScrollHint hint) {
+    TableState* s = stateOf(ui, table);
+    if (!s) return;
+    const u32 nr = TableView::rows(*s);
+    if (!nr) return;
+    const i64 r = std::min<i64>(row, i64(nr) - 1);
+    const i64 vis = TableView::visible(ui, table, *s);
+    switch (hint) {
+    case ScrollHint::EnsureVisible: TableView::ensureVisible(ui, table, *s, r); break;
+    case ScrollHint::Top: TableView::setFirst(ui, table, *s, r); break;
+    case ScrollHint::Center: TableView::setFirst(ui, table, *s, r - vis / 2); break;
+    }
+}
+void setTableActivation(UiContext& ui, NodeHandle table, bool on) {
+    if (TableState* s = stateOf(ui, table)) s->activation = on;
+}
+void setTableColumnFont(UiContext& ui, NodeHandle table, u32 col, std::string_view family, u16 weight) {
+    TableState* s = stateOf(ui, table);
+    if (!s || col >= kMaxCols) return;
+    s->colFamily[col].assign(family);
+    s->colWeight[col] = weight;
     ui.invalidate(table);
 }
 u32 tableFirstVisible(const UiContext& ui, NodeHandle table) { const TableState* s = stateOf(ui, table); return s ? s->first : 0u; }
