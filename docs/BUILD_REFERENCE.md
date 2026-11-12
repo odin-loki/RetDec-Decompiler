@@ -360,7 +360,7 @@ RETDEC_UPDATE_SNAPSHOTS=1 ./build/linux/tests/<suite>/retdec-*-tests
 |---------|----------------|-------------|
 | `retdec::ar-extractor` / similar not found | Partial `RETDEC_ENABLE_*` without dependencies | Use `full-*`, `RETDEC_ENABLE_ALL=ON`, or a recent `options.cmake` that ties `retdec-decompiler` deps. |
 | `llvm-tblgen` missing (MinGW cross) | No native Linux build | Run `wsl_configure_nosudo.sh` and build `build/linux` first; or set `RETDEC_LLVM_TABLEGEN`. |
-| `<expected>` / `std::format` not found, or C++23 errors in `src/gui` / `third_party/` | Compiler too old for C++23 | GCC 13+, Clang 17+, Apple Clang 15+, MSVC 2022 17.6+; `bash scripts/doctor.sh` / `scripts\doctor.ps1`. |
+| `<expected>` / `std::format` not found, or C++23 errors in `src/gui` / `third_party/` | Compiler too old for C++23, or Clang 17/18 on libstdc++ (its `<expected>` needs `__cpp_concepts >= 202002L`, which Clang advertises from 19) | GCC 13+, Clang 19+ (17+ with libc++), Apple Clang 15+, MSVC 2022 17.6+; `bash scripts/doctor.sh` / `scripts\doctor.ps1` compiles the probe with your `$CXX`. |
 | OpenSSL external project fails on Windows | `cl.exe` or Ninja missing | Developer PowerShell for VS 2022; `winget install Ninja-build.Ninja`. Inspect `build/windows/external/openssl-ep/build/`. |
 | CUDA not detected | `CUDA_PATH` / toolkit missing | Install CUDA; or disable `RETDEC_ENABLE_CUDA_ACCEL`. |
 | GitHub download fails during LLVM fetch | Network / HTTP2 | Retry build; clear `build/.../external/src/*-stamp/*-download` if needed. |

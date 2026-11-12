@@ -79,6 +79,9 @@ has gate tests in `Source/FUSE/UI/tests` (`fuse_ui_extra_*`, `test_ui_extras.cpp
   `splithandle` its grip in `background-end` (themed per `:hover` / `:pressed` / `:focus`). The default theme lists
   every former built-in colour, so the dark look is unchanged (scroll tracks of plain scroll containers now use the
   table's `rgba(0,0,0,0.15)`); menus were already CSS-driven.
+- **Clang 20 + libstdc++ 13**: `doc::JsonValue`'s special members are declared in `json.hpp` and defaulted in
+  `json.cpp`; inline implicit ones instantiated `std::pair<std::string, JsonValue>` while `JsonValue` was incomplete,
+  which Clang 20 rejects with libstdc++ 13.
 - **Build**: the UI1 key / IME tests that need the engine's `Source/FUSE/Core` are skipped when it is absent, and
   `fuse_text_fallback` skips (exit 77) without the Noto / Twemoji faces, so the vendored tree builds and tests on its
   own.
