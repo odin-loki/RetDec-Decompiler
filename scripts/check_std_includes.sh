@@ -98,9 +98,8 @@ def strip_comments_and_literals(text):
     return "".join(out)
 
 # Directories that are not this project's to format. third_party/ is vendored
-# upstream code (FuseUI, Forge) kept as upstream has it, like deps/;
-# .qt-gui-reference/ is the read-only Qt specification for the GUI port.
-SKIP_DIRS = {".git", "build", "deps", "third_party", ".qt-gui-reference",
+# upstream code (FuseUI, Forge) kept as upstream has it, like deps/.
+SKIP_DIRS = {".git", "build", "deps", "third_party",
              "node_modules", "__pycache__"}
 
 found = {}

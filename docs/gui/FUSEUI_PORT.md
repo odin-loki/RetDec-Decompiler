@@ -5,10 +5,9 @@ retdec-gui no longer uses Qt. It is built on **FuseUI** (the GUI toolkit from
 and **Forge** (vendored in `third_party/forge`) for everything that is not
 drawing: processes, files, JSON, settings, hashing, threads.
 
-The Qt implementation is kept, read-only, in `.qt-gui-reference/` while the
-port is in progress. It is the specification: every panel, menu action,
-shortcut and behaviour it has, the new GUI has. It is deleted when the port is
-complete. Nothing builds from it.
+The port is complete: every panel, menu action, shortcut and behaviour of the
+former Qt GUI is here, and its tests are ported to `tests/gui`. The Qt copy that
+served as the specification has been deleted.
 
 ## Layout
 
@@ -85,8 +84,8 @@ ninja -C build/gui && ./build/gui/gui-tests/retdec-gui-tests
   `fuse::ui::UiContext` (bundled font: `fuse::text::Font::bundled()`), using
   the same input calls a user's events produce (`pointerDown`, `keyDown`,
   `textInput`) or the widget setters, then `ui.update(dt)` and assertions on
-  node text/values. Port the Qt tests in `.qt-gui-reference/tests/` for the
-  same behaviour; they are the acceptance criteria.
+  node text/values. The tests ported from the Qt GUI (named after their Qt
+  originals in each file's header) are the acceptance criteria; keep them.
 
 ## Headless and CI
 

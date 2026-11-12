@@ -31,7 +31,7 @@ bump. Never edit `deps/llvm/`.
   and use format-specific emitters. `--buildable` sidecars are **on by
   default**.
 - The GUI (`retdec-gui`, now on FuseUI + Forge from `third_party/`; the
-  port from Qt is in progress) runs the same `retdec-decompiler` child as the
+  port from Qt is complete) runs the same `retdec-decompiler` child as the
   CLI. macOS ships `RetDec.app` in the arm64 tarball (ad-hoc signed, not
   notarised).
 - Optional neural refine (Forge backend) is `RETDEC_ENABLE_NEURAL` at build and

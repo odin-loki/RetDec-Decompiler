@@ -8,7 +8,7 @@ that pipeline.
 
 This is the simplest working approach today: `retdec-decompiler.cpp` includes
 LLVM `PluginLoader` but does **not** expose `--load-pass-plugin`. The GUI is
-being rewritten on FuseUI ([docs/gui/FUSEUI_PORT.md](../../docs/gui/FUSEUI_PORT.md));
+built on FuseUI ([docs/gui/FUSEUI_PORT.md](../../docs/gui/FUSEUI_PORT.md));
 its plugin interface (`IDecompilerPlugin` / `IAnalysisPlugin`) is ported with
 dynamic libraries loaded through Forge (`forge/os/dynlib.hpp`), not a GUI
 toolkit's plugin loader.

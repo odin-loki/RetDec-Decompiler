@@ -175,7 +175,7 @@ Harness: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ### GUI (FuseUI)
 
-`retdec-gui` no longer uses Qt. It is being rewritten on **FuseUI**, a GUI
+`retdec-gui` no longer uses Qt. It is built on **FuseUI**, a GUI
 toolkit vendored in [third_party/fuseui](third_party/README.md) whose native
 window backends (X11, Win32, macOS Cocoa) blit a CPU-rasterised frame, and
 **Forge** ([third_party/forge](third_party/README.md)) for processes, files,
@@ -188,9 +188,8 @@ reuse** on re-open. The former “~24% faster Fast decompile” figure is
 **withdrawn**. Post-decompile loads `.c`, `.config.json`, `.dsm`, and `.ll`.
 macOS Release packages ship **`RetDec.app`** (ad-hoc signed, not notarised).
 
-The port is in progress. Its specification is the panel set of the former Qt
-GUI (kept read-only in `.qt-gui-reference/` until the port is complete), which
-the FuseUI GUI reproduces:
+The port from the former Qt GUI is complete: the FuseUI GUI has the same panel
+set, menus, shortcuts and behaviour:
 
 | Place | Panels |
 |-------|--------|

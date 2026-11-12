@@ -179,8 +179,8 @@ This is **optional**: core decompilation remains usable without any model on dis
 The GUI is built on FuseUI and Forge, first-party libraries vendored in the
 source tree (same owner and licence terms as RetDec), with native X11, Win32
 and macOS Cocoa windows drawn by a CPU rasteriser — nothing to install, and no
-LGPL toolkit to relink. The port from the earlier Qt GUI is in progress and
-keeps its feature set. It targets a professional analyst workflow:
+LGPL toolkit to relink. It was ported from the earlier Qt GUI and keeps its
+feature set. It targets a professional analyst workflow:
 
 - **Tri-pane code view** — Synchronized assembly, SSA IR, and decompiled text.
 - **CFG visualizer** — Basic blocks, Fit/zoom, Export SVG/PNG.

@@ -328,9 +328,8 @@ Thread-safe `Profiler` with `std::mutex`. `RssTracker`: Linux
 `-DRETDEC_GUI=OFF` for CLI-only) and needs nothing outside the tree. FuseUI's
 native window backends — X11 (libX11 loaded at run time, software presenter),
 Win32 and macOS Cocoa — blit a CPU-rasterised frame; there is no Vulkan, no
-platform plugin and no deploy step. The port from the Qt GUI is in progress;
-the Qt implementation is kept read-only in `.qt-gui-reference/` as the
-specification, and [gui/FUSEUI_PORT.md](gui/FUSEUI_PORT.md) is the guide.
+platform plugin and no deploy step. The port from the former Qt GUI is
+complete; [gui/FUSEUI_PORT.md](gui/FUSEUI_PORT.md) is the guide.
 
 Decompilation is **not** in-process: the GUI launches `retdec-decompiler` as a
 child process through Forge (`forge/os/process.hpp`), exactly as the CLI would

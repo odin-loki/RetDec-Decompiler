@@ -3,10 +3,10 @@
 **Status as of v2.0.22:** GUI v3 shipped (Qt 6). Phases A–E below are
 complete. Optional leftovers (i18n) are not release blockers.
 
-**Now:** the GUI has left Qt. It is being ported to FuseUI + Forge
-(`third_party/`), with the Qt implementation kept read-only in
-`.qt-gui-reference/` as the specification — every phase below is an
-acceptance criterion for the port. See [../gui/FUSEUI_PORT.md](../gui/FUSEUI_PORT.md).
+**Now:** the GUI has left Qt. It runs on FuseUI + Forge (`third_party/`); the
+port is complete and every phase below holds for it (the Qt implementation that
+served as the specification has been deleted). See
+[../gui/FUSEUI_PORT.md](../gui/FUSEUI_PORT.md).
 Headless runs set only `RETDEC_GUI_HEADLESS=1` on every platform; MAC-01 checks
 the relocatable bundle and its `Contents/share/retdec/gui` resources.
 

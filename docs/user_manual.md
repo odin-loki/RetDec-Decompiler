@@ -1,6 +1,6 @@
 # RetDec User Manual
 
-This manual describes the **GUI** (`retdec-gui`, built on FuseUI — see [gui/FUSEUI_PORT.md](gui/FUSEUI_PORT.md); the port from Qt is in progress and reproduces the panels described here), its panels, settings, and common workflows for **RetDec Imortek 2.0.24**. For **building** from source, read [BUILD_REFERENCE.md](BUILD_REFERENCE.md) and the platform guides [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) / [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md). The top-level [README.md](../README.md) lists supported file formats and CLI examples.
+This manual describes the **GUI** (`retdec-gui`, built on FuseUI — see [gui/FUSEUI_PORT.md](gui/FUSEUI_PORT.md); ported from the former Qt GUI with the panels described here), its panels, settings, and common workflows for **RetDec Imortek 2.0.24**. For **building** from source, read [BUILD_REFERENCE.md](BUILD_REFERENCE.md) and the platform guides [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) / [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md). The top-level [README.md](../README.md) lists supported file formats and CLI examples.
 
 Decompilation in the GUI is the same `retdec-decompiler` subprocess as the CLI. Algorithm recovery, semantic export, and optional offline neural refinement are the product; recovered C is a supporting artefact.
 

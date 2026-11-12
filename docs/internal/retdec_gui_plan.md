@@ -4,9 +4,9 @@
 that was implemented, not an unimplemented mockup.
 
 **Later:** it was implemented in Qt, which the GUI no longer uses. The Qt names
-below (`QTabWidget`, `QTimer`, `QProcess`, ...) describe that implementation,
-kept read-only in `.qt-gui-reference/`; the FuseUI port
-([../gui/FUSEUI_PORT.md](../gui/FUSEUI_PORT.md)) keeps the same design.
+below (`QTabWidget`, `QTimer`, `QProcess`, ...) describe that former
+implementation; the FuseUI GUI ([../gui/FUSEUI_PORT.md](../gui/FUSEUI_PORT.md))
+keeps the same design.
 
 ## v3 — the "between" design
 
