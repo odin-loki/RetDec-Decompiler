@@ -72,6 +72,8 @@ libraries vendored in [third_party/](third_party/README.md):
 | Forge (`third_party/forge`) — OS layer, JSON, hashing, threads | AGPL-3.0-or-later or commercial. First-party, as above. |
 | stb (in FuseUI) | MIT or public domain |
 | Open Sans font (in FuseUI) | Apache-2.0 |
+| JetBrains Mono font (in FuseUI) | SIL Open Font License 1.1 |
+| DejaVu Sans font (in FuseUI) | Bitstream Vera / Arev font licences (permissive) |
 | Lua 5.2 (in FuseUI; vendored, not linked into retdec-gui) | MIT |
 | Monocypher 4.0.2 (in Forge) | BSD-2-Clause or CC0-1.0 |
 | Level Zero API header (in Forge) | MIT |

@@ -153,6 +153,7 @@ endif()
 # Extras (several font faces, glyph fallback, placeholders, double click, multi-selection views, spin box special
 # text, indeterminate progress): one binary, one ctest gate per area (fuse_ui_extra_<name>)
 fuse_ui_test(fuse_ui_extras test_ui_extras.cpp)
+target_compile_definitions(fuse_ui_extras PRIVATE FUSE_UI_TEST_FONT_DIR="${FUSE_UI_REPO_ROOT}/vendor/fonts")
 if(TARGET fuse_ui_doc)
     target_link_libraries(fuse_ui_extras PRIVATE fuse_ui_doc)
     target_compile_definitions(fuse_ui_extras PRIVATE FUSE_UI_EXTRAS_HAVE_DOC=1)

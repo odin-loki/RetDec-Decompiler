@@ -1124,7 +1124,9 @@ void MainWindow::wirePanels()
 	settingsDlg_->onApplied = [this] { applySettings(); };
 
 	// Function list.
-	functionList_->onFunctionActivated = [this](uint64_t addr, const std::string& name) { showFunction(addr, name); };
+	functionList_->onFunctionActivated = [this](uint64_t addr, const std::string& name) {
+		if (addr != shownFunction_) showFunction(addr, name);
+	};
 	functionList_->onSelectionChanged = [this] {
 		updateRedecompileEnabled();
 		if (auto e = functionList_->selectedEntry(); e && e->address != shownFunction_)
@@ -1486,6 +1488,12 @@ void MainWindow::restoreLayout()
 
 void MainWindow::saveLayout()
 {
+	snapshotLayout();
+	if (opts_.layoutStore) (void)opts_.layoutStore->save();
+}
+
+void MainWindow::snapshotLayout()
+{
 	fuse::app::Settings* st = opts_.layoutStore;
 	if (!st) return;
 	st->set("window.width", double(windowSize_.w));
@@ -1496,7 +1504,6 @@ void MainWindow::saveLayout()
 	st->set("decompilePrintAfterAll", printAfterAll_ ? 1.0 : 0.0);
 	st->set("fastDecompile", fastDecompile_ ? 1.0 : 0.0);
 	st->set("preferredDocumentTabIndex", double(currentDocumentTab()));
-	(void)st->save();
 }
 
 void MainWindow::resetLayout()

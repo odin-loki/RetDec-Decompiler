@@ -1091,6 +1091,18 @@ void MainWindow::finishQuit()
 	if (onQuitRequested) onQuitRequested(0);
 }
 
+void MainWindow::abandonUi()
+{
+	shutDown_ = true;
+	*alive_ = false;
+	run_.reset();
+	intelRun_.reset();
+	llvmPassesFile_.reset();
+	intelFileinfo_.reset();
+	if (settingsListener_) settings_.removeChangeListener(settingsListener_);
+	settingsListener_ = 0;
+}
+
 void MainWindow::shutdown()
 {
 	if (shutDown_) return;

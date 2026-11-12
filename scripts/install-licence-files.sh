@@ -29,6 +29,8 @@ write_third_party() {
 	for f in "${tp}/fuseui/LICENSE.md" "${tp}/forge/NOTICE" \
 		"${tp}/forge/third_party/monocypher/LICENCE.md" \
 		"${tp}/fuseui/vendor/fonts/opensans/LICENSE.txt" \
+		"${tp}/fuseui/vendor/fonts/jetbrainsmono/OFL.txt" \
+		"${tp}/fuseui/vendor/fonts/dejavu/LICENSE" \
 		"${tp}/fuseui/vendor/lua/LICENSE.txt" "${stb}"; do
 		[[ -f "${f}" ]] || { echo "Missing ${f}" >&2; exit 1; }
 	done
@@ -48,6 +50,8 @@ The code and data below are third-party and keep their own licences.
   stb (stb_truetype, stb_image, stb_image_write, stb_image_resize2)
                          third_party/fuseui/vendor/stb      MIT or public domain (Unlicense)
   Open Sans font         third_party/fuseui/vendor/fonts    Apache-2.0
+  JetBrains Mono font    third_party/fuseui/vendor/fonts    OFL-1.1
+  DejaVu Sans font       third_party/fuseui/vendor/fonts    Bitstream Vera / Arev (permissive)
   Lua 5.2                third_party/fuseui/vendor/lua      MIT (vendored; not linked
                                                               into retdec-gui)
   Monocypher 4.0.2       third_party/forge/third_party      BSD-2-Clause or CC0-1.0
@@ -78,6 +82,16 @@ TXT
 		echo "Open Sans (third_party/fuseui/vendor/fonts/opensans/LICENSE.txt)"
 		echo "=================================================================="
 		cat "${tp}/fuseui/vendor/fonts/opensans/LICENSE.txt"
+		echo
+		echo "=================================================================="
+		echo "JetBrains Mono (third_party/fuseui/vendor/fonts/jetbrainsmono/OFL.txt)"
+		echo "=================================================================="
+		cat "${tp}/fuseui/vendor/fonts/jetbrainsmono/OFL.txt"
+		echo
+		echo "=================================================================="
+		echo "DejaVu Sans (third_party/fuseui/vendor/fonts/dejavu/LICENSE)"
+		echo "=================================================================="
+		cat "${tp}/fuseui/vendor/fonts/dejavu/LICENSE"
 	} > "${out}"
 	echo "Installed: LICENSE-THIRD-PARTY"
 }
@@ -242,6 +256,9 @@ LICENSE-THIRD-PARTY):
     No other GUI toolkit is linked or shipped.
   stb (MIT or public domain) — third_party/fuseui/vendor/stb
   Open Sans font (Apache-2.0) — third_party/fuseui/vendor/fonts/opensans
+  JetBrains Mono font (OFL-1.1) — third_party/fuseui/vendor/fonts/jetbrainsmono
+  DejaVu Sans font (Bitstream Vera / Arev licences, permissive) —
+    third_party/fuseui/vendor/fonts/dejavu
   Lua 5.2 (MIT) — third_party/fuseui/vendor/lua (vendored; not linked
     into retdec-gui)
   Monocypher 4.0.2 (BSD-2-Clause or CC0-1.0) — third_party/forge/third_party

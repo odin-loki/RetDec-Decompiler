@@ -263,6 +263,10 @@ public:
 	/// panel, plugin menus — runs on every AppSettings change.
 	void applySettings();
 	ThemeKind theme() const { return theme_; }
+	/// Writes the layout keys into the store (no file write; the store saves
+	/// when dirty). Cheap enough to call every loop iteration.
+	void snapshotLayout();
+	/// snapshotLayout() and save the store.
 	void saveLayout();
 	void restoreLayout();
 	/// View → Reset Layout.
@@ -275,6 +279,10 @@ public:
 	void requestQuit();
 	/// Stop everything and save the layout (the app is exiting regardless).
 	void shutdown();
+	/// The UiContext is about to disappear under the window (the OS closed it):
+	/// kill child processes without touching the UI. The caller then releases
+	/// (leaks) the MainWindow instead of destroying it.
+	void abandonUi();
 
 	// ── Actions / menus ──────────────────────────────────────────────────────
 	/// Runs action @p id like a click (no-op and false when disabled / unknown).
@@ -589,7 +597,7 @@ private:
 	bool quitting_ = false;
 	bool shutDown_ = false;
 	int centralIndex_ = kCentralEmpty;
-	bool outputTabShown_[kOutCount] = {true, true, true, false};
+	bool outputTabShown_[kOutCount] = {true, true, true, true};
 	bool decompileStateShown_ = false;
 	bool progressShown_ = false;
 	bool bannerWanted_ = true;

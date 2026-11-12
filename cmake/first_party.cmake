@@ -70,6 +70,13 @@ if(RETDEC_GUI)
 	# CPU rasteriser + native blit everywhere; a decompiler UI has no need for
 	# a Vulkan loader, and it keeps the GUI running on machines without one.
 	set(FUSE_BUILD_UI_VK OFF CACHE BOOL "" FORCE)
+	# Bundled fonts (Open Sans, JetBrains Mono, DejaVu Sans) ship as files next to
+	# the GUI's other resources (installed below: FuseUI is EXCLUDE_FROM_ALL, so its
+	# own install rules do not run); the build tree uses FuseUI's vendor/fonts.
+	set(FUSE_UI_FONT_INSTALL_REL "../share/retdec/gui/fonts" CACHE STRING "" FORCE)
 	add_subdirectory("${RETDEC_THIRD_PARTY_DIR}/fuseui/Source/FUSE/UI"
 		"${CMAKE_BINARY_DIR}/third_party/fuseui" EXCLUDE_FROM_ALL)
+	install(DIRECTORY "${RETDEC_THIRD_PARTY_DIR}/fuseui/vendor/fonts/"
+		DESTINATION share/retdec/gui/fonts
+		FILES_MATCHING PATTERN "*.ttf" PATTERN "*.txt" PATTERN "LICENSE*" PATTERN "VERSION")
 endif()

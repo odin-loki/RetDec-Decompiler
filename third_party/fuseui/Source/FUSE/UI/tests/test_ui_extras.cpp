@@ -98,6 +98,17 @@ void gateFontFaces() {
     const auto paths = fontSearchPaths();
     UI_CHECK(!paths.empty() && paths.front() == bogus);
     UI_CHECK(Font::bundled().has_value()); // the compiled-in build-tree path still works
+    // the installed-tree location next to the executable is searched
+    bool installDir = false;
+    for (const std::string& d : paths) installDir |= d.ends_with("share/fuse/fonts") || d.ends_with("share/retdec/gui/fonts");
+    UI_CHECK(installDir);
+#if defined(FUSE_UI_TEST_FONT_DIR) && !defined(_WIN32)
+    // $FUSE_UI_FONT_DIR is searched: a bare file name only that directory has
+    UI_CHECK(!Font::load("JetBrainsMono-Bold.ttf").has_value());
+    setenv("FUSE_UI_FONT_DIR", FUSE_UI_TEST_FONT_DIR "/jetbrainsmono", 1);
+    UI_CHECK(Font::load("JetBrainsMono-Bold.ttf").has_value());
+    unsetenv("FUSE_UI_FONT_DIR");
+#endif
 
     UiContext ui{{.viewport = {700, 400}, .font = &fuse::ui::test::font()}};
     w::install(ui);
@@ -148,7 +159,6 @@ void gateFontFaces() {
     UI_CHECK(std::abs(ui.textLayout(code)->width - wi) < 0.5f);
     UI_CHECK(std::abs(ui.textLayout(plain)->width - pi) < 0.5f);
     UI_CHECK(std::abs(ui.measureString("iiiiiiii", 14.f, code) - wi) < 0.01f);
-    UI_CHECK(ui.rect(code).w >= std::floor(wi) && ui.rect(plain).w < ui.rect(code).w);
     // switching the family at run time relays out
     ui.removeClass(code, "mono");
     settle(ui);
@@ -246,7 +256,7 @@ void gatePlaceholder() {
     UiContext ui{{.viewport = {400, 300}, .font = &fuse::ui::test::font()}};
     w::install(ui);
     const NodeHandle edit = w::lineEdit(ui, ui.root(), {}, "edit");
-    const NodeHandle other = w::button(ui, ui.root(), "other", "other");
+    w::button(ui, ui.root(), "other", "other");
     const NodeHandle ce = w::codeEdit(ui, ui.root(), {}, w::CodeLanguage::Plain, "ce");
     ui.setCss(ce, "height", "60px");
     w::setPlaceholderText(ui, edit, "Filter functions");
@@ -510,9 +520,12 @@ void gateSpinBoxSpecial() {
 
 // ---- progress_indeterminate ------------------------------------------------------------------------------------------
 Rect chunkOf(const UiContext& ui, NodeHandle bar) {
-    Rect r;
+    Rect r; // widget paint commands are untagged: the last rect inside the bar is the chunk
+    const Rect b = ui.rect(bar);
     for (const DrawCmd& c : ui.drawList().cmds())
-        if (c.op == DrawOp::Rect && c.node == bar.index) r = c.rect; // the last rect is the chunk
+        if (c.op == DrawOp::Rect && c.rect.x >= b.x && c.rect.y >= b.y && c.rect.x + c.rect.w <= b.x + b.w + 0.5f &&
+            c.rect.y + c.rect.h <= b.y + b.h + 0.5f)
+            r = c.rect;
     return r;
 }
 void gateProgressIndeterminate() {

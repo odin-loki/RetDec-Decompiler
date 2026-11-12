@@ -40,6 +40,9 @@ LICENSE-THIRD-PARTY):
     No other GUI toolkit is linked or shipped.
   stb (MIT or public domain) — third_party/fuseui/vendor/stb
   Open Sans font (Apache-2.0) — third_party/fuseui/vendor/fonts/opensans
+  JetBrains Mono font (OFL-1.1) — third_party/fuseui/vendor/fonts/jetbrainsmono
+  DejaVu Sans font (Bitstream Vera / Arev licences, permissive) —
+    third_party/fuseui/vendor/fonts/dejavu
   Lua 5.2 (MIT) — third_party/fuseui/vendor/lua (vendored; not linked
     into retdec-gui)
   Monocypher 4.0.2 (BSD-2-Clause or CC0-1.0) — third_party/forge/third_party
