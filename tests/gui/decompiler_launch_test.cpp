@@ -767,9 +767,9 @@ TEST(DecompilerLaunch, AppendLogTailOnlyForHugeFiles)
 	EXPECT_EQ(out.text.find("first line"), std::string::npos);
 	EXPECT_NE(out.text.find("last line"), std::string::npos);
 
-	const auto small = m::readDecompilerLogForConsole(log, 10 * 1024 * 1024);
-	EXPECT_TRUE(small.notice.empty());
-	EXPECT_EQ(small.text, body);
+	const auto whole = m::readDecompilerLogForConsole(log, 10 * 1024 * 1024);
+	EXPECT_TRUE(whole.notice.empty());
+	EXPECT_EQ(whole.text, body);
 
 	EXPECT_EQ(m::scanDecompilerLogDiagnostics(log).size(), 0u);
 	EXPECT_TRUE(m::readDecompilerLogForConsole(tmp.file("missing.log")).text.empty());

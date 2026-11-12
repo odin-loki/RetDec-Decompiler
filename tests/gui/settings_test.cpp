@@ -609,9 +609,9 @@ TEST_F(SettingsTest, DescriptorValidation)
 	auto v = d;
 	v.abi_version = 2;
 	EXPECT_NE(m::validatePluginDescriptor(&v).error().find("API version mismatch"), std::string::npos);
-	auto small = d;
-	small.struct_size = 8;
-	EXPECT_FALSE(m::validatePluginDescriptor(&small).has_value());
+	auto shrunk = d;
+	shrunk.struct_size = 8;
+	EXPECT_FALSE(m::validatePluginDescriptor(&shrunk).has_value());
 	auto noId = d;
 	noId.id = "";
 	EXPECT_FALSE(m::validatePluginDescriptor(&noId).has_value());

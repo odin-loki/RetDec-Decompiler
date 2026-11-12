@@ -238,13 +238,13 @@ void FunctionListPanel::build(NodeHandle parent)
 
 void FunctionListPanel::buildFilterBar(NodeHandle bar)
 {
-	auto small = [&](NodeHandle n) {
+	auto compact = [&](NodeHandle n) {
 		ui_.setCss(n, "padding", "3px 6px");
 		ui_.setCss(n, "font-size", "13px");
 	};
 	nameEdit_ = w::lineEdit(ui_, bar);
 	ui_.setCss(nameEdit_, "width", "140px");
-	small(nameEdit_);
+	compact(nameEdit_);
 	ui_.setA11y(nameEdit_, fuse::ui::A11yRole::TextField, "Search");
 	w::setPlaceholderText(ui_, nameEdit_, std::string("Search") + std::string(kEllipsis));
 	tooltip(nameEdit_, "Filter by name (wildcards * ? [])");
@@ -253,14 +253,14 @@ void FunctionListPanel::buildFilterBar(NodeHandle bar)
 	ui_.addClass(addrLabel, "dim");
 	addrLowEdit_ = w::lineEdit(ui_, bar);
 	ui_.setCss(addrLowEdit_, "width", "80px");
-	small(addrLowEdit_);
+	compact(addrLowEdit_);
 	w::setPlaceholderText(ui_, addrLowEdit_, "0x0");
 	tooltip(addrLowEdit_, "Lowest address (hex)");
 	const NodeHandle dash = w::label(ui_, bar, "\xE2\x80\x93");
 	ui_.addClass(dash, "dim");
 	addrHighEdit_ = w::lineEdit(ui_, bar);
 	ui_.setCss(addrHighEdit_, "width", "80px");
-	small(addrHighEdit_);
+	compact(addrHighEdit_);
 	w::setPlaceholderText(ui_, addrHighEdit_, std::string("0xFFFF") + std::string(kEllipsis));
 	tooltip(addrHighEdit_, "Highest address (hex)");
 
@@ -268,7 +268,7 @@ void FunctionListPanel::buildFilterBar(NodeHandle bar)
 	ui_.addClass(confLabel, "dim");
 	confSpin_ = w::spinBox(ui_, bar, 0.f, 1.f, 0.f, 0.05f);
 	ui_.setCss(confSpin_, "width", "64px");
-	small(confSpin_);
+	compact(confSpin_);
 
 	static constexpr std::string_view kPatternNames[5] = {"STL", "Crypto", "Algo", "Pat", "Lib"};
 	for (std::size_t i = 0; i < 5; ++i)
@@ -285,7 +285,7 @@ void FunctionListPanel::buildFilterBar(NodeHandle bar)
 	jsonBtn_ = w::button(ui_, bar, "JSON");
 	copyBtn_ = w::button(ui_, bar, "Copy");
 	for (NodeHandle b: {csvBtn_, jsonBtn_, copyBtn_})
-		small(b);
+		compact(b);
 	tooltip(csvBtn_, "Export the visible functions as CSV");
 	tooltip(jsonBtn_, "Export the visible functions as JSON");
 	tooltip(copyBtn_, "Copy the visible functions as CSV");

@@ -120,9 +120,9 @@ TEST(ConsoleFeed, TakeCappedPrefersNewlinesAndUtf8Boundaries)
 	head = takeCapped(u, 100);
 	EXPECT_EQ(head.size() % 3, 0u);
 	EXPECT_EQ(head.size() + u.size(), 150u);
-	std::string small = "abc";
-	EXPECT_EQ(takeCapped(small, 100), "abc");
-	EXPECT_TRUE(small.empty());
+	std::string shortText = "abc";
+	EXPECT_EQ(takeCapped(shortText, 100), "abc");
+	EXPECT_TRUE(shortText.empty());
 }
 
 TEST(ConsoleFeed, AttachPushDrainDetach)
