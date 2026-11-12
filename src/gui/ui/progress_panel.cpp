@@ -5,6 +5,7 @@
  */
 
 #include "retdec/gui/ui/progress_panel.h"
+#include "retdec/gui/ui/theme.h"
 
 #include "retdec/gui/model/funclist_export.h"
 
@@ -32,16 +33,19 @@ constexpr std::string_view kWaterfallClass = "rd-waterfall";
 constexpr float kWaterfallRowH = 14.f;
 constexpr float kWaterfallLabelW = 120.f;
 
-const char* stateColor(StageState s)
+/// Tags @p n with `<prefix><state>` (and drops the other states' classes);
+/// the shared sheet and the themes colour them.
+void setStateClass(UiContext& ui, NodeHandle n, std::string_view prefix, StageState s)
 {
-	switch (s)
+	static constexpr std::string_view kStates[] = {"pending", "running", "done", "error"};
+	for (std::size_t i = 0; i < std::size(kStates); ++i)
 	{
-	case StageState::Pending: return "#6c7086";
-	case StageState::Running: return "#89b4fa";
-	case StageState::Done: return "#a6e3a1";
-	case StageState::Error: return "#f38ba8";
+		const std::string cls = std::string(prefix) + std::string(kStates[i]);
+		if (i == static_cast<std::size_t>(s))
+			ui.addClass(n, cls);
+		else
+			ui.removeClass(n, cls);
 	}
-	return "#cdd6f4";
 }
 
 void setEditText(UiContext& ui, NodeHandle edit, std::string_view text)
@@ -96,7 +100,7 @@ void ProgressPanel::paintWaterfall(const fuse::ui::PaintContext& pc, fuse::ui::D
 			dl,
 			"No stage has finished yet",
 			c,
-			pc.tint(Color::rgb(0x6c7086)),
+			pc.tint(Color::rgb(themeColors(ui).overlay1)),
 			12.f,
 			fuse::ui::TextAlignment::Center,
 			pc.node.index);
@@ -113,18 +117,18 @@ void ProgressPanel::paintWaterfall(const fuse::ui::PaintContext& pc, fuse::ui::D
 			dl,
 			b.label,
 			{c.x + 2.f, y, kWaterfallLabelW - 4.f, kWaterfallRowH},
-			pc.tint(Color::rgb(0x9a9cab)),
+			pc.tint(Color::rgb(themeColors(ui).subtext0)),
 			10.f,
 			fuse::ui::TextAlignment::Start,
 			pc.node.index);
 		const float x = c.x + kWaterfallLabelW + static_cast<float>(b.startMs) * scale;
 		const float bw = std::max(2.f, static_cast<float>(b.durationMs) * scale);
-		dl.rect({x, y + 1.f, bw, kWaterfallRowH - 2.f}, pc.tint(Color::rgb(b.color)), 2.f);
+		dl.rect({x, y + 1.f, bw, kWaterfallRowH - 2.f}, pc.tint(Color::rgb(themedColor(ui, b.color))), 2.f);
 		ui.paintString(
 			dl,
 			model::formatStageMs(b.durationMs),
 			{x + bw + 3.f, y, 80.f, kWaterfallRowH},
-			pc.tint(Color::rgb(0xcdd6f4)),
+			pc.tint(Color::rgb(themeColors(ui).text)),
 			10.f,
 			fuse::ui::TextAlignment::Start,
 			pc.node.index);
@@ -183,13 +187,11 @@ void ProgressPanel::build(NodeHandle parent)
 	ui_.setCss(root_, "flex-grow", "1");
 	ui_.setCss(root_, "padding", "0px");
 	ui_.setCss(root_, "gap", "0px");
+	// Fits a short Output dock: the stage list / timeline splitter gives way.
+	ui_.setCss(root_, "min-height", "0px");
+	ui_.setCss(root_, "overflow", "clip");
 
-	auto frame = [&](NodeHandle n) {
-		ui_.setCss(n, "background", "#2a2b32");
-		ui_.setCss(n, "border-width", "1px");
-		ui_.setCss(n, "border-color", "#474955");
-		ui_.setCss(n, "border-radius", "4px");
-	};
+	auto frame = [&](NodeHandle n) { ui_.addClass(n, "retdec-frame"); };
 
 	// ── summary header ──────────────────────────────────────────────────────
 	const NodeHandle summary = w::panel(ui_, root_);
@@ -209,7 +211,7 @@ void ProgressPanel::build(NodeHandle parent)
 	ui_.setCss(pctLabel_, "text-align", "end");
 	auto stat = [&](std::string_view icon, std::string_view text, std::string_view tip) {
 		const NodeHandle i = w::label(ui_, summary, icon);
-		ui_.setCss(i, "color", "#9a9cab");
+		ui_.addClass(i, "dim");
 		const NodeHandle l = w::label(ui_, summary, text);
 		ui_.setCss(l, "flex-shrink", "0");
 		tooltip(l, tip);
@@ -224,6 +226,7 @@ void ProgressPanel::build(NodeHandle parent)
 	// ── stages + timeline (stacked splitter) ────────────────────────────────
 	const NodeHandle split = w::splitter(ui_, root_, true);
 	ui_.setCss(split, "flex-grow", "1");
+	ui_.setCss(split, "min-height", "0px");
 	const NodeHandle stagesPane = w::splitterPane(ui_, split);
 	ui_.setCss(stagesPane, "flex-grow", "3");
 	stagesBox_ = w::scrollArea(ui_, stagesPane);
@@ -231,17 +234,17 @@ void ProgressPanel::build(NodeHandle parent)
 	ui_.setCss(stagesBox_, "padding", "4px");
 	ui_.setCss(stagesBox_, "gap", "4px");
 
-	const NodeHandle wfPane = w::splitterPane(ui_, split, 150.f);
+	const NodeHandle wfPane = w::splitterPane(ui_, split, 90.f);
 	ui_.setCss(wfPane, "padding", "4px 4px 2px 4px");
 	ui_.setCss(wfPane, "gap", "2px");
 	const NodeHandle wfTitle = w::label(ui_, wfPane, "Stage Timeline");
-	ui_.setCss(wfTitle, "color", "#9a9cab");
+	ui_.addClass(wfTitle, "dim");
 	ui_.setCss(wfTitle, "font-size", "12px");
 	waterfall_ = ui_.create(ui_.registry().find(kWaterfallClass), wfPane);
 	ui_.setUserData(waterfall_, static_cast<fuse::ui::u64>(reinterpret_cast<std::uintptr_t>(this)));
 	ui_.setA11y(waterfall_, fuse::ui::A11yRole::Image, "Stage timeline");
 	ui_.setCss(waterfall_, "flex-grow", "1");
-	ui_.setCss(waterfall_, "background", "#1e1e2e");
+	ui_.addClass(waterfall_, "retdec-canvas");
 	ui_.setCss(waterfall_, "border-radius", "4px");
 	ui_.setCss(waterfall_, "overflow", "clip");
 
@@ -254,17 +257,17 @@ void ProgressPanel::build(NodeHandle parent)
 	ui_.setCss(tp, "padding", "4px 8px");
 	ui_.setCss(tp, "flex-shrink", "0");
 	const NodeHandle tpTitle = w::label(ui_, tp, "Throughput:");
-	ui_.setCss(tpTitle, "color", "#9a9cab");
+	ui_.addClass(tpTitle, "dim");
 	const NodeHandle fnL = w::label(ui_, tp, "Functions/s:");
 	ui_.addClass(fnL, "dim");
 	fnRateLabel_ = w::label(ui_, tp, "\xE2\x80\x94");
-	ui_.setCss(fnRateLabel_, "color", "#89b4fa");
+	ui_.addClass(fnRateLabel_, "retdec-accent");
 	const NodeHandle sp = w::panel(ui_, tp);
 	ui_.setCss(sp, "flex-grow", "1");
 	const NodeHandle inL = w::label(ui_, tp, "Instructions/s:");
 	ui_.addClass(inL, "dim");
 	instrRateLabel_ = w::label(ui_, tp, "\xE2\x80\x94");
-	ui_.setCss(instrRateLabel_, "color", "#cba6f7");
+	ui_.addClass(instrRateLabel_, "retdec-mauve");
 
 	exportBtn_ = w::button(ui_, root_, "Export JSON");
 	ui_.setCss(exportBtn_, "padding", "4px 10px");
@@ -291,7 +294,7 @@ void ProgressPanel::addRowNodes(const std::string& name)
 	ui_.setCss(n.icon, "width", "16px");
 	ui_.setCss(n.icon, "text-align", "center");
 	ui_.setCss(n.icon, "flex-shrink", "0");
-	ui_.setCss(n.icon, "color", stateColor(StageState::Pending));
+	setStateClass(ui_, n.icon, "retdec-state-", StageState::Pending);
 	ui_.setA11y(n.icon, fuse::ui::A11yRole::Image, model::stageStateName(StageState::Pending));
 	n.name = w::label(ui_, n.row, name);
 	ui_.setCss(n.name, "width", "172px");
@@ -303,7 +306,7 @@ void ProgressPanel::addRowNodes(const std::string& name)
 	n.time = w::label(ui_, n.row, "");
 	ui_.setCss(n.time, "width", "64px");
 	ui_.setCss(n.time, "text-align", "end");
-	ui_.setCss(n.time, "color", "#9a9cab");
+	ui_.addClass(n.time, "dim");
 	ui_.setCss(n.time, "font-size", "12px");
 	rows_.push_back(std::move(r));
 }
@@ -330,9 +333,9 @@ void ProgressPanel::syncRow(std::size_t i)
 	const StageRowNodes& n = rows_[i].nodes;
 	ui_.setText(n.icon, model::stageStateIcon(s.state));
 	ui_.setA11y(n.icon, fuse::ui::A11yRole::Image, model::stageStateName(s.state));
-	ui_.setCss(n.icon, "color", stateColor(s.state));
-	ui_.setCss(n.name, "color", s.state == StageState::Pending ? "#9a9cab" : s.state == StageState::Error ? "#f38ba8" : "#e6e6eb");
-	ui_.setCss(n.bar, "background-end", s.state == StageState::Error ? "#f38ba8" : s.state == StageState::Done ? "#a6e3a1" : "#89b4fa");
+	setStateClass(ui_, n.icon, "retdec-state-", s.state);
+	setStateClass(ui_, n.name, "retdec-stage-name-", s.state);
+	setStateClass(ui_, n.bar, "retdec-state-", s.state);
 	if (s.percent >= 0) ui_.setValue(n.bar, static_cast<float>(s.percent) / 100.f);
 	// Running without a percentage: a busy bar (Qt: range 0..0).
 	w::setProgressIndeterminate(ui_, n.bar, s.state == StageState::Running && s.percent < 0);
@@ -378,9 +381,18 @@ void ProgressPanel::syncElapsed()
 	ui_.setText(elapsedTipNode_, elapsedTip_.empty() ? std::string("Elapsed wall time") : elapsedTip_);
 	switch (budget_)
 	{
-	case model::BudgetLevel::Exceeded: ui_.setCss(elapsedLabel_, "color", "#e64553"); break;
-	case model::BudgetLevel::Warning: ui_.setCss(elapsedLabel_, "color", "#df8e1d"); break;
-	default: ui_.setCss(elapsedLabel_, "color", "#e6e6eb"); break;
+	case model::BudgetLevel::Exceeded:
+		ui_.addClass(elapsedLabel_, "retdec-danger");
+		ui_.removeClass(elapsedLabel_, "retdec-warning");
+		break;
+	case model::BudgetLevel::Warning:
+		ui_.removeClass(elapsedLabel_, "retdec-danger");
+		ui_.addClass(elapsedLabel_, "retdec-warning");
+		break;
+	default:
+		ui_.removeClass(elapsedLabel_, "retdec-danger");
+		ui_.removeClass(elapsedLabel_, "retdec-warning");
+		break;
 	}
 }
 

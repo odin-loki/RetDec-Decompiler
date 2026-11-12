@@ -7,6 +7,7 @@
 #include "retdec/gui/ui/graph_view.h"
 
 #include "retdec/gui/ui/empty_state.h"
+#include "retdec/gui/ui/theme.h"
 
 #include <fuse/app/app.hpp>
 #include <fuse/ui/widgets/widgets.hpp>
@@ -33,6 +34,12 @@ Color graphColor(model::Rgba c, float opacity)
 {
 	return {float(model::rgbaR(c)) / 255.f, float(model::rgbaG(c)) / 255.f, float(model::rgbaB(c)) / 255.f,
 		float(model::rgbaA(c)) / 255.f * opacity};
+}
+
+model::Rgba themedRgba(ThemeKind kind, model::Rgba c)
+{
+	const uint32_t rgb = c >> 8;
+	return model::rgbaHex(themedColor(kind, rgb), model::rgbaA(c));
 }
 
 namespace {
@@ -74,6 +81,8 @@ void paintScene(UiContext& ui, DrawList& dl, const model::GraphScene& sc, const 
 	const Rect& clip, const PaintState& st, uint32_t nodeIdx)
 {
 	const float z = t.zoom;
+	const ThemeKind theme = currentTheme(ui);
+	auto tc = [theme](model::Rgba c, float opacity = 1.f) { return graphColor(themedRgba(theme, c), opacity); };
 	// SceneText faces: [mono][bold] (null = the view's own face).
 	const NodeHandle view = ui.handleOf(nodeIdx);
 	const fuse::text::Font* faces[2][2] = {{nullptr, styledFont(ui, view, false, true)},
@@ -95,10 +104,10 @@ void paintScene(UiContext& ui, DrawList& dl, const model::GraphScene& sc, const 
 		if (!reg.visible || !reg.rect.intersects(vis)) continue;
 		const Rect r = R(reg.rect);
 		const float rad = reg.radius * z;
-		dl.roundedRect(r, graphColor(reg.fill), {rad, rad, rad, rad}, graphColor(reg.border), std::max(1.f, reg.borderWidth * z));
+		dl.roundedRect(r, tc(reg.fill), {rad, rad, rad, rad}, tc(reg.border), std::max(1.f, reg.borderWidth * z));
 		if (!reg.label.empty() && st.text && reg.labelSize * z >= kMinTextPx)
 			ui.paintString(dl, reg.label, {r.x + 6.f * z, r.y + 2.f * z, r.w - 12.f * z, (reg.labelSize + 6.f) * z},
-				graphColor(reg.labelColor), reg.labelSize * z, fuse::ui::TextAlignment::Start, nodeIdx);
+				tc(reg.labelColor), reg.labelSize * z, fuse::ui::TextAlignment::Start, nodeIdx);
 	}
 
 	// Edges
@@ -111,7 +120,7 @@ void paintScene(UiContext& ui, DrawList& dl, const model::GraphScene& sc, const 
 		// Translucent edges are pre-blended over the background: segment joints would otherwise double the alpha
 		// and bead the line.
 		const float a = float(model::rgbaA(e.color)) / 255.f * e.opacity;
-		const Color raw = graphColor(e.color), bg = graphColor(sc.background);
+		const Color raw = tc(e.color), bg = tc(sc.background);
 		const Color c{raw.r * a + bg.r * (1.f - a), raw.g * a + bg.g * (1.f - a), raw.b * a + bg.b * (1.f - a), 1.f};
 		const float w = std::max(0.75f, e.width * z * (hot ? 1.6f : 1.f));
 		if (e.dashed)
@@ -147,8 +156,8 @@ void paintScene(UiContext& ui, DrawList& dl, const model::GraphScene& sc, const 
 	}
 
 	// Nodes
-	const Color selCol = graphColor(model::catppuccin::blue);
-	const Color hlCol = graphColor(model::catppuccin::yellow);
+	const Color selCol = tc(model::catppuccin::blue);
+	const Color hlCol = tc(model::catppuccin::yellow);
 	for (const auto& n: sc.nodes)
 	{
 		if (!n.visible || !n.rect.intersects(vis)) continue;
@@ -159,20 +168,20 @@ void paintScene(UiContext& ui, DrawList& dl, const model::GraphScene& sc, const 
 		const float op = n.opacity;
 		if (n.shadow) dl.roundedRect({r.x + 3.f * z, r.y + 3.f * z, r.w, r.h}, Color{0, 0, 0, 50.f / 255.f * op}, {rad, rad, rad, rad});
 		const model::Rgba fill = hovered && n.hoverFill ? n.hoverFill : n.fill;
-		dl.roundedRect(r, graphColor(fill, op), {rad, rad, rad, rad});
+		dl.roundedRect(r, tc(fill, op), {rad, rad, rad, rad});
 		if (n.headerFill && n.headerHeight > 0.f)
-			dl.roundedRect({r.x, r.y, r.w, n.headerHeight * z}, graphColor(n.headerFill, op), {rad, rad, 0.f, 0.f});
+			dl.roundedRect({r.x, r.y, r.w, n.headerHeight * z}, tc(n.headerFill, op), {rad, rad, 0.f, 0.f});
 		if (n.stripeFill && n.stripeWidth > 0.f)
 		{
 			const float sw = n.stripeWidth * z;
-			dl.roundedRect({r.x, r.y, sw + rad * 0.5f, r.h}, graphColor(n.stripeFill, op), {rad, 0.f, 0.f, rad});
+			dl.roundedRect({r.x, r.y, sw + rad * 0.5f, r.h}, tc(n.stripeFill, op), {rad, 0.f, 0.f, rad});
 		}
 		const model::Rgba border = hovered && n.hoverBorder ? n.hoverBorder : n.border;
 		const float bw = std::max(1.f, (hovered ? n.borderWidth + 0.5f : n.borderWidth) * z);
 		if (n.dashedBorder)
-			outlineDashed(dl, r, graphColor(border, op), bw, 5.f * std::max(1.f, z), 3.f * std::max(1.f, z));
+			outlineDashed(dl, r, tc(border, op), bw, 5.f * std::max(1.f, z), 3.f * std::max(1.f, z));
 		else
-			dl.roundedRect(r, Color{}, {rad, rad, rad, rad}, graphColor(border, op), bw);
+			dl.roundedRect(r, Color{}, {rad, rad, rad, rad}, tc(border, op), bw);
 		if (st.text)
 			for (const auto& tx: n.texts)
 			{
@@ -181,7 +190,7 @@ void paintScene(UiContext& ui, DrawList& dl, const model::GraphScene& sc, const 
 				const fuse::ui::TextAlignment al = tx.align == model::SceneAlign::Center ? fuse::ui::TextAlignment::Center
 					: tx.align == model::SceneAlign::Right                               ? fuse::ui::TextAlignment::End
 																						 : fuse::ui::TextAlignment::Start;
-				ui.paintString(dl, tx.text, R(tx.box), graphColor(tx.color, op), px, al, nodeIdx, faces[tx.mono][tx.bold]);
+				ui.paintString(dl, tx.text, R(tx.box), tc(tx.color, op), px, al, nodeIdx, faces[tx.mono][tx.bold]);
 			}
 		if (st.highlight && st.highlight->count(n.id))
 		{
@@ -245,7 +254,7 @@ GraphView::GraphView(UiContext& ui, NodeHandle parent, std::string_view id): m_u
 		ui.setUserData(m_node, m_slot);
 		ui.setA11y(m_node, fuse::ui::A11yRole::Group, "Graph");
 		ui.setCss(m_node, "flex-grow", "1");
-		ui.setCss(m_node, "background", "#1e1e2e");
+		ui.addClass(m_node, "retdec-canvas");
 		m_menuConn = ui.connect(m_node, fuse::ui::SignalKind::Submitted,
 			[this](UiContext&, NodeHandle, const fuse::ui::SignalArgs& a) {
 				if (!m_menuPick) return;
@@ -493,13 +502,15 @@ fuse::ui::NodeHandle GraphView::openMenu(std::string_view items, Vec2 at, std::f
 void GraphView::paint(const fuse::ui::PaintContext& pc, DrawList& dl)
 {
 	ensureFit();
+	const ThemeKind theme = currentTheme(m_ui);
+	auto tc = [theme](model::Rgba c, float opacity = 1.f) { return graphColor(themedRgba(theme, c), opacity); };
 	const Rect c = pc.content;
 	dl.pushClip(c);
-	dl.rect(c, graphColor(m_scene.background));
+	dl.rect(c, tc(m_scene.background));
 	if (m_scene.empty())
 	{
 		if (!m_emptyText.empty())
-			m_ui.paintString(dl, m_emptyText, c, graphColor(model::catppuccin::overlay0), 14.f,
+			m_ui.paintString(dl, m_emptyText, c, tc(model::catppuccin::overlay0), 14.f,
 				fuse::ui::TextAlignment::Center, pc.node.index);
 		dl.popClip();
 		return;
@@ -510,21 +521,21 @@ void GraphView::paint(const fuse::ui::PaintContext& pc, DrawList& dl)
 	// Minimap overlay: whole scene scaled, viewport indicator.
 	if (const Rect mm = minimapRect(); !mm.empty())
 	{
-		dl.roundedRect(mm, Color{24.f / 255.f, 24.f / 255.f, 37.f / 255.f, 210.f / 255.f}, {4.f, 4.f, 4.f, 4.f},
-			graphColor(model::catppuccin::surface1), 1.f);
+		dl.roundedRect(mm, tc(model::catppuccin::mantle, 210.f / 255.f), {4.f, 4.f, 4.f, 4.f},
+			tc(model::catppuccin::surface1), 1.f);
 		dl.pushClip(mm, 4.f);
 		float s = 1.f;
 		Vec2 off;
 		minimapScene(mm, s, off);
 		auto M = [&](const GRect& r) { return Rect{off.x + r.x * s, off.y + r.y * s, r.w * s, r.h * s}; };
 		for (const auto& reg: m_scene.regions)
-			if (reg.visible) dl.rect(M(reg.rect), graphColor(reg.fill));
+			if (reg.visible) dl.rect(M(reg.rect), tc(reg.fill));
 		if (m_scene.edges.size() <= 4000)
 			for (const auto& e: m_scene.edges)
 				if (e.visible && !e.points.empty())
 				{
 					const GPoint a = e.points.front(), b = e.points.back();
-					dl.line({off.x + a.x * s, off.y + a.y * s}, {off.x + b.x * s, off.y + b.y * s}, graphColor(e.color, 0.6f), 1.f);
+					dl.line({off.x + a.x * s, off.y + a.y * s}, {off.x + b.x * s, off.y + b.y * s}, tc(e.color, 0.6f), 1.f);
 				}
 		for (const auto& n: m_scene.nodes)
 			if (n.visible)
@@ -532,11 +543,10 @@ void GraphView::paint(const fuse::ui::PaintContext& pc, DrawList& dl)
 				Rect r = M(n.rect);
 				r.w = std::max(r.w, 1.5f);
 				r.h = std::max(r.h, 1.5f);
-				dl.rect(r, graphColor(n.border == model::catppuccin::surface1 ? model::catppuccin::overlay0 : n.border, n.opacity));
+				dl.rect(r, tc(n.border == model::catppuccin::surface1 ? model::catppuccin::overlay0 : n.border, n.opacity));
 			}
 		const GRect vs = m_t.visibleScene(c.w, c.h);
-		dl.roundedRect(M(vs), Color{0x89 / 255.f, 0xb4 / 255.f, 0xfa / 255.f, 40.f / 255.f}, {},
-			Color{0x89 / 255.f, 0xb4 / 255.f, 0xfa / 255.f, 200.f / 255.f}, 1.5f);
+		dl.roundedRect(M(vs), tc(model::catppuccin::blue, 40.f / 255.f), {}, tc(model::catppuccin::blue, 200.f / 255.f), 1.5f);
 		dl.popClip();
 	}
 
@@ -564,14 +574,14 @@ void GraphView::paint(const fuse::ui::PaintContext& pc, DrawList& dl)
 			float x = p.x + 14.f, y = p.y + 18.f;
 			if (x + w > c.right() - 4.f) x = std::max(c.x + 4.f, p.x - w - 8.f);
 			if (y + h > c.bottom() - 4.f) y = std::max(c.y + 4.f, p.y - h - 8.f);
-			dl.roundedRect({x, y, w, h}, graphColor(model::catppuccin::crust, 0.96f), {4.f, 4.f, 4.f, 4.f},
-				graphColor(model::catppuccin::surface2), 1.f);
+			dl.roundedRect({x, y, w, h}, tc(model::catppuccin::crust, 0.96f), {4.f, 4.f, 4.f, 4.f},
+				tc(model::catppuccin::surface2), 1.f);
 			dl.pushClip({x, y, w, h});
 			for (size_t i = 0; i < lines.size(); ++i)
 			{
 				const float ly = y + 4.f + lh * float(i);
 				if (ly + lh > y + h) break;
-				m_ui.paintString(dl, lines[i], {x + 8.f, ly, w - 16.f, lh}, graphColor(model::catppuccin::text), px,
+				m_ui.paintString(dl, lines[i], {x + 8.f, ly, w - 16.f, lh}, tc(model::catppuccin::text), px,
 					fuse::ui::TextAlignment::Start, pc.node.index);
 			}
 			dl.popClip();
@@ -728,7 +738,7 @@ fuse::ui::Image GraphView::renderImage(float scale)
 	constexpr float kMaxSide = 16384.f;
 	scale = std::min(scale, kMaxSide / std::max(b.w, b.h));
 	const int w = std::max(1, int(std::ceil(b.w * scale))), h = std::max(1, int(std::ceil(b.h * scale)));
-	img.resize(w, h, fuse::ui::packPremultiplied(graphColor(m_scene.background)));
+	img.resize(w, h, fuse::ui::packPremultiplied(graphColor(themedRgba(currentTheme(m_ui), m_scene.background))));
 	model::ViewTransform t;
 	t.zoom = scale;
 	t.origin = {b.x, b.y};
@@ -812,7 +822,7 @@ fuse::ui::NodeHandle graphToolbarRow(fuse::ui::UiContext& ui, fuse::ui::NodeHand
 	ui.setCss(t, "align-items", "center");
 	ui.setCss(t, "gap", "6px");
 	ui.setCss(t, "padding", "3px 6px");
-	ui.setCss(t, "background", "#181825");
+	ui.addClass(t, "retdec-graph-toolbar");
 	return t;
 }
 
@@ -821,17 +831,14 @@ fuse::ui::NodeHandle graphToolButton(fuse::ui::UiContext& ui, fuse::ui::NodeHand
 	const fuse::ui::NodeHandle b = fuse::ui::widgets::button(ui, parent, text);
 	ui.setCss(b, "padding", "2px 8px");
 	ui.setCss(b, "font-size", "12px");
-	ui.setCss(b, "background", "#313244");
-	ui.setCss(b, "color", "#cdd6f4");
-	ui.setCss(b, "border-color", "#45475a");
-	ui.setCss(b, "border-width", "1px");
+	ui.addClass(b, "retdec-graph-button");
 	return b;
 }
 
 fuse::ui::NodeHandle graphMutedLabel(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent, std::string_view text)
 {
 	const fuse::ui::NodeHandle l = fuse::ui::widgets::label(ui, parent, text);
-	ui.setCss(l, "color", "#a6adc8");
+	ui.addClass(l, "dim");
 	ui.setCss(l, "font-size", "12px");
 	return l;
 }

@@ -109,7 +109,7 @@ TargetPanel::TargetPanel(UiContext& ui, NodeHandle parent, model::AppSettings& s
 
 	w::label(ui, body, "Binary");
 	binary_ = w::label(ui, body, "—");
-	ui.setCss(binary_, "color", "#ffffff");
+	ui.addClass(binary_, "retdec-strong");
 
 	auto field = [&](std::string_view label, std::string_view placeholder) {
 		w::label(ui, body, label);

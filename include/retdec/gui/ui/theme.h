@@ -24,6 +24,7 @@
 
 #include <fuse/ui/ui.hpp>
 
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <string>
@@ -36,6 +37,23 @@ enum class ThemeKind
 	Mocha, ///< Catppuccin Mocha (dark, the default)
 	Latte, ///< Catppuccin Latte (light)
 };
+
+/// The Catppuccin colours of a flavour (0xRRGGBB), for what panels paint
+/// themselves (table cells, badges, severity marks). Style sheet colours are
+/// the theme files' job; these follow the same palette.
+struct ThemeColors
+{
+	uint32_t base, mantle, crust;
+	uint32_t surface0, surface1, surface2;
+	uint32_t overlay0, overlay1;
+	uint32_t text, subtext0, subtext1;
+	uint32_t blue, green, yellow, red, peach, mauve, teal, maroon;
+	/// Text on an accent-coloured fill (badges): base in both flavours.
+	uint32_t onAccent;
+};
+
+/// Mocha or Latte colours.
+const ThemeColors& themeColors(ThemeKind kind);
 
 /// "catppuccin_mocha" / "catppuccin_latte".
 std::string_view themeName(ThemeKind kind);
@@ -71,6 +89,16 @@ std::expected<ThemeKind, std::string> applyThemeFromSettings(
 
 /// The theme last applied to @p ui by applyTheme (Mocha when none was).
 ThemeKind currentTheme(const fuse::ui::UiContext& ui);
+
+/// themeColors(currentTheme(ui)): the palette of the theme @p ui shows.
+const ThemeColors& themeColors(const fuse::ui::UiContext& ui);
+
+/// A Catppuccin Mocha colour (0xRRGGBB) as the theme of @p ui shows it: the
+/// same role in Latte (green -> Latte green ...); colours outside the Mocha
+/// palette, and every colour under Mocha, are returned unchanged. For the
+/// model's Mocha-coded colours (string categories, constant labels).
+uint32_t themedColor(ThemeKind kind, uint32_t mochaRgb);
+uint32_t themedColor(const fuse::ui::UiContext& ui, uint32_t mochaRgb);
 
 /// Point size (Settings → General) to the px size the code views take (96 dpi).
 float editorFontPx(int pointSize);

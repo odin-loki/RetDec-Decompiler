@@ -5,6 +5,7 @@
  */
 
 #include "retdec/gui/ui/type_hierarchy_panel.h"
+#include "retdec/gui/ui/theme.h"
 
 #include "retdec/gui/ui/graph_view.h"
 #include "retdec/gui/ui/empty_state.h"
@@ -73,7 +74,7 @@ struct TypeHierarchyPanel::Glue
 		const auto& p = self(u);
 		if (row >= p.m_rows.size()) return;
 		const auto& r = p.m_rows[row];
-		const fuse::ui::Color color = pc.tint(graphColor(p.m_hierarchy.foreground(r.node, int(col))));
+		const fuse::ui::Color color = pc.tint(graphColor(themedRgba(currentTheme(pc.ui), p.m_hierarchy.foreground(r.node, int(col)))));
 		// Qt: monospace cells, abstract class names italic. FuseUI has no italic
 		// faces: they are bold (and mauve, from the model's colour).
 		const fuse::text::Font* face = styledFont(pc.ui, pc.node, true, p.m_hierarchy.italic(r.node, int(col)));
@@ -82,7 +83,7 @@ struct TypeHierarchyPanel::Glue
 			const float x = cell.x + float(r.depth) * kIndent;
 			if (r.hasChildren)
 				pc.ui.paintString(dl, r.expanded ? "\xE2\x96\xBE" : "\xE2\x96\xB8", {x, cell.y, kToggleW, cell.h}, // ▾ ▸
-					pc.tint(graphColor(model::catppuccin::overlay2)), pc.style.fontSize, fuse::ui::TextAlignment::Center,
+					pc.tint(graphColor(themedRgba(currentTheme(pc.ui), model::catppuccin::overlay2))), pc.style.fontSize, fuse::ui::TextAlignment::Center,
 					pc.node.index);
 			const float tx = x + kToggleW + 2.f;
 			pc.ui.paintString(dl, text, {tx, cell.y, std::max(0.f, cell.right() - tx), cell.h}, color, pc.style.fontSize,
@@ -96,7 +97,7 @@ struct TypeHierarchyPanel::Glue
 	{
 		const auto& p = self(u);
 		// Monospace; pure-virtual slots italic in Qt -> bold here (no italic faces).
-		pc.ui.paintString(dl, text, cell, pc.tint(graphColor(p.m_vtable.foreground(int(row), int(col)))), pc.style.fontSize,
+		pc.ui.paintString(dl, text, cell, pc.tint(graphColor(themedRgba(currentTheme(pc.ui), p.m_vtable.foreground(int(row), int(col))))), pc.style.fontSize,
 			fuse::ui::TextAlignment::Start, pc.node.index, styledFont(pc.ui, pc.node, true, p.m_vtable.italic(int(row), int(col))));
 	}
 };
@@ -112,13 +113,11 @@ TypeHierarchyPanel::TypeHierarchyPanel(UiContext& ui, NodeHandle parent): m_ui(u
 	ui.setCss(m_root, "flex-grow", "1");
 	ui.setCss(m_root, "padding", "4px");
 	ui.setCss(m_root, "gap", "4px");
-	ui.setCss(m_root, "background", "#1e1e2e");
+	ui.addClass(m_root, "retdec-canvas");
 	ui.setA11y(m_root, fuse::ui::A11yRole::Group, kTitle);
 
 	m_search = w::lineEdit(ui, m_root, "");
-	ui.setCss(m_search, "background", "#313244");
-	ui.setCss(m_search, "color", "#cdd6f4");
-	ui.setCss(m_search, "border-color", "#45475a");
+	ui.addClass(m_search, "retdec-input");
 	ui.setCss(m_search, "padding", "2px 6px");
 	ui.setA11y(m_search, fuse::ui::A11yRole::TextField, "Filter classes…");
 	w::setPlaceholderText(ui, m_search, "Filter classes\xE2\x80\xA6");
@@ -128,7 +127,7 @@ TypeHierarchyPanel::TypeHierarchyPanel(UiContext& ui, NodeHandle parent): m_ui(u
 	m_treePane = w::splitterPane(ui, m_split, 0.f);
 	ui.setCss(m_treePane, "padding", "0px");
 	m_emptyLabel = w::label(ui, m_treePane, "No RTTI classes recovered");
-	ui.setCss(m_emptyLabel, "color", "#6c7086");
+	ui.addClass(m_emptyLabel, "retdec-faint");
 	ui.setCss(m_emptyLabel, "text-align", "center");
 	ui.setCss(m_emptyLabel, "padding", "24px");
 	m_tree = w::tableView(ui, m_treePane, &m_treeModel);
@@ -146,10 +145,10 @@ TypeHierarchyPanel::TypeHierarchyPanel(UiContext& ui, NodeHandle parent): m_ui(u
 	ui.setCss(m_vtablePane, "padding", "0px");
 	ui.setCss(m_vtablePane, "gap", "0px");
 	m_vtableTitle = w::label(ui, m_vtablePane, "Vtable");
-	ui.setCss(m_vtableTitle, "color", "#a6adc8");
+	ui.addClass(m_vtableTitle, "dim");
 	ui.setCss(m_vtableTitle, "padding", "4px 6px 2px 6px");
 	m_detailsLabel = w::label(ui, m_vtablePane, "");
-	ui.setCss(m_detailsLabel, "color", "#6c7086");
+	ui.addClass(m_detailsLabel, "retdec-faint");
 	ui.setCss(m_detailsLabel, "font-size", "12px");
 	ui.setCss(m_detailsLabel, "padding", "0px 6px 4px 6px");
 	m_vtableView = w::tableView(ui, m_vtablePane, &m_vtableModel);

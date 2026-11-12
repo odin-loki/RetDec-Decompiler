@@ -44,6 +44,8 @@
 #include "retdec/gui/ui/triage_banner.h"
 #include "retdec/gui/ui/type_hierarchy_panel.h"
 
+#include <fuse/app/app.hpp>
+
 #include <forge/os/os.hpp>
 #include <forge/os/process.hpp>
 
@@ -1082,6 +1084,28 @@ void MainWindow::requestQuit()
 		return;
 	}
 	afterRun();
+}
+
+bool MainWindow::handleWindowCloseRequest()
+{
+	// A quit question is already up: let the user answer it.
+	if (questionOpen()) return false;
+	requestQuit();
+	// finishQuit ran (nothing to confirm): the loop ends through onQuitRequested
+	// with the window intact (normal shutdown); without that hook, close now.
+	return quitting_ && !onQuitRequested;
+}
+
+void MainWindow::attachWindow(fuse::app::AppWindow& window)
+{
+	window.setCloseRequestHandler([this](fuse::app::AppWindow&) { return handleWindowCloseRequest(); });
+	window.setFileDropHandler([this](fuse::app::AppWindow&, const fuse::app::FileDrop& drop) { dropFiles(drop.paths); });
+}
+
+void MainWindow::detachWindow(fuse::app::AppWindow& window)
+{
+	window.setCloseRequestHandler({});
+	window.setFileDropHandler({});
 }
 
 void MainWindow::finishQuit()

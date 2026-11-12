@@ -5,6 +5,7 @@
  */
 
 #include "retdec/gui/ui/function_list_panel.h"
+#include "retdec/gui/ui/theme.h"
 
 #include "retdec/gui/model/funclist_export.h"
 #include "retdec/gui/ui/empty_state.h"
@@ -62,18 +63,8 @@ struct FunclistHost
 	}
 };
 
-// Catppuccin Mocha (the Qt panel's palette).
-constexpr uint32_t kOverlay0 = 0x6c7086;
-constexpr uint32_t kText = 0xcdd6f4;
-constexpr uint32_t kSubtext0 = 0xa6adc8;
-constexpr uint32_t kSurface0 = 0x313244;
-constexpr uint32_t kSurface1 = 0x45475a;
-constexpr uint32_t kBase = 0x1e1e2e;
-constexpr uint32_t kGreen = 0xa6e3a1;
-constexpr uint32_t kYellow = 0xf9e2af;
-constexpr uint32_t kRed = 0xf38ba8;
-constexpr uint32_t kMauve = 0xcba6f7;
-constexpr uint32_t kTeal = 0x94e2d5;
+// Text on the (fixed-colour) pattern badges.
+constexpr uint32_t kBadgeText = 0x1e1e2e;
 
 constexpr std::string_view kEllipsis = "\xE2\x80\xA6";
 
@@ -90,13 +81,13 @@ void setEditText(UiContext& ui, NodeHandle edit, std::string_view text)
 	ui.setText(edit, text);
 }
 
-uint32_t tierColor(model::ConfidenceTier t)
+uint32_t tierColor(const ThemeColors& p, model::ConfidenceTier t)
 {
 	switch (t)
 	{
-	case model::ConfidenceTier::High: return kGreen;
-	case model::ConfidenceTier::Medium: return kYellow;
-	default: return kRed;
+	case model::ConfidenceTier::High: return p.green;
+	case model::ConfidenceTier::Medium: return p.yellow;
+	default: return p.red;
 	}
 }
 
@@ -199,8 +190,7 @@ void FunctionListPanel::build(NodeHandle parent)
 	table_ = w::tableView(ui_, host_, &itemModel_);
 	ui_.setA11y(table_, fuse::ui::A11yRole::List, "Function list table");
 	ui_.setCss(table_, "flex-grow", "1");
-	ui_.setCss(table_, "background", "#1e1e2e");
-	ui_.setCss(table_, "color", "#cdd6f4");
+	ui_.addClass(table_, "retdec-table");
 	ui_.setCss(table_, "font-size", "13px");
 	constexpr float kWidths[model::FnColCount] = {150.f, 240.f, 70.f, 64.f, 92.f, 92.f, 76.f, 220.f};
 	for (int c = 0; c < model::FnColCount; ++c)
@@ -1044,17 +1034,18 @@ void FunctionListPanel::paintCell(
 	const model::FunctionEntry& e = p.proxy_.entry(row);
 	UiContext& ui = pc.ui;
 	const float fs = pc.style.fontSize;
+	const ThemeColors& P = themeColors(ui);
 
 	switch (static_cast<int>(col))
 	{
 	case model::FnColConfidence: {
 		const float conf = std::clamp(e.confidence.composite(), 0.f, 1.f);
 		const Rect track{cell.x - 2.f, cell.y + 4.f, cell.w + 4.f, cell.h - 8.f};
-		dl.rect(track, pc.tint(Color::rgb(kSurface0)), 3.f);
+		dl.rect(track, pc.tint(Color::rgb(P.surface0)), 3.f);
 		const Rect fill{track.x, track.y, std::round(track.w * conf), track.h};
-		if (fill.w > 0.f) dl.rect(fill, pc.tint(Color::rgb(tierColor(model::confidenceTier(conf)), 200.f / 255.f)), 3.f);
-		// Dark text where the bar fills the middle, light text over the track.
-		const uint32_t textColor = conf >= 0.5f ? kBase : kText;
+		if (fill.w > 0.f) dl.rect(fill, pc.tint(Color::rgb(tierColor(P, model::confidenceTier(conf)), 200.f / 255.f)), 3.f);
+		// Text on the bar's fill where it covers the middle, body text over the track.
+		const uint32_t textColor = conf >= 0.5f ? P.onAccent : P.text;
 		ui.paintString(dl, text, track, pc.tint(Color::rgb(textColor)), fs - 2.f, fuse::ui::TextAlignment::Center, pc.node.index);
 		break;
 	}
@@ -1069,24 +1060,24 @@ void FunctionListPanel::paintCell(
 			if (model::patternActive(e.patterns, i))
 			{
 				dl.rect(r, pc.tint(Color::rgb(badge.rgb)), 2.f);
-				ui.paintString(dl, badge.label, r, pc.tint(Color::rgb(kBase)), 8.f, fuse::ui::TextAlignment::Center, pc.node.index);
+				ui.paintString(dl, badge.label, r, pc.tint(Color::rgb(kBadgeText)), 8.f, fuse::ui::TextAlignment::Center, pc.node.index);
 			}
 			else
-				dl.roundedRect(r, pc.tint(Color::rgb(kSurface0)), {2.f, 2.f, 2.f, 2.f}, pc.tint(Color::rgb(kSurface1)), 0.5f);
+				dl.roundedRect(r, pc.tint(Color::rgb(P.surface0)), {2.f, 2.f, 2.f, 2.f}, pc.tint(Color::rgb(P.surface1)), 0.5f);
 			x += kBadge + kSpacing;
 		}
 		break;
 	}
 	default: {
-		uint32_t color = kText;
+		uint32_t color = P.text;
 		switch (static_cast<int>(col))
 		{
-		case model::FnColAddress: color = kOverlay0; break;
-		case model::FnColName: color = e.isLibrary ? kTeal : kText; break;
+		case model::FnColAddress: color = P.overlay1; break;
+		case model::FnColName: color = e.isLibrary ? P.teal : P.text; break;
 		case model::FnColSize:
 		case model::FnColInstrs:
-		case model::FnColNotes: color = kSubtext0; break;
-		case model::FnColCC: color = kMauve; break;
+		case model::FnColNotes: color = P.subtext0; break;
+		case model::FnColCC: color = P.mauve; break;
 		default: break;
 		}
 		// Qt: Address and Name in the monospace face.

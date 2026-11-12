@@ -42,7 +42,7 @@ CallGraphPanel::CallGraphPanel(UiContext& ui, NodeHandle parent): m_ui(ui)
 	ui.setCss(m_root, "flex-grow", "1");
 	ui.setCss(m_root, "gap", "0px");
 	ui.setCss(m_root, "padding", "0px");
-	ui.setCss(m_root, "background", "#1e1e2e");
+	ui.addClass(m_root, "retdec-canvas");
 	ui.setA11y(m_root, fuse::ui::A11yRole::Group, kTitle);
 
 	// ── Filter row ───────────────────────────────────────────────────────────
@@ -89,7 +89,8 @@ CallGraphPanel::CallGraphPanel(UiContext& ui, NodeHandle parent): m_ui(ui)
 	const NodeHandle spacer = w::panel(ui, row2);
 	ui.setCss(spacer, "flex-grow", "1");
 	m_focusLabel = graphMutedLabel(ui, row2, "");
-	ui.setCss(m_focusLabel, "color", "#89b4fa");
+	ui.removeClass(m_focusLabel, "dim");
+	ui.addClass(m_focusLabel, "retdec-accent");
 	m_infoLabel = graphMutedLabel(ui, row2, "");
 	m_fitBtn = graphToolButton(ui, row2, "Fit");
 	m_resetBtn = graphToolButton(ui, row2, "100%");

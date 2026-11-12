@@ -94,8 +94,7 @@ AIAssistantPanel::AIAssistantPanel(UiContext& ui, NodeHandle parent, model::Assi
 	ui.setCss(chat_, "min-height", "60px");
 	ui.setCss(chat_, "gap", "6px");
 	ui.setCss(chat_, "padding", "6px");
-	ui.setCss(chat_, "background", "#15161a");
-	ui.setCss(chat_, "border", "1px var(--border, #474955)");
+	ui.addClass(chat_, "retdec-chat");
 	ui.setCss(chat_, "border-radius", "5px");
 	status_ = w::label(ui, root_, "", "status_label");
 	ui.addClass(status_, "retdec-note");

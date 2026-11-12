@@ -200,13 +200,19 @@ private:
 	std::function<void(const std::string&)> m_onChosen;
 };
 
-/// Toolbar pieces shared by the graph panels (Catppuccin styling of the Qt panels, set inline).
+/// Toolbar pieces shared by the graph panels (Catppuccin styling of the Qt
+/// panels through the shared classes, so they follow the theme).
 fuse::ui::NodeHandle graphToolbarRow(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent);
 fuse::ui::NodeHandle graphToolButton(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent, std::string_view text);
 fuse::ui::NodeHandle graphMutedLabel(fuse::ui::UiContext& ui, fuse::ui::NodeHandle parent, std::string_view text);
 
 /// Colour conversion model::Rgba -> FuseUI.
 fuse::ui::Color graphColor(model::Rgba c, float opacity = 1.f);
+
+enum class ThemeKind; // theme.h
+/// A scene colour (Catppuccin Mocha, as the model builds scenes) in @p kind:
+/// the Latte colour of the same role under the light theme (themedColor).
+model::Rgba themedRgba(ThemeKind kind, model::Rgba c);
 
 } // namespace retdec::gui::ui
 

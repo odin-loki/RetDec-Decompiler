@@ -343,8 +343,11 @@ void MainWindow::createLayout()
 	fill(ui_, docTabs_);
 	docHost_ = docTabs_;
 	auto page = [this](NodeHandle tabs, u32 i) {
+		// A tall page (Progress in a short Output dock) clips; the tab bar keeps its height.
+		ui_.setCss(widgets::tabWidgetBar(ui_, tabs), "flex-shrink", "0");
 		const NodeHandle p = widgets::tabPage(ui_, tabs, i);
 		fill(ui_, p);
+		ui_.setCss(p, "overflow", "clip");
 		return p;
 	};
 	decompiledC_ = std::make_unique<DecompiledCPanel>(ui_, page(docTabs_, kDocDecompiledC));
@@ -684,10 +687,9 @@ void MainWindow::createActions()
 	}
 	act("view.goto_address", "Go to address" + ell, [this] { onGotoAddress(); }, "Ctrl+G", Key::G, C);
 	act("view.goto_line", "Go to line" + ell, [this] { onGotoLine(); }, "Ctrl+L", Key::L, C);
-	// FuseUI has no key code for '`' (Key::Other), so the Qt Ctrl+` / Ctrl+Shift+`
-	// sequences are shown but cannot be bound.
-	act("view.show_console", "Show Console", [this] { focusOutputTab(kOutConsole); }, "Ctrl+`");
-	act("view.show_problems", "Show Problems", [this] { focusOutputTab(kOutProblems); }, "Ctrl+Shift+`");
+	// '`' is Key::Grave by key position (Shift+` arrives as Grave + Shift).
+	act("view.show_console", "Show Console", [this] { focusOutputTab(kOutConsole); }, "Ctrl+`", Key::Grave, C);
+	act("view.show_problems", "Show Problems", [this] { focusOutputTab(kOutProblems); }, "Ctrl+Shift+`", Key::Grave, CS);
 	act("view.show_history", "Show History", [this] { focusOutputTab(kOutHistory); });
 	act("view.show_progress", "Show Progress", [this] { focusOutputTab(kOutProgress); });
 	toggle("view.show_banner", "Show triage banner", "", [this](bool on) {
@@ -700,8 +702,7 @@ void MainWindow::createActions()
 	act("view.reset_layout", "Reset Layout", [this] { resetLayout(); });
 
 	// ── Tools ───────────────────────────────────────────────────────────────
-	// Ctrl+, cannot be bound either (no comma key in FuseUI's Key set).
-	act("tools.settings", "Settings" + ell, [this] { onSettings(); }, "Ctrl+,");
+	act("tools.settings", "Settings" + ell, [this] { onSettings(); }, "Ctrl+,", Key::Comma, C);
 	act("tools.signature_studio", "Signature Studio" + ell, [this] { onShowSignatureStudio(); });
 	act("tools.call_graph", "Call Graph" + ell, [this] { onShowCallGraph(); });
 	act("tools.type_hierarchy", "Type Hierarchy" + ell, [this] { onShowTypeHierarchy(); });

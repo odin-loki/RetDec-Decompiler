@@ -59,6 +59,31 @@ retdec-panel { background: transparent; }
 .retdec-banner-title { font-size: 15px; color: #ffffff; }
 .retdec-status { color: var(--text-dim, #9a9cab); flex-grow: 1; }
 .retdec-mono { font-family: "JetBrains Mono", monospace; }
+.retdec-table { background: var(--bg, #1e1e2e); color: var(--text, #cdd6f4); }
+.retdec-outlined { border-width: 1px; border-color: var(--border, #474955); }
+toolbutton.retdec-outlined:checked { background: var(--accent, #3d8bfd); color: var(--on-accent, #ffffff); }
+.retdec-canvas { background: var(--bg, #1e1e2e); }
+.retdec-strong { color: var(--text-strong, #ffffff); }
+.retdec-accent { color: var(--accent, #89b4fa); }
+.retdec-success { color: var(--success, #a6e3a1); }
+.retdec-danger { color: var(--danger, #f38ba8); }
+.retdec-warning { color: var(--warning, #fab387); }
+.retdec-mauve { color: var(--mauve, #cba6f7); }
+.retdec-frame { background: var(--surface, #2a2b32); border-width: 1px; border-color: var(--border, #474955); border-radius: 4px; }
+.retdec-state-pending { color: var(--text-muted, #6c7086); }
+.retdec-state-running { color: var(--accent, #89b4fa); }
+.retdec-state-done { color: var(--success, #a6e3a1); }
+.retdec-state-error { color: var(--danger, #f38ba8); }
+progressbar.retdec-state-pending, progressbar.retdec-state-running { background-end: var(--accent, #89b4fa); }
+progressbar.retdec-state-done { background-end: var(--success, #a6e3a1); }
+progressbar.retdec-state-error { background-end: var(--danger, #f38ba8); }
+.retdec-stage-name-pending { color: var(--text-dim, #9a9cab); }
+.retdec-stage-name-error { color: var(--danger, #f38ba8); }
+.retdec-faint { color: var(--text-muted, #6c7086); }
+.retdec-chat { background: var(--crust, #15161a); border: 1px var(--border, #474955); }
+.retdec-graph-toolbar { background: var(--mantle, #181825); }
+.retdec-graph-button { background: var(--surface-hi, #313244); color: var(--text, #cdd6f4); border-color: var(--border, #45475a); border-width: 1px; }
+.retdec-input { background: var(--input, #313244); color: var(--text, #cdd6f4); border-color: var(--border, #45475a); }
 .retdec-bold { font-weight: bold; }
 .md-code { font-family: "JetBrains Mono", monospace; }
 )css";

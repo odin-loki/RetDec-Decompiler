@@ -14,6 +14,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <format>
+#include <utility>
 
 namespace retdec::gui::ui {
 
@@ -141,6 +142,57 @@ std::expected<ThemeKind, std::string> applyThemeFromSettings(fuse::ui::UiContext
 ThemeKind currentTheme(const fuse::ui::UiContext& ui)
 {
 	return ui.hasClass(ui.root(), kLatteTag) ? ThemeKind::Latte : ThemeKind::Mocha;
+}
+
+const ThemeColors& themeColors(ThemeKind kind)
+{
+	static constexpr ThemeColors kMocha{
+		.base = 0x1e1e2e, .mantle = 0x181825, .crust = 0x11111b,
+		.surface0 = 0x313244, .surface1 = 0x45475a, .surface2 = 0x585b70,
+		.overlay0 = 0x6c7086, .overlay1 = 0x7f849c,
+		.text = 0xcdd6f4, .subtext0 = 0xa6adc8, .subtext1 = 0xbac2de,
+		.blue = 0x89b4fa, .green = 0xa6e3a1, .yellow = 0xf9e2af, .red = 0xf38ba8, .peach = 0xfab387,
+		.mauve = 0xcba6f7, .teal = 0x94e2d5, .maroon = 0xeba0ac,
+		.onAccent = 0x1e1e2e,
+	};
+	static constexpr ThemeColors kLatte{
+		.base = 0xeff1f5, .mantle = 0xe6e9ef, .crust = 0xdce0e8,
+		.surface0 = 0xccd0da, .surface1 = 0xbcc0cc, .surface2 = 0xacb0be,
+		.overlay0 = 0x9ca0b0, .overlay1 = 0x8c8fa1,
+		.text = 0x4c4f69, .subtext0 = 0x6c6f85, .subtext1 = 0x5c5f77,
+		.blue = 0x1e66f5, .green = 0x40a02b, .yellow = 0xdf8e1d, .red = 0xd20f39, .peach = 0xfe640b,
+		.mauve = 0x8839ef, .teal = 0x179299, .maroon = 0xe64553,
+		.onAccent = 0xeff1f5,
+	};
+	return kind == ThemeKind::Latte ? kLatte : kMocha;
+}
+
+const ThemeColors& themeColors(const fuse::ui::UiContext& ui)
+{
+	return themeColors(currentTheme(ui));
+}
+
+uint32_t themedColor(ThemeKind kind, uint32_t mochaRgb)
+{
+	if (kind == ThemeKind::Mocha) return mochaRgb;
+	// Catppuccin Mocha -> Latte, role for role.
+	static constexpr std::pair<uint32_t, uint32_t> kMap[] = {
+		{0xf5e0dc, 0xdc8a78}, {0xf2cdcd, 0xdd7878}, {0xf5c2e7, 0xea76cb}, {0xcba6f7, 0x8839ef}, {0xf38ba8, 0xd20f39},
+		{0xeba0ac, 0xe64553}, {0xfab387, 0xfe640b}, {0xf9e2af, 0xdf8e1d}, {0xa6e3a1, 0x40a02b}, {0x94e2d5, 0x179299},
+		{0x89dceb, 0x04a5e5}, {0x74c7ec, 0x209fb5}, {0x89b4fa, 0x1e66f5}, {0xb4befe, 0x7287fd}, {0xcdd6f4, 0x4c4f69},
+		{0xbac2de, 0x5c5f77}, {0xa6adc8, 0x6c6f85}, {0x9399b2, 0x7c7f93}, {0x7f849c, 0x8c8fa1}, {0x6c7086, 0x8c8fa1},
+		{0x585b70, 0xacb0be}, {0x45475a, 0xbcc0cc}, {0x313244, 0xccd0da}, {0x1e1e2e, 0xeff1f5}, {0x181825, 0xe6e9ef},
+		{0x11111b, 0xdce0e8},
+	};
+	const uint32_t rgb = mochaRgb & 0xFFFFFFu;
+	for (const auto& [mocha, latte]: kMap)
+		if (mocha == rgb) return latte;
+	return mochaRgb;
+}
+
+uint32_t themedColor(const fuse::ui::UiContext& ui, uint32_t mochaRgb)
+{
+	return themedColor(currentTheme(ui), mochaRgb);
 }
 
 float editorFontPx(int pointSize)

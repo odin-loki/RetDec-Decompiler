@@ -64,8 +64,9 @@
 #include <vector>
 
 namespace fuse::app {
+class AppWindow;
 class Settings;
-}
+} // namespace fuse::app
 
 namespace retdec::gui::ui {
 
@@ -277,6 +278,17 @@ public:
 	/// File → Quit / the window's close request: confirms a running analysis
 	/// and unsaved project changes, saves the layout, then onQuitRequested(0).
 	void requestQuit();
+	/// The OS window's close button (AppWindow::setCloseRequestHandler): the
+	/// same questions as File → Quit (running analysis, unsaved project). True
+	/// only when the window may close at once; otherwise the window stays and
+	/// the loop ends through onQuitRequested once the questions are answered.
+	bool handleWindowCloseRequest();
+	/// Installs @p window's OS hooks: the close button (handleWindowCloseRequest)
+	/// and files dropped from the OS (dropFiles). The window must outlive these
+	/// hooks or be detached with detachWindow() first.
+	void attachWindow(fuse::app::AppWindow& window);
+	/// Removes the hooks attachWindow() installed.
+	void detachWindow(fuse::app::AppWindow& window);
 	/// Stop everything and save the layout (the app is exiting regardless).
 	void shutdown();
 	/// The UiContext is about to disappear under the window (the OS closed it):

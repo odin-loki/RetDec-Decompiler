@@ -28,7 +28,7 @@ CfgPanel::CfgPanel(UiContext& ui, NodeHandle parent): m_ui(ui)
 	ui.setCss(m_root, "flex-grow", "1");
 	ui.setCss(m_root, "gap", "0px");
 	ui.setCss(m_root, "padding", "0px");
-	ui.setCss(m_root, "background", "#1e1e2e");
+	ui.addClass(m_root, "retdec-canvas");
 	ui.setA11y(m_root, fuse::ui::A11yRole::Group, kTitle);
 
 	// ── Toolbar ──────────────────────────────────────────────────────────────
@@ -63,8 +63,7 @@ CfgPanel::CfgPanel(UiContext& ui, NodeHandle parent): m_ui(ui)
 	ui.setCss(m_empty, "justify-content", "center");
 	ui.setCss(m_empty, "gap", "6px");
 	const NodeHandle title = w::label(ui, m_empty, "No control-flow graph");
-	ui.setCss(title, "font-size", "16px");
-	ui.setCss(title, "color", "#cdd6f4");
+	ui.addClass(title, "retdec-empty-title");
 	graphMutedLabel(ui, m_empty, "Select a function to visualize its basic blocks and edges.");
 	m_view = std::make_unique<GraphView>(ui, m_body);
 

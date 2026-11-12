@@ -410,6 +410,52 @@ TEST_F(MainWindowTest, KeyboardShortcutsAreDistinctAndWork)
 	EXPECT_TRUE(win->filePrompt().isOpen());
 }
 
+TEST_F(MainWindowTest, EveryShownShortcutIsBound)
+{
+	// Every shortcut the menus show is the key binding (no display-only text).
+	for (const std::string& id: win->actionIds())
+	{
+		const auto* a = win->action(id);
+		if (a->shortcut.empty())
+		{
+			EXPECT_EQ(a->key, Key::None) << id;
+			continue;
+		}
+		Key k = Key::None;
+		fuse::ui::u8 m = 0;
+		ASSERT_TRUE(fuse::ui::parseShortcut(a->shortcut, k, m)) << id << ": " << a->shortcut;
+		EXPECT_EQ(k, a->key) << id;
+		EXPECT_EQ(m, a->mods) << id;
+	}
+}
+
+TEST_F(MainWindowTest, PunctuationShortcutsFromTheQtWindow)
+{
+	// Ctrl+` (Console), Ctrl+Shift+` (Problems) and Ctrl+, (Settings), through
+	// real key events on the focused document view.
+	EXPECT_EQ(win->action("view.show_console")->key, Key::Grave);
+	EXPECT_EQ(win->action("view.show_problems")->key, Key::Grave);
+	EXPECT_EQ(win->action("tools.settings")->key, Key::Comma);
+	h.ui.setFocus(win->decompiledC().view().node());
+	win->focusOutputTab(ui::MainWindow::kOutHistory);
+	h.key(Key::Grave, kModCtrl | kModShift);
+	EXPECT_EQ(win->currentOutputTab(), ui::MainWindow::kOutProblems);
+	h.key(Key::Grave, kModCtrl);
+	EXPECT_EQ(win->currentOutputTab(), ui::MainWindow::kOutConsole);
+	// The Output dock comes back when closed.
+	win->setDockOpen(ui::MainWindow::Dock::Output, false);
+	h.key(Key::Grave, kModCtrl | kModShift);
+	EXPECT_EQ(win->currentOutputTab(), ui::MainWindow::kOutProblems);
+	EXPECT_TRUE(win->dockOpen(ui::MainWindow::Dock::Output));
+	EXPECT_FALSE(win->settingsDialog().isOpen());
+	h.key(Key::Comma, kModCtrl);
+	EXPECT_TRUE(win->settingsDialog().isOpen());
+	win->settingsDialog().cancel();
+	// Plain punctuation is typing, not a shortcut.
+	EXPECT_FALSE(win->handleShortcut(Key::Grave, 0));
+	EXPECT_FALSE(win->handleShortcut(Key::Comma, 0));
+}
+
 // ─── Comprehensive smoke (main-window parts) ─────────────────────────────────
 
 TEST_F(MainWindowTest, EveryTabSwitches)
@@ -999,6 +1045,107 @@ TEST_F(MainWindowTest, SettingsChangesApplyLive)
 	EXPECT_TRUE(contains(win->statusMessageText(), "Decompiler --config"));
 }
 
+namespace {
+
+float luminance(const fuse::ui::Color& c)
+{
+	return 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b;
+}
+
+/// Share of the frame's pixels darker than @p below (0..1 luminance; channel
+/// order does not matter for the average).
+double darkShare(const fuse::ui::Image& img, float below)
+{
+	std::size_t dark = 0;
+	for (uint32_t px: img.pixels)
+	{
+		const float l = (float((px >> 16) & 0xFF) + float((px >> 8) & 0xFF) + float(px & 0xFF)) / (3.f * 255.f);
+		if (l < below) ++dark;
+	}
+	return img.pixels.empty() ? 0.0 : double(dark) / double(img.pixels.size());
+}
+
+fuse::ui::Image renderFrame(fuse::ui::UiContext& ui)
+{
+	fuse::ui::Image img;
+	img.resize(int(ui.viewport().w), int(ui.viewport().h), 0xFF000000u);
+	fuse::ui::CpuRasterizer r;
+	r.setGlyphAtlas(ui.atlas().pixels(), ui.atlas().size());
+	r.render(ui.drawList(), img);
+	return img;
+}
+
+} // namespace
+
+TEST_F(MainWindowTest, BothThemesStyleEveryWidgetDrawnPart)
+{
+	decompileFixture();
+	win->raiseDocumentTab(ui::MainWindow::kDocSynced);
+	win->focusOutputTab(ui::MainWindow::kOutConsole);
+	const fuse::ui::NodeHandle owner = win->root();
+	using fuse::ui::kStateSelected;
+	struct Part
+	{
+		const char* name;
+		uint32_t states;
+		bool background; ///< else the text colour
+	};
+	static constexpr Part kBackgrounds[] = {
+		{"docktitle", 0, true},    {"tableheader", 0, true}, {"tab", kStateSelected, true}, {"tabline", 0, true},
+		{"codearea", 0, true},     {"codegutter", 0, true},  {"scrollthumb", 0, true},      {"codeplain", 0, false},
+		{"codekeyword", 0, false}, {"codestring", 0, false}, {"codecomment", 0, false},     {"tableheader", 0, false},
+	};
+
+	// Latte: every surface light, every text dark, and the frame mostly light.
+	settings.general.theme = model::GeneralSettings::Theme::Light;
+	settings.notifySettingsChanged();
+	h.frame(3);
+	ASSERT_EQ(win->theme(), ui::ThemeKind::Latte);
+	for (const Part& p: kBackgrounds)
+	{
+		const auto st = h.ui.partStyle(owner, p.name, p.states);
+		if (p.background)
+		{
+			if (std::string_view(p.name) == "scrollthumb" || std::string_view(p.name) == "tabline")
+				EXPECT_GT(luminance(st.background), 0.4f) << p.name;
+			else
+				EXPECT_GT(luminance(st.background), 0.8f) << p.name;
+		}
+		else
+			EXPECT_LT(luminance(st.color), 0.7f) << p.name; // comments are Overlay0
+	}
+	const fuse::ui::Image latte = renderFrame(h.ui);
+	screenshot("main_window_latte_parts.png");
+	EXPECT_LT(darkShare(latte, 0.3f), 0.06) << "dark areas left in the light theme";
+	// The graph canvas (CFG), the stage list and the Problems table follow too.
+	win->raiseDocumentTab(ui::MainWindow::kDocCFG);
+	win->focusOutputTab(ui::MainWindow::kOutProgress);
+	h.frame(3);
+	EXPECT_LT(darkShare(renderFrame(h.ui), 0.3f), 0.06) << "dark areas left in the light theme (CFG / Progress)";
+	screenshot("main_window_latte_cfg.png");
+	win->raiseDocumentTab(ui::MainWindow::kDocSynced);
+	win->focusOutputTab(ui::MainWindow::kOutConsole);
+
+	// Mocha: the same parts, dark surfaces and light text.
+	settings.general.theme = model::GeneralSettings::Theme::Dark;
+	settings.notifySettingsChanged();
+	h.frame(3);
+	ASSERT_EQ(win->theme(), ui::ThemeKind::Mocha);
+	for (const Part& p: kBackgrounds)
+	{
+		const auto st = h.ui.partStyle(owner, p.name, p.states);
+		if (p.background)
+		{
+			if (std::string_view(p.name) != "scrollthumb") EXPECT_LT(luminance(st.background), 0.25f) << p.name;
+		}
+		else
+			EXPECT_GT(luminance(st.color), 0.35f) << p.name;
+	}
+	const fuse::ui::Image mocha = renderFrame(h.ui);
+	screenshot("main_window_mocha_parts.png");
+	EXPECT_GT(darkShare(mocha, 0.3f), 0.8);
+}
+
 TEST_F(MainWindowTest, QuitConfirmsUnsavedChanges)
 {
 	win->triggerAction("file.quit");
@@ -1023,6 +1170,97 @@ TEST_F(MainWindowTest, QuitConfirmsUnsavedChanges)
 	win->answerQuestion(1); // No
 	EXPECT_TRUE(win->analysisRunning());
 	EXPECT_FALSE(quitCode.has_value());
+}
+
+TEST_F(MainWindowTest, OsCloseButtonAsksLikeQuit)
+{
+	// The window's close button (AppWindow::setCloseRequestHandler) goes
+	// through the same questions as File → Quit.
+	win.reset();
+	fuse::app::Application app{{.name = "retdec-gui-close-test", .loadSettings = false}};
+	auto& aw = app.createWindow({.title = "RetDec", .width = 1024, .height = 700});
+	ui::MainWindow mw(aw.ui(), ui::MainWindowOptions{.headless = true, .layoutStore = &store, .settings = &settings});
+	std::optional<int> code;
+	mw.onQuitRequested = [&](int c) {
+		code = c;
+		app.quit(c);
+	};
+	mw.attachWindow(aw);
+	app.step(0.f);
+
+	// Unsaved project: the question opens and the window stays.
+	mw.openBinary(writeFakeBinary().string());
+	mw.project()->setArch("arm");
+	EXPECT_FALSE(aw.userCloseRequest());
+	EXPECT_FALSE(aw.closing());
+	ASSERT_TRUE(mw.questionOpen());
+	EXPECT_TRUE(contains(mw.questionText(), "unsaved project changes"));
+	// Clicking close again while it is up does not stack another question.
+	EXPECT_FALSE(aw.userCloseRequest());
+	mw.answerQuestion(2); // Cancel
+	EXPECT_FALSE(code.has_value());
+	EXPECT_TRUE(app.step(0.f));
+	EXPECT_EQ(app.windowCount(), 1u);
+
+	// Running analysis: "Quit anyway?" first.
+	mw.startAnalysis();
+	EXPECT_FALSE(aw.userCloseRequest());
+	ASSERT_TRUE(mw.questionOpen());
+	EXPECT_TRUE(contains(mw.questionText(), "in progress"));
+	mw.answerQuestion(0); // Yes: stops the run, then the unsaved-changes question
+	EXPECT_FALSE(mw.analysisRunning());
+	ASSERT_TRUE(mw.questionOpen());
+	mw.answerQuestion(1); // Discard
+	EXPECT_EQ(code, 0);
+	// The loop ends through quit(); the window (and its context) are intact.
+	EXPECT_FALSE(aw.closing());
+	EXPECT_EQ(app.windowCount(), 1u);
+	mw.detachWindow(aw);
+	EXPECT_TRUE(aw.userCloseRequest()); // no hook: closes as before
+}
+
+TEST_F(MainWindowTest, OsCloseWithNothingToConfirmQuitsAtOnce)
+{
+	win.reset();
+	fuse::app::Application app{{.name = "retdec-gui-close-test2", .loadSettings = false}};
+	auto& aw = app.createWindow({.title = "RetDec", .width = 800, .height = 600});
+	{
+		ui::MainWindow mw(aw.ui(), ui::MainWindowOptions{.headless = true, .layoutStore = &store, .settings = &settings});
+		mw.attachWindow(aw);
+		// Without onQuitRequested nothing else would end the loop: the window closes.
+		EXPECT_TRUE(aw.userCloseRequest());
+		EXPECT_TRUE(aw.closing());
+		mw.detachWindow(aw);
+	}
+	auto& aw2 = app.createWindow({.title = "RetDec", .width = 800, .height = 600});
+	ui::MainWindow mw2(aw2.ui(), ui::MainWindowOptions{.headless = true, .layoutStore = &store, .settings = &settings});
+	int code = -1;
+	mw2.onQuitRequested = [&](int c) { code = c; };
+	mw2.attachWindow(aw2);
+	EXPECT_FALSE(aw2.userCloseRequest()); // quits through the hook instead
+	EXPECT_EQ(code, 0);
+	EXPECT_FALSE(aw2.closing());
+	mw2.detachWindow(aw2);
+}
+
+TEST_F(MainWindowTest, FilesDroppedOnTheOsWindowOpen)
+{
+	win.reset();
+	fuse::app::Application app{{.name = "retdec-gui-drop-test", .loadSettings = false}};
+	auto& aw = app.createWindow({.title = "RetDec", .width = 1024, .height = 700});
+	ui::MainWindow mw(aw.ui(), ui::MainWindowOptions{.headless = true, .layoutStore = &store, .settings = &settings});
+	EXPECT_FALSE(aw.acceptsFileDrops());
+	mw.attachWindow(aw);
+	EXPECT_TRUE(aw.acceptsFileDrops());
+	app.step(0.f);
+	const fs::path bin = writeFakeBinary("dropped.bin");
+	// A directory first: skipped, the regular file after it opens.
+	EXPECT_TRUE(aw.dropFiles({dir.string(), bin.string()}, {300.f, 300.f}));
+	EXPECT_EQ(mw.centralStackIndex(), ui::MainWindow::kCentralDocs);
+	ASSERT_NE(mw.project(), nullptr);
+	EXPECT_EQ(fs::path(mw.project()->binaryPath()).filename(), "dropped.bin");
+	mw.detachWindow(aw);
+	EXPECT_FALSE(aw.acceptsFileDrops());
 }
 
 TEST_F(MainWindowTest, ToolWindowsOpenFromTheToolsMenu)

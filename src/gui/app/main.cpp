@@ -127,6 +127,8 @@ int main(int argc, char** argv)
 	mw->setWindowSize(unsigned(win.size().w), unsigned(win.size().h));
 	mw->onQuitRequested = [&app](int code) { app.quit(code); };
 	mw->onTitleChanged = [&win](const std::string& title) { win.setTitle(title); };
+	// The OS close button asks like File → Quit; files dropped on the window open.
+	mw->attachWindow(win);
 	mw->onResizeRequested = [&native, &win](unsigned width, unsigned height) {
 		if (native && native->kind(win) != fuse::app::PresenterKind::Headless)
 			native->resizeWindow(win, width, height);
@@ -175,7 +177,7 @@ int main(int argc, char** argv)
 		mw->setWindowSize(unsigned(win.size().w), unsigned(win.size().h));
 		mw->snapshotLayout();
 		if (!app.step()) break;
-		if (app.windowCount() == 0) break; // the OS closed the window: `win` is gone
+		if (app.windowCount() == 0) break; // the window closed anyway: `win` is gone
 	}
 	if (app.windowCount() == 0)
 	{
@@ -186,6 +188,7 @@ int main(int argc, char** argv)
 	}
 	else
 	{
+		mw->detachWindow(win);
 		mw->shutdown();
 		mw.reset();
 	}

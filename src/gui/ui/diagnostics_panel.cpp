@@ -4,6 +4,7 @@
  */
 
 #include "retdec/gui/ui/diagnostics_panel.h"
+#include "retdec/gui/ui/theme.h"
 
 #include "retdec/gui/model/code_text.h"
 
@@ -18,15 +19,15 @@ using namespace fuse::ui;
 
 namespace {
 
-Color severityColor(model::Severity s)
+Color severityColor(const ThemeColors& p, model::Severity s)
 {
 	switch (s)
 	{
-	case model::Severity::Info: return Color::rgb(0xa6e3a1);
-	case model::Severity::Warning: return Color::rgb(0xf9e2af);
-	case model::Severity::Error: return Color::rgb(0xf38ba8);
+	case model::Severity::Info: return Color::rgb(p.green);
+	case model::Severity::Warning: return Color::rgb(p.yellow);
+	case model::Severity::Error: return Color::rgb(p.red);
 	}
-	return Color::rgb(0xcdd6f4);
+	return Color::rgb(p.text);
 }
 
 constexpr u32 kColumns = 5;
@@ -80,7 +81,7 @@ DiagnosticsPanel::DiagnosticsPanel(UiContext& ui, NodeHandle parent): ui_(ui)
 		const auto* self = static_cast<const DiagnosticsPanel*>(u);
 		if (row >= self->rows_.size()) return;
 		const model::Severity sev = self->store_.at(self->rows_[row]).severity;
-		const Color c = pc.tint(severityColor(sev));
+		const Color c = pc.tint(severityColor(themeColors(pc.ui), sev));
 		const float fs = pc.style.fontSize;
 		if (col == 0)
 		{

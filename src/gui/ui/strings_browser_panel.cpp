@@ -7,6 +7,7 @@
 #include "retdec/gui/ui/strings_browser_panel.h"
 
 #include "retdec/gui/ui/empty_state.h"
+#include "retdec/gui/ui/theme.h"
 
 #include "retdec/gui/model/funclist_export.h"
 
@@ -61,9 +62,6 @@ struct StringsHost
 	}
 };
 
-constexpr uint32_t kAddrColor = 0x6c7086;
-constexpr uint32_t kTextColor = 0xcdd6f4;
-constexpr uint32_t kDimColor = 0xa6adc8;
 
 constexpr std::string_view kTypeItems = "All Types\nASCII\nUTF-8\nUTF-16 LE\nUTF-16 BE\nWide\nPascal";
 constexpr std::string_view kCatItems = "All Cats\nPlain\nFormatStr\nURL\nFilePath\nRegEx\nCrypto";
@@ -188,8 +186,7 @@ void StringsBrowserPanel::buildTable(Table t, NodeHandle page)
 		ui_.setCss(catCombo_, "width", "110px");
 		regexBtn_ = w::toolButton(ui_, bar, ".*");
 		compact(regexBtn_);
-		ui_.setCss(regexBtn_, "border-width", "1px");
-		ui_.setCss(regexBtn_, "border-color", "#474955");
+		ui_.addClass(regexBtn_, "retdec-outlined");
 		tooltip(regexBtn_, "Enable regex search");
 		auto onCombo = [this](UiContext&, NodeHandle, const SignalArgs&) { applyStringFilter(); };
 		ui_.connect(typeCombo_, SignalKind::ValueChanged, onCombo);
@@ -217,8 +214,7 @@ void StringsBrowserPanel::buildTable(Table t, NodeHandle page)
 
 	k.exportBtn = w::toolButton(ui_, bar, "CSV");
 	compact(k.exportBtn);
-	ui_.setCss(k.exportBtn, "border-width", "1px");
-	ui_.setCss(k.exportBtn, "border-color", "#474955");
+	ui_.addClass(k.exportBtn, "retdec-outlined");
 	tooltip(k.exportBtn, isStr ? "Export strings to CSV" : "Export constants to CSV");
 	ui_.connect(k.exportBtn, SignalKind::Clicked, [this, t](UiContext&, NodeHandle, const SignalArgs&) {
 		openExportDialog(t);
@@ -249,8 +245,7 @@ void StringsBrowserPanel::buildTable(Table t, NodeHandle page)
 	k.table = w::tableView(ui_, k.host, &k.model);
 	ui_.setA11y(k.table, fuse::ui::A11yRole::List, isStr ? "Strings table" : "Constants table");
 	ui_.setCss(k.table, "flex-grow", "1");
-	ui_.setCss(k.table, "background", "#1e1e2e");
-	ui_.setCss(k.table, "color", "#cdd6f4");
+	ui_.addClass(k.table, "retdec-table");
 	ui_.setCss(k.table, "font-size", "13px");
 	k.delegate = {&k.painter, &StringsBrowserPanel::paintCell};
 	if (isStr)
@@ -367,7 +362,7 @@ void StringsBrowserPanel::setCategoryFilterIndex(int index)
 void StringsBrowserPanel::setRegexEnabled(bool on)
 {
 	ui_.setChecked(regexBtn_, on);
-	ui_.setCss(regexBtn_, "background", on ? "#3d8bfd" : "transparent");
+	// The theme's toolbutton:checked shows the state.
 	applyStringFilter();
 }
 
@@ -686,26 +681,27 @@ void StringsBrowserPanel::paintCell(
 	const StringsBrowserPanel& panel = *p->panel;
 	const auto t = static_cast<Table>(p->table);
 	if (row >= panel.visibleRowCount(t)) return;
-	uint32_t color = kTextColor;
+	const ThemeColors& P = themeColors(pc.ui);
+	uint32_t color = P.text;
 	if (col == 0)
-		color = kAddrColor;
+		color = P.overlay1;
 	else if (t == Table::Strings)
 	{
 		const auto& e = panel.strProxy_.entry(row);
 		if (col == model::StrColPreview)
 		{
-			if (const uint32_t c = model::stringCategoryColor(e.category)) color = c;
+			if (const uint32_t c = model::stringCategoryColor(e.category)) color = themedColor(pc.ui, c);
 		}
 		else
-			color = kDimColor;
+			color = P.subtext0;
 	}
 	else
 	{
 		const auto& e = panel.constProxy_.entry(row);
 		if (const uint32_t c = model::constantLabelColor(e.labelKind))
-			color = c;
+			color = themedColor(pc.ui, c);
 		else if (col != model::ConstColLabel)
-			color = kDimColor;
+			color = P.subtext0;
 	}
 	const bool right = (t == Table::Strings && col == model::StrColRefs)
 					|| (t == Table::Constants && (col == model::ConstColRefs || col == model::ConstColSize));

@@ -7,6 +7,7 @@
 #include "retdec/gui/ui/diff_panel.h"
 
 #include "retdec/gui/ui/empty_state.h"
+#include "retdec/gui/ui/theme.h"
 
 #include "retdec/gui/model/funclist_export.h"
 
@@ -35,12 +36,28 @@ namespace {
 
 constexpr std::string_view kPaneClass = "rd-diffpane";
 constexpr float kFontPx = 13.f;
+// Mocha colours; themed() gives the Latte ones under the light theme.
 constexpr uint32_t kPaneBg = 0x1e1e2e;
 constexpr uint32_t kGutterBg = 0x181825;
 constexpr uint32_t kText = 0xcdd6f4;
 constexpr uint32_t kCurrentLine = 0x45475a;
 constexpr uint32_t kGreen = 0xa6e3a1;
 constexpr uint32_t kRed = 0xf38ba8;
+
+/// @p rgb (a Mocha colour or one of the model's dark diff tints) in the theme of @p ui.
+uint32_t themed(const UiContext& ui, uint32_t rgb)
+{
+	if (currentTheme(ui) != ThemeKind::Latte) return rgb;
+	switch (rgb)
+	{
+	case model::kDiffRemovedBg: return 0xf9d8de;
+	case model::kDiffAddedBg: return 0xdcf1d6;
+	case model::kDiffRemovedSpanBg: return 0xf0a5b3;
+	case model::kDiffAddedSpanBg: return 0xa9dc9c;
+	case model::kDiffLineNumberFg: return 0x8c8fa1;
+	default: return themedColor(ThemeKind::Latte, rgb);
+	}
+}
 
 uint32_t darker(uint32_t rgb, float f)
 {
@@ -192,12 +209,12 @@ void DiffPanel::paintPane(const fuse::ui::PaintContext& pc, fuse::ui::DrawList& 
 								  : (ref->kind == PaneKind::Left ? p.leftDigits_ : p.rightDigits_);
 	const float numW = charW * static_cast<float>(numDigits + 1) + 6.f;
 	const float gutterW = unified ? numW * 2.f + charW * 2.f : numW;
-	const Color textCol = pc.tint(Color::rgb(kText));
-	const Color numCol = pc.tint(Color::rgb(model::kDiffLineNumberFg));
+	const Color textCol = pc.tint(Color::rgb(themed(ui, kText)));
+	const Color numCol = pc.tint(Color::rgb(themed(ui, model::kDiffLineNumberFg)));
 
 	dl.pushClip(c);
-	dl.rect(c, pc.tint(Color::rgb(kPaneBg)));
-	dl.rect({c.x, c.y, gutterW, c.h}, pc.tint(Color::rgb(kGutterBg)));
+	dl.rect(c, pc.tint(Color::rgb(themed(ui, kPaneBg))));
+	dl.rect({c.x, c.y, gutterW, c.h}, pc.tint(Color::rgb(themed(ui, kGutterBg))));
 	const int rows = static_cast<int>(p.rowCount());
 	const float textX = c.x + gutterW + 6.f - p.xScroll_;
 	for (int r = p.first_; r < rows; ++r)
@@ -235,10 +252,10 @@ void DiffPanel::paintPane(const fuse::ui::PaintContext& pc, fuse::ui::DrawList& 
 		}
 		if (bg)
 		{
-			dl.rect({c.x + gutterW, y, c.w - gutterW, lh}, pc.tint(Color::rgb(bg)));
-			dl.rect({c.x, y, gutterW - 2.f, lh}, pc.tint(Color::rgb(darker(bg, 1.3f))));
+			dl.rect({c.x + gutterW, y, c.w - gutterW, lh}, pc.tint(Color::rgb(themed(ui, bg))));
+			dl.rect({c.x, y, gutterW - 2.f, lh}, pc.tint(Color::rgb(darker(themed(ui, bg), 1.3f))));
 		}
-		if (r == p.cursorRow_) dl.rect({c.x + gutterW, y, c.w - gutterW, lh}, pc.tint(Color::rgb(kCurrentLine, 160.f / 255.f)));
+		if (r == p.cursorRow_) dl.rect({c.x + gutterW, y, c.w - gutterW, lh}, pc.tint(Color::rgb(themed(ui, kCurrentLine), 160.f / 255.f)));
 		if (line >= 0)
 			ui.paintString(
 				dl, std::to_string(line + 1), {c.x, y, numW - 4.f, lh}, numCol, px - 1.f, fuse::ui::TextAlignment::End, pc.node.index);
@@ -254,7 +271,7 @@ void DiffPanel::paintPane(const fuse::ui::PaintContext& pc, fuse::ui::DrawList& 
 					fuse::ui::TextAlignment::End,
 					pc.node.index);
 			const char pre[2] = {prefix, 0};
-			const Color preCol = pc.tint(Color::rgb(prefix == '+' ? kGreen : prefix == '-' ? kRed : kText));
+			const Color preCol = pc.tint(Color::rgb(themed(ui, prefix == '+' ? kGreen : prefix == '-' ? kRed : kText)));
 			ui.paintString(dl, pre, {c.x + numW * 2.f, y, charW * 2.f, lh}, preCol, px, fuse::ui::TextAlignment::Center, pc.node.index);
 		}
 		if (text.empty()) continue;
@@ -264,7 +281,7 @@ void DiffPanel::paintPane(const fuse::ui::PaintContext& pc, fuse::ui::DrawList& 
 		{
 			const float x0 = ui.measureString(std::string_view(shown).substr(0, sp.begin), px, pc.node);
 			const float x1 = ui.measureString(std::string_view(shown).substr(0, sp.end), px, pc.node);
-			dl.rect({textX + x0, y + 1.f, std::max(2.f, x1 - x0), lh - 2.f}, pc.tint(Color::rgb(spanColor)), 2.f);
+			dl.rect({textX + x0, y + 1.f, std::max(2.f, x1 - x0), lh - 2.f}, pc.tint(Color::rgb(themed(ui, spanColor))), 2.f);
 		}
 		ui.paintString(dl, shown, {textX, y, 100000.f, lh}, textCol, px, fuse::ui::TextAlignment::Start, pc.node.index);
 		dl.popClip();
@@ -383,11 +400,11 @@ void DiffPanel::build(NodeHandle parent)
 	ui_.setCss(stats_, "gap", "10px");
 	ui_.setCss(stats_, "padding", "0px 6px");
 	statsAdded_ = w::label(ui_, stats_, "");
-	ui_.setCss(statsAdded_, "color", "#a6e3a1");
+	ui_.addClass(statsAdded_, "retdec-success");
 	statsRemoved_ = w::label(ui_, stats_, "");
-	ui_.setCss(statsRemoved_, "color", "#f38ba8");
+	ui_.addClass(statsRemoved_, "retdec-danger");
 	statsSimilar_ = w::label(ui_, stats_, "No diff");
-	ui_.setCss(statsSimilar_, "color", "#888888");
+	ui_.addClass(statsSimilar_, "retdec-muted");
 	for (NodeHandle l: {statsAdded_, statsRemoved_, statsSimilar_})
 		ui_.setCss(l, "font-size", "13px");
 
@@ -406,8 +423,7 @@ void DiffPanel::build(NodeHandle parent)
 	// ── side by side ────────────────────────────────────────────────────────
 	auto header = [&](NodeHandle parent, std::string_view text) {
 		const NodeHandle l = w::label(ui_, parent, text);
-		ui_.setCss(l, "background", "#313244");
-		ui_.setCss(l, "color", "#cdd6f4");
+		ui_.addClass(l, "retdec-pane-title");
 		ui_.setCss(l, "padding", "2px");
 		ui_.setCss(l, "text-align", "center");
 		ui_.setCss(l, "font-size", "13px");

@@ -33,7 +33,7 @@ ShortcutsDialog::ShortcutsDialog(UiContext& ui): dlg_(ui, "Keyboard Shortcuts", 
 			const NodeHandle k = w::label(ui, row, e.keys);
 			ui.setCss(k, "width", "150px");
 			ui.setCss(k, "flex-shrink", "0");
-			ui.setCss(k, "color", "#ffffff");
+			ui.addClass(k, "retdec-strong");
 			const NodeHandle a = w::label(ui, row, e.action);
 			ui.setCss(a, "flex-grow", "1");
 			ui.setCss(a, "flex-shrink", "1");
