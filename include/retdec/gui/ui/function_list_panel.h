@@ -164,6 +164,8 @@ public:
 	/// Labels of the last context menu, in order (separators omitted).
 	const std::vector<std::string>& contextMenuLabels() const { return menuLabels_; }
 	fuse::ui::NodeHandle fileDialogNode() const { return fileDlg_; }
+	/// The hover tooltip of the cell under the pointer (shown after 0.5 s).
+	fuse::ui::NodeHandle cellToolTipNode() const { return cellTip_; }
 
 private:
 	enum class Prompt
@@ -200,6 +202,8 @@ private:
 	bool copy(const std::string& text);
 	std::vector<const model::FunctionEntry*> visibleEntries() const;
 	void notifyAnnotation(uint64_t address);
+	void hoverCell(fuse::ui::Vec2 p);
+	void hideCellTip();
 	static void paintCell(
 		const void* user,
 		const fuse::ui::PaintContext& pc,
@@ -226,6 +230,11 @@ private:
 	fuse::ui::NodeHandle promptDlg_, promptTitle_, promptLabel_, promptEdit_;
 	fuse::ui::NodeHandle menu_, fileDlg_;
 	std::vector<fuse::ui::NodeHandle> tooltips_; ///< live in the overlay layer
+	fuse::ui::NodeHandle cellTip_;
+	fuse::ui::TimerHandle cellTipTimer_;
+	bool cellTipPending_ = false;
+	int tipRow_ = -1, tipCol_ = -1;
+	fuse::ui::Vec2 tipPos_{};
 	bool fileDlgJson_ = false;
 
 	// selection (addresses; the table's value is the current row)

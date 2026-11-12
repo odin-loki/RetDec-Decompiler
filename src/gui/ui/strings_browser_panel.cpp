@@ -112,6 +112,8 @@ StringsBrowserPanel::~StringsBrowserPanel()
 		hookMap().erase({&ui_, k.host.index, k.host.generation});
 	if (ui_.alive(fileDlg_)) ui_.destroy(ui_.parent(fileDlg_));
 	if (ui_.alive(menu_)) ui_.destroy(menu_);
+	if (cellTipPending_) ui_.cancelTimer(cellTipTimer_);
+	if (ui_.alive(cellTip_)) ui_.destroy(cellTip_);
 	for (NodeHandle t: tooltips_)
 		if (ui_.alive(t)) ui_.destroy(t);
 	if (ui_.alive(root_)) ui_.destroy(root_);
@@ -233,7 +235,7 @@ void StringsBrowserPanel::buildTable(Table t, NodeHandle page)
 
 	k.painter = {this, static_cast<int>(t)};
 	k.model.user = &k.painter;
-	k.model.columns = isStr ? model::StrColCount : model::ConstColCount;
+	k.model.columns = static_cast<fuse::ui::u32>(isStr ? static_cast<int>(model::StrColCount) : static_cast<int>(model::ConstColCount));
 	k.model.rows = [](const void* u) {
 		const auto* p = static_cast<const Painter*>(u);
 		return static_cast<fuse::ui::u32>(p->panel->visibleRowCount(static_cast<Table>(p->table)));
@@ -466,6 +468,18 @@ bool StringsBrowserPanel::onTableEvent(Table t, const Event& e)
 {
 	TableKit& k = tables_[idx(t)];
 	const int current = static_cast<int>(ui_.value(k.table));
+	if (e.type == EventType::PointerMove)
+	{
+		if (!ui_.pressed().valid()) hoverCell(t, e.pos);
+		return false;
+	}
+	if (e.type == EventType::PointerLeave || e.type == EventType::Wheel)
+	{
+		hideCellTip();
+		tipRow_ = tipCol_ = -1;
+		return false;
+	}
+	hideCellTip();
 	if (e.type == EventType::KeyDown)
 	{
 		if ((e.mods & fuse::ui::kModCtrl) && e.key == Key::C)
@@ -507,6 +521,63 @@ bool StringsBrowserPanel::onTableEvent(Table t, const Event& e)
 	k.lastClickRow = row;
 	k.lastClickTime = now;
 	return false; // the table selects the row
+}
+
+int StringsBrowserPanel::columnAt(Table t, float x) const
+{
+	const NodeHandle table = tables_[idx(t)].table;
+	float at = ui_.contentRect(table).x;
+	const int cols = t == Table::Strings ? static_cast<int>(model::StrColCount) : static_cast<int>(model::ConstColCount);
+	for (int k = 0; k < cols; ++k)
+	{
+		at += w::tableColumnWidth(ui_, table, static_cast<fuse::ui::u32>(k));
+		if (x < at) return k;
+	}
+	return -1;
+}
+
+void StringsBrowserPanel::hoverCell(Table t, Vec2 p)
+{
+	const int row = rowAt(t, p);
+	const int col = row >= 0 ? columnAt(t, p.x) : -1;
+	if (t == tipTable_ && row == tipRow_ && col == tipCol_) return;
+	tipTable_ = t;
+	tipRow_ = row;
+	tipCol_ = col;
+	hideCellTip();
+	if (row < 0 || col < 0) return;
+	tipPos_ = p;
+	cellTipPending_ = true;
+	cellTipTimer_ = ui_.startTimer(0.5f, false, [this](UiContext&) {
+		cellTipPending_ = false;
+		if (tipRow_ < 0 || static_cast<std::size_t>(tipRow_) >= visibleRowCount(tipTable_)) return;
+		const auto r = static_cast<std::size_t>(tipRow_);
+		const std::string text = tipTable_ == Table::Strings ? model::stringToolTip(strProxy_.entry(r), tipCol_)
+															 : model::constantToolTip(constProxy_.entry(r), tipCol_);
+		if (text.empty()) return;
+		if (!ui_.alive(cellTip_))
+		{
+			cellTip_ = ui_.create("tooltip", w::overlayLayer(ui_)).value_or(NodeHandle{});
+			if (!ui_.alive(cellTip_)) return;
+			ui_.addClass(cellTip_, "tooltip");
+			ui_.setCss(cellTip_, "max-width", "640px");
+		}
+		ui_.setText(cellTip_, text);
+		ui_.setCss(cellTip_, "left", std::format("{}px", tipPos_.x + 12.f));
+		ui_.setCss(cellTip_, "top", std::format("{}px", tipPos_.y + 18.f));
+		w::overlayLayer(ui_);
+		ui_.setCss(cellTip_, "display", "flex");
+	});
+}
+
+void StringsBrowserPanel::hideCellTip()
+{
+	if (cellTipPending_)
+	{
+		ui_.cancelTimer(cellTipTimer_);
+		cellTipPending_ = false;
+	}
+	if (ui_.alive(cellTip_)) ui_.setCss(cellTip_, "display", "none");
 }
 
 void StringsBrowserPanel::activate(Table t, int row)

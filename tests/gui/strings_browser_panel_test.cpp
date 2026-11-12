@@ -614,6 +614,23 @@ TEST(StringsBrowserUiTest, ExportThroughDialog)
 	std::filesystem::remove_all(dir);
 }
 
+TEST(StringsBrowserUiTest, HoverShowsFullValueAndLabel)
+{
+	StringsFixture f;
+	f.h.ui.pointerMove(f.panel.cellCenter(Tab::Strings, 3, StrColPreview));
+	f.h.ui.update(0.6f);
+	f.h.frame();
+	ASSERT_TRUE(f.h.ui.alive(f.panel.cellToolTipNode()));
+	EXPECT_EQ(f.h.ui.text(f.panel.cellToolTipNode()), "Error: %s (code %d)");
+	f.panel.showTab(1);
+	f.h.frame();
+	f.h.ui.pointerMove(f.panel.cellCenter(Tab::Constants, 2, ConstColLabel));
+	f.h.ui.update(0.6f);
+	f.h.frame();
+	EXPECT_EQ(f.h.ui.text(f.panel.cellToolTipNode()), "HTTPS (0x1bb)");
+	EXPECT_TRUE(f.h.ui.computed(f.panel.cellToolTipNode()).visible);
+}
+
 TEST(StringsBrowserUiTest, RendersToPng)
 {
 	StringsFixture f;

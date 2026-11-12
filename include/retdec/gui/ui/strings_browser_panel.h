@@ -118,6 +118,8 @@ public:
 	fuse::ui::NodeHandle contextMenu() const { return menu_; }
 	fuse::ui::NodeHandle fileDialogNode() const { return fileDlg_; }
 	const std::vector<std::string>& contextMenuLabels() const { return menuLabels_; }
+	/// Hover tooltip of the cell under the pointer (full string value, constant label).
+	fuse::ui::NodeHandle cellToolTipNode() const { return cellTip_; }
 	std::size_t visibleRowCount(Table t) const;
 	std::string cellText(Table t, std::size_t row, int col) const;
 	uint64_t rowAddress(Table t, std::size_t row) const;
@@ -148,6 +150,9 @@ private:
 	void activate(Table t, int row);
 	void copyRow(Table t, int row, bool value);
 	bool copy(const std::string& text);
+	int columnAt(Table t, float x) const;
+	void hoverCell(Table t, fuse::ui::Vec2 p);
+	void hideCellTip();
 	static void paintCell(
 		const void* user,
 		const fuse::ui::PaintContext& pc,
@@ -183,6 +188,12 @@ private:
 	int menuRow_ = -1;
 	std::vector<std::string> menuLabels_;
 	std::vector<fuse::ui::NodeHandle> tooltips_;
+	fuse::ui::NodeHandle cellTip_;
+	fuse::ui::TimerHandle cellTipTimer_;
+	bool cellTipPending_ = false;
+	Table tipTable_ = Table::Strings;
+	int tipRow_ = -1, tipCol_ = -1;
+	fuse::ui::Vec2 tipPos_{};
 };
 
 } // namespace retdec::gui::ui

@@ -45,6 +45,13 @@ SettingsDialog::SettingsDialog(UiContext& ui, model::AppSettings& settings, mode
 	tabs_ = w::tabWidget(ui, dlg_.body(), kTabTitles, "settingsTabs");
 	ui.setCss(tabs_, "flex-grow", "1");
 	ui.setCss(tabs_, "min-height", "0px");
+	ui.setCss(w::tabWidgetBar(ui, tabs_), "flex-shrink", "0");
+	if (const NodeHandle stack = ui.nextSibling(w::tabWidgetBar(ui, tabs_)); ui.alive(stack))
+	{
+		// The page stack must shrink to the card, so pages scroll instead of the card.
+		ui.setCss(stack, "min-height", "0px");
+		ui.setCss(stack, "overflow", "hidden");
+	}
 
 	auto page = [&](u32 i) {
 		const NodeHandle p = w::tabPage(ui, tabs_, i);

@@ -787,6 +787,29 @@ TEST(FunctionListPanelUiTest, DemangleToggleAndShiftF10Menu)
 	EXPECT_FALSE(w::popupOpen(f.h.ui, f.panel.contextMenu()));
 }
 
+TEST(FunctionListPanelUiTest, HoverShowsCellToolTip)
+{
+	PanelFixture f;
+	const auto p = f.panel.cellCenter(1, FnColConfidence);
+	f.h.ui.pointerMove(p);
+	f.h.frame();
+	EXPECT_FALSE(f.h.ui.alive(f.panel.cellToolTipNode()));
+	f.h.ui.update(0.6f);
+	f.h.frame();
+	ASSERT_TRUE(f.h.ui.alive(f.panel.cellToolTipNode()));
+	EXPECT_TRUE(f.h.ui.computed(f.panel.cellToolTipNode()).visible);
+	EXPECT_NE(std::string(f.h.ui.text(f.panel.cellToolTipNode())).find("Composite: 50%"), std::string::npos);
+	// Another cell: the name, raw name and signature.
+	f.h.ui.pointerMove(f.panel.cellCenter(1, FnColName));
+	f.h.frame();
+	EXPECT_FALSE(f.h.ui.computed(f.panel.cellToolTipNode()).visible);
+	f.h.ui.update(0.6f);
+	f.h.frame();
+	EXPECT_EQ(f.h.ui.text(f.panel.cellToolTipNode()), "beta\n_Zbeta\nint beta(char*)");
+	f.h.key(fuse::ui::Key::Down);
+	EXPECT_FALSE(f.h.ui.computed(f.panel.cellToolTipNode()).visible);
+}
+
 TEST(FunctionListPanelUiTest, RendersToPng)
 {
 	Headless h({1100.f, 360.f});

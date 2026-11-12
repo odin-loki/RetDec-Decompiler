@@ -161,6 +161,7 @@ private:
 	fuse::ui::TimerHandle tickTimer_, busyTimer_;
 	bool tickRunning_ = false, busyRunning_ = false;
 	std::vector<fuse::ui::NodeHandle> tooltips_;
+	fuse::ui::NodeHandle elapsedTipNode_;
 
 	std::shared_ptr<Queue> queue_;
 	model::AnalysisBridge::Subscription subscription_;

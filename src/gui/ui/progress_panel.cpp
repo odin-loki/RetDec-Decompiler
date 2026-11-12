@@ -256,6 +256,7 @@ void ProgressPanel::build(NodeHandle parent)
 	fnCountLabel_ = stat("\xC6\x92", "0 fn", "Functions recovered");
 	instrLabel_ = stat("#", "0 instr", "Instructions analysed");
 	elapsedLabel_ = stat("\xCE\x94t", "0.0s", "Elapsed wall time");
+	elapsedTipNode_ = tooltips_.back();
 	ui_.setCss(elapsedLabel_, "width", "56px");
 
 	// ── stages + timeline (stacked splitter) ────────────────────────────────
@@ -431,6 +432,7 @@ void ProgressPanel::syncElapsed()
 	ui_.setText(elapsedLabel_, tracker_.started() && ms > 0 ? model::formatStageMs(ms) : "0.0s");
 	budget_ = tracker_.running() ? model::budgetLevel(ms, budgetSecs_) : model::BudgetLevel::Normal;
 	elapsedTip_ = model::budgetToolTip(budget_, budgetSecs_);
+	ui_.setText(elapsedTipNode_, elapsedTip_.empty() ? std::string("Elapsed wall time") : elapsedTip_);
 	switch (budget_)
 	{
 	case model::BudgetLevel::Exceeded: ui_.setCss(elapsedLabel_, "color", "#e64553"); break;

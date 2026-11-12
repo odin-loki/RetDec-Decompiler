@@ -144,6 +144,8 @@ FunctionListPanel::~FunctionListPanel()
 	for (NodeHandle dlg: {promptDlg_, fileDlg_})
 		if (ui_.alive(dlg)) ui_.destroy(ui_.parent(dlg));
 	if (ui_.alive(menu_)) ui_.destroy(menu_);
+	if (cellTipPending_) ui_.cancelTimer(cellTipTimer_);
+	if (ui_.alive(cellTip_)) ui_.destroy(cellTip_);
 	for (NodeHandle t: tooltips_)
 		if (ui_.alive(t)) ui_.destroy(t);
 	if (ui_.alive(root_)) ui_.destroy(root_);
@@ -561,6 +563,7 @@ bool FunctionListPanel::onTableEvent(const Event& e)
 	using fuse::ui::kModShift;
 	if (e.type == EventType::KeyDown)
 	{
+		hideCellTip();
 		extendOnKey_ = false;
 		const bool ctrl = e.mods & kModCtrl, shift = e.mods & kModShift;
 		if (ctrl && e.key == Key::A)
@@ -596,7 +599,19 @@ bool FunctionListPanel::onTableEvent(const Event& e)
 			extendOnKey_ = true;
 		return false;
 	}
+	if (e.type == EventType::PointerMove)
+	{
+		if (!ui_.pressed().valid()) hoverCell(e.pos);
+		return false;
+	}
+	if (e.type == EventType::PointerLeave || e.type == EventType::Wheel)
+	{
+		hideCellTip();
+		tipRow_ = tipCol_ = -1;
+		return false;
+	}
 	if (e.type != EventType::PointerDown) return false;
+	hideCellTip();
 
 	const Rect c = ui_.contentRect(table_);
 	if (!c.contains(e.pos)) return false;
@@ -629,6 +644,46 @@ bool FunctionListPanel::onTableEvent(const Event& e)
 		lastClickTime_ = now;
 	}
 	return true;
+}
+
+void FunctionListPanel::hoverCell(Vec2 p)
+{
+	const int row = rowAt(p);
+	const int col = row >= 0 ? columnAt(p.x) : -1;
+	if (row == tipRow_ && col == tipCol_) return;
+	tipRow_ = row;
+	tipCol_ = col;
+	hideCellTip();
+	if (row < 0 || col < 0) return;
+	if (model::functionToolTip(proxy_.entry(static_cast<std::size_t>(row)), col).empty()) return;
+	tipPos_ = p;
+	cellTipPending_ = true;
+	cellTipTimer_ = ui_.startTimer(0.5f, false, [this](UiContext&) {
+		cellTipPending_ = false;
+		if (tipRow_ < 0 || static_cast<std::size_t>(tipRow_) >= proxy_.rowCount()) return;
+		const std::string text = model::functionToolTip(proxy_.entry(static_cast<std::size_t>(tipRow_)), tipCol_);
+		if (!ui_.alive(cellTip_))
+		{
+			cellTip_ = ui_.create("tooltip", w::overlayLayer(ui_)).value_or(NodeHandle{});
+			if (!ui_.alive(cellTip_)) return;
+			ui_.addClass(cellTip_, "tooltip");
+		}
+		ui_.setText(cellTip_, text);
+		ui_.setCss(cellTip_, "left", std::format("{}px", tipPos_.x + 12.f));
+		ui_.setCss(cellTip_, "top", std::format("{}px", tipPos_.y + 18.f));
+		w::overlayLayer(ui_);
+		ui_.setCss(cellTip_, "display", "flex");
+	});
+}
+
+void FunctionListPanel::hideCellTip()
+{
+	if (cellTipPending_)
+	{
+		ui_.cancelTimer(cellTipTimer_);
+		cellTipPending_ = false;
+	}
+	if (ui_.alive(cellTip_)) ui_.setCss(cellTip_, "display", "none");
 }
 
 void FunctionListPanel::activateRow(int row, int col)
