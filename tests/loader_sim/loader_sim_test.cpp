@@ -1207,3 +1207,60 @@ TEST(ELFRelocations, Elf32RelaAddendIsReadAtTheElf32Offset)
 	EXPECT_EQ(0x1234, recs[0].addend);
 	EXPECT_EQ(0x5678, recs[1].addend);
 }
+
+// Many SHT_RELA headers, each claiming a one-byte sh_entsize over the same
+// bytes.
+//
+// Each section's walk is bounded by the file, but the sum over sections was
+// not, and an entsize of one made every byte a record. Fill the file with 0x08
+// (R_386_RELATIVE in the low byte of r_info) and each of the N sections yields
+// a record per byte: libFuzzer took a 64 kB input of this shape past the 2 GB
+// RSS limit through a single std::vector<RelocRecord>.
+//
+// An entsize below the structure's own size is not a relocation table, and a
+// well-formed file cannot describe more relocations than its size over the
+// smallest entry, so that is the bound.
+TEST(ELFRelocations, SectionsSharingOneByteEntriesCannotAmplify)
+{
+	auto put16 = [](std::vector<uint8_t>& v, std::size_t o, uint16_t x) {
+		v[o] = x & 0xFF;
+		v[o + 1] = (x >> 8) & 0xFF;
+	};
+	auto put32 = [](std::vector<uint8_t>& v, std::size_t o, uint32_t x) {
+		for (int i = 0; i < 4; ++i)
+			v[o + i] = (x >> (8 * i)) & 0xFF;
+	};
+
+	constexpr std::size_t kShdr32 = 40;
+	constexpr uint16_t kNumSec = 64;
+	constexpr std::size_t kShOff = 4096;
+	std::vector<uint8_t> v(kShOff + kNumSec * kShdr32, 0x08);
+	v[0] = 0x7F;
+	v[1] = 'E';
+	v[2] = 'L';
+	v[3] = 'F';
+	v[4] = 1; // ELFCLASS32
+	v[5] = 1; // ELFDATA2LSB
+	put32(v, 32, static_cast<uint32_t>(kShOff)); // e_shoff
+	put16(v, 48, kNumSec);                       // e_shnum
+	put16(v, 50, 0xFFFF);                        // e_shstrndx: none
+	for (std::size_t i = 0; i < kNumSec; ++i)
+	{
+		const std::size_t sh = kShOff + i * kShdr32;
+		put32(v, sh + 4, 4);           // SHT_RELA
+		put32(v, sh + 16, 0);          // sh_offset
+		put32(v, sh + 20, 0xFFFFFFFF); // sh_size
+		put32(v, sh + 36, 1);          // sh_entsize
+	}
+
+	LoaderSim sim(v.data(), v.size(), 0x8048000, false, true);
+	const auto recs = sim.applyELFRelocations(0x8048000);
+
+	const std::size_t bound = v.size() / 8 + 1;
+	EXPECT_LE(recs.size(), bound) << "applyELFRelocations returned " << recs.size() << " records from a "
+								  << v.size() << "-byte file";
+
+	// The same file still loads end to end without amplifying anywhere.
+	const auto img = sim.load();
+	EXPECT_LE(img.relocations.size(), bound);
+}

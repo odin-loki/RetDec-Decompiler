@@ -60,6 +60,17 @@ that `ElfFormat::loadDynamicSegmentSection()` passed `sh_size` to ELFIO's
 section 1 is larger than the entire file!". It is hand-written rather than
 libFuzzer's blob so that what it tests is legible.
 
+`loadersim/oom_elf_rela_sections_sharing_entries` is likewise hand-written. CI
+found an out-of-memory in `loadersim` (2211 MB against the 2048 MB limit) but
+the reproducer stayed on the runner. This file reaches the same place: a
+little-endian ELF32 (first byte `0x06` is the harness's flags) with 800
+`SHT_RELA` section headers, each claiming `sh_offset` 0, `sh_size`
+`0xFFFFFFFF` and `sh_entsize` 1 over 64 kB that are mostly `0x08`
+(`R_386_RELATIVE`). `LoaderSim::applyELFRelocations()` made one `RelocRecord`
+per byte per section -- about 1 GB RSS and a single 512 MB `malloc` -- until it
+rejected entsizes below the structure's own size and capped the total at the
+file size over the smallest entry.
+
 ## CI
 
 Weekly `sanitizers.yml` runs ASan over `tests/decompile_samples` corpus.
