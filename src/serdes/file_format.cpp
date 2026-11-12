@@ -12,17 +12,6 @@
 #include "retdec/serdes/file_format.h"
 #include "retdec/serdes/std.h"
 
-namespace {
-
-const std::string JSON_name    = "name";
-const std::string JSON_endian  = "endian";
-const std::string JSON_bitSize = "bitSize";
-
-const std::string JSON_val_little = "little";
-const std::string JSON_val_big    = "big";
-
-} // anonymous namespace
-
 namespace retdec {
 namespace serdes {
 
