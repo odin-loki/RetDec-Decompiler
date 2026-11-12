@@ -133,6 +133,10 @@ private:
 	void build(fuse::ui::NodeHandle parent);
 	fuse::ui::NodeHandle makePane(fuse::ui::NodeHandle parent, PaneRef* ref);
 	void apply(model::DiffResult diff);
+	void resetHunks();
+	void updateStats();
+	void scrollToRowTop(int row);
+	void invalidatePanes();
 	void tooltip(fuse::ui::NodeHandle n, std::string_view text);
 	void updateStageCombo();
 	bool copy(const std::string& text);
