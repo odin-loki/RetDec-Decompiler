@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <functional>
 #include <string>
+#include <vector>
 #include <thread>
 
 namespace retdec::gui::test {
@@ -34,6 +35,12 @@ inline const fuse::text::Font& bundledFont()
 			std::fprintf(stderr, "bundled FuseUI font missing\n");
 			std::abort();
 		}
+		// FuseUI's glyph fallback chain (DejaVu Sans: ✓ ▶ ⚠ …), as fuse::app::defaultFont() has.
+		static const std::vector<fuse::text::Font> fallbacks = fuse::text::Font::bundledFallbacks();
+		std::vector<const fuse::text::Font*> chain;
+		for (const auto& x: fallbacks)
+			chain.push_back(&x);
+		r->setFallbacks(std::move(chain));
 		return std::move(*r);
 	}();
 	return f;
@@ -46,6 +53,7 @@ public:
 		: ui({.viewport = viewport, .font = &bundledFont()})
 	{
 		fuse::ui::widgets::install(ui);
+		ui.registerBundledFonts(); // "monospace", bold faces, symbol fallback (as AppWindow)
 		ui.setCss(ui.root(), "padding", "0px");
 		ui.setCss(ui.root(), "gap", "0px");
 	}

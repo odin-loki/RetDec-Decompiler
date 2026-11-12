@@ -119,6 +119,7 @@ void MainWindow::startAnalysis()
 	progressShown_ = true;
 	setShown(ui_, statusProgress_, true);
 	setAnalysisProgress(0);
+	fuse::ui::widgets::setProgressIndeterminate(ui_, statusProgress_, true);
 	startElapsedTimer();
 	progress_->resetAll();
 	setStatusStage("Running\xE2\x80\xA6");
@@ -344,6 +345,7 @@ bool MainWindow::launchDecompilerForBinary(const std::string& absBinary, const s
 	progressShown_ = true;
 	setShown(ui_, statusProgress_, true);
 	setAnalysisProgress(0);
+	fuse::ui::widgets::setProgressIndeterminate(ui_, statusProgress_, true);
 	startElapsedTimer();
 	logProgressOffset_ = logConsoleOffset_ = logDiagOffset_ = 0;
 	currentProgressStage_.clear();

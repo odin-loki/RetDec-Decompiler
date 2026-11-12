@@ -20,12 +20,6 @@ using namespace fuse::ui;
 
 namespace {
 
-double nowSeconds()
-{
-	using namespace std::chrono;
-	return duration<double>(steady_clock::now().time_since_epoch()).count();
-}
-
 constexpr uint64_t kMaxHexBytes = 64 * 1024;
 
 } // namespace
@@ -59,6 +53,9 @@ BinaryBrowserPanel::BinaryBrowserPanel(UiContext& ui, NodeHandle parent): ui_(ui
 	w::setTableColumnWidth(ui, table_, 0, 260.f);
 	w::setTableColumnWidth(ui, table_, 1, 140.f);
 	w::setTableColumnWidth(ui, table_, 2, 110.f);
+	w::setTableColumnFont(ui, table_, 1, kMonoFamily);
+	w::setTableColumnFont(ui, table_, 2, kMonoFamily);
+	w::setTableActivation(ui, table_, true); // double click / Enter navigate
 
 	hexHeader_ = w::label(ui, bottom, "Hex View");
 	ui.addClass(hexHeader_, "retdec-muted");
@@ -68,7 +65,7 @@ BinaryBrowserPanel::BinaryBrowserPanel(UiContext& ui, NodeHandle parent): ui_(ui
 
 	auto* self = this;
 	ui.connect(table_, SignalKind::ValueChanged, [self](UiContext&, NodeHandle, const SignalArgs& a) { self->showHexForRow(int(a.value)); });
-	ui.connect(table_, SignalKind::Submitted, [self](UiContext&, NodeHandle, const SignalArgs& a) { self->activateRow(int(a.value)); });
+	ui.connect(table_, SignalKind::Activated, [self](UiContext&, NodeHandle, const SignalArgs& a) { self->activateRow(int(a.value)); });
 }
 
 BinaryBrowserPanel::~BinaryBrowserPanel()
@@ -97,17 +94,7 @@ bool BinaryBrowserPanel::handleEvent(EventContext& ec, const Event& e)
 		}
 		return false;
 	}
-	if (e.button != MouseButton::Left) return false;
-	const double now = nowSeconds();
-	const bool dbl = now - lastDown_ < 0.45 && std::abs(e.pos.x - lastDownPos_.x) < 5.f && std::abs(e.pos.y - lastDownPos_.y) < 5.f;
-	lastDown_ = dbl ? -1.0 : now;
-	lastDownPos_ = e.pos;
-	if (dbl)
-	{
-		activateRow(int(ui_.value(table_)));
-		return true;
-	}
-	return false;
+	return false; // double click / Enter: the table's Activated signal
 }
 
 std::string BinaryBrowserPanel::cellText(int row, int col) const

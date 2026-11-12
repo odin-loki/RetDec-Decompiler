@@ -8,6 +8,7 @@
 #include "retdec/gui/ui/tri_pane_code_view.h"
 
 #include <fuse/ui/widgets/widgets.hpp>
+#include <span>
 
 namespace retdec::gui::ui {
 
@@ -57,6 +58,8 @@ retdec-panel { background: transparent; }
   background: var(--surface, #2a2b32); border: 1px var(--border, #474955); }
 .retdec-banner-title { font-size: 15px; color: #ffffff; }
 .retdec-status { color: var(--text-dim, #9a9cab); flex-grow: 1; }
+.retdec-mono { font-family: "JetBrains Mono", monospace; }
+.retdec-bold { font-weight: bold; }
 )css";
 
 } // namespace
@@ -122,6 +125,9 @@ void ensureRetdecUiClasses(UiContext& ui)
 	WidgetRegistry& r = ui.registry();
 	if (r.find(PanelRootW::kName) != 0xFFFFFFFFu) return;
 	if (r.find("tableview") == 0xFFFFFFFFu) w::install(ui);
+	// Monospace code / addresses and the symbol glyphs (✓ ▶ ⚠ …) need the
+	// bundled faces; AppWindow registers them, bare contexts (tests) may not.
+	if (!ui.font() || ui.resolveFont("monospace") == ui.font()) ui.registerBundledFonts();
 	r.registerWidget<PanelRootW>();
 	registerCodeViewClass(ui);
 	(void)ui.addStyleSheet(kRetdecCss);
@@ -174,6 +180,16 @@ NodeHandle toolbarRow(UiContext& ui, NodeHandle parent)
 	ui.setCss(row, "gap", "4px");
 	ui.setCss(row, "flex-shrink", "0");
 	return row;
+}
+
+const fuse::text::Font* styledFont(const UiContext& ui, NodeHandle node, bool mono, bool bold)
+{
+	if (!mono && !bold) return nullptr;
+	const ComputedStyle& st = ui.computed(node);
+	const u16 weight = bold ? kFontWeightBold : (st.fontWeight ? st.fontWeight : kFontWeightNormal);
+	const fuse::text::Font* f = mono ? ui.resolveFont(kMonoFamily, weight)
+	                                 : ui.resolveFont(std::span<const u32>(st.fontFamily.data(), st.fontFamilyCount), weight);
+	return f == ui.fontFor(node) ? nullptr : f;
 }
 
 void setLineEditText(UiContext& ui, NodeHandle edit, std::string_view text)

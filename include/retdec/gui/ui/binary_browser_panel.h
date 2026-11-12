@@ -91,8 +91,6 @@ private:
 	fuse::ui::widgets::ItemModel model_;
 	std::vector<Row> rows_;
 	std::string binaryPath_;
-	double lastDown_ = -1.0;
-	fuse::ui::Vec2 lastDownPos_;
 	fuse::ui::Vec2 menuPos_;
 	fuse::ui::TimerHandle menuTimer_;
 	bool menuPending_ = false;

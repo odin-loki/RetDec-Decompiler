@@ -96,8 +96,6 @@ private:
 	std::string text_;
 	fuse::ui::widgets::ItemModel model_;
 	fuse::ui::widgets::CellDelegate delegate_;
-	double lastDown_ = -1.0;
-	fuse::ui::Vec2 lastDownPos_;
 	int sortCol_ = -1;
 	bool sortAsc_ = true;
 };

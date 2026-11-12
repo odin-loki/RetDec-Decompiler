@@ -82,8 +82,23 @@ fuse::ui::NodeHandle toolbarRow(fuse::ui::UiContext& ui, fuse::ui::NodeHandle pa
 void setLineEditText(fuse::ui::UiContext& ui, fuse::ui::NodeHandle edit, std::string_view text);
 
 /// Registers the classes and default styles of this directory (idempotent;
-/// every panel constructor calls it).
+/// every panel constructor calls it). Also registers FuseUI's bundled faces
+/// (Open Sans, JetBrains Mono for "monospace", DejaVu Sans glyph fallback)
+/// when the context has no monospace face yet (AppWindow already has them).
 void ensureRetdecUiClasses(fuse::ui::UiContext& ui);
+
+/// CSS classes of the shared sheet: "retdec-mono" (code, addresses, hex: the
+/// monospace family) and "retdec-bold".
+inline constexpr std::string_view kMonoClass = "retdec-mono";
+inline constexpr std::string_view kBoldClass = "retdec-bold";
+/// The CSS family list used for code, addresses and hex.
+inline constexpr std::string_view kMonoFamily = "\"JetBrains Mono\", monospace";
+
+/// The face for text a cell delegate / custom widget paints in @p node with
+/// paintString: the node's own family (or the monospace one when @p mono) at
+/// bold weight when @p bold. Null when that is the node's own face (pass it
+/// straight to paintString).
+const fuse::text::Font* styledFont(const fuse::ui::UiContext& ui, fuse::ui::NodeHandle node, bool mono, bool bold);
 
 } // namespace retdec::gui::ui
 

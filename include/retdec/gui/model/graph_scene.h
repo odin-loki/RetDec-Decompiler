@@ -114,7 +114,7 @@ struct SceneText
 	Rgba color = catppuccin::text;
 	SceneAlign align = SceneAlign::Left;
 	bool bold = false;
-	bool mono = false; ///< preferred monospace (SVG font-family; the view uses the UI font)
+	bool mono = false; ///< monospace (the view paints it with the "monospace" face; SVG font-family)
 };
 
 struct SceneNode

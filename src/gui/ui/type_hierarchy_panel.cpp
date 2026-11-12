@@ -7,6 +7,7 @@
 #include "retdec/gui/ui/type_hierarchy_panel.h"
 
 #include "retdec/gui/ui/graph_view.h"
+#include "retdec/gui/ui/empty_state.h"
 
 #include <algorithm>
 #include <cmath>
@@ -26,7 +27,6 @@ namespace {
 constexpr float kIndent = 16.f;
 constexpr float kToggleW = 14.f;
 constexpr float kCellPad = 6.f; ///< the table view's cell inset
-constexpr double kDoubleClick = 0.45;
 
 float tableRowHeight(const UiContext& ui, NodeHandle n)
 {
@@ -74,39 +74,30 @@ struct TypeHierarchyPanel::Glue
 		if (row >= p.m_rows.size()) return;
 		const auto& r = p.m_rows[row];
 		const fuse::ui::Color color = pc.tint(graphColor(p.m_hierarchy.foreground(r.node, int(col))));
+		// Qt: monospace cells, abstract class names italic. FuseUI has no italic
+		// faces: they are bold (and mauve, from the model's colour).
+		const fuse::text::Font* face = styledFont(pc.ui, pc.node, true, p.m_hierarchy.italic(r.node, int(col)));
 		if (col == 0)
 		{
 			const float x = cell.x + float(r.depth) * kIndent;
 			if (r.hasChildren)
-			{
-				const float cx = x + kToggleW * 0.5f, cy = cell.y + cell.h * 0.5f;
-				const fuse::ui::Color tc = pc.tint(graphColor(model::catppuccin::overlay2));
-				if (r.expanded)
-				{ // ▾
-					dl.line({cx - 4.f, cy - 2.f}, {cx + 4.f, cy - 2.f}, tc, 1.5f);
-					dl.line({cx - 4.f, cy - 2.f}, {cx, cy + 3.f}, tc, 1.5f);
-					dl.line({cx + 4.f, cy - 2.f}, {cx, cy + 3.f}, tc, 1.5f);
-				}
-				else
-				{ // ▸
-					dl.line({cx - 2.f, cy - 4.f}, {cx - 2.f, cy + 4.f}, tc, 1.5f);
-					dl.line({cx - 2.f, cy - 4.f}, {cx + 3.f, cy}, tc, 1.5f);
-					dl.line({cx - 2.f, cy + 4.f}, {cx + 3.f, cy}, tc, 1.5f);
-				}
-			}
+				pc.ui.paintString(dl, r.expanded ? "\u25BE" : "\u25B8", {x, cell.y, kToggleW, cell.h}, // ▾ ▸
+					pc.tint(graphColor(model::catppuccin::overlay2)), pc.style.fontSize, fuse::ui::TextAlignment::Center,
+					pc.node.index);
 			const float tx = x + kToggleW + 2.f;
 			pc.ui.paintString(dl, text, {tx, cell.y, std::max(0.f, cell.right() - tx), cell.h}, color, pc.style.fontSize,
-				fuse::ui::TextAlignment::Start, pc.node.index);
+				fuse::ui::TextAlignment::Start, pc.node.index, face);
 			return;
 		}
-		pc.ui.paintString(dl, text, cell, color, pc.style.fontSize, fuse::ui::TextAlignment::Start, pc.node.index);
+		pc.ui.paintString(dl, text, cell, color, pc.style.fontSize, fuse::ui::TextAlignment::Start, pc.node.index, face);
 	}
 	static void paintVtable(const void* u, const fuse::ui::PaintContext& pc, fuse::ui::DrawList& dl, Rect cell,
 		uint32_t row, uint32_t col, std::string_view text, bool)
 	{
 		const auto& p = self(u);
+		// Monospace; pure-virtual slots italic in Qt -> bold here (no italic faces).
 		pc.ui.paintString(dl, text, cell, pc.tint(graphColor(p.m_vtable.foreground(int(row), int(col)))), pc.style.fontSize,
-			fuse::ui::TextAlignment::Start, pc.node.index);
+			fuse::ui::TextAlignment::Start, pc.node.index, styledFont(pc.ui, pc.node, true, p.m_vtable.italic(int(row), int(col))));
 	}
 };
 
@@ -130,7 +121,7 @@ TypeHierarchyPanel::TypeHierarchyPanel(UiContext& ui, NodeHandle parent): m_ui(u
 	ui.setCss(m_search, "border-color", "#45475a");
 	ui.setCss(m_search, "padding", "2px 6px");
 	ui.setA11y(m_search, fuse::ui::A11yRole::TextField, "Filter classes…");
-	w::setTooltip(ui, m_search, "Filter classes…");
+	w::setPlaceholderText(ui, m_search, "Filter classes\u2026");
 
 	m_split = w::splitter(ui, m_root, /*stacked=*/true);
 	ui.setCss(m_split, "flex-grow", "1");
@@ -149,6 +140,7 @@ TypeHierarchyPanel::TypeHierarchyPanel(UiContext& ui, NodeHandle parent): m_ui(u
 		w::setTableColumnWidth(ui, m_tree, c, treeW[c]);
 		w::setTableDelegate(ui, m_tree, c, &m_treeDelegate);
 	}
+	w::setTableActivation(ui, m_tree, true);
 
 	m_vtablePane = w::splitterPane(ui, m_split, 220.f);
 	ui.setCss(m_vtablePane, "padding", "0px");
@@ -169,6 +161,7 @@ TypeHierarchyPanel::TypeHierarchyPanel(UiContext& ui, NodeHandle parent): m_ui(u
 		w::setTableColumnWidth(ui, m_vtableView, c, vtW[c]);
 		w::setTableDelegate(ui, m_vtableView, c, &m_vtableDelegate);
 	}
+	w::setTableActivation(ui, m_vtableView, true);
 
 	// ── Wiring ───────────────────────────────────────────────────────────────
 	ui.connect(m_search, SignalKind::TextChanged,
@@ -190,8 +183,12 @@ TypeHierarchyPanel::TypeHierarchyPanel(UiContext& ui, NodeHandle parent): m_ui(u
 		else if (a.event->key == fuse::ui::Key::Right && m_rows[size_t(row)].hasChildren && !m_rows[size_t(row)].expanded)
 			toggleRow(row);
 	});
-	ui.connect(m_vtableView, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { vtableClicked(); });
-	ui.connect(m_vtableView, SignalKind::Submitted,
+	// Double click on a class row toggles it (not Enter: index -1); a double
+	// click or Enter on a vtable slot navigates.
+	ui.connect(m_tree, SignalKind::Activated, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+		if (a.index >= 0) treeActivated(int(std::lround(a.value)));
+	});
+	ui.connect(m_vtableView, SignalKind::Activated,
 		[this](UiContext&, NodeHandle, const SignalArgs& a) { activateVtableRow(int(std::lround(a.value))); });
 
 	rebuildRows(-1);
@@ -371,34 +368,22 @@ void TypeHierarchyPanel::treeClicked()
 {
 	const int row = int(std::lround(m_ui.value(m_tree)));
 	if (row < 0 || row >= int(m_rows.size())) return;
-	const auto now = std::chrono::steady_clock::now();
 	// Click on the disclosure triangle toggles.
-	if (const auto t = treeToggleCenter(row); t && m_rows[size_t(row)].hasChildren)
-	{
-		const Vec2 p = m_ui.pointer();
-		if (std::abs(p.x - t->x) <= kToggleW * 0.5f + 1.f)
-		{
-			toggleRow(row);
-			m_lastTreeRow = -1;
-			return;
-		}
-	}
-	const bool dbl = m_lastTreeRow == row && std::chrono::duration<double>(now - m_lastTreeClick).count() <= kDoubleClick;
-	m_lastTreeRow = dbl ? -1 : row;
-	m_lastTreeClick = now;
-	if (dbl) toggleRow(row);
+	if (overToggle(row)) toggleRow(row);
 }
 
-void TypeHierarchyPanel::vtableClicked()
+bool TypeHierarchyPanel::overToggle(int row) const
 {
-	const int row = int(std::lround(m_ui.value(m_vtableView)));
-	if (row < 0) return;
-	const auto now = std::chrono::steady_clock::now();
-	const bool dbl =
-		m_lastVtableRow == row && std::chrono::duration<double>(now - m_lastVtableClick).count() <= kDoubleClick;
-	m_lastVtableRow = dbl ? -1 : row;
-	m_lastVtableClick = now;
-	if (dbl) activateVtableRow(row);
+	if (row < 0 || row >= int(m_rows.size()) || !m_rows[size_t(row)].hasChildren) return false;
+	const auto t = treeToggleCenter(row);
+	return t && std::abs(m_ui.pointer().x - t->x) <= kToggleW * 0.5f + 1.f;
+}
+
+void TypeHierarchyPanel::treeActivated(int row)
+{
+	// A double click on the triangle already toggled twice through its clicks.
+	if (row < 0 || row >= int(m_rows.size()) || overToggle(row)) return;
+	toggleRow(row);
 }
 
 void TypeHierarchyPanel::activateVtableRow(int row)

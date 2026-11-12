@@ -6,6 +6,8 @@
 
 #include "retdec/gui/ui/graph_view.h"
 
+#include "retdec/gui/ui/empty_state.h"
+
 #include <fuse/app/app.hpp>
 #include <fuse/ui/widgets/widgets.hpp>
 
@@ -72,6 +74,10 @@ void paintScene(UiContext& ui, DrawList& dl, const model::GraphScene& sc, const 
 	const Rect& clip, const PaintState& st, uint32_t nodeIdx)
 {
 	const float z = t.zoom;
+	// SceneText faces: [mono][bold] (null = the view's own face).
+	const NodeHandle view = ui.handleOf(nodeIdx);
+	const fuse::text::Font* faces[2][2] = {{nullptr, styledFont(ui, view, false, true)},
+		{styledFont(ui, view, true, false), styledFont(ui, view, true, true)}};
 	const GRect visible = t.visibleScene(clip.w, clip.h);
 	const GRect vis{visible.x + (clip.x - offset.x) / z, visible.y + (clip.y - offset.y) / z, visible.w, visible.h};
 	auto V = [&](GPoint p) {
@@ -175,7 +181,7 @@ void paintScene(UiContext& ui, DrawList& dl, const model::GraphScene& sc, const 
 				const fuse::ui::TextAlignment al = tx.align == model::SceneAlign::Center ? fuse::ui::TextAlignment::Center
 					: tx.align == model::SceneAlign::Right                               ? fuse::ui::TextAlignment::End
 																						 : fuse::ui::TextAlignment::Start;
-				ui.paintString(dl, tx.text, R(tx.box), graphColor(tx.color, op), px, al, nodeIdx);
+				ui.paintString(dl, tx.text, R(tx.box), graphColor(tx.color, op), px, al, nodeIdx, faces[tx.mono][tx.bold]);
 			}
 		if (st.highlight && st.highlight->count(n.id))
 		{
@@ -623,11 +629,10 @@ bool GraphView::handle(const Event& e)
 			return true;
 		}
 		m_drag = Drag::None;
-		const auto now = std::chrono::steady_clock::now();
-		const bool dbl = m_lastClickNode == id
-			&& std::chrono::duration<double>(now - m_lastClickTime).count() <= m_doubleClick;
-		m_lastClickNode = dbl ? std::nullopt : id;
-		m_lastClickTime = now;
+		// FuseUI counts the clicks (UiContext double-click settings); the second
+		// press must land on the same graph node.
+		const bool dbl = e.clicks == 2 && m_lastClickNode == id;
+		m_lastClickNode = id;
 		setSelectedNode(id);
 		// Callbacks last: they may replace the scene.
 		const uint64_t nodeId = *id;

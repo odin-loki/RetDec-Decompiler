@@ -11,8 +11,9 @@
  *   Blue #89b4fa  Green #a6e3a1  Yellow #f9e2af  Red #f38ba8  Peach #fab387
  *   Mauve #cba6f7  Teal #94e2d5
  *
- * font-family / font-weight are ignored by FuseUI builds that do not know
- * them yet (an unknown property is skipped, the rest of the sheet applies).
+ * Fonts: the bundled faces (sans-serif = Open Sans, monospace = JetBrains
+ * Mono) registered by fuse_app; code and console views are monospace as in
+ * the Qt theme.
  */
 
 :root {
@@ -23,7 +24,7 @@
   --accent: #89b4fa; --accent-hi: #b4d0ff; --on-accent: #1e1e2e;
   --danger: #f38ba8; --warning: #fab387; --success: #a6e3a1; --info: #89b4fa;
   --input: #313244; --code-bg: #11111b; --selection: #3e4260;
-  background: var(--bg); color: var(--text); font-size: 13px;
+  background: var(--bg); color: var(--text); font-size: 13px; font-family: sans-serif;
 }
 
 /* ── Core widgets ─────────────────────────────────────────────────────────── */
@@ -43,6 +44,9 @@ toolbutton:hover { background: var(--surface-hi); color: var(--accent); }
 toolbutton:pressed { background: var(--surface2); }
 toolbutton:checked { background: var(--surface2); color: var(--accent); }
 toolbutton:disabled { color: var(--surface3); background: transparent; }
+/* retdec-codeview keeps the default face until CodeView measures its token
+   runs with the node's font (with monospace set, tokens overlap). */
+lineedit, spinbox, combobox { placeholder-color: var(--surface3); }
 lineedit, spinbox {
   background: var(--input); color: var(--text); border: 1px var(--surface2); border-radius: 4px; padding: 4px 8px;
 }
@@ -92,11 +96,11 @@ tooltip { background: var(--crust); color: var(--text); border: 1px var(--surfac
 .md-h2 { font-size: 18px; color: var(--text-strong); }
 .md-h3 { font-size: 15px; color: var(--accent); }
 .md-p, .md-li { color: var(--text); }
-.md-code { background: var(--crust); color: var(--success); font-family: "JetBrains Mono", "Cascadia Code", monospace; }
+.md-code { background: var(--crust); color: var(--success); font-family: monospace; }
 .md-quote { color: var(--text-dim); background: var(--surface-hi); }
 .propgrid { background: var(--crust); border: 1px var(--border-dim); }
 .propgroup { color: var(--text-strong); background: var(--surface-hi); }
-codeedit { background: var(--code-bg); color: var(--text); border: 1px var(--border-dim); font-family: "JetBrains Mono", "Cascadia Code", monospace; }
+codeedit { background: var(--code-bg); color: var(--text); border: 1px var(--border-dim); font-family: monospace; }
 
 /* ── Docks ────────────────────────────────────────────────────────────────── */
 

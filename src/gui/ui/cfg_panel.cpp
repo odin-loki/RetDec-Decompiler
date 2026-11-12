@@ -41,6 +41,7 @@ CfgPanel::CfgPanel(UiContext& ui, NodeHandle parent): m_ui(ui)
 	ui.setCss(m_search, "font-size", "12px");
 	ui.setCss(m_search, "padding", "2px 6px");
 	ui.setA11y(m_search, fuse::ui::A11yRole::TextField, "Search blocks");
+	w::setPlaceholderText(ui, m_search, "Search blocks\u2026");
 	m_matchLabel = graphMutedLabel(ui, m_toolbar, "");
 	m_fitBtn = graphToolButton(ui, m_toolbar, "Fit");
 	m_resetBtn = graphToolButton(ui, m_toolbar, "100%");

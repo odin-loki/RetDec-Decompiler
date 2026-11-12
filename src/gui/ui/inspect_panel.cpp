@@ -61,7 +61,7 @@ InspectPanel::InspectPanel(UiContext& ui, NodeHandle parent): ui_(ui)
 	w::label(ui, urow, "Unpack output:");
 	unpackOut_ = w::lineEdit(ui, urow, "");
 	ui.setCss(unpackOut_, "flex-grow", "1");
-	w::setTooltip(ui, unpackOut_, "Defaults to <binary>-unpacked");
+	w::setPlaceholderText(ui, unpackOut_, "Defaults to <binary>-unpacked");
 	bruteChk_ = w::checkBox(ui, urow, "Brute", false);
 	w::setTooltip(ui, bruteChk_, "Pass -b|--brute to retdec-unpacker.");
 	autoOpenChk_ = w::checkBox(ui, urow, "Open when done", false);

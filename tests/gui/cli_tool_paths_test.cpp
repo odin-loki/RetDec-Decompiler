@@ -96,9 +96,11 @@ TEST_F(CliToolPaths, MacBundleLayout)
 	m::setApplicationDirPathOverride(macos);
 
 	const auto prefixes = m::installPrefixCandidates();
-	ASSERT_EQ(prefixes.size(), 2u);
+	// <bin>/.. , <bin> itself (portable flat layout), then the prefix holding the bundle.
+	ASSERT_EQ(prefixes.size(), 3u);
 	EXPECT_EQ(prefixes[0], tmp.path / "prefix" / "RetDec.app" / "Contents");
-	EXPECT_EQ(prefixes[1], tmp.path / "prefix");
+	EXPECT_EQ(prefixes[1], macos);
+	EXPECT_EQ(prefixes[2], tmp.path / "prefix");
 
 	EXPECT_EQ(m::resolveRetdecBin2patExecutable(), tmp.path / "prefix" / "bin" / exe("retdec-bin2pat"));
 	EXPECT_EQ(m::resolveGuiResourceDir(), tmp.path / "prefix" / "RetDec.app" / "Contents" / "share" / "retdec" / "gui");

@@ -22,6 +22,7 @@
 #include <functional>
 #include <random>
 #include <string>
+#include <vector>
 #include <string_view>
 #include <thread>
 
@@ -32,6 +33,12 @@ inline const fuse::text::Font& bundledFont()
 	static const fuse::text::Font f = [] {
 		auto r = fuse::text::Font::bundled();
 		if (!r) std::abort();
+		// FuseUI's glyph fallback chain (DejaVu Sans: ✓ ▶ ⚠ …), as fuse::app::defaultFont() has.
+		static const std::vector<fuse::text::Font> fallbacks = fuse::text::Font::bundledFallbacks();
+		std::vector<const fuse::text::Font*> chain;
+		for (const auto& x: fallbacks)
+			chain.push_back(&x);
+		r->setFallbacks(std::move(chain));
 		return std::move(*r);
 	}();
 	return f;

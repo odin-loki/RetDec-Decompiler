@@ -103,7 +103,7 @@ bool clipboardGet(void* user, std::string& out)
 	return !out.empty();
 }
 
-constexpr std::string_view kDocTitles = "Decompiled C\nAssembly\nIR (SSA)\nCFG\nSynced (Asm \xE2\x94\x83 IR \xE2\x94\x83 C)";
+constexpr std::string_view kDocTitles = "Decompiled C\nAssembly\nIR (SSA)\nCFG\nSynced (Asm | IR | C)";
 constexpr std::string_view kWorkspaceTitles = "Strings\nInspect\nBinary\nTarget";
 constexpr std::array<std::string_view, MainWindow::kOutCount> kOutputTitles = {"Console", "Problems", "History",
                                                                                  "Progress"};
@@ -1081,6 +1081,7 @@ void MainWindow::setStatusDecompileState(const std::string& state)
 
 void MainWindow::setAnalysisProgress(int percent)
 {
+	widgets::setProgressIndeterminate(ui_, statusProgress_, false);
 	ui_.setValue(statusProgress_, float(std::clamp(percent, 0, 100)) / 100.f);
 }
 

@@ -54,6 +54,10 @@ struct CodePalette
 	std::array<fuse::ui::Color, model::kTokenKindCount> tokens{};
 	/// Console line kinds (Plain, Warning, Error, Banner, Footer).
 	std::array<fuse::ui::Color, 5> console{};
+	/// Token kinds / console line kinds painted bold (the Qt highlighters':
+	/// keywords and mnemonics; banner and footer lines).
+	std::array<bool, model::kTokenKindCount> boldTokens{};
+	std::array<bool, 5> boldConsole{};
 };
 CodePalette defaultCodePalette();
 
@@ -183,7 +187,6 @@ private:
 	bool dragging_ = false;
 	bool dragScroll_ = false;
 	float grab_ = 0.f;
-	double lastClickTime_ = -1.0;
 	int lastClickLine_ = -1;
 };
 

@@ -52,12 +52,14 @@ CallGraphPanel::CallGraphPanel(UiContext& ui, NodeHandle parent): m_ui(ui)
 	ui.setCss(m_nameFilter, "font-size", "12px");
 	ui.setCss(m_nameFilter, "padding", "2px 6px");
 	ui.setA11y(m_nameFilter, fuse::ui::A11yRole::TextField, "Filter functions");
-	w::setTooltip(ui, m_nameFilter, "Filter functions… (substring, or a glob with * and ?)");
+	w::setPlaceholderText(ui, m_nameFilter, "Filter functions\u2026");
+	w::setTooltip(ui, m_nameFilter, "Substring, or a glob with * and ?");
 	graphMutedLabel(ui, row1, "Min calls:");
 	m_minCalls = smallSpin(ui, row1, 0.f, 100000.f, 0.f, "70px");
 	graphMutedLabel(ui, row1, "Depth:");
 	m_depth = smallSpin(ui, row1, 0.f, 99.f, 0.f, "56px");
-	w::setTooltip(ui, m_depth, "Maximum call depth from the roots (0 = all)");
+	w::setSpecialValueText(ui, m_depth, "All"); // 0 = no depth limit (Qt: specialValueText)
+	w::setTooltip(ui, m_depth, "Maximum call depth from the roots");
 	m_hideLib = w::checkBox(ui, row1, "Hide lib", false);
 	ui.setCss(m_hideLib, "font-size", "12px");
 	m_module = w::comboBox(ui, row1, "All modules", 0);
@@ -75,7 +77,8 @@ CallGraphPanel::CallGraphPanel(UiContext& ui, NodeHandle parent): m_ui(ui)
 	ui.setCss(m_find, "font-size", "12px");
 	ui.setCss(m_find, "padding", "2px 6px");
 	ui.setA11y(m_find, fuse::ui::A11yRole::TextField, "Find function");
-	w::setTooltip(ui, m_find, "Find: highlight matching functions (Enter centres the first)");
+	w::setPlaceholderText(ui, m_find, "Find function\u2026");
+	w::setTooltip(ui, m_find, "Highlight matching functions (Enter centres the first)");
 	m_layoutCombo = w::comboBox(ui, row2, "Force-directed\nLayered", 0);
 	ui.setCss(m_layoutCombo, "font-size", "12px");
 	ui.setCss(m_layoutCombo, "padding", "2px 6px");

@@ -23,12 +23,6 @@ using model::TextRange;
 
 namespace {
 
-double nowSeconds()
-{
-	using namespace std::chrono;
-	return duration<double>(steady_clock::now().time_since_epoch()).count();
-}
-
 std::size_t prevCp(std::string_view s, std::size_t c)
 {
 	if (!c) return 0;
@@ -81,6 +75,9 @@ CodePalette defaultCodePalette()
 	set(TK::SsaName, Color::rgb(0xcba6f7));      // mauve
 	set(TK::Builtin, Color::rgb(0x94e2d5));      // teal
 	p.console = {Color::rgb(0xcdd6f4), Color::rgb(0xf9e2af), Color::rgb(0xf38ba8), Color::rgb(0x89b4fa), Color::rgb(0xa6e3a1)};
+	p.boldTokens[static_cast<std::size_t>(TK::Keyword)] = true;
+	p.boldTokens[static_cast<std::size_t>(TK::Mnemonic)] = true;
+	p.boldConsole[3] = p.boldConsole[4] = true; // banner, footer
 	return p;
 }
 
@@ -99,6 +96,8 @@ struct CodeView::Glue
 		s.grow = 1.f;
 		s.shrink = 1.f;
 		s.fontSize = 13.f;
+		// Code, assembly, hex and console output: monospace, so columns line up.
+		s.fontFamilyCount = u8(parseFontFamilies(kMonoFamily, s.fontFamily));
 		s.minHeight = Length::px(0.f);
 		s.minWidth = Length::px(0.f);
 		return s;
@@ -170,6 +169,7 @@ struct CodeView::Glue
 		const float x0 = ta.x + 2.f - v->scrollX_;
 		const TextPos a = std::min(v->caret_, v->anchor_), b = std::max(v->caret_, v->anchor_);
 		const bool hasSel = !(a == b);
+		const fuse::text::Font* boldFace = styledFont(ui, pc.node, false, true);
 		if (v->isEmpty() && !v->placeholder_.empty())
 			ui.paintString(dl, v->placeholder_, {ta.x + 4.f, c.y, ta.w, lh}, pc.tint(pal.placeholder), fs, TextAlignment::Start, pc.node.index);
 		for (int r = 0; r < vis && v->first_ + r < count; ++r)
@@ -181,21 +181,25 @@ struct CodeView::Glue
 			{
 				const std::size_t sc = li == a.line ? std::min<std::size_t>(std::size_t(a.col), L.size()) : 0;
 				const std::size_t ec = li == b.line ? std::min<std::size_t>(std::size_t(b.col), L.size()) : L.size();
-				const float sx = x0 + ui.measureString(L.substr(0, sc), fs);
-				const float ex = x0 + ui.measureString(L.substr(0, ec), fs) + (li != b.line ? 6.f : 0.f);
+				const float sx = x0 + ui.measureString(L.substr(0, sc), fs, pc.node);
+				const float ex = x0 + ui.measureString(L.substr(0, ec), fs, pc.node) + (li != b.line ? 6.f : 0.f);
 				dl.rect({sx, y, std::max(0.f, ex - sx), lh}, pc.tint(pal.selection));
 			}
-			auto seg = [&](std::size_t from, std::size_t to, Color col) {
+			// Bold runs use the bold face of the view's (monospace) family: the same
+			// advances, so columns still line up.
+			auto seg = [&](std::size_t from, std::size_t to, Color col, bool bold = false) {
 				if (to <= from) return true;
-				const float x = x0 + ui.measureString(L.substr(0, from), fs);
+				const float x = x0 + ui.measureString(L.substr(0, from), fs, pc.node);
 				if (x > ta.right()) return false;
 				const std::string_view part = L.substr(from, to - from);
-				ui.paintString(dl, part, {x, y, ta.right() - x + 2000.f, lh}, pc.tint(col), fs, TextAlignment::Start, pc.node.index);
+				ui.paintString(dl, part, {x, y, ta.right() - x + 2000.f, lh}, pc.tint(col), fs, TextAlignment::Start, pc.node.index,
+				               bold ? boldFace : nullptr);
 				return true;
 			};
 			if (v->console_)
 			{
-				seg(0, L.size(), pal.console[std::min<std::size_t>(4, std::size_t(v->console_->kind(std::size_t(li))))]);
+				const std::size_t k = std::min<std::size_t>(4, std::size_t(v->console_->kind(std::size_t(li))));
+				seg(0, L.size(), pal.console[k], pal.boldConsole[k]);
 			}
 			else
 			{
@@ -204,14 +208,14 @@ struct CodeView::Glue
 				for (const model::TokenSpan& s: spans)
 				{
 					if (!seg(at, s.start, pal.text)) break;
-					if (!seg(s.start, s.start + s.length, pal.tokens[std::size_t(s.kind)])) break;
+					if (!seg(s.start, s.start + s.length, pal.tokens[std::size_t(s.kind)], pal.boldTokens[std::size_t(s.kind)])) break;
 					at = s.start + s.length;
 				}
 				seg(at, L.size(), pal.text);
 			}
 			if (focused && li == v->caret_.line)
 			{
-				const float cx = x0 + ui.measureString(L.substr(0, std::min<std::size_t>(std::size_t(v->caret_.col), L.size())), fs);
+				const float cx = x0 + ui.measureString(L.substr(0, std::min<std::size_t>(std::size_t(v->caret_.col), L.size())), fs, pc.node);
 				dl.rect({cx, y + 2.f, 1.5f, lh - 4.f}, pc.tint(pal.caret));
 				ui.setTextCaret(pc.node, {cx, y + 2.f, 1.5f, lh - 4.f});
 			}
@@ -269,9 +273,8 @@ struct CodeView::Glue
 			v->caret_ = p;
 			if (!shift) v->anchor_ = p;
 			v->dragging_ = true;
-			const double now = nowSeconds();
-			const bool dbl = v->lastClickLine_ == p.line && now - v->lastClickTime_ < 0.45;
-			v->lastClickTime_ = dbl ? -1.0 : now;
+			// FuseUI's click counting (UiContext double-click settings).
+			const bool dbl = e.clicks == 2 && v->lastClickLine_ == p.line;
 			v->lastClickLine_ = p.line;
 			v->invalidate();
 			// A click always activates its line (even the current one).
@@ -522,7 +525,7 @@ float CodeView::gutterWidth() const
 	if (!gutter_) return 0.f;
 	char b[24];
 	std::snprintf(b, sizeof b, "%d", std::max(1, lineCount()));
-	return ui_.measureString(b, ui_.computed(node_).fontSize * 0.9f) + 18.f;
+	return ui_.measureString(b, ui_.computed(node_).fontSize * 0.9f, node_) + 18.f;
 }
 
 void CodeView::clampCaret()
@@ -683,7 +686,7 @@ TextPos CodeView::hitTest(Vec2 p) const
 	while (col < L.size())
 	{
 		const std::size_t nx = nextCp(L, col);
-		const float nw = ui_.measureString(L.substr(0, nx), fs);
+		const float nw = ui_.measureString(L.substr(0, nx), fs, node_);
 		if (x < (prevW + nw) * 0.5f) break;
 		prevW = nw;
 		col = nx;
@@ -800,18 +803,18 @@ TriPaneCodeView::TriPaneCodeView(UiContext& ui, NodeHandle parent): ui_(ui)
 
 	// Toolbar.
 	const NodeHandle tb = toolbarRow(ui, root_);
-	backBtn_ = w::toolButton(ui, tb, "<"); // the bundled UI font has no ◀ / ▶
-	fwdBtn_ = w::toolButton(ui, tb, ">");
-	w::setTooltip(ui, backBtn_, "Navigate back (Alt+Left)");
-	w::setTooltip(ui, fwdBtn_, "Navigate forward (Alt+Right)");
+	backBtn_ = w::toolButton(ui, tb, "\u25C0"); // ◀
+	fwdBtn_ = w::toolButton(ui, tb, "\u25B6");  // ▶
+	w::setTooltip(ui, backBtn_, "Navigate back (Alt+\u2190)");
+	w::setTooltip(ui, fwdBtn_, "Navigate forward (Alt+\u2192)");
 	funcLabel_ = w::label(ui, tb, "No function loaded");
 	ui.setCss(funcLabel_, "flex-grow", "1");
 	w::label(ui, tb, "Lang:");
 	langCombo_ = w::comboBox(ui, tb, "C\nC++\nC#\nJava\nPython\nLua", 0);
 	w::setTooltip(ui, langCombo_,
-	              "View-only syntax highlighting. To change decompiled output: Settings > Decompiler > Output "
+	              "View-only syntax highlighting. To change decompiled output: Settings \u2192 Decompiler \u2192 Output "
 	              "language, then re-decompile (F5).");
-	findBtn_ = w::toolButton(ui, tb, "Find");
+	findBtn_ = w::toolButton(ui, tb, "Find"); // Qt: ⌕ (U+2315), in none of the bundled faces
 	w::setTooltip(ui, findBtn_, "Find in panes (Ctrl+F)");
 
 	// Panes.
@@ -832,10 +835,13 @@ TriPaneCodeView::TriPaneCodeView(UiContext& ui, NodeHandle parent): ui_(ui)
 	ui.addClass(fl, "retdec-muted");
 	findEdit_ = w::lineEdit(ui, findBar_, "");
 	ui.setCss(findEdit_, "flex-grow", "1");
-	w::setTooltip(ui, findEdit_, "Search all panes\xE2\x80\xA6");
-	findPrev_ = w::toolButton(ui, findBar_, "Prev");
-	findNext_ = w::toolButton(ui, findBar_, "Next");
-	findClose_ = w::toolButton(ui, findBar_, "\xC3\x97"); // ×
+	w::setPlaceholderText(ui, findEdit_, "Search all panes\u2026");
+	findNext_ = w::toolButton(ui, findBar_, "\u25BC");  // ▼
+	findPrev_ = w::toolButton(ui, findBar_, "\u25B2");  // ▲
+	findClose_ = w::toolButton(ui, findBar_, "\u2715"); // ✕
+	w::setTooltip(ui, findNext_, "Next match (Enter)");
+	w::setTooltip(ui, findPrev_, "Previous match");
+	w::setTooltip(ui, findClose_, "Close (Escape)");
 	setShown(ui, findBar_, false);
 
 	// Wiring.
@@ -850,7 +856,7 @@ TriPaneCodeView::TriPaneCodeView(UiContext& ui, NodeHandle parent): ui_(ui)
 	ui.connect(langCombo_, SignalKind::ValueChanged, [self](UiContext&, NodeHandle, const SignalArgs& a) {
 		self->setOutputLanguage(static_cast<OutputLang>(std::clamp(int(a.value), 0, 5)));
 		if (self->onStatusMessage)
-			self->onStatusMessage("Change in Settings > Decompiler > Output language, then re-decompile.", 4000);
+			self->onStatusMessage("Change in Settings \u2192 Decompiler \u2192 Output language, then re-decompile.", 4000);
 	});
 
 	asm_->onLineActivated = [self](int l) { self->onLineActivated(model::TriPane::Asm, l); };

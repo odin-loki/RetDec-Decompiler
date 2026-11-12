@@ -19,12 +19,6 @@ using namespace fuse::ui;
 
 namespace {
 
-double nowSeconds()
-{
-	using namespace std::chrono;
-	return duration<double>(steady_clock::now().time_since_epoch()).count();
-}
-
 Color severityColor(model::Severity s)
 {
 	switch (s)
@@ -50,7 +44,8 @@ DiagnosticsPanel::DiagnosticsPanel(UiContext& ui, NodeHandle parent): ui_(ui)
 	combo_ = w::comboBox(ui, top, "All\nInfo\nWarnings\nErrors", 0);
 	search_ = w::lineEdit(ui, top, "");
 	ui.setCss(search_, "width", "200px");
-	w::setTooltip(ui, search_, "Filter text\xE2\x80\xA6 (replaces the severity filter while non-empty)");
+	w::setPlaceholderText(ui, search_, "Filter text\u2026");
+	w::setTooltip(ui, search_, "Filters by text; replaces the severity filter while non-empty");
 	copyBtn_ = w::button(ui, top, "Copy");
 	w::setTooltip(ui, copyBtn_, "Copy visible rows as TSV");
 	saveBtn_ = w::button(ui, top, "Save\xE2\x80\xA6");
@@ -79,13 +74,24 @@ DiagnosticsPanel::DiagnosticsPanel(UiContext& ui, NodeHandle parent): ui_(ui)
 	w::setTableColumnWidth(ui, table_, 2, 460.f);
 	w::setTableColumnWidth(ui, table_, 3, 110.f);
 	w::setTableColumnWidth(ui, table_, 4, 140.f);
+	w::setTableActivation(ui, table_, true); // double click / Enter navigate
 
 	delegate_.user = this;
-	delegate_.paint = [](const void* u, const PaintContext& pc, DrawList& dl, Rect cell, u32 row, u32, std::string_view text, bool) {
+	delegate_.paint = [](const void* u, const PaintContext& pc, DrawList& dl, Rect cell, u32 row, u32 col, std::string_view text, bool) {
 		const auto* self = static_cast<const DiagnosticsPanel*>(u);
 		if (row >= self->rows_.size()) return;
-		const Color c = severityColor(self->store_.at(self->rows_[row]).severity);
-		pc.ui.paintString(dl, text, cell, pc.tint(c), pc.style.fontSize, TextAlignment::Start, pc.node.index);
+		const model::Severity sev = self->store_.at(self->rows_[row]).severity;
+		const Color c = pc.tint(severityColor(sev));
+		const float fs = pc.style.fontSize;
+		if (col == 0)
+		{
+			const float iw = fs + 6.f;
+			pc.ui.paintString(dl, model::severityIcon(sev), {cell.x, cell.y, iw, cell.h}, c, fs, TextAlignment::Start, pc.node.index);
+			cell.x += iw;
+			cell.w = std::max(0.f, cell.w - iw);
+		}
+		// Address column: monospace (a delegate paints with the view's face unless told otherwise).
+		pc.ui.paintString(dl, text, cell, c, fs, TextAlignment::Start, pc.node.index, col == 3 ? styledFont(pc.ui, pc.node, true, false) : nullptr);
 	};
 	for (u32 c = 0; c < kColumns; ++c)
 		w::setTableDelegate(ui, table_, c, &delegate_);
@@ -101,7 +107,7 @@ DiagnosticsPanel::DiagnosticsPanel(UiContext& ui, NodeHandle parent): ui_(ui)
 	});
 	ui.connect(copyBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->copyVisible(); });
 	ui.connect(saveBtn_, SignalKind::Clicked, [self](UiContext&, NodeHandle, const SignalArgs&) { self->saveVisible(); });
-	ui.connect(table_, SignalKind::Submitted, [self](UiContext&, NodeHandle, const SignalArgs& a) { self->activateRow(int(a.value)); });
+	ui.connect(table_, SignalKind::Activated, [self](UiContext&, NodeHandle, const SignalArgs& a) { self->activateRow(int(a.value)); });
 	ui.connect(table_, SignalKind::Toggled, [self](UiContext&, NodeHandle, const SignalArgs& a) {
 		self->sortCol_ = int(a.value);
 		self->sortAsc_ = a.flag;
@@ -116,23 +122,9 @@ DiagnosticsPanel::~DiagnosticsPanel()
 	releasePanelRoot(ui_, root_);
 }
 
-bool DiagnosticsPanel::handleEvent(EventContext& ec, const Event& e)
+bool DiagnosticsPanel::handleEvent(EventContext&, const Event&)
 {
-	// Double-click on a table row: two left presses at the same spot.
-	if (ec.phase == Phase::Capture && e.type == EventType::PointerDown && e.button == MouseButton::Left && ec.target == table_)
-	{
-		const double now = nowSeconds();
-		const bool dbl = now - lastDown_ < 0.45 && std::abs(e.pos.x - lastDownPos_.x) < 5.f && std::abs(e.pos.y - lastDownPos_.y) < 5.f;
-		lastDown_ = dbl ? -1.0 : now;
-		lastDownPos_ = e.pos;
-		if (dbl)
-		{
-			const int row = int(ui_.value(table_));
-			if (row >= 0) activateRow(row);
-			return true;
-		}
-	}
-	return false;
+	return false; // double click / Enter: the table's Activated signal
 }
 
 std::string DiagnosticsPanel::cellText(int row, int col) const
@@ -141,7 +133,7 @@ std::string DiagnosticsPanel::cellText(int row, int col) const
 	const model::Diagnostic& d = store_.at(rows_[std::size_t(row)]);
 	switch (col)
 	{
-	case 0: return std::string(model::severityLabel(d.severity)); // the UI font has no ℹ ⚠ ✖ glyphs
+	case 0: return std::string(model::severityLabel(d.severity)); // the delegate draws the ℹ ⚠ ✖ icon before it
 	case 1: return d.source;
 	case 2: return d.message;
 	case 3: return d.address ? model::hexAddress(d.address) : std::string();

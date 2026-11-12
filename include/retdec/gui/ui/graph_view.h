@@ -118,6 +118,8 @@ public:
 	std::function<void(std::optional<uint64_t> id)> onHoverChanged;
 	std::function<void()> onViewChanged;
 
+	/// Deprecated: double clicks follow the context's settings
+	/// (UiContext::setDoubleClick); kept for source compatibility.
 	void setDoubleClickInterval(double seconds) { m_doubleClick = seconds; }
 
 	// Widget-class glue (internal).
@@ -153,7 +155,6 @@ private:
 	} m_drag = Drag::None;
 	fuse::ui::Vec2 m_last;
 	std::optional<uint64_t> m_lastClickNode;
-	std::chrono::steady_clock::time_point m_lastClickTime;
 	double m_doubleClick = 0.45;
 
 	// tooltip

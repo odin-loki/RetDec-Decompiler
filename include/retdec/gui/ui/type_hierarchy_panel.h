@@ -101,7 +101,8 @@ private:
 	void showVtable(int node);
 	void toggleRow(int row);
 	void treeClicked();
-	void vtableClicked();
+	void treeActivated(int row);
+	bool overToggle(int row) const;
 	std::optional<fuse::ui::Vec2> rowCenter(fuse::ui::NodeHandle table, int row) const;
 
 	fuse::ui::UiContext& m_ui;
@@ -119,10 +120,6 @@ private:
 	fuse::ui::widgets::ItemModel m_vtableModel;
 	fuse::ui::widgets::CellDelegate m_treeDelegate;
 	fuse::ui::widgets::CellDelegate m_vtableDelegate;
-
-	// double-click detection on the tables
-	int m_lastTreeRow = -1, m_lastVtableRow = -1;
-	std::chrono::steady_clock::time_point m_lastTreeClick, m_lastVtableClick;
 };
 
 } // namespace retdec::gui::ui
