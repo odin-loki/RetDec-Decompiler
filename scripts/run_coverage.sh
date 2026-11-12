@@ -57,7 +57,9 @@ if [[ "${LCOV_MAJOR:-1}" -ge 2 ]]; then
     LCOV_IGNORE=(--ignore-errors mismatch,mismatch,inconsistent,inconsistent,unused,unused,empty,negative,source,gcov,version,version)
     GENHTML_IGNORE=(--ignore-errors inconsistent,inconsistent,source,unmapped,empty)
 else
-    LCOV_IGNORE=(--ignore-errors mismatch)
+    # 1.x knows only gcov, source and graph; "mismatch" is a 2.x category and
+    # 1.x geninfo rejects it ("unknown argument for --ignore-errors").
+    LCOV_IGNORE=(--ignore-errors source)
     GENHTML_IGNORE=()
 fi
 
@@ -73,13 +75,35 @@ cmake --preset "$PRESET" -S "$REPO_ROOT" 2>&1 | tail -5
 echo "[2/5] Building..."
 cmake --build "$BUILD_DIR" --parallel "$(nproc)"
 
+# Capture RetDec's own object directories, not the whole build tree.
+# external/ is EP_PREFIX: the ExternalProject source and build trees (LLVM and
+# friends). LLVM's sources ship test inputs such as
+# llvm/test/tools/llvm-cov/gcov/Inputs/*.gcda with no matching .gcno, and
+# lcov 2.x stops with "ERROR: (path) cannot process .gcda file" on the first
+# one. deps/ holds the vendored dependencies and their ExternalProjects (yara);
+# everything it compiles is removed from the report below, so skip it too.
+# Every other top-level directory (src/, tests/, third_party/ for the
+# first-party Forge/FuseUI, ...) is captured as before.
+LCOV_DIRS=()
+for dir in "$BUILD_DIR"/*/; do
+    dir="${dir%/}"
+    case "${dir##*/}" in
+        external|deps) continue ;;
+    esac
+    LCOV_DIRS+=(--directory "$dir")
+done
+if [[ ${#LCOV_DIRS[@]} -eq 0 ]]; then
+    echo "ERROR: no object directories to capture under $BUILD_DIR" >&2
+    exit 1
+fi
+
 # ---------------------------------------------------------------------------
 # 3. Baseline coverage (zero-counters capture)
 # ---------------------------------------------------------------------------
 echo "[3/5] Capturing baseline coverage..."
 lcov \
     --capture --initial \
-    --directory "$BUILD_DIR" \
+    "${LCOV_DIRS[@]}" \
     --output-file "$BUILD_DIR/coverage_baseline.info" \
     --rc lcov_branch_coverage=1 \
     "${LCOV_IGNORE[@]}" \
@@ -118,7 +142,7 @@ echo "[5/5] Generating coverage report..."
 
 lcov \
     --capture \
-    --directory "$BUILD_DIR" \
+    "${LCOV_DIRS[@]}" \
     --output-file "$BUILD_DIR/coverage_test.info" \
     --rc lcov_branch_coverage=1 \
     "${LCOV_IGNORE[@]}" \
