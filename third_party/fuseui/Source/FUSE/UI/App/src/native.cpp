@@ -1,5 +1,9 @@
-// fuse_app native windows: X11 (libX11 loaded at runtime, so neither X11 headers nor libX11 are needed to build) and
-// Win32, plus the presenter selection (Vulkan swapchain -> GDI on Win32 -> headless). See native.hpp.
+// fuse_app native windows: X11 (libX11 loaded at runtime, so neither X11 headers nor libX11 are needed to build),
+// Win32 and macOS (Cocoa, native_cocoa.mm), plus the presenter selection (Vulkan swapchain -> software blit of the CPU
+// raster -> headless). See native.hpp.
+//
+// RetDec changes (not upstream FUSE yet): the macOS backend, and a software presenter for X11 (XPutImage of the CPU
+// raster) so a window draws without a Vulkan loader; upstream left an X11 window without Vulkan blank.
 #include "native_internal.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
 
@@ -21,6 +25,8 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#elif defined(__APPLE__)
+#include "cocoa_bridge.hpp"
 #else
 #include <dlfcn.h>
 #include <poll.h>
@@ -101,7 +107,7 @@ void appendUtf8(std::string& s, u32 cp) {
 }
 } // namespace
 
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(__APPLE__)
 // ---- X11 (runtime-loaded) ----------------------------------------------------------------------------------------
 namespace x11 {
 using Display = struct _XDisplay;
@@ -270,6 +276,8 @@ struct NativePlatform::Impl {
 #if defined(_WIN32)
         std::vector<u32> bgra; ///< GDI fallback staging
         wchar_t highSurrogate = 0;
+#else
+        std::vector<u32> staged; ///< software presenter: pixels in the OS order (X11 TrueColor)
 #endif
     };
 
@@ -282,6 +290,8 @@ struct NativePlatform::Impl {
     EventSource previous{};
 #if defined(_WIN32)
     HINSTANCE hinst = nullptr;
+#elif defined(__APPLE__)
+    bool cocoaReady = false;
 #else
     x11::Lib x;
     x11::Display* dpy = nullptr;
@@ -301,6 +311,9 @@ struct NativePlatform::Impl {
         return nullptr;
     }
     detail::VkCtx* vkContext() {
+#if defined(__APPLE__)
+        vkTried = true; // no MoltenVK presenter: the CPU raster is blitted
+#endif
         if (!vkTried && opts.vulkan) {
             vkTried = true;
 #if defined(_WIN32)
@@ -339,8 +352,9 @@ struct NativePlatform::Impl {
     void blitPopupOs(Rec::Popup& p);
     bool capturePopupOs(const Rec::Popup& p, Image& out);
     bool postClickOs(unsigned long long h, Vec2 at);
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(__APPLE__)
     bool captureX(unsigned long win, unsigned w, unsigned h, Image& out);
+    void blitX(unsigned long win, const Image& img, std::vector<u32>& staged, Rect damage);
 #endif
     Rec* findPopup(unsigned long long h, std::size_t& idx) {
         for (Rec* r : recs)
@@ -430,6 +444,19 @@ bool NativePlatform::Impl::present(void* user, AppWindow& w, Rect damage) {
         SetDIBitsToDevice(dc, 0, 0, DWORD(img.width), DWORD(img.height), 0, 0, 0, UINT(img.height), r.bgra.data(), &bi,
                           DIB_RGB_COLORS);
         ReleaseDC(hwnd, dc);
+        r.impl->syncPopups(r);
+        return true;
+    }
+#elif defined(__APPLE__)
+    case PresenterKind::Software: {
+        const Image& img = w.rasterize(damage);
+        cocoa::blit(reinterpret_cast<void*>(r.handle), img.pixels.data(), img.width, img.height);
+        return true;
+    }
+#else
+    case PresenterKind::Software: {
+        const Image& img = w.rasterize(damage);
+        r.impl->blitX(static_cast<unsigned long>(r.handle), img, r.staged, damage);
         r.impl->syncPopups(r);
         return true;
     }
@@ -769,6 +796,85 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
 bool NativePlatform::available() const { return true; }
 void* NativePlatform::nativeDisplay() const { return m->hinst; }
 
+#elif defined(__APPLE__)
+// ---- macOS (Cocoa, native_cocoa.mm) ----------------------------------------------------------------------------------
+namespace {
+using RecT = NativePlatform::Impl::Rec;
+AppWindow* winOf(void* u) { auto* r = static_cast<RecT*>(u); return r ? r->win : nullptr; }
+cocoa::Callbacks cocoaCallbacks(RecT& r) {
+    cocoa::Callbacks cb;
+    cb.user = &r;
+    cb.close = [](void* u) { if (AppWindow* w = winOf(u)) w->requestClose(); };
+    cb.resize = [](void* u, unsigned ww, unsigned hh) { if (AppWindow* w = winOf(u)) w->resize(ww, hh); };
+    cb.expose = [](void* u) { if (AppWindow* w = winOf(u)) { static_cast<RecT*>(u)->mapped = true; w->requestRedraw(); } };
+    cb.modifiers = [](void* u, std::uint8_t md) { if (AppWindow* w = winOf(u)) w->ui().setModifiers(md); };
+    cb.pointerMove = [](void* u, float x, float y) { if (AppWindow* w = winOf(u)) w->ui().pointerMove({x, y}); };
+    cb.pointerDown = [](void* u, float x, float y, int b) {
+        if (AppWindow* w = winOf(u))
+            w->ui().pointerDown({x, y}, b == 1 ? MouseButton::Right : b == 2 ? MouseButton::Middle : MouseButton::Left);
+    };
+    cb.pointerUp = [](void* u, float x, float y) { if (AppWindow* w = winOf(u)) w->ui().pointerUp({x, y}); };
+    cb.wheel = [](void* u, float x, float y, float dx, float dy) { if (AppWindow* w = winOf(u)) w->ui().wheel({x, y}, {dx, dy}); };
+    cb.key = [](void* u, int k, std::uint8_t md, bool down) {
+        if (AppWindow* w = winOf(u)) {
+            if (down) w->ui().keyDown(Key(k), md);
+            else w->ui().keyUp(Key(k), md);
+        }
+    };
+    cb.text = [](void* u, const char* t) { if (AppWindow* w = winOf(u)) w->ui().textInput(t); };
+    cb.focus = [](void* u, bool gained) { if (auto* r = static_cast<RecT*>(u)) r->focused = gained; };
+    return cb;
+}
+} // namespace
+
+bool NativePlatform::Impl::createOsWindow(Rec& r) {
+    const Size sz = r.win->size();
+    void* w = cocoa::createWindow(r.win->title(), unsigned(sz.w), unsigned(sz.h), cocoaCallbacks(r));
+    if (!w) {
+        error = "NSWindow creation failed";
+        return false;
+    }
+    r.handle = reinterpret_cast<unsigned long long>(w);
+    r.mapped = true;
+    return true;
+}
+void NativePlatform::Impl::destroyOsWindow(Rec& r) {
+    if (!r.handle) return;
+    cocoa::destroyWindow(reinterpret_cast<void*>(r.handle));
+    r.handle = 0;
+}
+bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
+    Impl& m = *static_cast<Impl*>(user);
+    if (!m.cocoaReady) return m.previous.pump ? m.previous.pump(m.previous.user, app, wait) : true;
+    return cocoa::pump(wait);
+}
+bool NativePlatform::Impl::screenInfo(const Rec& r, int& ox, int& oy, Rect& work) const {
+    float wx = 0, wy = 0, ww = 0, wh = 0;
+    if (!cocoa::screenInfo(reinterpret_cast<void*>(r.handle), ox, oy, wx, wy, ww, wh)) return false;
+    work = {wx, wy, ww, wh};
+    return true;
+}
+// OS-window popups are not implemented on macOS (NativeOptions::osPopups); popups draw inside the window.
+void NativePlatform::Impl::grabPointer(Rec&, bool) {}
+bool NativePlatform::Impl::createPopupOs(Rec&, Rec::Popup&) { return false; }
+void NativePlatform::Impl::movePopupOs(Rec::Popup&) {}
+void NativePlatform::Impl::destroyPopupOs(Rec::Popup& p) { p.handle = 0; }
+void NativePlatform::Impl::blitPopupOs(Rec::Popup&) {}
+bool NativePlatform::Impl::postClickOs(unsigned long long, Vec2) { return false; }
+bool NativePlatform::Impl::captureOs(const Rec& r, Image& out) {
+    const Size sz = r.win->size();
+    out.resize(int(sz.w), int(sz.h));
+    return cocoa::readback(reinterpret_cast<void*>(r.handle), out.pixels.data(), out.width, out.height);
+}
+bool NativePlatform::Impl::capturePopupOs(const Rec::Popup&, Image&) { return false; }
+
+NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std::make_unique<Impl>(app, o)) {
+    m->opts.osPopups = false;
+    m->cocoaReady = cocoa::init(app.name(), m->error);
+    if (m->cocoaReady) app.setEventSource({m.get(), &Impl::pump});
+}
+bool NativePlatform::available() const { return m->cocoaReady; }
+void* NativePlatform::nativeDisplay() const { return nullptr; }
 #else
 // ---- X11 platform ------------------------------------------------------------------------------------------------
 bool NativePlatform::Impl::createOsWindow(Rec& r) {
@@ -985,6 +1091,32 @@ bool NativePlatform::Impl::captureX(unsigned long win, unsigned w, unsigned h, I
     return good;
 }
 
+void NativePlatform::Impl::blitX(unsigned long win, const Image& img, std::vector<u32>& staged, Rect damage) {
+    if (!win || img.pixels.empty() || !dpy) return;
+    const int scr = x.DefaultScreen(dpy);
+    if (x.DefaultDepth(dpy, scr) < 24) return;
+    staged.resize(img.pixels.size());
+    // Convert the damaged rows only; PutImage then sends only the damaged rectangle.
+    const int x0 = std::clamp(int(std::floor(damage.x)), 0, img.width), y0 = std::clamp(int(std::floor(damage.y)), 0, img.height);
+    int x1 = std::clamp(int(std::ceil(damage.x + damage.w)), 0, img.width), y1 = std::clamp(int(std::ceil(damage.y + damage.h)), 0, img.height);
+    if (damage.w <= 0.f || damage.h <= 0.f) { x1 = img.width; y1 = img.height; }
+    const int bx0 = (damage.w <= 0.f || damage.h <= 0.f) ? 0 : x0, by0 = (damage.w <= 0.f || damage.h <= 0.f) ? 0 : y0;
+    for (int yy = by0; yy < y1; ++yy)
+        for (int xx = bx0; xx < x1; ++xx) {
+            const std::size_t i = std::size_t(yy) * std::size_t(img.width) + std::size_t(xx);
+            const u32 q = img.pixels[i]; // 0xAABBGGRR -> TrueColor 0x00RRGGBB
+            staged[i] = ((q & 0xFFu) << 16) | (q & 0xFF00u) | ((q >> 16) & 0xFFu);
+        }
+    if (x1 <= bx0 || y1 <= by0) return;
+    x11::Image* xi = x.CreateImage(dpy, x.DefaultVisual(dpy, scr), unsigned(x.DefaultDepth(dpy, scr)), 2 /*ZPixmap*/, 0,
+                                   reinterpret_cast<char*>(staged.data()), unsigned(img.width), unsigned(img.height), 32, 0);
+    if (!xi) return;
+    x.PutImage(dpy, win, x.DefaultGC(dpy, scr), xi, bx0, by0, bx0, by0, unsigned(x1 - bx0), unsigned(y1 - by0));
+    xi->data = nullptr; // ours (XDestroyImage would free it)
+    xi->f.destroy(xi);
+    x.Flush(dpy);
+}
+
 NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std::make_unique<Impl>(app, o)) {
     const char* disp = std::getenv("DISPLAY");
     if (disp && *disp && m->x.load()) {
@@ -1011,6 +1143,8 @@ NativePlatform::~NativePlatform() {
     detail::vkCtxDestroy(m->vk);
 #if defined(_WIN32)
     m->app.setEventSource({});
+#elif defined(__APPLE__)
+    if (m->cocoaReady) m->app.setEventSource({});
 #else
     if (m->dpy) {
         m->x.CloseDisplay(m->dpy);
@@ -1037,6 +1171,8 @@ PresenterKind NativePlatform::show(AppWindow& w) {
         s.kind = SurfaceSource::Win32;
         s.hinstance = m->hinst;
         s.hwnd = reinterpret_cast<void*>(r->handle);
+#elif defined(__APPLE__)
+        (void)s;
 #else
         s.kind = SurfaceSource::Xlib;
         s.display = m->dpy;
@@ -1044,11 +1180,8 @@ PresenterKind NativePlatform::show(AppWindow& w) {
 #endif
         r->vk = detail::vkWinCreate(c, s, m->opts, m->error);
     }
-#if defined(_WIN32)
+    // Without a Vulkan presenter every platform blits the CPU raster (GDI, XPutImage, a Cocoa view).
     r->kind = r->vk ? PresenterKind::Vulkan : PresenterKind::Software;
-#else
-    r->kind = r->vk ? PresenterKind::Vulkan : PresenterKind::Headless;
-#endif
     if (m->opts.osPopups) w.ui().setOsPopups(true); // screen bounds arrive with the first present
     w.setPresenter({r, &Impl::present, &Impl::destroy});
     return r->kind;
@@ -1182,6 +1315,24 @@ std::vector<int> NativePlatform::iconSizes(const AppWindow& w) const {
     for (WPARAM which : {WPARAM(ICON_BIG), WPARAM(ICON_SMALL)})
         if (const int wpx = iconWidth(reinterpret_cast<HICON>(SendMessageW(hwnd, WM_GETICON, which, 0)))) out.push_back(wpx);
     return out;
+}
+#elif defined(__APPLE__)
+bool NativePlatform::setIcon(const AppWindow& w, std::span<const Image> sizes) {
+    const Impl::Rec* r = m->find(w);
+    if (!r || !r->handle) return false;
+    const Image* best = nullptr; // the Dock shows one large image
+    for (const Image& i : sizes)
+        if (i.width > 0 && i.pixels.size() == std::size_t(i.width) * std::size_t(i.height) && (!best || i.width > best->width)) best = &i;
+    return best && cocoa::setIcon(best->pixels.data(), best->width, best->height);
+}
+bool NativePlatform::resizeWindow(const AppWindow& w, unsigned width, unsigned height) {
+    const Impl::Rec* r = m->find(w);
+    return r && r->handle && cocoa::resize(reinterpret_cast<void*>(r->handle), width, height);
+}
+std::vector<int> NativePlatform::iconSizes(const AppWindow& w) const {
+    const Impl::Rec* r = m->find(w);
+    if (!r || !r->handle || !cocoa::iconSize()) return {};
+    return {cocoa::iconSize()};
 }
 #else
 bool NativePlatform::setIcon(const AppWindow& w, std::span<const Image> sizes) {
