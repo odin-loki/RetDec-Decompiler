@@ -86,10 +86,10 @@ std::optional<int> findAddressLine(const std::vector<std::string>& lines, uint64
 
 /// Writes @p text (UTF-8) to @p path, truncating. Reports write, flush and
 /// close failures, not only open failures.
-std::expected<void, std::string> writeTextFile(const std::filesystem::path& path, std::string_view text);
+std::expected<void, std::string> saveTextFile(const std::filesystem::path& path, std::string_view text);
 
 /// Reads a whole file as text.
-std::expected<std::string, std::string> readTextFile(const std::filesystem::path& path);
+std::expected<std::string, std::string> loadTextFile(const std::filesystem::path& path);
 
 } // namespace retdec::gui::model
 

@@ -130,8 +130,9 @@ CfgPanel::CfgPanel(UiContext& ui, NodeHandle parent): m_ui(ui)
 CfgPanel::~CfgPanel()
 {
 	m_view.reset();
+	if (m_prompt && m_ui.alive(m_prompt->dialog())) m_ui.destroy(m_prompt->dialog());
+	m_prompt.reset();
 	if (m_ui.alive(m_root)) m_ui.destroy(m_root);
-	if (m_ui.alive(m_exportDialog)) m_ui.destroy(m_exportDialog);
 }
 
 // ── Data ─────────────────────────────────────────────────────────────────────

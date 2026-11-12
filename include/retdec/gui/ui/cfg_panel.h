@@ -117,9 +117,9 @@ private:
 	fuse::ui::NodeHandle m_root, m_toolbar, m_funcLabel, m_infoLabel, m_search, m_matchLabel;
 	fuse::ui::NodeHandle m_fitBtn, m_resetBtn, m_chainsBtn, m_minimapCheck, m_svgBtn, m_pngBtn, m_dotBtn;
 	fuse::ui::NodeHandle m_body, m_empty;
-	fuse::ui::NodeHandle m_exportDialog;
 	GraphExportFormat m_pendingExport = GraphExportFormat::Svg;
 	std::unique_ptr<GraphView> m_view;
+	std::unique_ptr<SavePrompt> m_prompt;
 
 	std::vector<model::BasicBlockData> m_blocks;
 	std::vector<model::CFGEdgeData> m_edges;

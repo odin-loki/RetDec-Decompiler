@@ -9,6 +9,8 @@
 #ifndef RETDEC_GUI_MODEL_CODE_ADDRESS_H
 #define RETDEC_GUI_MODEL_CODE_ADDRESS_H
 
+#include "retdec/gui/model/address.h"
+
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -16,11 +18,7 @@
 
 namespace retdec::gui::model {
 
-/// "0x" + lowercase hex (same as hexAddress in types.h).
-std::string formatAddressHex(uint64_t address);
-
-/// First "0x…" token on @p line, if any (and if it fits in 64 bits).
-std::optional<uint64_t> parseFirstAddress(std::string_view line);
+// formatAddressHex / parseFirstAddress / the menu labels live in address.h.
 
 /// Parses a user-typed address for "Go to address": hex with or without a
 /// "0x" prefix, surrounding whitespace ignored.

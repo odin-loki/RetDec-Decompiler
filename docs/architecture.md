@@ -18,7 +18,7 @@ redesign. For a stage-by-stage map of that redesign onto real files, see
 3. [Running Pipeline](#pipeline)
 4. [Managed-Language Dispatch](#managed)
 5. [Core Library Details](#libraries)
-6. [Qt GUI Architecture](#gui)
+6. [GUI Architecture](#gui)
 7. [AI Inference Engine](#ai)
 8. [Plugin System](#plugins)
 9. [Performance and Threading Model](#threading)
@@ -321,13 +321,37 @@ Thread-safe `Profiler` with `std::mutex`. `RssTracker`: Linux
 
 ---
 
-## Qt GUI Architecture {#gui}
+## GUI Architecture {#gui}
 
-`retdec-gui` is optional (`RETDEC_REQUIRE_QT6` or Qt6 found). Decompilation
-is **not** in-process: `RetDecMainWindow` starts `retdec-decompiler` as a
-`QProcess` (`src/gui/decompiler_launch.cpp`).
+`retdec-gui` is built on **FuseUI** (`third_party/fuseui`) and **Forge**
+(`third_party/forge`); it contains no Qt. It is on by default (`RETDEC_GUI`,
+`-DRETDEC_GUI=OFF` for CLI-only) and needs nothing outside the tree. FuseUI's
+native window backends — X11 (libX11 loaded at run time, software presenter),
+Win32 and macOS Cocoa — blit a CPU-rasterised frame; there is no Vulkan, no
+platform plugin and no deploy step. The port from the Qt GUI is in progress;
+the Qt implementation is kept read-only in `.qt-gui-reference/` as the
+specification, and [gui/FUSEUI_PORT.md](gui/FUSEUI_PORT.md) is the guide.
 
-### Window layout (`src/gui/mainwindow.cpp`)
+Decompilation is **not** in-process: the GUI launches `retdec-decompiler` as a
+child process through Forge (`forge/os/process.hpp`), exactly as the CLI would
+(`src/gui/model/decompiler_launch.cpp`), and loads the artefacts it writes.
+
+### Layers (`src/gui/CMakeLists.txt`)
+
+| Target | Directory | Contents |
+|--------|-----------|----------|
+| `retdec-gui-model` | `src/gui/model`, `include/retdec/gui/model` | No UI. C++23 + Forge: artifact loading, decompiler launch, projects, settings, export, graph layout, filtering, diffing, log parsing. Unit-tested without a window. |
+| `retdec-gui-ui` | `src/gui/ui`, `include/retdec/gui/ui` | FuseUI views: main window, panels, dialogs. Testable through a headless `fuse::ui::UiContext`. |
+| `retdec-gui` | `src/gui/app` | The executable: native window, or headless with `RETDEC_GUI_HEADLESS=1` / `--headless`. |
+| resources | `src/gui/resources` → `share/retdec/gui` | Themes (FuseUI CSS), LLVM pass presets, fonts; found at run time at `<bin>/../share/retdec/gui` (`Contents/share/retdec/gui` in `RetDec.app`). |
+
+A panel is a class that owns a FuseUI subtree, takes data through setters and
+reports events through `std::function` callbacks; the main window owns the
+panels, places them in docks and tabs and wires them together. FuseUI has one
+owner thread: background work (Forge thread pool) hands results back with
+`ui.post(...)`.
+
+### Window layout (specification, from the Qt GUI)
 
 ```
 MainWindow
@@ -338,20 +362,22 @@ MainWindow
                              AI Assistant (Tools menu; not a default dock)
 ```
 
-`AnalysisBridge` reports progress to `ProgressPanel`. It does **not** run
-pipeline stages on `QThreadPool`.
+Progress is parsed from the decompiler's output in the model layer; no
+pipeline stage runs inside the GUI process.
 
-### SettingsDialog
+### Settings
 
-Eight tabs (`src/gui/panels/settings_dialog.cpp`): General, Analysis, **CUDA**,
-ML, Recovery, Advanced, Decompiler, Plugins. There is **no** OpenCL tab.
-Analysis checkboxes (module clustering, C++ lifter, CUDA host recovery) are
-GUI-only in-process toggles; F5 still uses the CLI pipeline above.
+Eight groups, as in the Qt GUI: General, Analysis, **CUDA**, ML, Recovery,
+Advanced, Decompiler, Plugins. There is **no** OpenCL group. Analysis
+checkboxes (module clustering, C++ lifter, CUDA host recovery) are GUI-only
+toggles; F5 still uses the CLI pipeline above.
 
-`AppSettings` uses `QSettings(QSettings::IniFormat, QSettings::UserScope,
-"retdec", "settings")` — INI on every platform. Typical paths:
-`~/.config/retdec/settings.ini` (Linux) and
-`%APPDATA%/retdec/settings.ini` (Windows). Not the Windows registry.
+`AppSettings` (`include/retdec/gui/model/settings.h`) persists JSON at
+`<config dir>/retdec/settings.json` — `~/.config/retdec` on Linux,
+`~/Library/Application Support/retdec` on macOS, `%APPDATA%\retdec` on
+Windows (Forge `config_dir()`), written atomically. Group and key names are
+the ones the Qt version used, so values and defaults carry over. Not the
+Windows registry.
 
 ### Plugin System {#plugins}
 
@@ -363,8 +389,10 @@ Plugin file (.so / .dll)
     retdec_plugin_api_version() → const char*  (must == "1.0")
 ```
 
-`PluginManager` uses `QPluginLoader`, checks `RETDEC_PLUGIN_API_VERSION`
-(`"1.0"`), and topological-sorts declared dependencies.
+`PluginManager` loads plugins as shared libraries through Forge
+(`forge/os/dynlib.hpp`), checks `RETDEC_PLUGIN_API_VERSION` (`"1.0"`), and
+topological-sorts declared dependencies. (The Qt GUI used `QPluginLoader`; the
+contract above is unchanged.)
 
 | Interface | Hook |
 |-----------|------|
@@ -390,7 +418,8 @@ Two separate consumers:
    `cc`/`gcc -fsyntax-only`. Differential gate is **not implemented**
    (`RETDEC_NEURAL_DIFF_GATE=1` warns and skips). See
    [NEURAL_REFINEMENT.md](NEURAL_REFINEMENT.md).
-2. **GUI Tools → AI Assistant…** — `InferenceWorker` on a `QThread` loads a
+2. **GUI Tools → AI Assistant…** — an inference worker on a background
+   thread (Forge thread pool; results posted back to the UI thread) loads a
    GGUF in-process when neural is linked. Independent of the refine sidecar.
 
 ```

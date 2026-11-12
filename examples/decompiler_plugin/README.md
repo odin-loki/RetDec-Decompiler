@@ -7,9 +7,11 @@ primary artefacts are recovered C (buildable by default) plus
 that pipeline.
 
 This is the simplest working approach today: `retdec-decompiler.cpp` includes
-LLVM `PluginLoader` but does **not** expose `--load-pass-plugin`. GUI plugins
-use Qt `QPluginLoader`
-([plugin_interface.h](../../include/retdec/gui/settings/plugin_interface.h)).
+LLVM `PluginLoader` but does **not** expose `--load-pass-plugin`. The GUI is
+being rewritten on FuseUI ([docs/gui/FUSEUI_PORT.md](../../docs/gui/FUSEUI_PORT.md));
+its plugin interface (`IDecompilerPlugin` / `IAnalysisPlugin`) is ported with
+dynamic libraries loaded through Forge (`forge/os/dynlib.hpp`), not a GUI
+toolkit's plugin loader.
 
 ## What ships here
 
@@ -90,8 +92,8 @@ Until then, prefer:
 - **CLI:** `--profile fast|balanced|quality` or `--llvm-passes-json`
   ([profiles/README.md](../../src/retdec-decompiler/profiles/README.md))
 - **Post:** `post_process_output.py` or your own script on `.c` / `.config.json`
-- **GUI:** `IDecompilerPlugin` / `IAnalysisPlugin` via Qt
-  ([plugin_interface.h](../../include/retdec/gui/settings/plugin_interface.h))
+- **GUI:** `IDecompilerPlugin` / `IAnalysisPlugin`, loaded as shared libraries
+  through Forge (see [docs/gui/FUSEUI_PORT.md](../../docs/gui/FUSEUI_PORT.md))
 
 ## Related
 

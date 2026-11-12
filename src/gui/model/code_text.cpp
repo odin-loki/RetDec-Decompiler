@@ -231,7 +231,7 @@ std::optional<int> findAddressLine(const std::vector<std::string>& lines, uint64
 	return std::nullopt;
 }
 
-std::expected<void, std::string> writeTextFile(const std::filesystem::path& path, std::string_view text)
+std::expected<void, std::string> saveTextFile(const std::filesystem::path& path, std::string_view text)
 {
 	std::FILE* f = std::fopen(path.string().c_str(), "wb");
 	if (!f) return std::unexpected(std::format("cannot open {} for writing", path.string()));
@@ -244,7 +244,7 @@ std::expected<void, std::string> writeTextFile(const std::filesystem::path& path
 	return {};
 }
 
-std::expected<std::string, std::string> readTextFile(const std::filesystem::path& path)
+std::expected<std::string, std::string> loadTextFile(const std::filesystem::path& path)
 {
 	std::FILE* f = std::fopen(path.string().c_str(), "rb");
 	if (!f) return std::unexpected(std::format("cannot open {}", path.string()));

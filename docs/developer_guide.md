@@ -99,9 +99,9 @@ Mirrors many `src/` library names, plus:
 | Tool | Minimum | Notes |
 |------|---------|-------|
 | CMake | **3.13** to configure the root project; **3.26** to use `CMakePresets.json` / superbuild | Do not document 3.26 as the only possible CMake |
-| GCC or Clang | GCC 11 / Clang 14 typical | Libraries `cxx_std_17`; `retdec-decompiler` is `cxx_std_20` |
+| GCC or Clang | **C++23**: GCC 13 / Clang 17 / Apple Clang 15 / MSVC 2022 17.6 | `CMAKE_CXX_STANDARD 23`; `retdec-gui` and Forge need `std::expected` and `std::format` |
 | Ninja | any | Presets use the Ninja generator |
-| Qt6 | 6.4-class Widgets | Required only for `retdec-gui` / `full-*` presets that pull GUI |
+| GUI toolkit | none to install | `retdec-gui` uses FuseUI + Forge vendored in `third_party/` ([gui/FUSEUI_PORT.md](gui/FUSEUI_PORT.md)); `cmake/gui_standalone` builds it alone |
 | CUDA Toolkit | optional | `RETDEC_ENABLE_CUDA` / `RETDEC_ENABLE_CUDA_ACCEL` default **OFF** |
 
 ### Quick build (Linux/WSL)
@@ -121,7 +121,7 @@ Helper: `bash scripts/wsl_configure_nosudo.sh` then
 **no** preset named `asan`, `tsan`, or `debug`. See
 [BUILD_REFERENCE.md](BUILD_REFERENCE.md#root-cmake-presets).
 
-CLI-only: `core-debug` / `core-release` or `-DRETDEC_REQUIRE_QT6=OFF`.
+CLI-only: `-DRETDEC_GUI=OFF`, or `core-debug` / `core-release`.
 
 ### Windows cross-compile (from Linux/WSL)
 

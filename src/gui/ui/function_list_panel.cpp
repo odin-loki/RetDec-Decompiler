@@ -586,10 +586,8 @@ bool FunctionListPanel::onTableEvent(const Event& e)
 	if (!c.contains(e.pos)) return false;
 	const float rh = rowHeight(ui_, table_);
 	if (e.pos.y < c.y + rh) return false; // header: sorting / column resize
-	const auto first = w::tableFirstVisible(ui_, table_);
 	const auto visibleRows = static_cast<std::size_t>(std::max(1.f, (c.h - rh) / rh));
 	if (proxy_.rowCount() > visibleRows && e.pos.x >= c.right() - 8.f) return false; // scroll bar
-	(void)first;
 
 	const int row = rowAt(e.pos);
 	if (e.button == fuse::ui::MouseButton::Right)

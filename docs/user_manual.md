@@ -1,6 +1,6 @@
 # RetDec User Manual
 
-This manual describes the **Qt 6 GUI** (`retdec-gui`), its panels, settings, and common workflows for **RetDec Imortek 2.0.24**. For **building** from source, read [BUILD_REFERENCE.md](BUILD_REFERENCE.md) and the platform guides [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) / [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md). The top-level [README.md](../README.md) lists supported file formats and CLI examples.
+This manual describes the **GUI** (`retdec-gui`, built on FuseUI — see [gui/FUSEUI_PORT.md](gui/FUSEUI_PORT.md); the port from Qt is in progress and reproduces the panels described here), its panels, settings, and common workflows for **RetDec Imortek 2.0.24**. For **building** from source, read [BUILD_REFERENCE.md](BUILD_REFERENCE.md) and the platform guides [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) / [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md). The top-level [README.md](../README.md) lists supported file formats and CLI examples.
 
 Decompilation in the GUI is the same `retdec-decompiler` subprocess as the CLI. Algorithm recovery, semantic export, and optional offline neural refinement are the product; recovered C is a supporting artefact.
 
@@ -39,15 +39,14 @@ Linux AppImage (`retdec-2.0.24-x86_64.AppImage`) is **opt-in** in
 **Prerequisites**
 
 - CMake as in the table above
-- A C++17-capable compiler (GCC 11+, Clang 14+, or MSVC 2019+ on Windows)
-- Qt 6 (6.4 or later) with Widgets, Core, Gui, **and Test** — **required** for the `full-linux-*` and `full-windows-*` presets that build `retdec-gui`
+- A C++23 compiler (GCC 13+, Clang 17+, Apple Clang 15+, or MSVC 2022 17.6+ on Windows)
+- Nothing for the GUI: FuseUI and Forge are vendored in `third_party/` (`RETDEC_GUI`, default ON)
 - Ninja (recommended)
 - CUDA Toolkit is **not** required
 
 **Linux / WSL / macOS — full GUI preset** (binary dir `build/linux/`)
 
 ```bash
-# Ubuntu/Debian: sudo apt install qt6-base-dev qt6-base-dev-tools
 bash scripts/wsl_configure_nosudo.sh
 cmake --build build/linux -j"$(nproc)"
 ```
@@ -89,7 +88,7 @@ retdec-gui --headless
 retdec-gui --headless-decompile /path/to/binary.elf
 ```
 
-`--headless` uses Qt offscreen (`RETDEC_GUI_HEADLESS=1` is equivalent).
+`--headless` runs without an OS window: the FuseUI window presents to nothing (`RETDEC_GUI_HEADLESS=1` is equivalent).
 `--headless-decompile` requires a binary path. Optional
 `--headless-exit-ms N` quits after N ms.
 
@@ -188,7 +187,7 @@ Ctrl+1 … Ctrl+5 switch those tabs. **View → Go to address…** is Ctrl+G.
 ### CFG visualiser
 
 Toolbar: Fit, 100%, Expand chains, **Export SVG**, **Export PNG**.
-SVG export requires Qt Svg (`QT_SVG`); otherwise the button warns.
+SVG export writes what the view shows; PNG export rasterises the same scene.
 Click a block to select; drag to pan; scroll to zoom. A mini-map is
 shown for large graphs.
 
@@ -447,7 +446,7 @@ Full feature lists: [README.md](../README.md).
 
 | Topic | Detail |
 |-------|--------|
-| **Portable folder** | `dist\windows\` after `windows_native_build.ps1` contains `retdec-gui.exe`, Qt platforms plugins, and MSVC redistributables. CUDA runtime DLLs only if you built with `RETDEC_ENABLE_CUDA_ACCEL=ON` (default OFF). |
+| **Portable folder** | `dist\windows\` after `windows_native_build.ps1` contains `retdec-gui.exe`, `share\retdec\` (including the GUI's `share\retdec\gui\` resources) and MSVC redistributables; the GUI has no toolkit DLLs or plugins. CUDA runtime DLLs only if you built with `RETDEC_ENABLE_CUDA_ACCEL=ON` (default OFF). |
 | **Debuggable bundle** | `windows_prepare_debuggable_gui.ps1` produces `dist\windows\debuggable\` with PDBs. |
 | **Smoke tests** | `.\scripts\Test-RetdecWindows.ps1 -DistDir dist\windows` |
 | **VcXsrv / X11** | For GUI from WSL without WSLg, see `scripts/launch_gui_vcxsrv.sh`. |
@@ -458,13 +457,14 @@ Full feature lists: [README.md](../README.md).
 
 | Problem | What to check |
 |---------|----------------|
-| GUI does not start | Run from `dist\windows` (or install prefix `bin`) so Qt plugins sit next to the executable; on macOS use `RetDec.app` from the tarball, not a Homebrew-prefix copy. |
+| GUI starts unstyled or without fonts | Its resources were not found: run from an install prefix (`bin\` beside `share\retdec\gui\`) or, on macOS, `RetDec.app` from the tarball (`Contents/share/retdec/gui`). |
+| GUI does not open a window on Linux | The X11 backend loads `libX11.so.6` at run time; install it (`libx11-6`) and check `DISPLAY`. Under Wayland it runs through XWayland. |
 | “No CUDA” / slow analysis | The decompiler pipeline is CPU. GUI CUDA settings do not drive `cuda_accel`. |
 | AI-assisted naming | Tools → AI Assistant, or `RETDEC_NEURAL_REFINE` + `RETDEC_NEURAL_MODEL`. |
 | Empty decompilation | Opening a file does not decompile — press F5. Check **Settings → Advanced → Max functions** (0 = all). |
 | Crash on open file | Try a smaller sample; raise **Verbosity** under Advanced; on Windows `run_gui_with_procdump.ps1` (see [scripts/README.md](../scripts/README.md)). |
 
-For **build** failures (OpenSSL, LLVM download, Qt, MSVC env), see [BUILD_REFERENCE.md](BUILD_REFERENCE.md#troubleshooting) and [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md).
+For **build** failures (OpenSSL, LLVM download, C++23 compiler, MSVC env), see [BUILD_REFERENCE.md](BUILD_REFERENCE.md#troubleshooting) and [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md).
 
 ---
 
@@ -473,7 +473,7 @@ For **build** failures (OpenSSL, LLVM download, Qt, MSVC env), see [BUILD_REFERE
 | Need | Document |
 |------|----------|
 | Build from source | [BUILD_REFERENCE.md](BUILD_REFERENCE.md) |
-| MSVC + Qt | [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) |
+| MSVC native build | [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) |
 | All docs + CI table | [docs/README.md](README.md) |
 | Architecture / pipeline | [architecture.md](architecture.md) |
 | GUI roadmap | [GUI_ROADMAP.md](internal/GUI_ROADMAP.md) |

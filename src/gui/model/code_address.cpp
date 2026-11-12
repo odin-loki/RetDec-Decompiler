@@ -87,18 +87,6 @@ std::size_t branchEnd(std::string_view line)
 
 } // namespace
 
-std::string formatAddressHex(uint64_t address)
-{
-	return std::format("0x{:x}", address);
-}
-
-std::optional<uint64_t> parseFirstAddress(std::string_view line)
-{
-	const auto toks = hexTokens(line);
-	if (toks.empty()) return std::nullopt;
-	return toks.front().value;
-}
-
 std::optional<uint64_t> parseAddressInput(std::string_view text)
 {
 	while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())))

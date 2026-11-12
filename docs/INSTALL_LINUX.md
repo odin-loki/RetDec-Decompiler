@@ -18,8 +18,11 @@ Build the project first with CMake presets (Release recommended for distribution
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
-  build-essential cmake ninja-build python3 \
-  qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev libxkbcommon-dev
+  build-essential cmake ninja-build python3
+
+# A C++23 compiler is required (GCC 13+ / Clang 17+). retdec-gui needs no
+# packages: FuseUI and Forge are vendored in third_party/, and the X11 window
+# backend loads libX11 at run time.
 
 # Presets need CMake 3.26+ (CMakePresets.json). Root CMakeLists.txt still
 # declares cmake_minimum_required(VERSION 3.13). Ubuntu's cmake package may
@@ -195,7 +198,7 @@ tar xzf retdec-2.0.24-linux-x64.tar.gz
 cd retdec-2.0.24-linux-x64
 export PATH="$(pwd)/bin:$PATH"
 retdec-decompiler --help
-retdec-gui   # needs display / Qt platform plugin
+retdec-gui   # needs an X11 display (or XWayland); RETDEC_GUI_HEADLESS=1 for none
 ```
 
 ### Smoke test (`fib_smoke`) and signatures
@@ -233,8 +236,8 @@ This removes the install tree and deletes matching `PATH` lines from
 
 - **Integration tests:** [`.github/workflows/ctest-linux.yml`](../.github/workflows/ctest-linux.yml)
   runs on **push and pull request to `main`** (and `workflow_dispatch`). It fetches
-  large support files, pins CMake **3.31.6**, installs Qt6 and PyYAML, and runs
-  headless GUI (`QT_QPA_PLATFORM=offscreen`) plus labelled ctest (CPU-only;
+  large support files, pins CMake **3.31.6**, installs PyYAML, and runs
+  the headless GUI tests (`RETDEC_GUI_HEADLESS=1`) plus labelled ctest (CPU-only;
   `RETDEC_ENABLE_CUDA_ACCEL=OFF`).
 - **Release packaging:** [`.github/workflows/release-installers.yml`](../.github/workflows/release-installers.yml)
   `linux-installer` job (`needs: release`) builds `dist/retdec-<ver>-linux-x64.tar.gz`
@@ -262,7 +265,8 @@ and `uninstall.sh` (scripts only). Do not commit the tarball.
 |---------|-----|
 | `Permission denied` running scripts | `chmod +x scripts/*.sh` or use `bash scripts/...` |
 | `install/linux/bin` missing | Run `cmake --build build/linux` then re-run the installer script |
-| GUI fails on headless SSH | `export QT_QPA_PLATFORM=offscreen` or use CLI tools only |
+| GUI fails on headless SSH | No X display: `export RETDEC_GUI_HEADLESS=1` (or `--headless`), or use CLI tools only |
+| GUI starts unstyled / without fonts | `share/retdec/gui` must sit at `<bin>/../share/retdec/gui`; run the installed copy |
 | AppImage FUSE error | `export APPIMAGE_EXTRACT_AND_RUN=1` |
 | `.deb` not created | Install `fpm` or ignore (tarball is the primary artifact) |
 | Shared libs not found after install | Use `install.sh --add-path` or set `LD_LIBRARY_PATH` to `<prefix>/lib` (RPATH should cover normal use) |

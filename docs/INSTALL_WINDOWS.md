@@ -58,13 +58,11 @@ Binaries are **not** committed. `build-windows-installer.ps1` writes `dist\` onl
 | `-BundleDir` | `dist\windows-bundle` | Staging layout for NSIS |
 | `-SkipBuild` | off | Skip `cmake --build` / `--install` |
 | `-Version` | from `CMakeLists.txt` | Package version (e.g. `2.0.24`) |
-| `-QtRoot` | auto-detect | Qt kit root (e.g. `C:\Qt\6.11.0\msvc2022_64`) |
 
 The bundle includes:
 
 - `bin\*.exe` from the install tree (decompiler, GUI, fileinfo, utilities)
-- `share\retdec\` support data
-- Qt6 DLLs (`Qt6Core`, `Qt6Gui`, `Qt6Widgets`, …) and `platforms\qwindows.dll`, `qoffscreen.dll`
+- `share\retdec\` support data, including the GUI's resources in `share\retdec\gui\` (the GUI is FuseUI on Win32: no toolkit DLLs or plugins)
 - MSVC runtime DLLs when found under the Visual Studio redist directory
 
 ---
@@ -171,7 +169,7 @@ Or from the repo after staging:
 | `scripts\windows_native_build.ps1` | Full native build + `dist\windows` staging |
 | `scripts\bundle-windows.sh` | Linux/WSL cross-compile bundle (same NSIS layout) |
 | `packaging\nsis\retdec.nsi` | NSIS installer definition |
-| [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) | Build from source (MSVC + CUDA + Qt6) |
+| [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) | Build from source (MSVC; CUDA optional) |
 | [../releases/README.md](../releases/README.md) | Git-tracked install scripts + GitHub Release binaries |
 | [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md) | CLI-only cross-compile from WSL |
 
@@ -179,7 +177,7 @@ Or from the repo after staging:
 
 ## 6. CI and GitHub Releases
 
-- **Integration tests:** `.github/workflows/ctest-windows.yml` is **schedule + `workflow_dispatch` only** (not every push). Fetch-large-files, Qt6, MSVC, CPU-only (`RETDEC_ENABLE_CUDA_ACCEL=OFF`).
+- **Integration tests:** `.github/workflows/ctest-windows.yml` is **schedule + `workflow_dispatch` only** (not every push). Fetch-large-files, MSVC, CPU-only (`RETDEC_ENABLE_CUDA_ACCEL=OFF`).
 - **Release publishing:** `.github/workflows/release-installers.yml` job **`windows-installer`** on `windows-latest`:
   - NSIS `setup.exe` + portable zip.
   - `RETDEC_TESTS=OFF`, `CMAKE_BUILD_PARALLEL_LEVEL=1`.
