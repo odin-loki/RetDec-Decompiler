@@ -305,6 +305,9 @@ struct TableView {
     }
     /// Font of a cell: ItemModel::font, else the column font, else the view's (null).
     static const fuse::text::Font* cellFont(UiContext& ui, const PaintContext& pc, const TableState& s, u32 row, u32 col) {
+        return cellFont(ui, pc.style, s, row, col);
+    }
+    static const fuse::text::Font* cellFont(UiContext& ui, const ComputedStyle& style, const TableState& s, u32 row, u32 col) {
         std::string_view fam = s.colFamily[col];
         u16 w = s.colWeight[col];
         if (s.model->font) {
@@ -313,8 +316,8 @@ struct TableView {
             if (cf.weight) w = cf.weight;
         }
         if (fam.empty() && !w) return nullptr;
-        if (fam.empty()) return ui.resolveFont(std::span<const u32>(pc.style.fontFamily.data(), pc.style.fontFamilyCount), w);
-        return ui.resolveFont(fam, w ? w : pc.style.fontWeight);
+        if (fam.empty()) return ui.resolveFont(std::span<const u32>(style.fontFamily.data(), style.fontFamilyCount), w);
+        return ui.resolveFont(fam, w ? w : style.fontWeight);
     }
     static bool barGeom(const UiContext& ui, NodeHandle n, const TableState& s, Rect& track, Rect& thumb) {
         const u32 r = rows(s), vis = visible(ui, n, s);
@@ -375,7 +378,10 @@ struct TableView {
                 if (s->colW[k] <= 0.f) continue;
                 const std::string_view d = s->model->data(s->model->user, row, k, s->scratch);
                 dl.pushClip({x, y, s->colW[k] - 2.f, rh});
-                if (const CellDelegate* dg = s->delegate[k]; dg && dg->paint)
+                if (const CellDelegate* dg = s->delegate[k]; dg && dg->paintWithFont)
+                    dg->paintWithFont(dg->user, pc, dl, {x + 6.f, y, s->colW[k] - 12.f, rh}, row, k, d, rowSel,
+                                      cellFont(ui, pc, *s, row, k));
+                else if (dg && dg->paint)
                     dg->paint(dg->user, pc, dl, {x + 6.f, y, s->colW[k] - 12.f, rh}, row, k, d, rowSel);
                 else
                     ui.paintString(dl, d, {x + 6.f, y, s->colW[k] - 12.f, rh}, k ? dim : text, fs, TextAlignment::Start, pc.node.index,
@@ -739,6 +745,40 @@ void tableClearSelection(UiContext& ui, NodeHandle table) {
     TableView::clearMarks(*s);
     s->anchor = -1;
     TableView::selectionChanged(ui, table, *s);
+}
+void setTableSelection(UiContext& ui, NodeHandle table, std::span<const u32> sel, i64 anchor) {
+    TableState* s = stateOf(ui, table);
+    if (!s) return;
+    const u32 nr = TableView::rows(*s);
+    if (anchor >= i64(nr)) anchor = -1;
+    if (anchor < 0)
+        for (u32 r : sel)
+            if (r < nr) { anchor = r; break; }
+    if (s->mode == SelectionMode::Single) {
+        if (i32(ui.value(table)) != i32(anchor)) ui.setValue(table, f32(anchor), true);
+        ui.invalidate(table);
+        return;
+    }
+    std::vector<bool> next;
+    u32 count = 0;
+    for (u32 r : sel) {
+        if (r >= nr) continue;
+        if (r >= next.size()) next.resize(std::size_t(r) + 1, false);
+        if (!next[r]) { next[r] = true; ++count; }
+    }
+    bool same = count == s->selCount;
+    for (std::size_t r = 0; same && r < std::max(next.size(), s->sel.size()); ++r)
+        same = (r < next.size() && next[r]) == (r < s->sel.size() && s->sel[r]);
+    s->anchor = anchor;
+    if (same) return;
+    s->sel = std::move(next);
+    s->selCount = count;
+    TableView::selectionChanged(ui, table, *s);
+}
+const fuse::text::Font* tableCellFont(UiContext& ui, NodeHandle table, u32 row, u32 col) {
+    const TableState* s = stateOf(ui, table);
+    if (!s || !s->model || col >= kMaxCols) return nullptr;
+    return TableView::cellFont(ui, ui.computed(table), *s, row, col);
 }
 void scrollToRow(UiContext& ui, NodeHandle table, u32 row, ScrollHint hint) {
     TableState* s = stateOf(ui, table);

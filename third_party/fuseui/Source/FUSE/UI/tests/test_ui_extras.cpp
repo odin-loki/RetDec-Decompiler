@@ -6,13 +6,18 @@
 //                          search paths; one glyph atlas serves every face
 //   glyph_fallback         check marks, arrows, geometric shapes and the ellipsis render in every bundled face through
 //                          the bundled fallback chain (DejaVu Sans) and through UiContext::addFallbackFont
-//   placeholder            lineedit / codeedit placeholder: muted colour, CSS placeholder-color, hidden on focus / text
+//   placeholder            lineedit / codeedit placeholder: muted colour, CSS placeholder-color, kept while focused
+//                          and empty (Qt), hidden on focus with class placeholder-hide-on-focus, hidden by text
 //   double_click           DoubleClicked from press timing and distance (virtual clock), configurable, click counts
 //   table_multiselect      Single (default) vs Extended selection with Ctrl / Shift clicks and keys, Ctrl+A, the
 //                          selection API, scrollToRow, Activated on Enter / double click
 //   spinbox_special        special-value text at the minimum
 //   progress_indeterminate the busy bar animates on the context clock and stops when switched off
 //   cooked_font_props      (with fuse_ui_doc) font-family / font-weight survive the style cooker; custom properties too
+//   delegate_font          table cell delegates get the resolved cell face (paintWithFont / tableCellFont)
+//   desc_font_fallback     a UiContextDesc font without a chain gets the bundled fallback chain from
+//                          registerBundledFonts (incl. the vendored Noto Sans Symbols 2 / Symbols: U+23F1, U+2315)
+//   table_set_selection    setTableSelection: bulk replace, one SelectionChanged, the Shift anchor, Single mode
 //   key_names              punctuation keys appended to Key (earlier values unchanged); keyName / keyFromName /
 //                          parseShortcut round trips ("Ctrl+Shift+`", "Ctrl++", aliases)
 //   part_styles            UiContext::partStyle: widget sub-parts (tableheader, tab:selected, scrollthumb ...) match
@@ -274,11 +279,20 @@ void gatePlaceholder() {
     UI_CHECK(ph.size() >= 10);
     UI_CHECK(!ph.empty() && ph[0].fill.a < text.a * 0.6f && ph[0].fill.a > 0.f); // muted
     UI_CHECK(!glyphsOf(ui, ce).empty());
-    // focused: no placeholder (caret only)
+    // focused: the placeholder stays until the user types (Qt) ...
     fuse::ui::test::UiTestDriver d(ui);
     d.click("edit");
     UI_CHECK(ui.focused() == edit);
+    UI_CHECK(glyphsOf(ui, edit).size() >= 10);
+    // ... unless the field opts into hiding it on focus
+    ui.addClass(edit, "placeholder-hide-on-focus");
+    ui.invalidate(edit);
+    settle(ui);
     UI_CHECK(glyphsOf(ui, edit).empty());
+    ui.removeClass(edit, "placeholder-hide-on-focus");
+    ui.invalidate(edit);
+    settle(ui);
+    UI_CHECK(glyphsOf(ui, edit).size() >= 10);
     d.type("abc");
     UI_CHECK(ui.text(edit) == "abc");
     auto typed = glyphsOf(ui, edit);
@@ -294,9 +308,17 @@ void gatePlaceholder() {
     settle(ui);
     ph = glyphsOf(ui, edit);
     UI_CHECK(!ph.empty() && ph[0].fill.r > 0.99f && ph[0].fill.g < 0.01f && ph[0].fill.a > 0.99f);
-    // code edit: hidden once it has focus
+    // code edit: kept while focused and empty, hidden on focus with the class, gone once there is text
     d.click("ce");
-    UI_CHECK(ui.focused() == ce && glyphsOf(ui, ce).size() < 5);
+    UI_CHECK(ui.focused() == ce && glyphsOf(ui, ce).size() >= 10);
+    ui.addClass(ce, "placeholder-hide-on-focus");
+    ui.invalidate(ce);
+    settle(ui);
+    UI_CHECK(glyphsOf(ui, ce).size() < 5);
+    ui.removeClass(ce, "placeholder-hide-on-focus");
+    d.type("x");
+    settle(ui);
+    UI_CHECK(glyphsOf(ui, ce).size() < 5);
 }
 
 // ---- double_click ----------------------------------------------------------------------------------------------------
@@ -605,6 +627,120 @@ void gateCookedFontProps() {
 #endif
 }
 
+// ---- delegate_font --------------------------------------------------------------------------------------------------
+struct FontLog {
+    struct Hit { u32 row, col; const fuse::text::Font* font; };
+    std::vector<Hit> hits;
+    static void paint(const void* u, const PaintContext& pc, DrawList& dl, Rect cell, u32 row, u32 col, std::string_view text,
+                      bool, const fuse::text::Font* font) {
+        const_cast<FontLog*>(static_cast<const FontLog*>(u))->hits.push_back({row, col, font});
+        pc.ui.paintString(dl, text, cell, pc.style.color, pc.style.fontSize, TextAlignment::Start, pc.node.index, font);
+    }
+};
+void gateDelegateFont() {
+    UiContext ui{{.viewport = {700, 300}, .font = &fuse::ui::test::font()}};
+    w::install(ui);
+    UI_CHECK(ui.registerBundledFonts() >= 4);
+    CellModel cm; // column 2: ItemModel::font = monospace
+    const w::ItemModel model = cm.model();
+    const NodeHandle table = w::tableView(ui, ui.root(), &model, "table");
+    ui.setCss(table, "height", "120px");
+    w::setTableColumnFont(ui, table, 0, "monospace", 700);
+    FontLog log;
+    w::CellDelegate dg;
+    dg.user = &log;
+    dg.paintWithFont = &FontLog::paint;
+    for (u32 c = 0; c < 3; ++c) w::setTableDelegate(ui, table, c, &dg);
+    settle(ui);
+    const fuse::text::Font* monoBold = ui.resolveFont("monospace", 700);
+    const fuse::text::Font* mono = ui.resolveFont("monospace", 400);
+    UI_CHECK(monoBold && mono && monoBold != mono);
+    bool seen0 = false, seen1 = false, seen2 = false;
+    for (const auto& h : log.hits) {
+        if (h.col == 0) { seen0 = true; UI_CHECK(h.font == monoBold); }         // column font
+        if (h.col == 1) { seen1 = true; UI_CHECK(h.font == nullptr); }          // the view's face
+        if (h.col == 2) { seen2 = true; UI_CHECK(h.font == mono); }             // ItemModel::font
+        UI_CHECK(h.font == w::tableCellFont(ui, table, h.row, h.col));
+    }
+    UI_CHECK(seen0 && seen1 && seen2);
+    // the delegate's text is painted in the face it was given (glyphs of column 0 are monospace bold)
+    UI_CHECK(!glyphsOf(ui, table).empty());
+}
+
+// ---- desc_font_fallback ---------------------------------------------------------------------------------------------
+void gateDescFontFallback() {
+    auto f = fuse::text::Font::bundled();
+    UI_CHECK(f.has_value());
+    if (!f) return;
+    fuse::text::Font face = std::move(*f);
+    UI_CHECK(face.faceCount() == 1 && face.faceFor(0x2713) == 0);
+    UiContext ui{{.viewport = {300, 100}, .font = &face}};
+    w::install(ui);
+    UI_CHECK(ui.registerBundledFonts() >= 4);
+    UI_CHECK(ui.font() == &face && face.faceCount() > 1);
+    for (char32_t cp : {U'\u2713', U'\u25B6', U'\u26A0', U'\u23F1', U'\u2315', U'\u2026'}) {
+        const auto i = face.faceFor(cp);
+        if (!(cp == U'\u2026' || i != 0)) std::printf("desc_font_fallback: U+%04X has no face\n", unsigned(cp));
+        UI_CHECK(cp == U'\u2026' || i != 0); // the ellipsis is in Open Sans itself
+    }
+    // a label with the symbols paints no .notdef: every glyph comes from a face that maps it
+    const NodeHandle l = w::label(ui, ui.root(), "\u2713 \u25B6 \u26A0 \u23F1 \u2315", "l");
+    settle(ui);
+    UI_CHECK(glyphsOf(ui, l).size() == 5);
+    // a face that already has a chain keeps it
+    auto g = fuse::text::Font::bundled();
+    auto dv = fuse::text::Font::load("dejavu/DejaVuSans.ttf");
+    UI_CHECK(g && dv);
+    if (g && dv) {
+        fuse::text::Font own = std::move(*g);
+        own.setFallbacks({&*dv});
+        UiContext u2{{.viewport = {100, 100}, .font = &own}};
+        u2.registerBundledFonts();
+        UI_CHECK(own.faceCount() == 2 && &own.face(1) == &*dv);
+    }
+}
+
+// ---- table_set_selection ---------------------------------------------------------------------------------------------
+void gateTableSetSelection() {
+    UiContext ui{{.viewport = {500, 400}, .font = &fuse::ui::test::font()}};
+    w::install(ui);
+    w::StringTableModel m("Address\tName");
+    for (int i = 0; i < 50; ++i) m.addRow("x\ty");
+    const NodeHandle t = w::tableView(ui, ui.root(), &m.model(), "table");
+    ui.setCss(t, "height", "300px");
+    w::setTableSelectionMode(ui, t, w::SelectionMode::Extended);
+    settle(ui);
+    int signals = 0;
+    f32 lastCount = -1.f;
+    ui.connect(t, SignalKind::SelectionChanged, [&](UiContext&, NodeHandle, const SignalArgs& a) { ++signals; lastCount = a.value; });
+    const u32 pick[] = {7, 3, 5, 3, 99}; // unordered, a duplicate, one out of range
+    w::setTableSelection(ui, t, pick, 5);
+    UI_CHECK(signals == 1 && lastCount == 3.f);
+    UI_CHECK((w::tableSelectedRows(ui, t) == std::vector<u32>{3, 5, 7}));
+    w::setTableSelection(ui, t, pick, 5); // unchanged: no signal
+    UI_CHECK(signals == 1);
+    // the anchor drives Shift+arrow / Shift+click extension: current row 9, Shift+Down extends 5..10
+    ui.setValue(t, 9.f);
+    ui.setFocus(t, FocusReason::Keyboard);
+    ui.keyDown(Key::Down, kModShift);
+    ui.keyUp(Key::Down, kModShift);
+    settle(ui);
+    UI_CHECK((w::tableSelectedRows(ui, t) == std::vector<u32>{5, 6, 7, 8, 9, 10}));
+    // default anchor = the first listed row; empty clears with one signal
+    signals = 0;
+    const u32 big[] = {40, 41, 42, 43, 44, 45, 46, 47, 48, 49};
+    w::setTableSelection(ui, t, big);
+    UI_CHECK(signals == 1 && w::tableSelectedCount(ui, t) == 10);
+    w::setTableSelection(ui, t, {});
+    UI_CHECK(signals == 2 && w::tableSelectedCount(ui, t) == 0);
+    // Single mode: the anchor (else the first row) becomes the current row
+    w::setTableSelectionMode(ui, t, w::SelectionMode::Single);
+    w::setTableSelection(ui, t, pick);
+    UI_CHECK(ui.value(t) == 7.f && (w::tableSelectedRows(ui, t) == std::vector<u32>{7}));
+    w::setTableSelection(ui, t, {});
+    UI_CHECK(w::tableSelectedRows(ui, t).empty());
+}
+
 // ---- key_names ------------------------------------------------------------------------------------------------------
 // Earlier Key values keep their numbers (cooked bindings, saved shortcuts); the punctuation keys follow Other.
 static_assert(u16(Key::BracketRight) == 64 && u16(Key::Other) == 65);
@@ -791,6 +927,9 @@ int main(int argc, char** argv) {
                                {"spinbox_special", gateSpinBoxSpecial},
                                {"progress_indeterminate", gateProgressIndeterminate},
                                {"cooked_font_props", gateCookedFontProps},
+                               {"delegate_font", gateDelegateFont},
+                               {"desc_font_fallback", gateDescFontFallback},
+                               {"table_set_selection", gateTableSetSelection},
                                {"key_names", gateKeyNames},
                                {"part_styles", gatePartStyles}};
     bool ran = false;

@@ -819,7 +819,8 @@ struct CodeEditW {
                                TextAlignment::Start, pc.node.index);
                 i = j;
             }
-            if (!focused && li == 0 && s->lines.size() == 1 && L.empty() && !ui.placeholder(pc.node).empty()) {
+            if ((!focused || !ui.hasClass(pc.node, "placeholder-hide-on-focus")) && li == 0 && s->lines.size() == 1 && L.empty() &&
+                !ui.placeholder(pc.node).empty()) {
                 const Color pcol = pc.style.placeholderColor.a > 0.f ? pc.style.placeholderColor
                                                                     : pc.style.color.withAlpha(pc.style.color.a * 0.45f);
                 ui.paintString(dl, ui.placeholder(pc.node), {x0, y, c.right() - x0, lh}, pc.tint(pcol), fs, TextAlignment::Start,

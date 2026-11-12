@@ -78,7 +78,8 @@ public:
     /// it; InvalidFont otherwise.
     static std::expected<Font, TextError> bundled();
     /// FUSE's bundled fallback faces in chain order: Noto Sans Hebrew, Arabic, Devanagari, Twemoji (COLRv0 colour
-    /// emoji), Symbols 2 and DejaVu Sans (wide symbol coverage: check marks, arrows, geometric shapes, box drawing).
+    /// emoji), Symbols 2, DejaVu Sans (wide symbol coverage: check marks, arrows, geometric shapes, box drawing) and
+    /// Noto Sans Symbols (technical symbols such as U+2315).
     /// Fonts whose files are missing are skipped. Attach them with setFallbacks().
     static std::vector<Font> bundledFallbacks();
 
@@ -150,7 +151,8 @@ struct BundledFace {
     bool monospace = false;      ///< the face for the generic "monospace" family
     bool fallback = false;       ///< a coverage face (glyph fallback), not a UI face
 };
-/// Open Sans Regular / Bold, JetBrains Mono Regular / Bold and DejaVu Sans (fallback).
+/// Open Sans Regular / Bold, JetBrains Mono Regular / Bold; DejaVu Sans, Noto Sans Symbols 2 and Noto Sans Symbols
+/// (fallback faces).
 std::span<const BundledFace> bundledFaces();
 
 // ---- Shaping -------------------------------------------------------------------------------------------------------

@@ -30,12 +30,16 @@ has gate tests in `Source/FUSE/UI/tests` (`fuse_ui_extra_*`, `test_ui_extras.cpp
 - **Bundled fonts**: `vendor/fonts/opensans/OpenSans-Bold.ttf` (Open Sans 1.10 Bold, Apache-2.0, same release as the
   regular face), `vendor/fonts/jetbrainsmono` (JetBrains Mono 2.304 Regular + Bold, OFL-1.1) and
   `vendor/fonts/dejavu/DejaVuSans.ttf` (DejaVu 2.37, Bitstream Vera / Arev licences) as the glyph-fallback face
-  (check marks, arrows, geometric shapes); each directory has its licence and a `VERSION` file with source and
-  SHA-256.
-- **Glyph fallback**: `Font::bundledFallbacks()` ends with DejaVu Sans; the bundled faces and context-owned faces get
-  the fallback chain, so symbols missing from a face render from any registered fallback face.
+  (check marks, arrows, geometric shapes), `vendor/fonts/noto` (Noto Sans Symbols 2 2.008 and Noto Sans Symbols 2.003,
+  OFL-1.1, static unhinted instances: U+23F1, U+2315 and other technical symbols); each directory has its licence
+  and a `VERSION` file with source and SHA-256.
+- **Glyph fallback**: `Font::bundledFallbacks()` is Noto Sans Symbols 2, DejaVu Sans, Noto Sans Symbols (after the
+  upstream Noto / Twemoji faces when present); the bundled faces and context-owned faces get the fallback chain, so
+  symbols missing from a face render from any registered fallback face. `registerBundledFonts()` also attaches the
+  bundled chain to a `UiContextDesc::font` that has none (in place), so ✓ ▶ ⚠ no longer draw .notdef there.
 - **Placeholders**: `widgets::setPlaceholderText` (lineedit, codeedit) in CSS `placeholder-color` (default: the text
-  colour at 45 %), shown while empty and unfocused; `UiContext::setPlaceholder / placeholder`.
+  colour at 45 %), shown while empty, also while focused (Qt; class `placeholder-hide-on-focus` restores hiding on
+  focus); `UiContext::setPlaceholder / placeholder`.
 - **Double click**: `SignalKind::DoubleClicked` and `EventType::DoubleClick` from press timing / distance
   (`UiContext::setDoubleClick`, default 500 ms / 4 px; `Event::clicks` counts the series), on the context clock
   (`UiContext::setClock / now`; fuse_app uses the application clock).
@@ -43,7 +47,9 @@ has gate tests in `Source/FUSE/UI/tests` (`fuse_ui_extra_*`, `test_ui_extras.cpp
   Ctrl+A, Ctrl+Space; `tableSelectedRows`, `setTableRowSelected`, `tableSelectAll`, `tableClearSelection`,
   `SignalKind::SelectionChanged`), `scrollToRow(ui, table, row, hint)`, optional `SignalKind::Activated` on Enter /
   double click (`setTableActivation`), per-column (`setTableColumnFont`) and per-cell (`ItemModel::font`) fonts.
-  Single selection stays the default.
+  Single selection stays the default. `setTableSelection(ui, table, rows, anchor)` replaces the selection in bulk
+  (one `SelectionChanged`, sets the Shift anchor). Cell delegates get the resolved cell face through the optional
+  `CellDelegate::paintWithFont` (or `tableCellFont(ui, table, row, col)` from a plain `paint`).
 - **Spin box / progress bar**: `setSpecialValueText` (shown at the minimum), `setProgressIndeterminate` (busy bar).
 - **Cooked styles**: `font-family` values are cooked; custom properties are now tagged `0xFFFFFFFF` (blobs cooked
   before, which tagged them 56, still load).

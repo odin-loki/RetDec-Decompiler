@@ -436,7 +436,8 @@ public:
     /// Registers FUSE's bundled faces once per process (shared): Open Sans Regular / Bold ("Open Sans", aliases
     /// "sans-serif", "system-ui"), JetBrains Mono Regular / Bold ("JetBrains Mono", aliases "monospace",
     /// "ui-monospace") with the bundled fallback chain (DejaVu Sans for symbols, plus Noto / Twemoji when present).
-    /// Sets the default family to Open Sans when none is set, and the default face when the context has none.
+    /// Sets the default family to Open Sans when none is set, and the default face when the context has none. A
+    /// default face given in UiContextDesc that has no fallback chain gets the bundled chain attached (in place).
     /// Returns the number of faces registered (0 when the font files cannot be found).
     u32 registerBundledFonts();
     /// The face for a family list (fontFamilyHash values) and weight: the first registered family (after aliases)

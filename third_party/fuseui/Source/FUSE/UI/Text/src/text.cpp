@@ -523,6 +523,8 @@ std::span<const BundledFace> bundledFaces() {
         {"JetBrains Mono", 400, "jetbrainsmono/JetBrainsMono-Regular.ttf", true, false},
         {"JetBrains Mono", 700, "jetbrainsmono/JetBrainsMono-Bold.ttf", true, false},
         {"DejaVu Sans", 400, "dejavu/DejaVuSans.ttf", false, true},
+        {"Noto Sans Symbols 2", 400, "noto/NotoSansSymbols2-Regular.ttf", false, true},
+        {"Noto Sans Symbols", 400, "noto/NotoSansSymbols-Regular.ttf", false, true},
     };
     return kFaces;
 }
@@ -542,11 +544,13 @@ std::expected<Font, TextError> Font::bundled() {
 
 std::vector<Font> Font::bundledFallbacks() {
     std::vector<Font> out;
-    // Emoji before Symbols 2 so emoji-presentation code points (U+2764 ...) come out in colour; DejaVu Sans last as
-    // the wide-coverage catch-all (check marks, arrows, geometric shapes, box drawing, math).
+    // Emoji before Symbols 2 so emoji-presentation code points (U+2764 ...) come out in colour; DejaVu Sans as the
+    // wide-coverage catch-all (check marks, arrows, geometric shapes, box drawing, math), then Noto Sans Symbols for
+    // the technical symbols none of the others has (U+2315 ...).
     static const char* const kFiles[] = {"noto/NotoSansHebrew-Regular.ttf", "noto/NotoSansArabic-Regular.ttf",
                                          "noto/NotoSansDevanagari-Regular.ttf", "twemoji/TwemojiMozilla.ttf",
-                                         "noto/NotoSansSymbols2-Regular.ttf", "dejavu/DejaVuSans.ttf"};
+                                         "noto/NotoSansSymbols2-Regular.ttf", "dejavu/DejaVuSans.ttf",
+                                         "noto/NotoSansSymbols-Regular.ttf"};
     for (const char* f : kFiles)
         if (auto font = load(f)) out.push_back(std::move(*font));
     return out;

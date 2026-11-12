@@ -400,7 +400,9 @@ struct LineEdit {
             const f32 x0 = ui.measureString(t.substr(0, a), px, pc.node), x1 = ui.measureString(t.substr(0, b), px, pc.node);
             dl.rect({c.x + x0 - scrollX, c.y, x1 - x0, c.h}, accent(pc).withAlpha(0.45f * pc.opacity));
         }
-        if (t.empty() && !focused && !ui.placeholder(pc.node).empty()) {
+        // Qt: the placeholder stays until the user types (class placeholder-hide-on-focus: hidden while focused)
+        if (t.empty() && pre.empty() && (!focused || !ui.hasClass(pc.node, "placeholder-hide-on-focus")) &&
+            !ui.placeholder(pc.node).empty()) {
             ui.paintString(dl, ui.placeholder(pc.node), c, mutedCol(pc), px, TextAlignment::Start, pc.node.index);
         } else if (pre.empty()) {
             labelAt(pc, dl, t, {c.x - scrollX, c.y, c.w + scrollX + 1000.f, c.h}, TextAlignment::Start);

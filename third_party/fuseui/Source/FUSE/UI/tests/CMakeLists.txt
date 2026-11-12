@@ -159,7 +159,8 @@ if(TARGET fuse_ui_doc)
     target_compile_definitions(fuse_ui_extras PRIVATE FUSE_UI_EXTRAS_HAVE_DOC=1)
 endif()
 foreach(g font_faces glyph_fallback placeholder double_click table_multiselect spinbox_special progress_indeterminate
-          cooked_font_props key_names part_styles)
+          cooked_font_props delegate_font desc_font_fallback table_set_selection
+          key_names part_styles)
     add_test(NAME fuse_ui_extra_${g} COMMAND fuse_ui_extras --gate=${g})
     set_tests_properties(fuse_ui_extra_${g} PROPERTIES LABELS "fuse_ui;gate")
 endforeach()

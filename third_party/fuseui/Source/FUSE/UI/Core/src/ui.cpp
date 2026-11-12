@@ -901,6 +901,21 @@ const BundledSet& bundledSet() {
 
 u32 UiContext::registerBundledFonts() {
     const BundledSet& set = bundledSet();
+    // A default face from UiContextDesc without a fallback chain gets the bundled one (process-lifetime faces), so
+    // check marks / arrows / warning signs do not draw .notdef. The caller's Font object is updated in place (it must
+    // not be an object defined const); a face that already has a chain keeps it.
+    if (m_font && m_font->faceCount() == 1 && !set.fallbacks.empty()) {
+        bool bundledFace = false;
+        for (const auto& bf : set.faces) bundledFace = bundledFace || bf.second.get() == m_font;
+        bool ownFallback = false;
+        for (const auto& f : set.fallbacks) ownFallback = ownFallback || &f == m_font;
+        if (!bundledFace && !ownFallback) {
+            std::vector<const fuse::text::Font*> chain;
+            for (const auto& f : set.fallbacks) chain.push_back(&f);
+            const_cast<fuse::text::Font*>(m_font)->setFallbacks(std::move(chain));
+            markAllDirty();
+        }
+    }
     u32 n = 0;
     std::string_view uiFamily, monoFamily;
     for (const auto& [bf, font] : set.faces) {

@@ -53,7 +53,8 @@ NodeHandle panel(UiContext& ui, NodeHandle parent, std::string_view id = {});
 std::string_view comboText(const UiContext& ui, NodeHandle combo);
 
 /// Placeholder text of a lineedit or codeedit (Qt: placeholderText): painted in `placeholder-color` (default: the
-/// text colour at 45 % alpha) while the field is empty and unfocused. Empty = none.
+/// text colour at 45 % alpha) while the field is empty, focused or not, as in Qt (the caret is drawn over it). Add
+/// the class `placeholder-hide-on-focus` to hide it while the field has focus. Empty = none.
 void setPlaceholderText(UiContext& ui, NodeHandle edit, std::string_view text);
 std::string_view placeholderText(const UiContext& ui, NodeHandle edit);
 /// Spin box special-value text (Qt: QSpinBox::specialValueText), e.g. "All" or "Auto": shown instead of the number
@@ -198,6 +199,11 @@ u32 tableSelectedCount(const UiContext& ui, NodeHandle table);
 void setTableRowSelected(UiContext& ui, NodeHandle table, u32 row, bool selected);
 void tableSelectAll(UiContext& ui, NodeHandle table);
 void tableClearSelection(UiContext& ui, NodeHandle table);
+/// Replaces the whole selection with `rows` in one step (out-of-range rows are ignored; order and duplicates do not
+/// matter) and emits SelectionChanged once, only when the selection changed. Extended: `anchor` becomes the
+/// Shift+click / Shift+arrow anchor (-1: the first of `rows`, none when empty); the current row (value()) is left as
+/// it is. Single: `anchor` (else the first of `rows`) becomes the selected / current row; empty clears it.
+void setTableSelection(UiContext& ui, NodeHandle table, std::span<const u32> rows, i64 anchor = -1);
 /// Scrolls so `row` is visible (EnsureVisible: the least scrolling; Top / Center: placed there). Does not select.
 enum class ScrollHint : u8 { EnsureVisible, Top, Center };
 void scrollToRow(UiContext& ui, NodeHandle table, u32 row, ScrollHint hint = ScrollHint::EnsureVisible);
@@ -222,7 +228,14 @@ struct CellDelegate {
     const void* user = nullptr;
     void (*paint)(const void* user, const PaintContext& pc, DrawList& dl, Rect cell, u32 row, u32 col,
                   std::string_view text, bool selected) = nullptr;
+    /// Used instead of `paint` when set: also gets the cell's resolved face (setTableColumnFont, ItemModel::font;
+    /// null = the view's own face), to pass to UiContext::paintString / measureString.
+    void (*paintWithFont)(const void* user, const PaintContext& pc, DrawList& dl, Rect cell, u32 row, u32 col,
+                          std::string_view text, bool selected, const fuse::text::Font* font) = nullptr;
 };
+/// The face a table cell is drawn in (column font, then ItemModel::font; null = the view's own face). For delegates
+/// that keep the plain `paint` callback.
+const fuse::text::Font* tableCellFont(UiContext& ui, NodeHandle table, u32 row, u32 col);
 /// Sets (or with nullptr clears) the delegate for `col`. The delegate must outlive the view.
 void setTableDelegate(UiContext& ui, NodeHandle table, u32 col, const CellDelegate* delegate);
 

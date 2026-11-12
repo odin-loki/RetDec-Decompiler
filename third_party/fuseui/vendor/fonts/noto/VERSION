@@ -1,0 +1,11 @@
+name: Noto Sans Symbols 2 / Noto Sans Symbols (glyph-fallback faces for symbols the other bundled faces lack,
+  e.g. U+23F1 stopwatch from Symbols 2 and U+2315 telephone recorder from Symbols)
+upstream: https://github.com/notofonts/symbols
+version: Noto Sans Symbols 2 2.008, Noto Sans Symbols 2.003
+retrieved: https://raw.githubusercontent.com/notofonts/notofonts.github.io/main/fonts/NotoSansSymbols2/unhinted/ttf/NotoSansSymbols2-Regular.ttf
+  and .../fonts/NotoSansSymbols/unhinted/ttf/NotoSansSymbols-Regular.ttf (static unhinted instances, unchanged);
+  OFL.txt from https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssymbols2/OFL.txt; fetched over HTTPS 2026-11-12
+license: OFL-1.1
+license_file: OFL.txt
+sha256: NotoSansSymbols2-Regular.ttf c4a0a80f0041ce4be81e2478faad22776d23edb98ae3f0d19bd37044820ecf9d
+sha256: NotoSansSymbols-Regular.ttf 6eea9cb4cd39269ea9f95ba5c2735f80ae74049dfc9e1a7c932a5cfc8f0c3030
