@@ -106,7 +106,7 @@ bool readsEntryValue(LoadInst* l, Value* ptr)
 		{
 			return true;
 		}
-		for (llvm::BasicBlock* pred : llvm::predecessors(b))
+		for (llvm::BasicBlock* pred: llvm::predecessors(b))
 		{
 			work.push_back(pred);
 		}
