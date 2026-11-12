@@ -220,6 +220,9 @@ void Settings::remove(std::string_view key) {
 AppWindow::AppWindow(Application& app, const WindowDesc& d, u32 id)
     : m_app(app), m_ui({.viewport = {f32(d.width), f32(d.height)}, .font = &defaultFont()}), m_title(d.title), m_id(id) {
     widgets::install(m_ui);
+    if (d.bundledFonts) m_ui.registerBundledFonts();
+    // input timing (double clicks) and widget animation follow the application clock (virtual in tests)
+    m_ui.setClock({&m_app, [](void* u) { return static_cast<const Application*>(u)->now(); }});
     m_presenter = {this, &AppWindow::presentHeadless, nullptr};
 }
 AppWindow::~AppWindow() {

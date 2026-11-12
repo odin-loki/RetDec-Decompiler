@@ -755,6 +755,13 @@ struct CodeEditW {
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
     static Size measure(UiContext&, NodeHandle, Size) { return {420.f, 240.f}; }
+    /// Code is monospace by default (the generic family; UiContext::registerBundledFonts maps it to JetBrains Mono).
+    static ComputedStyle defaults() {
+        ComputedStyle c;
+        c.fontFamily[0] = fontFamilyHash("monospace");
+        c.fontFamilyCount = 1;
+        return c;
+    }
     static f32 lineH(const PaintContext& pc) { return std::ceil(pc.style.fontSize * 1.35f); }
     static f32 lineH(UiContext& ui, NodeHandle n) { return std::ceil(ui.computed(n).fontSize * 1.35f); }
     static f32 gutter(UiContext& ui, NodeHandle n, const CodeState& s) {
@@ -800,6 +807,12 @@ struct CodeEditW {
                 ui.paintString(dl, std::string_view(L).substr(i, j - i), {x, y, c.right() - x + 400.f, lh}, pc.tint(kTok[tok[i]]), fs,
                                TextAlignment::Start, pc.node.index);
                 i = j;
+            }
+            if (!focused && li == 0 && s->lines.size() == 1 && L.empty() && !ui.placeholder(pc.node).empty()) {
+                const Color pcol = pc.style.placeholderColor.a > 0.f ? pc.style.placeholderColor
+                                                                    : pc.style.color.withAlpha(pc.style.color.a * 0.45f);
+                ui.paintString(dl, ui.placeholder(pc.node), {x0, y, c.right() - x0, lh}, pc.tint(pcol), fs, TextAlignment::Start,
+                               pc.node.index);
             }
             if (focused && li == s->caret.line) {
                 const f32 cx = x0 + ui.measureString(std::string_view(L).substr(0, s->caret.col), fs, pc.node);

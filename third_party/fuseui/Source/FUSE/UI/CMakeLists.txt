@@ -31,9 +31,20 @@ endif()
 add_library(fuse_text STATIC Text/src/text.cpp)
 target_include_directories(fuse_text PUBLIC Text/include)
 target_include_directories(fuse_text SYSTEM PRIVATE "${FUSE_UI_REPO_ROOT}/vendor/stb")
+# Font files stay files: the build tree's vendor/fonts is compiled in, an installed tree finds them next to the
+# executable (<bin>/${FUSE_UI_FONT_INSTALL_REL}), FUSE_UI_FONT_DIR and fuse::text::addFontSearchPath() add more.
+set(FUSE_UI_FONT_INSTALL_REL "../share/fuse/fonts" CACHE STRING
+    "Bundled font directory relative to the executable in an installed tree (or absolute)")
+option(FUSE_UI_INSTALL_FONTS "install() vendor/fonts (TTFs + licences) to FUSE_UI_FONT_INSTALL_DIR" OFF)
+set(FUSE_UI_FONT_INSTALL_DIR "share/fuse/fonts" CACHE STRING "Install destination of the bundled fonts")
 target_compile_definitions(fuse_text PRIVATE
     FUSE_TEXT_BUNDLED_FONT="${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf"
-    FUSE_TEXT_FONT_DIR="${FUSE_UI_REPO_ROOT}/vendor/fonts")
+    FUSE_TEXT_FONT_DIR="${FUSE_UI_REPO_ROOT}/vendor/fonts"
+    FUSE_TEXT_FONT_INSTALL_REL="${FUSE_UI_FONT_INSTALL_REL}")
+if(FUSE_UI_INSTALL_FONTS)
+    install(DIRECTORY "${FUSE_UI_REPO_ROOT}/vendor/fonts/" DESTINATION "${FUSE_UI_FONT_INSTALL_DIR}"
+            FILES_MATCHING PATTERN "*.ttf" PATTERN "*.txt" PATTERN "LICENSE*" PATTERN "VERSION")
+endif()
 target_compile_features(fuse_text PUBLIC cxx_std_23)
 
 # FULL profile (decision D2): HarfBuzz + FreeType through FetchContent (static, no optional deps), SheenBidi (UAX #9)

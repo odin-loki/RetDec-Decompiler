@@ -26,6 +26,7 @@ fuse_ui_test(fuse_ui_a11y_tree_dump test_a11y_tree_dump.cpp)
 fuse_ui_test(fuse_ui_text_basics test_text_basics.cpp)
 fuse_ui_test(fuse_text_edit_ops test_text_edit_ops.cpp)
 fuse_ui_test(fuse_text_fallback test_text_fallback.cpp)
+set_tests_properties(fuse_text_fallback PROPERTIES SKIP_RETURN_CODE 77)
 fuse_ui_test(fuse_ui_widget_interaction test_widget_interaction.cpp)
 
 find_package(Threads REQUIRED)
@@ -40,8 +41,10 @@ if(EXISTS ${FUSE_RELIGHT_OVERLAY}/src/ui.cpp)
     target_include_directories(fuse_ui_relight_equivalence PRIVATE ${FUSE_RELIGHT_OVERLAY}/include)
 endif()
 
-# UI1 key / event v2: header-only, plus the v1 key tables from Core.
+# UI1 key / event v2: header-only, plus the v1 key tables from Core (the engine's Source/FUSE/Core; skipped when
+# FUSE UI is built outside the FUSE tree, e.g. vendored).
 set(FUSE_CORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../Core)
+if(EXISTS ${FUSE_CORE_DIR}/src/platform/input.cpp)
 fuse_ui_test(fuse_ui_platform_keys_v2 test_platform_keys_v2.cpp ${FUSE_CORE_DIR}/src/platform/input.cpp
              ${FUSE_CORE_DIR}/src/platform/text_services.cpp)
 target_include_directories(fuse_ui_platform_keys_v2 PRIVATE ${FUSE_CORE_DIR}/include)
@@ -52,6 +55,7 @@ target_include_directories(fuse_ui_text_input PRIVATE ${FUSE_CORE_DIR}/include)
 if(WIN32) # text_services.cpp uses IMM32 (ImmAssociateContextEx etc.)
     target_link_libraries(fuse_ui_platform_keys_v2 PRIVATE imm32)
     target_link_libraries(fuse_ui_text_input PRIVATE imm32)
+endif()
 endif()
 
 # .fuseui documents and Lua bindings.
@@ -145,6 +149,20 @@ if(TARGET fuse_ui_designer_lib)
     fuse_ui_test(fuse_ui_designer_roundtrip test_designer.cpp)
     target_link_libraries(fuse_ui_designer_roundtrip PRIVATE fuse_ui_designer_lib)
 endif()
+
+# Extras (several font faces, glyph fallback, placeholders, double click, multi-selection views, spin box special
+# text, indeterminate progress): one binary, one ctest gate per area (fuse_ui_extra_<name>)
+fuse_ui_test(fuse_ui_extras test_ui_extras.cpp)
+if(TARGET fuse_ui_doc)
+    target_link_libraries(fuse_ui_extras PRIVATE fuse_ui_doc)
+    target_compile_definitions(fuse_ui_extras PRIVATE FUSE_UI_EXTRAS_HAVE_DOC=1)
+endif()
+foreach(g font_faces glyph_fallback placeholder double_click table_multiselect spinbox_special progress_indeterminate
+          cooked_font_props)
+    add_test(NAME fuse_ui_extra_${g} COMMAND fuse_ui_extras --gate=${g})
+    set_tests_properties(fuse_ui_extra_${g} PROPERTIES LABELS "fuse_ui;gate")
+endforeach()
+set_tests_properties(fuse_ui_extras PROPERTIES DISABLED TRUE) # the per-gate tests above run it
 
 # UI10 platform feel: kinetic scroll physics, haptics hook
 fuse_ui_test(fuse_ui_platform_feel test_platform_feel.cpp)

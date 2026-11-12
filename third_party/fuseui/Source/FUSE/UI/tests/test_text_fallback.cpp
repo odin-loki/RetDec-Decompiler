@@ -1,5 +1,6 @@
 // fuse_text_fallback (UI3): font fallback chains and COLRv0 colour emoji.
-//   - Font::bundledFallbacks: Hebrew, Arabic, Devanagari, Twemoji (COLRv0 + CPAL) and Symbols 2, in that order
+//   - Font::bundledFallbacks: Hebrew, Arabic, Devanagari, Twemoji (COLRv0 + CPAL), Symbols 2 and DejaVu Sans, in that
+//     order (skipped, exit 77, where the Noto / Twemoji faces are not shipped, e.g. a vendored copy of FUSE UI)
 //   - faceFor picks the first face whose cmap has the code point; runs split per face at cluster granularity
 //     (marks, emoji modifiers and ZWJ sequences stay on one face), no .notdef in mixed text
 //   - colour glyphs paint as palette-coloured layers through the ordinary Glyph op (CPU and GPU unchanged)
@@ -49,9 +50,15 @@ int main(int argc, char** argv) {
     UI_CHECK(primary.has_value());
     if (!primary) return fuse::ui::test::finish("fuse_text_fallback");
     Font& font = *primary;
+    for (const char* f : {"noto/NotoSansHebrew-Regular.ttf", "noto/NotoSansArabic-Regular.ttf",
+                          "noto/NotoSansDevanagari-Regular.ttf", "twemoji/TwemojiMozilla.ttf", "noto/NotoSansSymbols2-Regular.ttf"})
+        if (findFontFile(f).empty()) {
+            std::printf("fuse_text_fallback: skipped (%s not present)\n", f);
+            return 77;
+        }
     std::vector<Font> chainFonts = Font::bundledFallbacks();
-    UI_CHECK_EQ(chainFonts.size(), std::size_t(5));
-    if (chainFonts.size() != 5) return fuse::ui::test::finish("fuse_text_fallback");
+    UI_CHECK_EQ(chainFonts.size(), std::size_t(6));
+    if (chainFonts.size() != 6) return fuse::ui::test::finish("fuse_text_fallback");
     UI_CHECK(!font.hasColorGlyphs() && chainFonts[3].hasColorGlyphs());
 
     std::vector<ShapedGlyph> g;
@@ -60,7 +67,7 @@ int main(int argc, char** argv) {
     std::vector<const Font*> chain;
     for (const Font& f : chainFonts) chain.push_back(&f);
     font.setFallbacks(chain);
-    UI_CHECK_EQ(font.faceCount(), std::size_t(6));
+    UI_CHECK_EQ(font.faceCount(), std::size_t(7));
 
     UI_CHECK_EQ(font.faceFor(U'A'), 0);
     UI_CHECK_EQ(font.faceFor(U'\u05D0'), 1);  // Hebrew alef
@@ -106,7 +113,7 @@ int main(int argc, char** argv) {
     d.pixelSize = 20.f;
     layoutText(font, defaultShaper(), mixed, d, tl);
     int notdef = 0, faces = 0;
-    bool seen[6] = {};
+    bool seen[7] = {};
     for (const auto& x : tl.glyphs) {
         notdef += x.glyph == 0;
         if (!seen[x.face]) { seen[x.face] = true; ++faces; }

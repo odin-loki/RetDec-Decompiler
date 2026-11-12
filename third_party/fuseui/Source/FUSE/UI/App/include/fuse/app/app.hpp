@@ -77,6 +77,9 @@ struct WindowDesc {
     std::string_view title = "FUSE";
     u32 width = 800, height = 600;
     f32 dpiScale = 1.f;
+    /// Registers FUSE's bundled faces (UiContext::registerBundledFonts: Open Sans Regular / Bold, JetBrains Mono for
+    /// "monospace", DejaVu Sans glyph fallback) so CSS font-family / font-weight work out of the box.
+    bool bundledFonts = true;
 };
 enum class RedrawPolicy : fuse::ui::u8 {
     OnDemand,   ///< update + present only when the UI needs it (default)
