@@ -27,7 +27,7 @@ add_executable(format_router_probe
 target_include_directories(format_router_probe
     PRIVATE "${CMAKE_SOURCE_DIR}/src/retdec-decompiler"
 )
-target_compile_features(format_router_probe PUBLIC cxx_std_20)
+target_compile_features(format_router_probe PUBLIC cxx_std_23)
 target_link_libraries(format_router_probe
     retdec::utils
     retdec-jvm-parser
@@ -244,7 +244,7 @@ add_dependencies(retdec-decompiler-corpus-fixtures retdec-decompiler-runtime-sha
 # are per module now; this decompiles three fixtures serially and then three
 # copies of each at once, and requires identical output.
 add_executable(parallel_decompile_check parallel_decompile_check.cpp)
-target_compile_features(parallel_decompile_check PRIVATE cxx_std_20)
+target_compile_features(parallel_decompile_check PRIVATE cxx_std_23)
 target_link_libraries(parallel_decompile_check retdec::retdec retdec::config retdec::deps::llvm)
 if(MSVC)
 	target_link_libraries(parallel_decompile_check

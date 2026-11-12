@@ -1,0 +1,31 @@
+FORGE
+Copyright (c) 2026 Odin Loch (Imortek). Dual licensed: AGPL-3.0-or-later or commercial.
+
+This is a clean-room implementation, with one vendored third-party library:
+
+  third_party/monocypher  Monocypher 4.0.2 (Loup Vaillant et al.), BSD-2-Clause OR CC0-1.0.
+                          Used for Ed25519 pack signing and XChaCha20-Poly1305 pack encryption.
+
+A machine-readable SPDX 2.3 SBOM is produced by tools/sbom.py.
+ops/intrinsics/x86.json is a hand-curated subset of intrinsic signatures (facts about the
+public Intel ISA interface), not copied from the Intel Intrinsics Guide data files.
+
+Level Zero API header (third_party/level-zero/ze_api.h)
+Copyright (C) 2019-2026 Intel Corporation. SPDX-License-Identifier: MIT
+
+llama.cpp / ggml (https://github.com/ggml-org/llama.cpp)
+Copyright (c) 2023-2026 The ggml authors. SPDX-License-Identifier: MIT
+The CUDA decode matvec (forge_qmatmul_q81 / forge_quant_q81 in ops/gen/gpu_gen.py) follows the design of
+ggml-cuda's mul_mat_vec_q (mmvq.cu, vecdotq.cuh): q8_1-quantised activations, dp4a dot products against
+the GGUF-encoded weight blocks, and a warp per output column. The code is a FORGE implementation.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
+following conditions: The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
+OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

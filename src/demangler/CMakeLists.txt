@@ -32,7 +32,7 @@ add_library(demangler STATIC
 )
 add_library(retdec::demangler ALIAS demangler)
 
-target_compile_features(demangler PUBLIC cxx_std_17)
+target_compile_features(demangler PUBLIC cxx_std_23)
 
 target_include_directories(demangler
 	PUBLIC

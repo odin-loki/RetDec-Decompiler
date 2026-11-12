@@ -85,7 +85,7 @@ fi
 # Probe for gmock before building the real thing, so "no gmock" reports itself
 # as that rather than as a wall of missing-header errors.
 printf '#include <gmock/gmock.h>\nint main(){ return 0; }\n' > "${WORK}/probe.cpp"
-if ! "${CXX_BIN}" -std=c++17 "${WORK}/probe.cpp" -lgmock -lgtest -lpthread \
+if ! "${CXX_BIN}" -std=c++23 "${WORK}/probe.cpp" -lgmock -lgtest -lpthread \
 	-o "${WORK}/probe" > "${WORK}/probe.log" 2>&1
 then
 	echo "DEM-01: no usable gmock found." >&2
@@ -124,7 +124,7 @@ while IFS= read -r f; do SRCS+=("$f"); done < <(
 while IFS= read -r f; do SRCS+=("$f"); done < <(find tests/demangler -name '*.cpp' | sort)
 
 BIN="${WORK}/demangler_test"
-if ! "${CXX_BIN}" -std=c++17 -O0 -g0 \
+if ! "${CXX_BIN}" -std=c++23 -O0 -g0 \
 	-Iinclude -Itests -Ideps/rapidjson/include -DRAPIDJSON_HAS_STDSTRING=1 \
 	"${LLVM_CPPFLAGS[@]}" -w \
 	"${SRCS[@]}" -o "${BIN}" \

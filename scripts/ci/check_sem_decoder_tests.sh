@@ -103,7 +103,7 @@ SRCS=(
 )
 
 BIN="${WORK}/sem_decoder_test"
-if ! "${CXX_BIN}" -std=c++17 -O0 -g \
+if ! "${CXX_BIN}" -std=c++23 -O0 -g \
 	-Iinclude -Itests/standalone "${CAPSTONE_CFLAGS[@]}" \
 	"${SRCS[@]}" -o "${BIN}" "${CAPSTONE_LIBS[@]}" \
 	> "${WORK}/build.log" 2>&1

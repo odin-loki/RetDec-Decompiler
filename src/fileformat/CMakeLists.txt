@@ -94,7 +94,7 @@ add_library(fileformat STATIC
 )
 add_library(retdec::fileformat ALIAS fileformat)
 
-target_compile_features(fileformat PUBLIC cxx_std_17)
+target_compile_features(fileformat PUBLIC cxx_std_23)
 
 target_include_directories(fileformat
 	PUBLIC

@@ -15,7 +15,7 @@ target_link_libraries(retdec-type-inference
         retdec-ssa
 )
 
-target_compile_features(retdec-type-inference PUBLIC cxx_std_17)
+target_compile_features(retdec-type-inference PUBLIC cxx_std_23)
 
 set_target_properties(retdec-type-inference PROPERTIES
     POSITION_INDEPENDENT_CODE ON

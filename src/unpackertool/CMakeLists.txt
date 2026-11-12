@@ -20,7 +20,7 @@ add_library(unpackertool STATIC
 )
 add_library(retdec::unpackertool ALIAS unpackertool)
 
-target_compile_features(unpackertool PUBLIC cxx_std_17)
+target_compile_features(unpackertool PUBLIC cxx_std_23)
 
 target_include_directories(unpackertool
 	PRIVATE
@@ -82,7 +82,7 @@ add_executable(main
 	main.cpp
 )
 
-target_compile_features(main PUBLIC cxx_std_17)
+target_compile_features(main PUBLIC cxx_std_23)
 
 target_include_directories(main
 	PRIVATE

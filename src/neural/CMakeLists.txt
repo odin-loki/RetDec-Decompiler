@@ -56,7 +56,7 @@ if(TARGET OpenSSL::Crypto)
     endif()
 endif()
 
-target_compile_features(retdec-neural PUBLIC cxx_std_17)
+target_compile_features(retdec-neural PUBLIC cxx_std_23)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     target_compile_options(retdec-neural PRIVATE -Werror)

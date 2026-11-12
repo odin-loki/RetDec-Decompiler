@@ -1,0 +1,4 @@
+module CForge [system] {
+    header "shim.h"
+    export *
+}

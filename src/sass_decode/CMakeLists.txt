@@ -23,7 +23,7 @@ target_link_libraries(retdec-sass-decode
 )
 
 set_target_properties(retdec-sass-decode PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
     OUTPUT_NAME "retdec-sass-decode"
 )

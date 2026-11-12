@@ -1,0 +1,5 @@
+#!/bin/sh
+# clang drives the AMDGPU linker as "lld -flavor gnu ..."; zig's bundled ld.lld takes the GNU flavour
+# implicitly. Lets clang link HIP code objects on machines without a system lld. ZIG is set by CMake.
+if [ "$1" = "-flavor" ]; then shift 2; fi
+exec "${FORGE_ZIG:-zig}" ld.lld "$@"

@@ -316,7 +316,7 @@ add_library(llvmir2hll STATIC
 )
 add_library(retdec::llvmir2hll ALIAS llvmir2hll)
 
-target_compile_features(llvmir2hll PUBLIC cxx_std_17)
+target_compile_features(llvmir2hll PUBLIC cxx_std_23)
 
 target_include_directories(llvmir2hll
 	PUBLIC

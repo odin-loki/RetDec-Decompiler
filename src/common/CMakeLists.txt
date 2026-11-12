@@ -18,7 +18,7 @@ add_library(common STATIC
 )
 add_library(retdec::common ALIAS common)
 
-target_compile_features(common PUBLIC cxx_std_17)
+target_compile_features(common PUBLIC cxx_std_23)
 
 target_include_directories(common
 	PUBLIC

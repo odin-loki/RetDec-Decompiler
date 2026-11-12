@@ -15,7 +15,7 @@ target_link_libraries(retdec-alias-analysis
         retdec-ssa
 )
 
-target_compile_features(retdec-alias-analysis PUBLIC cxx_std_17)
+target_compile_features(retdec-alias-analysis PUBLIC cxx_std_23)
 
 set_target_properties(retdec-alias-analysis PROPERTIES
     POSITION_INDEPENDENT_CODE ON

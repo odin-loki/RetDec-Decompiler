@@ -20,7 +20,7 @@ add_library(utils STATIC
 )
 add_library(retdec::utils ALIAS utils)
 
-target_compile_features(utils PUBLIC cxx_std_17)
+target_compile_features(utils PUBLIC cxx_std_23)
 
 target_compile_definitions(utils PRIVATE
 	RETDEC_GIT_COMMIT_HASH="${RETDEC_GIT_COMMIT_HASH}"
@@ -146,7 +146,7 @@ else()
     set_target_properties(retdec-gpu-scanner PROPERTIES OUTPUT_NAME "retdec-gpu-scanner")
 endif()
 
-target_compile_features(retdec-gpu-scanner PUBLIC cxx_std_17)
+target_compile_features(retdec-gpu-scanner PUBLIC cxx_std_23)
 target_include_directories(retdec-gpu-scanner
     PUBLIC
         $<BUILD_INTERFACE:${RETDEC_INCLUDE_DIR}>

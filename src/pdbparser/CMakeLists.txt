@@ -7,7 +7,7 @@ add_library(pdbparser STATIC
 )
 add_library(retdec::pdbparser ALIAS pdbparser)
 
-target_compile_features(pdbparser PUBLIC cxx_std_17)
+target_compile_features(pdbparser PUBLIC cxx_std_23)
 
 target_include_directories(pdbparser
 	PUBLIC

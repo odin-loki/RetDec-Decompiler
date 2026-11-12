@@ -73,42 +73,42 @@ readonly CRASH_DIR="tests/crash_corpus"
 
 # target : harness stem : src modules : C++ standard : link libs : seed glob
 readonly TARGETS=(
-	"pyc:fuzz_pyc:pyc_parser bc_module:17::tests/managed_integration/fixtures/python/*.pyc"
-	"lua:fuzz_lua:lua_parser bc_module:17::tests/managed_integration/fixtures/lua/*.luac"
-	"wasm:fuzz_wasm:wasm_parser bc_module:17::tests/managed_integration/fixtures/wasm/*.wasm"
-	"dex:fuzz_dex:dex_parser bc_module:17:-lz:tests/managed_integration/fixtures/dex/*.dex"
-	"jvm:fuzz_jvm_class:jvm_parser bc_module:17:-lz:tests/managed_integration/fixtures/java/*.class"
-	"jar:fuzz_jar:jvm_parser bc_module:17:-lz:tests/managed_integration/fixtures/java/*.jar"
-	"apk:fuzz_apk:dex_parser bc_module:17:-lz:tests/managed_integration/fixtures/dex/*.apk"
-	"pdb:fuzz_pdb:pdbparser:17::tests/managed_integration/fixtures/pdb/*.pdb"
-	"cil:fuzz_cli:cli_parser bc_module:20:-lz:tests/managed_integration/fixtures/dotnet/*.dll"
+	"pyc:fuzz_pyc:pyc_parser bc_module:23::tests/managed_integration/fixtures/python/*.pyc"
+	"lua:fuzz_lua:lua_parser bc_module:23::tests/managed_integration/fixtures/lua/*.luac"
+	"wasm:fuzz_wasm:wasm_parser bc_module:23::tests/managed_integration/fixtures/wasm/*.wasm"
+	"dex:fuzz_dex:dex_parser bc_module:23:-lz:tests/managed_integration/fixtures/dex/*.dex"
+	"jvm:fuzz_jvm_class:jvm_parser bc_module:23:-lz:tests/managed_integration/fixtures/java/*.class"
+	"jar:fuzz_jar:jvm_parser bc_module:23:-lz:tests/managed_integration/fixtures/java/*.jar"
+	"apk:fuzz_apk:dex_parser bc_module:23:-lz:tests/managed_integration/fixtures/dex/*.apk"
+	"pdb:fuzz_pdb:pdbparser:23::tests/managed_integration/fixtures/pdb/*.pdb"
+	"cil:fuzz_cli:cli_parser bc_module:23:-lz:tests/managed_integration/fixtures/dotnet/*.dll"
 	# PeLib is 9,791 lines of PE parsing that had neither a unit suite nor any
 	# fuzzing. fuzz_pe.cpp does not cover it: that harness drives
 	# retdec::fileformat, which publicly links LLVM. PeLib itself does not.
-	"pelib:fuzz_pelib:pelib utils:17:-lz:tests/managed_integration/fixtures/pe/*"
+	"pelib:fuzz_pelib:pelib utils:23:-lz:tests/managed_integration/fixtures/pe/*"
 	# The signature-lattice parser is the decompiler's first read of an
 	# untrusted file, and it is the only translation unit under src/fileformat
 	# that does not link LLVM -- so fuzz_pe.cpp, which drives the LLVM-backed
 	# fileformat, has never covered it. The module path is a subdirectory
 	# rather than a top-level module for exactly that reason: src/fileformat/
 	# as a whole does not build here, src/fileformat/lattice/ does.
-	"lattice:fuzz_lattice:fileformat/lattice:17::tests/managed_integration/fixtures/pe/*"
+	"lattice:fuzz_lattice:fileformat/lattice:23::tests/managed_integration/fixtures/pe/*"
 	# A mangled symbol is attacker-controlled text out of the symbol table, and
 	# all four seeders are hand-written parsers over it. Nothing fuzzed them.
 	# The first two minutes found two signed-integer overflows.
-	"demangle:fuzz_demangle:type_seed:17::tests/managed_integration/fixtures/mangled/*.sym"
+	"demangle:fuzz_demangle:type_seed:23::tests/managed_integration/fixtures/mangled/*.sym"
 	# The loader simulator walks a PE or ELF image's section table, base
 	# relocations, imports, delay imports and TLS callbacks -- every offset and
 	# count out of the file. Nothing fuzzed it; the first run found an import
 	# walk that turns 30 kB into 1.3 million records.
-	"loadersim:fuzz_loader_sim:loader_sim:17::tests/managed_integration/fixtures/pe/*"
+	"loadersim:fuzz_loader_sim:loader_sim:23::tests/managed_integration/fixtures/pe/*"
 	# The pipeline as the decompiler runs it: the lattice classifies the bytes
 	# and MiniUnpacker maps the image and emulates from its entry point. Slow
 	# -- an emulator under three sanitizers manages single-digit executions a
 	# second -- but it is the only coverage either half has together, and the
 	# first run found an 832-byte input that reached 975 MB before executing an
 	# instruction.
-	"unpack:fuzz_unpack:mini_emu fileformat/lattice:17::tests/managed_integration/fixtures/pe/*"
+	"unpack:fuzz_unpack:mini_emu fileformat/lattice:23::tests/managed_integration/fixtures/pe/*"
 )
 
 # How the format-valid seeds are made, for the three targets whose globs matched

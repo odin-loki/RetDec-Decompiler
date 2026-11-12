@@ -1,0 +1,66 @@
+# Qwen3.5 text decoder (Qwen3.5-0.8B..27B dense): a hybrid of Gated DeltaNet linear-attention layers and
+# gated full-attention layers, every `interval`-th layer full (layer_types must follow that pattern).
+#   linear layer: in_proj_qkv -> depthwise causal conv (state conv[l]) -> SiLU -> split q,k,v; gated delta
+#                 rule over a fixed-size recurrent state (ssm[l]); gated RMSNorm (norm(o) * silu(z)); out_proj
+#   full layer:   q_proj gives [query, gate] per head; QK-norm; partial NeoX RoPE over the first `rot` dims;
+#                 attention output * sigmoid(gate) before o_proj
+# RMSNorm weights are stored with the (1 + w) offset already applied by the importer (except the gated norm).
+# Double-brace placeholders are substituted by `forge import` from config.json (text_config).
+blueprint "decoder-lm" opset 1
+
+params {
+  d_model: {{hidden_size}}  n_layers: {{num_hidden_layers}}  n_heads: {{num_attention_heads}}
+  n_kv: {{num_key_value_heads}}  head_dim: {{head_dim}}  ffn: {{intermediate_size}}
+  vocab: {{vocab_size}}  eps: {{rms_norm_eps}}  rot: {{rotary_dim}}
+  interval: {{full_attention_interval}}  n_blocks: {{n_blocks}}
+  lk_heads: {{linear_num_key_heads}}  lk_dim: {{linear_key_head_dim}}
+  lv_heads: {{linear_num_value_heads}}  lv_dim: {{linear_value_head_dim}}
+  rope: { base: {{rope_theta}} }
+}
+
+state kv[n_layers] : kv_cache(heads: n_kv, dim: head_dim)
+state conv[n_layers] : conv_window
+state ssm[n_layers] : recurrent
+
+input tokens    : f32[seq]
+input positions : f32[seq]
+
+graph {
+  kd = lk_heads * lk_dim
+  x = embed(W.tok_emb, tokens)
+  repeat b in 0..n_blocks {
+    repeat j in 0..interval - 1 {
+      l = b * interval + j
+      h = rms_norm(x, W.layer[l].attn_norm, eps)
+      c = silu(conv[l].conv(linear(h, W.layer[l].w_qkv), W.layer[l].conv_w))
+      q = heads(slice(c, 1, 0, kd), lk_heads, lk_dim)
+      k = heads(slice(c, 1, kd, 2 * kd), lk_heads, lk_dim)
+      v = heads(slice(c, 1, 2 * kd, 2 * kd + lv_heads * lv_dim), lv_heads, lv_dim)
+      g = W.layer[l].a_neg * softplus(linear(h, W.layer[l].w_a) + W.layer[l].dt_bias)
+      beta = sigmoid(linear(h, W.layer[l].w_b))
+      o = ssm[l].delta(q, k, v, g, beta)
+      o = rms_norm(o, W.layer[l].ssm_norm, eps) * silu(heads(linear(h, W.layer[l].w_z), lv_heads, lv_dim))
+      x = x + linear(merge(o, lv_heads * lv_dim), W.layer[l].wo)
+      h = rms_norm(x, W.layer[l].ffn_norm, eps)
+      x = x + linear(silu(linear(h, W.layer[l].w_gate)) * linear(h, W.layer[l].w_up), W.layer[l].w_down)
+    }
+    l = b * interval + interval - 1
+    h = rms_norm(x, W.layer[l].attn_norm, eps)
+    qg = heads(linear(h, W.layer[l].wq), n_heads, 2 * head_dim)
+    gate = merge(slice(qg, 2, head_dim, 2 * head_dim), n_heads * head_dim)
+    q = rms_norm(slice(qg, 2, 0, head_dim), W.layer[l].q_norm, eps)
+    q = concat(rope(slice(q, 2, 0, rot), positions, base: rope.base, neox: 1), slice(q, 2, rot, head_dim), axis: 2)
+    k = rms_norm(heads(linear(h, W.layer[l].wk), n_kv, head_dim), W.layer[l].k_norm, eps)
+    k = concat(rope(slice(k, 2, 0, rot), positions, base: rope.base, neox: 1), slice(k, 2, rot, head_dim), axis: 2)
+    v = heads(linear(h, W.layer[l].wv), n_kv, head_dim)
+    kk, vv = kv[l].append(k, v)
+    a = attention(q, kk, vv, causal: true, groups: n_heads / n_kv)
+    x = x + linear(merge(a, n_heads * head_dim) * sigmoid(gate), W.layer[l].wo)
+    h = rms_norm(x, W.layer[l].ffn_norm, eps)
+    x = x + linear(silu(linear(h, W.layer[l].w_gate)) * linear(h, W.layer[l].w_up), W.layer[l].w_down)
+  }
+  logits = linear(rms_norm(last(x, seq), W.out_norm, eps), W.lm_head)
+}
+
+output logits : f32[1, vocab]
+session generative_sequence

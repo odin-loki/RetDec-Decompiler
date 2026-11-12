@@ -19,7 +19,7 @@ if(WIN32)
 endif()
 
 set_target_properties(retdec-profiling-tests PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
 )
 

@@ -1,0 +1,8 @@
+op transpose  class data_movement  inputs 1  shape transpose  tol exact  fuse no  cost 0  attrs "perm" doc "permute axes"
+op reshape    class data_movement  inputs 1  shape reshape    tol exact  fuse no  cost 0  attrs "shape" doc "reshape (one -1 allowed)"
+op gather     class data_movement  inputs 2  shape gather     tol exact  fuse no  cost 0  doc "rows of table[n, d] selected by idx[...] -> [..., d] (embedding lookup)"
+op concat     class data_movement  inputs 2  shape concat     tol exact  fuse no  cost 0  attrs "axis" doc "concatenate along axis"
+op slice      class data_movement  inputs 1  shape slice      tol exact  fuse no  cost 0  attrs "axis,start,end" doc "x[start:end] along axis"
+op rope       class data_movement  inputs 2  shape same       tol abs:1e-5  fuse no  cost 6  attrs "base,neox" doc "rotary embedding of x[s, h, d] at positions pos[s]"
+op silu_mul   class elementwise    inputs 2  shape broadcast  tol abs:1e-5  fuse yes cost 13 doc "silu(a) * b (fused SwiGLU gate)"
+op expand     class data_movement  inputs 1  shape expand     tol exact  fuse no  cost 0  attrs "axis,n" doc "repeat a size-1 axis n times (broadcast_to along one axis)"

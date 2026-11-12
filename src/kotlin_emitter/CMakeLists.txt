@@ -18,6 +18,6 @@ target_link_libraries(retdec-kotlin-emitter
 )
 
 set_target_properties(retdec-kotlin-emitter PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
 )

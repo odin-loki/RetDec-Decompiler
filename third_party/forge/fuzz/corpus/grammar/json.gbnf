@@ -1,0 +1,6 @@
+root ::= obj
+obj ::= "{" ws ( pair ( "," ws pair )* )? "}"
+pair ::= str ws ":" ws val
+str ::= "\"" [a-z]* "\""
+val ::= str | [0-9]+ | obj
+ws ::= [ \t\n]*

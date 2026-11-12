@@ -1,0 +1,7 @@
+name: Open Sans
+upstream: https://github.com/googlefonts/opensans
+version: 1.10
+retrieved: copied unchanged from vendor/bullet/examples/OpenGLWindow/OpenSans.ttf (Bullet ships the Apache-2.0 release)
+license: Apache-2.0
+license_file: LICENSE.txt
+sha256: OpenSans.ttf e64e508b2aa2880f907e470c4550980ec4c0694d103a43f36150ac3f93189bee

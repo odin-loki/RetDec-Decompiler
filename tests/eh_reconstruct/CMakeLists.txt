@@ -14,7 +14,7 @@ target_include_directories(retdec-eh-reconstruct-tests
         ${PROJECT_SOURCE_DIR}/include
 )
 
-target_compile_features(retdec-eh-reconstruct-tests PRIVATE cxx_std_17)
+target_compile_features(retdec-eh-reconstruct-tests PRIVATE cxx_std_23)
 
 include(GoogleTest)
 gtest_discover_tests(retdec-eh-reconstruct-tests)

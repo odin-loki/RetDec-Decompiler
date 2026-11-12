@@ -4,7 +4,7 @@ add_library(retdec-fileformat-lattice STATIC
 )
 add_library(retdec::fileformat-lattice ALIAS retdec-fileformat-lattice)
 
-target_compile_features(retdec-fileformat-lattice PUBLIC cxx_std_17)
+target_compile_features(retdec-fileformat-lattice PUBLIC cxx_std_23)
 
 target_include_directories(retdec-fileformat-lattice
     PUBLIC

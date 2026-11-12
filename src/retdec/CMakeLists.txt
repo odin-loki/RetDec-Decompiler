@@ -7,7 +7,7 @@ add_library(retdec STATIC
 )
 add_library(retdec::retdec ALIAS retdec)
 
-target_compile_features(retdec PUBLIC cxx_std_17)
+target_compile_features(retdec PUBLIC cxx_std_23)
 
 target_include_directories(retdec
 	PUBLIC

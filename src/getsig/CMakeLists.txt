@@ -3,7 +3,7 @@ add_executable(getsig
 	getsig.cpp
 )
 
-target_compile_features(getsig PUBLIC cxx_std_17)
+target_compile_features(getsig PUBLIC cxx_std_23)
 
 target_link_libraries(getsig
 	retdec::fileformat

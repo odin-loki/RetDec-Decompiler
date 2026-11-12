@@ -16,7 +16,7 @@ target_link_libraries(retdec-serial-detect-tests
 )
 
 set_target_properties(retdec-serial-detect-tests PROPERTIES
-    CXX_STANDARD          17
+    CXX_STANDARD          23
     CXX_STANDARD_REQUIRED YES
 )
 

@@ -7,7 +7,7 @@ add_library(rtti-finder STATIC
 )
 add_library(retdec::rtti-finder ALIAS rtti-finder)
 
-target_compile_features(rtti-finder PUBLIC cxx_std_17)
+target_compile_features(rtti-finder PUBLIC cxx_std_23)
 
 target_include_directories(rtti-finder
 	PUBLIC

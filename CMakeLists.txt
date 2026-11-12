@@ -35,7 +35,7 @@ string(TIMESTAMP RETDEC_BUILD_DATE UTC)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -209,6 +209,7 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR
 endif()
 
 add_subdirectory(deps)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/first_party.cmake)
 cond_add_subdirectory(docs RETDEC_DOC)
 add_subdirectory(scripts)
 # QUAL-07 after deps so the pinned LLVM is not compiled with these macros.

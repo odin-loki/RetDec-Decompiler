@@ -11,6 +11,6 @@ target_include_directories(retdec-code-data
 )
 
 set_target_properties(retdec-code-data PROPERTIES
-    CXX_STANDARD          17
+    CXX_STANDARD          23
     CXX_STANDARD_REQUIRED ON
 )

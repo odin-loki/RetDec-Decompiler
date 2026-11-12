@@ -83,7 +83,7 @@ option(RETDEC_ENABLE_LIEF "Build LIEF adapter for incremental fileformat migrati
 # status when it is missing. Its sibling RETDEC_ENABLE_LIEF is not like this --
 # cmake/lief_optional.cmake reads it.
 option(RETDEC_NEURAL_OFFLINE_ONLY "Compile out neural network egress paths (air-gapped builds)" OFF)
-option(RETDEC_REQUIRE_QT6 "Require Qt6 so retdec-gui configures; fail CMake if Qt6 is missing" OFF)
+option(RETDEC_GUI "Build retdec-gui (FuseUI; no external GUI toolkit needed)" ON)
 option(RETDEC_ENABLE_EXPERIMENTAL_SCAFFOLD "Build experimental task scaffold library (tasks 5-60 code anchors)" OFF)
 option(RETDEC_ENABLE_YARACPP "" OFF)
 

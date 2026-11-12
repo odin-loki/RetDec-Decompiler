@@ -17,7 +17,7 @@ target_link_libraries(retdec-java-emitter
 )
 
 set_target_properties(retdec-java-emitter PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
 )
 

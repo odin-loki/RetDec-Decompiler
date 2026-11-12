@@ -3,7 +3,7 @@ add_executable(capstone2llvmirtool
 	capstone2llvmir.cpp
 )
 
-target_compile_features(capstone2llvmirtool PUBLIC cxx_std_17)
+target_compile_features(capstone2llvmirtool PUBLIC cxx_std_23)
 
 target_link_libraries(capstone2llvmirtool
 	retdec::utils

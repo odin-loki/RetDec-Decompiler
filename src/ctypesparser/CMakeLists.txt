@@ -6,7 +6,7 @@ add_library(ctypesparser STATIC
 )
 add_library(retdec::ctypesparser ALIAS ctypesparser)
 
-target_compile_features(ctypesparser PUBLIC cxx_std_17)
+target_compile_features(ctypesparser PUBLIC cxx_std_23)
 
 target_include_directories(ctypesparser
 	PUBLIC

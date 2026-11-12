@@ -10,7 +10,7 @@ target_link_libraries(retdec-bc-module-tests
 )
 
 set_target_properties(retdec-bc-module-tests PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 23
     CXX_STANDARD_REQUIRED YES
 )
 

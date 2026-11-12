@@ -59,11 +59,11 @@ DEFINES="$DEFINES -DRETDEC_GIT_VERSION_TAG=\"standalone\""
 DEFINES="$DEFINES -DRETDEC_BUILD_DATE=\"standalone\""
 
 # -Wno-unused-parameter: the upstream style leaves interface parameters named.
-CXXFLAGS="-std=c++17 $INCLUDES $DEFINES -O1 -g0 -fno-omit-frame-pointer -Wall -Wno-unused-parameter ${EXTRA_CXXFLAGS}"
-TESTFLAGS="-std=c++17 $INCLUDES $DEFINES -Itests/standalone -O1 -g0 -Wall -Wno-unused-parameter ${EXTRA_CXXFLAGS}"
+CXXFLAGS="-std=c++23 $INCLUDES $DEFINES -O1 -g0 -fno-omit-frame-pointer -Wall -Wno-unused-parameter ${EXTRA_CXXFLAGS}"
+TESTFLAGS="-std=c++23 $INCLUDES $DEFINES -Itests/standalone -O1 -g0 -Wall -Wno-unused-parameter ${EXTRA_CXXFLAGS}"
 
 # Modules that build with no third-party dependency.  Keep alphabetical.
-# A module belongs here only if `$CXX -std=c++17 $INCLUDES $DEFINES -fsyntax-only src/<m>/*.cpp`
+# A module belongs here only if `$CXX -std=c++23 $INCLUDES $DEFINES -fsyntax-only src/<m>/*.cpp`
 # succeeds; scripts/standalone_check.sh --audit re-verifies that claim.
 readonly MODULES=(
 	algo_recover alias_analysis bc_module call_conv cfg cfg_structure
@@ -365,8 +365,8 @@ if [ "$MODE" = audit ]; then
 			fi
 		done
 		[ ${#srcs[@]} -eq 0 ] && continue
-		std=c++17
-		for c20 in "${CXX20_MODULES[@]}"; do [ "$c20" = "$m" ] && std=c++20; done
+		std=c++23
+		for c20 in "${CXX20_MODULES[@]}"; do [ "$c20" = "$m" ] && std=c++23; done
 		# shellcheck disable=SC2086
 		if $CXX -std=$std $INCLUDES $DEFINES -fsyntax-only -x c++ "${srcs[@]}" >/dev/null 2>&1; then
 			if [ -z "${declared[$m]:-}" ] && [ -z "${excluded[$m]:-}" ]; then
@@ -505,13 +505,13 @@ compile_one() {
 	local compiler="$CXX"
 	case "$kind" in
 		test)  flags="$SC_TESTFLAGS" ;;
-		test20) flags="${SC_TESTFLAGS/-std=c++17/-std=c++20}" ;;
+		test20) flags="${SC_TESTFLAGS/-std=c++23/-std=c++23}" ;;
 		# whereami is vendored C, not C++; retdec/utils links against it.
 		cc)    flags="-O1 -g0 -w $SC_EXTRA_CXXFLAGS"; compiler="${CC:-cc}" ;;
-		mod20)   flags="${SC_CXXFLAGS/-std=c++17/-std=c++20}" ;;
+		mod20)   flags="${SC_CXXFLAGS/-std=c++23/-std=c++23}" ;;
 		# -x c++ so the compiler does not refuse an unknown .cu extension.
 		modcu)   flags="$SC_CXXFLAGS -x c++" ;;
-		mod20cu) flags="${SC_CXXFLAGS/-std=c++17/-std=c++20} -x c++" ;;
+		mod20cu) flags="${SC_CXXFLAGS/-std=c++23/-std=c++23} -x c++" ;;
 		gui)   flags="$SC_GUIFLAGS" ;;
 		*)     flags="$SC_CXXFLAGS" ;;
 	esac
@@ -713,7 +713,7 @@ compile_cuda_accel() {
 			printf '#include "%s"\n' "$stripped"
 		} > "$tu"
 		# shellcheck disable=SC2086
-		if ! "$CXX" -std=c++20 $INCLUDES $DEFINES -DRETDEC_HAS_CUDA -Wall -Wextra \
+		if ! "$CXX" -std=c++23 $INCLUDES $DEFINES -DRETDEC_HAS_CUDA -Wall -Wextra \
 				-I"$ROOT/tests/utils/cuda_stub" -fsyntax-only -x c++ "$tu" > "$log" 2>&1; then
 			bad_srcs+=("$src")
 			printf '\n%s--- %s%s\n' "$C_RED" "$src" "$C_OFF"
@@ -786,7 +786,7 @@ check_kernel_headers() {
 	for h in "${headers[@]}"; do
 		printf '#include "%s"\nint main(void) { return 0; }\n' "${h#include/}" > "$tu"
 		# shellcheck disable=SC2086
-		if ! $CXX -std=c++17 $INCLUDES $DEFINES $KERNEL_WARN_FLAGS $EXTRA_CXXFLAGS \
+		if ! $CXX -std=c++23 $INCLUDES $DEFINES $KERNEL_WARN_FLAGS $EXTRA_CXXFLAGS \
 				-fsyntax-only "$tu" > "$log" 2>&1; then
 			bad_headers+=("$h")
 			printf '\n%s--- %s%s\n' "$C_RED" "$h" "$C_OFF"
@@ -895,7 +895,7 @@ check_gui() {
 		printf '%s\t%s\tgui\n' "$src" "$obj" >> "$joblist"
 	done
 
-	export SC_GUIFLAGS="-std=c++20 -fPIC $qtCflags -Iinclude -Isrc/gui -Itests/standalone -Itests/gui -DRETDEC_GUI_HAS_NEURAL -O1 -g0 -Wall -Wno-unused-parameter ${EXTRA_CXXFLAGS}"
+	export SC_GUIFLAGS="-std=c++23 -fPIC $qtCflags -Iinclude -Isrc/gui -Itests/standalone -Itests/gui -DRETDEC_GUI_HAS_NEURAL -O1 -g0 -Wall -Wno-unused-parameter ${EXTRA_CXXFLAGS}"
 	local guiStatus=0
 	if ! xargs -d '\n' -P "$JOBS" -n 1 bash -c 'compile_one "$0"' < "$joblist"; then
 		guiStatus=1
@@ -1150,7 +1150,7 @@ for s in "${run_suites[@]}"; do
 	# --start-group/--end-group resolves the undeclared cycles between module
 	# archives without needing a topological order.
 	suiteFlags="$TESTFLAGS"
-	for c20 in "${CXX20_MODULES[@]}"; do [ "$c20" = "$s" ] && suiteFlags="${TESTFLAGS/-std=c++17/-std=c++20}"; done
+	for c20 in "${CXX20_MODULES[@]}"; do [ "$c20" = "$s" ] && suiteFlags="${TESTFLAGS/-std=c++23/-std=c++23}"; done
 
 	# The archive readers (JAR, APK) call into zlib, which is a system library
 	# rather than anything vendored; link it when it is present.

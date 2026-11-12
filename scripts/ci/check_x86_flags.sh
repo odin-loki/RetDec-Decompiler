@@ -148,7 +148,7 @@ echo "FLAG-01: compiling ${n_srcs} translation units with ${JOBS} job(s)"
 export WORKDIR
 xargs -P "${JOBS}" -I{} sh -c '
 	o="${WORKDIR}/obj/$(echo "$1" | tr "/" "_").o"
-	g++ -std=c++17 -c -O1 '"${INC} ${LLVM_FLAGS}"' "$1" -o "$o" \
+	g++ -std=c++23 -c -O1 '"${INC} ${LLVM_FLAGS}"' "$1" -o "$o" \
 		2>>"${WORKDIR}/cc.err" || echo "FAILED $1" >> "${WORKDIR}/cc.err"
 ' _ {} < "${srcs}"
 
@@ -159,7 +159,7 @@ if grep -q '^FAILED ' "${WORKDIR}/cc.err"; then
 fi
 
 link() {
-	g++ -std=c++17 -O1 ${INC} ${LLVM_FLAGS} "$1" "${WORKDIR}"/obj/*.o -o "$2" \
+	g++ -std=c++23 -O1 ${INC} ${LLVM_FLAGS} "$1" "${WORKDIR}"/obj/*.o -o "$2" \
 		-L"${CS_PREFIX}/lib" -lcapstone \
 		$("${LLVM_CONFIG}" --libs) $("${LLVM_CONFIG}" --system-libs) -pthread \
 		2>"${WORKDIR}/link.err" || { sed -n '1,30p' "${WORKDIR}/link.err"; die "link failed: $1"; }

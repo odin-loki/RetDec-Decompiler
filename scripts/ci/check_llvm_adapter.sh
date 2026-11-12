@@ -101,7 +101,7 @@ mapfile -t ALGO_SRCS < <(find src/algo_recover -name '*.cpp' | sort)
 SRCS+=("${ALGO_SRCS[@]}")
 
 BIN="${WORK}/llvm_to_ssa_test"
-if ! "${CXX:-g++}" -std=c++17 -O0 -g \
+if ! "${CXX:-g++}" -std=c++23 -O0 -g \
 	-Iinclude -Isrc/retdec -Itests/standalone \
 	"${LLVM_CPPFLAGS[@]}" -fexceptions -frtti \
 	"${SRCS[@]}" -o "${BIN}" \

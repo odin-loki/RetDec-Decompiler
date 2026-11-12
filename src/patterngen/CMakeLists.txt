@@ -5,7 +5,7 @@ add_library(patterngen STATIC
 )
 add_library(retdec::patterngen ALIAS patterngen)
 
-target_compile_features(patterngen PUBLIC cxx_std_17)
+target_compile_features(patterngen PUBLIC cxx_std_23)
 
 target_include_directories(patterngen
 	PUBLIC

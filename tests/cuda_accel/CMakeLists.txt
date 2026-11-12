@@ -18,7 +18,7 @@ target_link_libraries(retdec-cuda-accel-tests
 
 # Match retdec-cuda-accel: avoid cxx_std_23 on CUDA-linked targets (CMake -> CUDA23).
 set_target_properties(retdec-cuda-accel-tests PROPERTIES
-    CXX_STANDARD 20
+    CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
 )
 

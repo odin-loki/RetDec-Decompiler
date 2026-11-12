@@ -309,7 +309,7 @@ echo "C2L-01: compiling ${n_srcs} translation units against LLVM ${LLVM_MAJOR} w
 export WORKDIR
 xargs -P "${JOBS}" -I{} sh -c '
 	o="${WORKDIR}/obj/$(echo "$1" | tr "/" "_").o"
-	g++ -std=c++17 -c -O0 '"${INC} ${LLVM_FLAGS}"' "$1" -o "$o" \
+	g++ -std=c++23 -c -O0 '"${INC} ${LLVM_FLAGS}"' "$1" -o "$o" \
 		2>>"${WORKDIR}/cc.err" || echo "FAILED $1" >> "${WORKDIR}/cc.err"
 ' _ {} < "${srcs}"
 
@@ -432,7 +432,7 @@ fi
 # It reuses the objects already built above; only the test objects are dropped,
 # because they carry gtest's main().
 shift_objs="$(ls "${WORKDIR}"/obj/*.o | grep -v '/obj/tests_')"
-g++ -std=c++17 -O0 ${INC} ${LLVM_FLAGS} scripts/ci/shift_poison_check.cpp \
+g++ -std=c++23 -O0 ${INC} ${LLVM_FLAGS} scripts/ci/shift_poison_check.cpp \
 	${shift_objs} -o "${WORKDIR}/shift_poison" \
 	-L"${CS_PREFIX}/lib" -lcapstone -L"${KS_PREFIX}/lib" -lkeystone \
 	$("${LLVM_CONFIG}" --libs) $("${LLVM_CONFIG}" --system-libs) -pthread \

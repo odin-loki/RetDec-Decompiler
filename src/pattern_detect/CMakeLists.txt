@@ -21,7 +21,7 @@ target_link_libraries(retdec_pattern_detect
 )
 
 set_target_properties(retdec_pattern_detect PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
 )
 

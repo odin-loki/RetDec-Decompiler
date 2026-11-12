@@ -9,7 +9,7 @@ add_library(unpacker STATIC
 )
 add_library(retdec::unpacker ALIAS unpacker)
 
-target_compile_features(unpacker PUBLIC cxx_std_17)
+target_compile_features(unpacker PUBLIC cxx_std_23)
 
 target_include_directories(unpacker
 	PUBLIC

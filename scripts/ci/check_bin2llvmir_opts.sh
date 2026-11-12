@@ -99,7 +99,7 @@ PASS_SRCS="
 for f in ${PASS_SRCS}; do
 	[ -f "$f" ] || die "missing source $f"
 	o="${WORKDIR}/$(basename "$f" .cpp).o"
-	g++ -std=c++17 -O0 -w -fPIC ${INC} ${LLVM_FLAGS} -c "$f" -o "$o" \
+	g++ -std=c++23 -O0 -w -fPIC ${INC} ${LLVM_FLAGS} -c "$f" -o "$o" \
 		2>"${WORKDIR}/cc.err" \
 		|| { sed -n '1,20p' "${WORKDIR}/cc.err" >&2; die "$f did not compile"; }
 done
@@ -109,7 +109,7 @@ g++ -shared -o "${WORKDIR}/libopt.so" "${WORKDIR}"/*.o \
 	2>"${WORKDIR}/so.err" \
 	|| { sed -n '1,20p' "${WORKDIR}/so.err" >&2; die "could not build the pass library"; }
 
-g++ -std=c++17 -O0 -w ${INC} ${LLVM_FLAGS} \
+g++ -std=c++23 -O0 -w ${INC} ${LLVM_FLAGS} \
 	scripts/ci/inst_opt_semantics_check.cpp \
 	-o "${WORKDIR}/optck" \
 	-L"${WORKDIR}" -lopt -Wl,-rpath,"${WORKDIR}" \

@@ -1,0 +1,32 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  linux-x86:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build g++-14 python3-numpy
+      - run: cmake --preset dev -DCMAKE_CXX_COMPILER=g++-14
+      - run: cmake --build --preset dev -j
+      - run: ctest --preset dev
+  # ThreadSanitizer: scripting runtime (tasks, channels, forge::shared, ARC across threads, debug-mode
+  # race/deadlock detector) and the thread-pool backed tests. Slow/emulator suites are excluded.
+  linux-tsan:
+    runs-on: ubuntu-24.04
+    env:
+      TSAN_OPTIONS: halt_on_error=1 second_deadlock_stack=1
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build clang-18 python3-numpy
+      - run: cmake -S . -B build-tsan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_COMPILER=clang++-18 -DCMAKE_C_COMPILER=clang-18 -DFORGE_TSAN=ON -DFORGE_BUILD_EXAMPLES=OFF
+      - run: cmake --build build-tsan -j --target test_script forge
+      - run: ./build-tsan/test_script
+  linux-asan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build clang-18 python3-numpy
+      - run: cmake -S . -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++-18 -DCMAKE_C_COMPILER=clang-18 -DFORGE_SANITIZE=ON -DFORGE_BUILD_EXAMPLES=OFF
+      - run: cmake --build build-asan -j --target test_script
+      - run: ./build-asan/test_script
+  # Planned: Intel SDE (AVX-512/AMX), QEMU AArch64 (NEON/SVE), QEMU RISC-V, MSVC, macOS, Android/iOS, GPU lab.

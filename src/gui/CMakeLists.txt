@@ -1,265 +1,64 @@
-cmake_minimum_required(VERSION 3.21)
+# retdec-gui on FuseUI (third_party/fuseui) and Forge (third_party/forge).
+#
+#   retdec-gui-model  src/gui/model  -- no UI: artifacts, launching the decompiler,
+#                                       projects, settings, export, graph layout,
+#                                       filtering. Pure C++23 on Forge; unit-tested
+#                                       without a window.
+#   retdec-gui-ui     src/gui/ui     -- FuseUI views (main window, panels, dialogs).
+#                                       Testable headless: a UiContext needs no
+#                                       window, and CpuRasterizer renders frames.
+#   retdec-gui        src/gui/app    -- the executable (native window, or headless
+#                                       with RETDEC_GUI_HEADLESS=1).
+#
+# Directories are globbed so a new model/view file needs no edit here.
 
-# ── Qt6 ────────────────────────────────────────────────────────────────────────
-find_package(Qt6 REQUIRED COMPONENTS
-    Core
-    Gui
-    Widgets
-)
-# Qt6::Svg is optional — provides QSvgGenerator for CFG SVG export.
-find_package(Qt6 OPTIONAL_COMPONENTS Svg)
+get_filename_component(RETDEC_GUI_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 
-# Automatically run moc, uic, and rcc on files that need it.
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTOUIC ON)
-set(CMAKE_AUTORCC ON)
+# Resources that ship next to the binary (share/retdec/gui) and are found at run
+# time, the way decompiler-config.json is.
+set(RETDEC_GUI_RESOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/resources")
 
-# ── Source files ───────────────────────────────────────────────────────────────
-
-set(GUI_PANEL_SOURCES
-    cli_tool_paths.cpp
-    decompiler_launch.cpp
-    batch_decompile_queue.cpp
-    artifact_loader.cpp
-    zip_writer.cpp
-    export_bundle.cpp
-    panels/inspect_panel.cpp
-    panels/command_log_panel.cpp
-    panels/live_console_panel.cpp
-    panels/triage_banner.cpp
-    panels/target_panel.cpp
-    panels/signature_studio_panel.cpp
-    panels/panel_base.cpp
-    panels/binary_browser_panel.cpp
-    panels/function_list_panel.cpp
-    panels/assembly_panel.cpp
-    panels/ir_panel.cpp
-    panels/decompiled_c_panel.cpp
-    panels/cfg_panel.cpp
-    panels/type_hierarchy_panel.cpp
-    panels/call_graph_panel.cpp
-    panels/ai_assistant_panel.cpp
-    panels/strings_browser_panel.cpp
-    panels/diff_panel.cpp
-    panels/settings_dialog.cpp
-    settings/settings.cpp
-    settings/plugin_manager.cpp
-    theme.cpp
-    panels/remaining_panels.cpp
-    panels/progress_panel.cpp
-    panels/tri_pane_code_view.cpp
-    widgets/empty_state_widget.cpp
-)
-
-# Panel library MOC headers only — mainwindow / project_file are linked with retdec-gui.
-set(GUI_HEADERS
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/cli_tool_paths.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/decompiler_launch.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/batch_decompile_queue.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/artifact_loader.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/zip_writer.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/export_bundle.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/inspect_panel.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/command_log_panel.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/live_console_panel.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/triage_banner.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/target_panel.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/signature_studio_panel.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/panel_base.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/binary_browser_panel.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/function_list_panel.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/assembly_panel.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/ir_panel.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/decompiled_c_panel.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/cfg_panel.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/type_hierarchy_panel.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/call_graph_panel.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/strings_browser_panel.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/ai_assistant_panel.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/diagnostics_panel.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/progress_panel.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/tri_pane_code_view.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/diff_panel.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/settings_dialog.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/settings/settings.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/settings/plugin_manager.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/theme.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/settings/plugin_interface.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/widgets/empty_state_widget.h
-)
-
-# ── Launch helpers (headless / argv filtering for CI and automated debug) ─────
-
-add_library(retdec-gui-launch STATIC
-    launch_options.cpp
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/launch_options.h
-)
-
-target_include_directories(retdec-gui-launch
-    PUBLIC
-        ${PROJECT_SOURCE_DIR}/include
-)
-
-target_link_libraries(retdec-gui-launch
-    PUBLIC
-        Qt6::Core
-)
-
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    target_compile_options(retdec-gui-launch PRIVATE -Werror)
-endif()
-
-# ── Panel library (shared between executable and tests) ────────────────────────
-
-add_library(retdec-gui-panels STATIC
-    ${GUI_PANEL_SOURCES}
-    ${GUI_HEADERS}
-)
-
-target_include_directories(retdec-gui-panels
-    PUBLIC
-        ${PROJECT_SOURCE_DIR}/include
-)
-
-target_link_libraries(retdec-gui-panels
-    PUBLIC
-        Qt6::Core
-        Qt6::Gui
-        Qt6::Widgets
-)
-
+# ── Model ────────────────────────────────────────────────────────────────────
+file(GLOB RETDEC_GUI_MODEL_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/model/*.cpp")
+add_library(retdec-gui-model STATIC ${RETDEC_GUI_MODEL_SOURCES})
+target_include_directories(retdec-gui-model PUBLIC ${RETDEC_GUI_ROOT}/include)
+target_link_libraries(retdec-gui-model PUBLIC retdec::forge Threads::Threads)
+target_compile_features(retdec-gui-model PUBLIC cxx_std_23)
+target_compile_definitions(retdec-gui-model PRIVATE
+	RETDEC_GUI_SOURCE_RESOURCE_DIR="${RETDEC_GUI_RESOURCE_DIR}")
 if(TARGET retdec::neural)
-	target_link_libraries(retdec-gui-panels PUBLIC retdec::neural)
-	target_compile_definitions(retdec-gui-panels PUBLIC RETDEC_GUI_HAS_NEURAL)
+	target_link_libraries(retdec-gui-model PUBLIC retdec::neural)
+	target_compile_definitions(retdec-gui-model PUBLIC RETDEC_GUI_HAS_NEURAL)
 endif()
 
-# ── Executable ─────────────────────────────────────────────────────────────────
+# ── Views ────────────────────────────────────────────────────────────────────
+file(GLOB RETDEC_GUI_UI_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ui/*.cpp")
+add_library(retdec-gui-ui STATIC ${RETDEC_GUI_UI_SOURCES})
+target_link_libraries(retdec-gui-ui PUBLIC retdec-gui-model fuse_ui_widgets fuse_ui_doc fuse_app)
+target_compile_features(retdec-gui-ui PUBLIC cxx_std_23)
 
-add_executable(retdec-gui WIN32 MACOSX_BUNDLE
-    main.cpp
-    mainwindow.cpp
-    batch_decompile_dialog.cpp
-    project_file.cpp
-    resources/resources.qrc
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/mainwindow.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/batch_decompile_dialog.h
-    ${PROJECT_SOURCE_DIR}/include/retdec/gui/project_file.h
-    ${GUI_HEADERS}
-)
-
-target_include_directories(retdec-gui
-    PRIVATE
-        ${PROJECT_SOURCE_DIR}/include
-)
-
-target_link_libraries(retdec-gui
-    PRIVATE
-        retdec-gui-launch
-        retdec-gui-panels
-        Qt6::Core
-        Qt6::Gui
-        Qt6::Widgets
-        $<TARGET_NAME_IF_EXISTS:Qt6::Svg>
-)
-
-if(TARGET Qt6::Svg)
-    target_compile_definitions(retdec-gui PRIVATE QT_SVG_LIB)
-endif()
-
-# Optional: build retdec-gui with AddressSanitizer.
-# Enable with:  cmake -DRETDEC_GUI_ASAN=ON ...
-option(RETDEC_GUI_ASAN "Build retdec-gui with /fsanitize=address (MSVC/Clang)." OFF)
-if(RETDEC_GUI_ASAN)
-    if(MSVC)
-        target_compile_options(retdec-gui PRIVATE /fsanitize=address /Zi)
-        target_link_options(retdec-gui    PRIVATE /DEBUG)
-        target_compile_definitions(retdec-gui PRIVATE _DISABLE_VECTOR_ANNOTATION _DISABLE_STRING_ANNOTATION)
-        target_compile_options(retdec-gui-panels PRIVATE /fsanitize=address /Zi)
-        target_compile_definitions(retdec-gui-panels PRIVATE _DISABLE_VECTOR_ANNOTATION _DISABLE_STRING_ANNOTATION)
-    else()
-        target_compile_options(retdec-gui PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer -g)
-        target_link_options(retdec-gui    PRIVATE -fsanitize=address,undefined)
-        target_compile_options(retdec-gui-panels PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer -g)
-    endif()
-    message(STATUS "retdec-gui: AddressSanitizer ENABLED")
-endif()
-
+# ── Executable ───────────────────────────────────────────────────────────────
+add_executable(retdec-gui WIN32 MACOSX_BUNDLE app/main.cpp)
+target_link_libraries(retdec-gui PRIVATE retdec-gui-ui fuse_app_native)
 set_target_properties(retdec-gui PROPERTIES
-    CXX_STANDARD          17
-    CXX_STANDARD_REQUIRED YES
-    OUTPUT_NAME           "retdec-gui"
-    # On macOS bundle the app properly.
-    MACOSX_BUNDLE_BUNDLE_NAME          "RetDec"
-    MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
-)
-
-# ── Qt6 deployment helper (Windows) ────────────────────────────────────────────
-set(RETDEC_QT_OFFSCREEN_DLL "")
-if(WIN32)
-    cmake_path(SET RETDEC_QT_OFFSCREEN_DLL NORMALIZE "${Qt6_DIR}/../../../plugins/platforms/qoffscreen.dll")
-    if(NOT EXISTS "${RETDEC_QT_OFFSCREEN_DLL}")
-        set(RETDEC_QT_OFFSCREEN_DLL "")
-    endif()
+	OUTPUT_NAME "retdec-gui"
+	MACOSX_BUNDLE_BUNDLE_NAME "RetDec"
+	MACOSX_BUNDLE_GUI_IDENTIFIER "com.imortek.retdec"
+	MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
+if(MSVC)
+	# WIN32 subsystem, but main() is the entry point on every platform.
+	target_link_options(retdec-gui PRIVATE /ENTRY:mainCRTStartup)
 endif()
 
-if(WIN32 AND RETDEC_QT_OFFSCREEN_DLL)
-    function(retdec_gui_deploy_offscreen_plugin target_name)
-        add_custom_command(TARGET ${target_name} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${target_name}>/platforms"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${RETDEC_QT_OFFSCREEN_DLL}"
-                "$<TARGET_FILE_DIR:${target_name}>/platforms/"
-            COMMENT "Deploy Qt platforms/qoffscreen.dll next to ${target_name} (headless)"
-        )
-    endfunction()
-    retdec_gui_deploy_offscreen_plugin(retdec-gui)
-endif()
+# Stage resources next to the build-tree binary as they are installed, so a
+# build-tree run finds them in ../share/retdec/gui.
+add_custom_command(TARGET retdec-gui POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:retdec-gui>/../share/retdec/gui"
+	COMMAND ${CMAKE_COMMAND} -E copy_directory "${RETDEC_GUI_RESOURCE_DIR}"
+		"$<TARGET_FILE_DIR:retdec-gui>/../share/retdec/gui"
+	COMMENT "Staging retdec-gui resources")
 
-if(WIN32)
-    find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${Qt6_DIR}/../../../bin")
-    if(WINDEPLOYQT_EXECUTABLE)
-        add_custom_command(TARGET retdec-gui POST_BUILD
-            COMMAND "${WINDEPLOYQT_EXECUTABLE}"
-                --no-compiler-runtime
-                "$<TARGET_FILE:retdec-gui>"
-            COMMENT "Running windeployqt for retdec-gui (build tree)"
-        )
-    endif()
-endif()
-
-# ── Installation ───────────────────────────────────────────────────────────────
 install(TARGETS retdec-gui
-    BUNDLE  DESTINATION .
-    RUNTIME DESTINATION bin
-)
-
-# Deploy Qt next to installed retdec-gui.exe (POST_BUILD does not affect install prefix).
-if(WIN32 AND WINDEPLOYQT_EXECUTABLE)
-    configure_file(
-        "${CMAKE_CURRENT_SOURCE_DIR}/install-windeployqt-gui.cmake.in"
-        "${CMAKE_CURRENT_BINARY_DIR}/install-windeployqt-gui.cmake"
-        @ONLY
-    )
-    install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/install-windeployqt-gui.cmake")
-endif()
-
-# ── Optional: macOS deploy ─────────────────────────────────────────────────────
-if(APPLE)
-    find_program(MACDEPLOYQT_EXECUTABLE macdeployqt HINTS "${Qt6_DIR}/../../../bin")
-    if(MACDEPLOYQT_EXECUTABLE)
-        # No -dmg. macdeployqt's -dmg calls `hdiutil create`, which refuses to
-        # overwrite; POST_BUILD runs on every relink, so the second build of a
-        # tree reports
-        #
-        #     ERROR: Bundle creation error: "hdiutil: create failed - File exists"
-        #
-        # on a build that is otherwise fine. A disk image is a packaging step,
-        # not a build step: scripts/build-macos-installer.sh --dmg makes one,
-        # after removing a stale one.
-        add_custom_command(TARGET retdec-gui POST_BUILD
-            COMMAND "${MACDEPLOYQT_EXECUTABLE}"
-                "$<TARGET_BUNDLE_DIR:retdec-gui>"
-            COMMENT "Running macdeployqt for retdec-gui"
-        )
-    endif()
-endif()
+	BUNDLE DESTINATION .
+	RUNTIME DESTINATION bin)
+install(DIRECTORY "${RETDEC_GUI_RESOURCE_DIR}/" DESTINATION share/retdec/gui)

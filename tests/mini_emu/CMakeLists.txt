@@ -8,7 +8,7 @@ add_executable(retdec-mini-emu-tests
     mini_emu_test.cpp
 )
 
-target_compile_features(retdec-mini-emu-tests PRIVATE cxx_std_17)
+target_compile_features(retdec-mini-emu-tests PRIVATE cxx_std_23)
 
 target_link_libraries(retdec-mini-emu-tests
     PRIVATE

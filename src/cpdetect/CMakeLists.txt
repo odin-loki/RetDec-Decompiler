@@ -12,7 +12,7 @@ add_library(cpdetect STATIC
 )
 add_library(retdec::cpdetect ALIAS cpdetect)
 
-target_compile_features(cpdetect PUBLIC cxx_std_17)
+target_compile_features(cpdetect PUBLIC cxx_std_23)
 
 target_include_directories(cpdetect
 	PUBLIC

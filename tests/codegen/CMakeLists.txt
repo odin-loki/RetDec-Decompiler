@@ -9,6 +9,6 @@ target_link_libraries(retdec_codegen_tests
         retdec::deps::gtest_main
 )
 
-target_compile_features(retdec_codegen_tests PRIVATE cxx_std_17)
+target_compile_features(retdec_codegen_tests PRIVATE cxx_std_23)
 
 add_test(NAME retdec_codegen_tests COMMAND retdec_codegen_tests)

@@ -1,0 +1,143 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "dev",
+      "generator": "Ninja",
+      "binaryDir": "build/dev",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
+      "name": "release",
+      "generator": "Ninja",
+      "binaryDir": "build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "asan",
+      "generator": "Ninja",
+      "binaryDir": "build/asan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "FORGE_SANITIZE": "ON"
+      }
+    },
+    {
+      "name": "windows-mingw",
+      "generator": "Ninja",
+      "binaryDir": "build/win64",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "macos-osxcross",
+      "generator": "Ninja",
+      "binaryDir": "build/macos",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/macos-osxcross.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "android-arm64",
+      "generator": "Ninja",
+      "binaryDir": "build/android-arm64",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/android-arm64.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FORGE_JNI": "ON"
+      }
+    },
+    {
+      "name": "ios",
+      "generator": "Xcode",
+      "binaryDir": "build/ios",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/ios.cmake"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan"
+    },
+    {
+      "name": "windows-mingw",
+      "configurePreset": "windows-mingw"
+    },
+    {
+      "name": "macos-osxcross",
+      "configurePreset": "macos-osxcross"
+    },
+    {
+      "name": "android-arm64",
+      "configurePreset": "android-arm64"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "filter": {
+        "exclude": {
+          "label": "slow"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ],
+  "packagePresets": [
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "generators": [
+        "TGZ"
+      ]
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "release",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "release"
+        },
+        {
+          "type": "build",
+          "name": "release"
+        },
+        {
+          "type": "test",
+          "name": "release"
+        },
+        {
+          "type": "package",
+          "name": "release"
+        }
+      ]
+    }
+  ]
+}

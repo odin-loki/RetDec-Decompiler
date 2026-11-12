@@ -15,7 +15,7 @@ target_link_libraries(retdec-var-recovery
         retdec-ssa
 )
 
-target_compile_features(retdec-var-recovery PUBLIC cxx_std_17)
+target_compile_features(retdec-var-recovery PUBLIC cxx_std_23)
 
 set_target_properties(retdec-var-recovery PROPERTIES
     POSITION_INDEPENDENT_CODE ON

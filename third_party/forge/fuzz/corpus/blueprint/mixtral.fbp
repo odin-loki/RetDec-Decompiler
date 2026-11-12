@@ -1,0 +1,41 @@
+# Mixtral-style sparse MoE decoder (Mixtral 8x7B / 8x22B layout).
+# Router: softmax over experts, keep top-k, renormalise (HF MixtralSparseMoeBlock).
+# Experts are evaluated densely and weighted by the (mostly zero) gate column; a sparse
+# dispatch lowering is a scheduling optimisation over the same graph.
+blueprint "decoder-lm-moe" opset 1
+
+params {
+  d_model: {{hidden_size}}  n_layers: {{num_hidden_layers}}  n_heads: {{num_attention_heads}}
+  n_kv: {{num_key_value_heads}}  head_dim: {{head_dim}}  ffn: {{intermediate_size}}
+  vocab: {{vocab_size}}  eps: {{rms_norm_eps}}
+  n_experts: {{num_local_experts}}  n_active: {{num_experts_per_tok}}
+  rope: { base: {{rope_theta}} }
+}
+
+state kv[n_layers] : kv_cache(heads: n_kv, dim: head_dim)
+
+input tokens    : f32[seq]
+input positions : f32[seq]
+
+graph {
+  x = embed(W.tok_emb, tokens)
+  repeat l in 0..n_layers {
+    h = rms_norm(x, W.layer[l].attn_norm, eps)
+    q = rope(heads(linear(h, W.layer[l].wq), n_heads, head_dim), positions, base: rope.base, neox: {{rope_neox}})
+    k = rope(heads(linear(h, W.layer[l].wk), n_kv, head_dim), positions, base: rope.base, neox: {{rope_neox}})
+    v = heads(linear(h, W.layer[l].wv), n_kv, head_dim)
+    kk, vv = kv[l].append(k, v)
+    a = attention(q, kk, vv, causal: true, groups: n_heads / n_kv)
+    x = x + linear(merge(a, n_heads * head_dim), W.layer[l].wo)
+    h = rms_norm(x, W.layer[l].ffn_norm, eps)
+    g = moe_gate(linear(h, W.layer[l].router), k: n_active, norm: 1)
+    repeat e in 0..n_experts {
+      y = linear(silu(linear(h, W.layer[l].expert[e].w_gate)) * linear(h, W.layer[l].expert[e].w_up), W.layer[l].expert[e].w_down)
+      x = x + slice(g, axis: 1, start: e, end: e + 1) * y
+    }
+  }
+  logits = linear(rms_norm(last(x, seq), W.out_norm, eps), W.lm_head)
+}
+
+output logits : f32[1, vocab]
+session generative_sequence

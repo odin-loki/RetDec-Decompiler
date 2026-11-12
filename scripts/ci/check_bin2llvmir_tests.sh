@@ -151,7 +151,7 @@ compile_src() {
 	f="$1"
 	o="${B2L_OBJ}/$(echo "$f" | tr '/' '_' | sed 's/\.cpp$/.o/')"
 	if [ -f "$o" ] && [ "$o" -nt "$f" ]; then return 0; fi
-	if g++ -std=c++17 -O0 -w ${B2L_INC} ${B2L_LF} -c "$f" -o "$o" 2>"${o}.err"; then
+	if g++ -std=c++23 -O0 -w ${B2L_INC} ${B2L_LF} -c "$f" -o "$o" 2>"${o}.err"; then
 		rm -f "${o}.err"
 	else
 		rm -f "$o"
@@ -201,7 +201,7 @@ fi
 for f in $(find deps/tlsh -name '*.cpp' ! -name 'WinFunctions.cpp' | sort); do
 	o="${WORKDIR}/dep/tlsh_$(basename "$f" .cpp).o"
 	[ -f "$o" ] && [ "$o" -nt "$f" ] && continue
-	g++ -std=c++17 -O0 -w -Ideps/tlsh/include -c "$f" -o "$o" \
+	g++ -std=c++23 -O0 -w -Ideps/tlsh/include -c "$f" -o "$o" \
 		|| die "deps/tlsh: $f did not compile"
 done
 for f in $(find deps/authenticode-parser/src -name '*.c' | sort); do
@@ -216,7 +216,7 @@ if [ ! -f "${WORKDIR}/dep/stb_image.o" ] \
 		-o "${WORKDIR}/dep/stb_image.o" || die "deps/stb did not compile"
 fi
 
-g++ -std=c++17 -O0 -w ${INC} ${LLVM_FLAGS} -c scripts/ci/b2l_dwarf_stub.cpp \
+g++ -std=c++23 -O0 -w ${INC} ${LLVM_FLAGS} -c scripts/ci/b2l_dwarf_stub.cpp \
 	-o "${WORKDIR}/dwarf_stub.o" || die "the DWARF stub did not compile"
 
 # mock_inference and neural_refine_stub are the build's stand-ins for
@@ -249,7 +249,7 @@ compile_test() {
 	f="$1"
 	o="${B2L_TOBJ}/$(echo "$f" | tr '/' '_' | sed 's/\.cpp$/.o/')"
 	if [ -f "$o" ] && [ "$o" -nt "$f" ]; then return 0; fi
-	if g++ -std=c++17 -O0 -w ${B2L_INC} ${B2L_LF} -c "$f" -o "$o" 2>"${o}.err"; then
+	if g++ -std=c++23 -O0 -w ${B2L_INC} ${B2L_LF} -c "$f" -o "$o" 2>"${o}.err"; then
 		rm -f "${o}.err"
 	else
 		rm -f "$o"
@@ -270,7 +270,7 @@ if [ "${test_compile_failed}" -ne 0 ]; then
 	die "a tests/bin2llvmir source did not compile"
 fi
 
-g++ -std=c++17 -O0 -w "${WORKDIR}"/tobj/*.o "${WORKDIR}/dwarf_stub.o" \
+g++ -std=c++23 -O0 -w "${WORKDIR}"/tobj/*.o "${WORKDIR}/dwarf_stub.o" \
 	-o "${WORKDIR}/b2ltest" \
 	-Wl,--start-group "${WORKDIR}/libretdec.a" "${WORKDIR}"/dep/*.o -Wl,--end-group \
 	-lgtest -lgtest_main -lgmock \

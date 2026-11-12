@@ -10,7 +10,7 @@ add_library(retdec-packer STATIC
 )
 add_library(retdec::packer ALIAS retdec-packer)
 
-target_compile_features(retdec-packer PUBLIC cxx_std_17)
+target_compile_features(retdec-packer PUBLIC cxx_std_23)
 
 target_include_directories(retdec-packer
     PUBLIC
