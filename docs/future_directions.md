@@ -216,7 +216,7 @@ Loaders that accept input today (file opens ≠ native-lift maturity):
 | Language | Status | Notes |
 |----------|--------|-------|
 | C | **Shipped default** | Native ELF/PE/Mach-O. `--buildable` on by default |
-| C++ | **Rejected** | CLI rejects `--output-lang cpp`; `src/cxx_backend` unwired |
+| C++ | **Rejected** | CLI rejects `--output-lang cpp`; `src/cxx_backend` unwired. Plan: [internal/CPP_EMITTER_PLAN.md](internal/CPP_EMITTER_PLAN.md) |
 | Python | **Shipped** | From `.pyc` only |
 | Lua | **Shipped** | From `.luac` only |
 | WASM/WAT | **Shipped** | From `.wasm` only |
