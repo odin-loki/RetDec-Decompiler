@@ -846,7 +846,7 @@ The migration doc treats Clang as *"not a separate pin; it lives in that monorep
 | `LLVM-19` | **Real semantic diff for the AI gates** — compare Clang ASTs of original and refined C to classify edits precisely. Far more reliable than tree-sitter node counting (`AI-46`). |
 | `LLVM-20` | **Better `--buildable` output** — validate generated headers and stubs with Clang before writing, and emit fix-its when validation fails. Your best feature gets more robust. |
 | `LLVM-21` | **Clang's tooling for free**: `clang-format` the output (you ship `.clang-format` already), `clang-tidy` it as a readability metric, `ASTMatchers` for declarative idiom recognition instead of hand-written matchers. |
-| `LLVM-22` | **Emit C++ properly.** A real C++ backend (`src/cxx_backend/`, 971 LOC, zero consumers, while `--output-lang cpp` ships renamed C) becomes far more tractable with Clang available to validate what you emit. Resolves `DEAD-01`/`CLI-01` positively. |
+| `LLVM-22` | **Emit C++ properly.** A real C++ backend (`src/cxx_backend/`, 971 LOC, zero consumers, while `--output-lang cpp` ships renamed C) becomes far more tractable with Clang available to validate what you emit. Resolves `DEAD-01`/`CLI-01` positively. Plan: [docs/internal/CPP_EMITTER_PLAN.md](docs/internal/CPP_EMITTER_PLAN.md). |
 
 ## 6.5 Toolchain modernisation alongside
 

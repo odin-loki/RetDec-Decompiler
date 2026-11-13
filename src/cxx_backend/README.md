@@ -14,3 +14,6 @@ Do not advertise C++ output until that wiring exists. Specification
 extraction still emits C plus `.config.json` detections.
 
 Sources here: `cxx_ast.cpp`, `cxx_emitter.cpp`, `cxx_lifter.cpp`.
+
+The plan for a real C++ writer (built on llvmir2hll's BIR, reusing these
+detectors, with STL support) is [docs/internal/CPP_EMITTER_PLAN.md](../../docs/internal/CPP_EMITTER_PLAN.md).
